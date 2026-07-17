@@ -36,10 +36,9 @@ window.EditorAPI = {
         clearTimeout(this._saveTimer)
         this._saveTimer = setTimeout(() => this.save(), 2000)
       },
-      editorProps: {
-        handlePaste: (view, event) => this._handlePaste(event),
-      },
     })
+    // Paste handler for images
+    el.addEventListener('paste', (e) => this._handlePaste(e))
     this._setupToolbar()
   },
 
@@ -98,18 +97,28 @@ window.EditorAPI = {
   },
 
   _handlePaste(event) {
+    // Try clipboard items first
     const items = event.clipboardData?.items
-    if (!items) return false
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        event.preventDefault()
-        const file = item.getAsFile()
-        if (!file) return true
-        this._uploadImage(file)
-        return true
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          event.preventDefault()
+          const file = item.getAsFile()
+          if (file) { this._uploadImage(file); return }
+        }
       }
     }
-    return false
+    // Try clipboard files
+    const files = event.clipboardData?.files
+    if (files) {
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          event.preventDefault()
+          this._uploadImage(file)
+          return
+        }
+      }
+    }
   },
 
   async _uploadImage(file) {
