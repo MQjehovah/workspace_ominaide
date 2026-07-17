@@ -229,6 +229,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       <div class="nav-item" onclick="showView('notes')" title="笔记">
         <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
       </div>
+      <div style="flex:1"></div>
+      <div class="nav-item" id="navUser" style="font-size:10px;font-weight:600;color:var(--secondary);cursor:default" title="用户"></div>
       <div class="nav-item" onclick="showView('settings')" title="设置">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </div>
@@ -436,6 +438,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
         document.getElementById('loggedUser').textContent = username
+        document.getElementById('navUser').textContent = username.charAt(0).toUpperCase()
         document.getElementById('greetingText').textContent = username
         document.getElementById('subText').textContent = 'OmniAide 桌面工作台'
         await loadWorkspaces()

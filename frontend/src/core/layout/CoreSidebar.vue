@@ -3,7 +3,7 @@
     :default-active="route.path"
     :collapse="collapsed"
     :router="true"
-    style="height:100vh; border-right:1px solid #dcdfe6; overflow-y:auto"
+    style="height:100vh; border-right:1px solid #dcdfe6; overflow-y:auto; display:flex; flex-direction:column"
   >
     <div style="padding:16px; text-align:center; font-weight:700; font-size:16px; border-bottom:1px solid #ebeef5">
       <span v-if="!collapsed">OmniAide</span>
@@ -35,22 +35,27 @@
       </el-menu-item>
     </template>
 
-    <!-- Settings at bottom -->
-    <div style="position:absolute; bottom:0; width:100%">
-      <el-menu-item index="/settings">
-        <el-icon><Setting /></el-icon>
-        <span>设置</span>
-      </el-menu-item>
-    </div>
+    <!-- Spacer + User + Settings at bottom -->
+    <div style="flex:1"></div>
+    <el-menu-item v-if="auth.user" style="cursor:default;opacity:0.7">
+      <el-icon><User /></el-icon>
+      <span>{{ auth.user.username }}</span>
+    </el-menu-item>
+    <el-menu-item index="/settings">
+      <el-icon><Setting /></el-icon>
+      <span>设置</span>
+    </el-menu-item>
   </el-menu>
 </template>
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import { Folder, Management, Setting } from '@element-plus/icons-vue'
+import { Folder, Management, Setting, User } from '@element-plus/icons-vue'
 import { usePluginStore } from '@/stores/core/plugin'
+import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()
 const route = useRoute()
 const pluginStore = usePluginStore()
+const auth = useAuthStore()
 </script>
