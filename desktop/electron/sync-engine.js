@@ -49,22 +49,68 @@ class SyncEngine {
 
   async _pollOnce() {
     try {
-      const folder = this.config.serverPath || '/'
-      const res = await axios.get(`${this.config.serverUrl}/api/files?page_size=200&folder_path=${encodeURIComponent(folder)}`, {
+      const serverPrefix = (this.config.serverPath || '/').replace(/\/+$/, '')
+      const localPath = this.config.localPath
+      if (!localPath) return
+
+      // Fetch all active files from server
+      const res = await axios.get(`${this.config.serverUrl}/api/files?page_size=500`, {
         headers: { Authorization: 'Bearer ' + this.config.token }
       })
-      const files = res.data?.files || []
-      const localPath = this.config.localPath
-      for (const f of files) {
+      const serverFiles = res.data?.files || []
+
+      // Build set of server files (relative to serverPath)
+      const serverPaths = new Set()
+      for (const f of serverFiles) {
         if (f.is_folder) continue
-        const relPath = f.folder_path.replace(/\/$/, '') + '/' + f.original_name
-        const localFile = path.join(localPath, relPath)
-        if (!fs.existsSync(localFile)) {
-          this._downloadFile(f.id, localFile, relPath)
+        const fileRel = (f.folder_path || '/').replace(/\/+$/, '') + '/' + (f.original_name || '')
+        if (fileRel.startsWith(serverPrefix + '/') || (serverPrefix === '' || serverPrefix === '/')) {
+          const rel = serverPrefix === '/' || serverPrefix === '' ? fileRel.replace(/^\//, '') : fileRel.slice(serverPrefix.length + 1)
+          serverPaths.add(rel)
+          const localFile = path.join(localPath, rel)
+          if (!fs.existsSync(localFile)) {
+            this._downloadFile(f.id, localFile, rel)
+          }
         }
       }
+
+      // Upload local files not on server
+      const walkDir = (dir, prefix) => {
+        let entries
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+        for (const entry of entries) {
+          if (entry.name.startsWith('.')) continue
+          const fullPath = path.join(dir, entry.name)
+          const relPath = prefix ? prefix + '/' + entry.name : entry.name
+          if (entry.isDirectory()) {
+            walkDir(fullPath, relPath)
+          } else if (!serverPaths.has(relPath)) {
+            this._uploadFile(fullPath, relPath)
+          }
+        }
+      }
+      walkDir(localPath, '')
     } catch (err) {
       // Silent
+    }
+  }
+
+  async _uploadFile(filePath, relativePath) {
+    try {
+      const relParts = relativePath.replace(/\\/g, '/').split('/')
+      const filename = relParts.pop()
+      const folderPath = (this.config.serverPath || '/').replace(/\/+$/, '') + (relParts.length ? '/' + relParts.join('/') : '') + '/'
+      const urlRes = await axios.post(`${this.config.serverUrl}/api/files/upload-url`, {
+        filename, folder_path: folderPath
+      }, { headers: { Authorization: 'Bearer ' + this.config.token } })
+      if (urlRes.data?.upload_url && urlRes.data?.file_id) {
+        const fileContent = fs.readFileSync(filePath)
+        await axios.put(urlRes.data.upload_url, fileContent, { headers: { 'Content-Type': 'application/octet-stream' } })
+        await axios.post(`${this.config.serverUrl}/api/files/confirm`, { file_id: urlRes.data.file_id }, { headers: { Authorization: 'Bearer ' + this.config.token } })
+        if (this.onEvent) this.onEvent({ direction: 'local', file_path: relativePath, event_type: 'create' })
+      }
+    } catch (err) {
+      console.error('Upload failed:', err.message)
     }
   }
 
@@ -117,25 +163,7 @@ class SyncEngine {
       if (this.onEvent) this.onEvent(event)
       this.setStatus('syncing')
 
-      // Upload file to server
-      if (eventType !== 'delete') {
-        try {
-          const relParts = relativePath.replace(/\\/g, '/').split('/')
-          const filename = relParts.pop()
-          const folderPath = (this.config.serverPath || '/').replace(/\/+$/, '') + (relParts.length ? '/' + relParts.join('/') : '') + '/'
-          const urlRes = await axios.post(`${this.config.serverUrl}/api/files/upload-url`, {
-            filename, folder_path: folderPath
-          }, { headers: { Authorization: 'Bearer ' + this.config.token } })
-          if (urlRes.data?.upload_url) {
-            const fs = require('fs')
-            const fileContent = fs.readFileSync(filePath)
-            await axios.put(urlRes.data.upload_url, fileContent, { headers: { 'Content-Type': 'application/octet-stream' } })
-            await axios.post(`${this.config.serverUrl}/api/files/confirm`, { file_id: urlRes.data.file_id }, { headers: { Authorization: 'Bearer ' + this.config.token } })
-          }
-        } catch (err) {
-          console.error('Upload failed:', err.message)
-        }
-      }
+      if (eventType !== 'delete') this._uploadFile(filePath, relativePath)
     }
 
     this.watcher.on('add', p => sendEvent('create', p))
