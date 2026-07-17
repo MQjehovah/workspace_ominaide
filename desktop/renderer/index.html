@@ -148,6 +148,15 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
 .btn-sm { padding: 7px 16px; font-size: 11px; }
 
+.file-card {
+  background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);
+  padding:16px;cursor:pointer;transition:all 0.2s;box-shadow:var(--shadow);
+}
+.file-card:hover { border-color:rgba(var(--accent-rgb),0.25);transform:translateY(-2px); }
+.file-card .fc-icon { font-size:32px;text-align:center;padding:12px 0; }
+.file-card .fc-name { font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:8px; }
+.file-card .fc-meta { font-size:10px;color:var(--muted);margin-top:2px; }
+
 .event-list { max-height: 150px; overflow-y: auto; margin-top: 8px; }
 .event-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 11px; color: var(--secondary); border-bottom: 1px solid var(--border); }
 .event-item:last-child { border-bottom: none; }
@@ -196,8 +205,11 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
   <div class="main">
     <div class="sidebar">
-      <div class="nav-item active" onclick="showView('dashboard')" title="工作台">
+      <div class="nav-item" onclick="showView('dashboard')" title="工作台">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </div>
+      <div class="nav-item" onclick="showView('files');loadFiles()" title="文件">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       </div>
       <div class="nav-item" onclick="showView('settings')" title="设置">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -214,7 +226,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
         <div class="section-label">快捷入口</div>
         <div class="app-row">
-          <div class="app-btn" onclick="openWeb('/files')">
+          <div class="app-btn" onclick="showView('files');loadFiles()">
             <div class="icon-wrap" style="background:rgba(0,122,255,0.1);color:#007AFF">
               <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
             </div>
@@ -243,6 +255,20 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         <div class="section-label">最近文件</div>
         <div id="recentFiles" class="file-list">
           <div class="empty-state">启动同步后显示最近文件</div>
+        </div>
+      </div>
+
+      <!-- Files -->
+      <div id="viewFiles" class="view">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <h1 style="font-size:20px">文件</h1>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="uploadFile()">上传</button>
+            <input type="file" id="fileInput" style="display:none" onchange="handleFileSelect(event)" multiple />
+          </div>
+        </div>
+        <div id="fileGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+          <div class="empty-state" style="grid-column:1/-1">加载中...</div>
         </div>
       </div>
 
@@ -289,6 +315,17 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       </div>
     </div>
   </div>
+  </div>
+
+  <!-- Preview Dialog -->
+  <div id="previewDialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;align-items:center;justify-content:center" onclick="if(event.target===this)closePreview()">
+    <div style="background:var(--surface);border-radius:var(--radius);padding:24px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.15)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:600;font-size:14px">文件预览</span>
+        <button class="icon-btn" onclick="closePreview()" style="font-size:18px;line-height:1">&times;</button>
+      </div>
+      <div id="previewContent"></div>
+    </div>
   </div>
 
   <script>
@@ -343,6 +380,107 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       document.getElementById('syncLabel').textContent = '未连接'
       document.getElementById('startBtn').disabled = false
       document.getElementById('stopBtn').disabled = true
+    }
+
+    // === File Management ===
+    let allFiles = []
+
+    async function loadFiles() {
+      const grid = document.getElementById('fileGrid')
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">加载中...</div>'
+      try {
+        const res = await fetch(config.serverUrl + '/api/v1/files?page_size=100', {
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        allFiles = data.files || []
+        renderFiles()
+      } catch (e) {
+        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">加载失败</div>'
+      }
+    }
+
+    function renderFiles() {
+      const grid = document.getElementById('fileGrid')
+      if (!allFiles.length) {
+        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">暂无文件</div>'
+        return
+      }
+      grid.innerHTML = allFiles.map(f => {
+        const ext = (f.original_name || '').split('.').pop().toLowerCase()
+        const isImg = ['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext)
+        const icon = isImg ? '🖼' : ['mp4','webm','mkv'].includes(ext) ? '🎬' : ['mp3','wav','flac'].includes(ext) ? '🎵' : ['pdf'].includes(ext) ? '📄' : ['zip','rar','7z'].includes(ext) ? '📦' : '📄'
+        const size = f.size ? (f.size / 1024).toFixed(f.size > 1024*1024 ? 2 : 0) + (f.size > 1024*1024 ? ' MB' : ' KB') : ''
+        const time = f.created_at ? new Date(f.created_at).toLocaleDateString() : ''
+        return '<div class="file-card" onclick="previewFile(' + f.id + ')">' +
+          '<div class="fc-icon">' + icon + '</div>' +
+          '<div class="fc-name">' + f.original_name + '</div>' +
+          '<div class="fc-meta">' + size + ' ' + time + '</div>' +
+          '</div>'
+      }).join('')
+    }
+
+    function uploadFile() {
+      document.getElementById('fileInput').click()
+    }
+
+    async function handleFileSelect(event) {
+      const files = event.target.files
+      if (!files.length) return
+      for (const file of files) {
+        try {
+          // Get presigned URL
+          const urlRes = await fetch(config.serverUrl + '/api/v1/files/upload-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
+            body: JSON.stringify({ filename: file.name, mime_type: file.type })
+          })
+          if (!urlRes.ok) continue
+          const { upload_url, file_id } = await urlRes.json()
+          // Upload to MinIO
+          await fetch(upload_url, { method: 'PUT', body: file })
+          // Confirm
+          await fetch(config.serverUrl + '/api/v1/files/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
+            body: JSON.stringify({ file_id })
+          })
+        } catch (e) { console.error('Upload failed:', file.name, e) }
+      }
+      event.target.value = ''
+      await loadFiles()
+    }
+
+    async function previewFile(fileId) {
+      try {
+        const res = await fetch(config.serverUrl + '/api/v1/files/' + fileId, {
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        if (!res.ok) return
+        const f = await res.json()
+        // Get download URL for preview
+        const dlRes = await fetch(config.serverUrl + '/api/v1/files/' + fileId + '/download-url', {
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        const dl = dlRes.ok ? (await dlRes.json()).download_url : null
+        const ext = (f.original_name || '').split('.').pop().toLowerCase()
+        const isImg = ['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext)
+        const html = '<div style="padding:8px 0">' +
+          '<p style="font-size:13px;font-weight:600;margin-bottom:8px">' + f.original_name + '</p>' +
+          '<p style="font-size:11px;color:var(--secondary);margin-bottom:4px">大小: ' + (f.size ? (f.size / 1024).toFixed(1) + ' KB' : '-') + '</p>' +
+          '<p style="font-size:11px;color:var(--secondary);margin-bottom:4px">类型: ' + (f.mime_type || '-') + '</p>' +
+          '<p style="font-size:11px;color:var(--secondary);margin-bottom:12px">创建: ' + (f.created_at ? new Date(f.created_at).toLocaleString() : '-') + '</p>' +
+          (isImg && dl ? '<img src="' + dl + '" style="max-width:100%;max-height:400px;border-radius:8px" />' : '') +
+          (dl ? '<div style="margin-top:12px"><button class="btn btn-primary btn-sm" onclick="window.open(\'' + dl + '\')">下载</button></div>' : '') +
+          '</div>'
+        document.getElementById('previewContent').innerHTML = html
+        document.getElementById('previewDialog').style.display = 'flex'
+      } catch (e) {}
+    }
+
+    function closePreview() {
+      document.getElementById('previewDialog').style.display = 'none'
     }
 
     async function loadWorkspaces() {
