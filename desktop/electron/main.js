@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog } = require('electron')
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, shell } = require('electron')
 const path = require('path')
 const { SyncEngine } = require('./sync-engine')
 const Store = require('electron-store')
@@ -10,8 +10,10 @@ let syncEngine = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 500,
-    height: 600,
+    width: 680,
+    height: 540,
+    minWidth: 580,
+    minHeight: 400,
     resizable: true,
     webPreferences: {
       nodeIntegration: false,
@@ -100,6 +102,10 @@ ipcMain.handle('stop-sync', () => {
 ipcMain.handle('get-sync-status', () => {
   if (syncEngine) return syncEngine.getStatus()
   return { status: 'disconnected', pendingEvents: 0 }
+})
+
+ipcMain.handle('open-external', async (event, url) => {
+  await shell.openExternal(url)
 })
 
 app.whenReady().then(() => {

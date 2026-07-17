@@ -3,77 +3,207 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniAide 桌面同步</title>
+  <title>OmniAide 工作台</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
-    .container { max-width: 480px; margin: 0 auto; padding: 20px; }
-    h1 { font-size: 22px; margin-bottom: 20px; }
-    .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; height: 100vh; display: flex; flex-direction: column; }
+    
+    /* Top Bar */
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 48px; background: #fff; border-bottom: 1px solid #e4e7ed; -webkit-app-region: drag; }
+    .topbar-title { font-size: 15px; font-weight: 600; }
+    .topbar-actions { display: flex; gap: 8px; -webkit-app-region: no-drag; }
+    
+    .sync-indicator { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 12px; font-size: 12px; cursor: pointer; }
+    .sync-indicator.connected { background: #f0f9eb; color: #67c23a; }
+    .sync-indicator.disconnected { background: #fef0f0; color: #f56c6c; }
+    .sync-indicator.syncing { background: #fdf6ec; color: #e6a23c; }
+    
+    .icon-btn { background: none; border: none; cursor: pointer; padding: 6px; border-radius: 6px; font-size: 18px; line-height: 1; color: #606266; }
+    .icon-btn:hover { background: #f5f7fa; }
+    
+    /* Main Layout */
+    .main { flex: 1; display: flex; overflow: hidden; }
+    .sidebar { width: 56px; background: #fff; border-right: 1px solid #e4e7ed; display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 4px; }
+    .nav-item { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; font-size: 20px; color: #909399; position: relative; }
+    .nav-item:hover { background: #f5f7fa; color: #409EFF; }
+    .nav-item.active { background: #ecf5ff; color: #409EFF; }
+    .nav-item .badge { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; }
+    .nav-item .badge.sync-active { background: #67c23a; }
+    
+    .content { flex: 1; overflow-y: auto; padding: 24px; }
+    
+    /* Views */
+    .view { display: none; }
+    .view.active { display: block; }
+    
+    /* Workbench / Dashboard */
+    .welcome h2 { font-size: 20px; margin-bottom: 4px; }
+    .welcome p { color: #909399; font-size: 13px; margin-bottom: 24px; }
+    
+    .section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #606266; }
+    
+    .app-grid { display: grid; grid-template-columns: repeat(auto-fill, 80px); gap: 12px; margin-bottom: 28px; }
+    .app-item { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 8px; border-radius: 10px; cursor: pointer; transition: background 0.15s; }
+    .app-item:hover { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .app-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .app-name { font-size: 11px; color: #606266; text-align: center; }
+    
+    .file-list { display: flex; flex-direction: column; gap: 6px; }
+    .file-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; cursor: pointer; background: #fff; border: 1px solid #ebeef5; }
+    .file-item:hover { border-color: #c6e2ff; }
+    .file-icon { font-size: 20px; }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-meta { font-size: 11px; color: #909399; }
+    
+    /* Settings View */
+    .settings-card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; border: 1px solid #ebeef5; }
+    .settings-card h3 { font-size: 14px; margin-bottom: 16px; color: #303133; }
     .form-group { margin-bottom: 14px; }
-    label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
-    input, select { width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px; }
-    button { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .form-group label { display: block; font-size: 12px; color: #909399; margin-bottom: 4px; }
+    .form-group input { width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; outline: none; }
+    .form-group input:focus { border-color: #409EFF; }
+    .folder-select { display: flex; gap: 8px; }
+    .folder-select input { flex: 1; cursor: pointer; }
+    .btn { padding: 8px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
     .btn-primary { background: #409EFF; color: #fff; }
     .btn-primary:hover { background: #66b1ff; }
     .btn-danger { background: #f56c6c; color: #fff; }
-    .btn-default { background: #ecf5ff; color: #409EFF; border: 1px solid #b3d8ff; }
-    .status-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 6px; font-size: 13px; }
-    .status-connected { background: #f0f9eb; color: #67c23a; }
-    .status-disconnected { background: #fef0f0; color: #f56c6c; }
-    .status-syncing { background: #fdf6ec; color: #e6a23c; }
-    .event-list { max-height: 200px; overflow-y: auto; }
-    .event-item { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; display: flex; justify-content: space-between; }
-    .folder-select { display: flex; gap: 8px; }
-    .folder-select input { flex: 1; }
+    .btn-default { background: #f5f7fa; color: #606266; border: 1px solid #dcdfe6; }
+    .btn-default:hover { color: #409EFF; border-color: #c6e2ff; }
+    .btn-sm { padding: 6px 14px; font-size: 12px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .event-list { max-height: 160px; overflow-y: auto; }
+    .event-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12px; border-bottom: 1px solid #f5f5f5; }
+    .event-item:last-child { border: none; }
+    .event-time { color: #c0c4cc; font-size: 11px; }
   </style>
 </head>
 <body>
-  <div class="container" id="app">
-    <h1>🔄 OmniAide 同步</h1>
-    
-    <!-- Status -->
-    <div id="statusBar" class="status-bar status-disconnected">● 未连接</div>
-    
-    <!-- Settings -->
-    <div class="card">
-      <div class="form-group">
-        <label>服务器地址</label>
-        <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="http://localhost:8000" />
-      </div>
-      <div class="form-group">
-        <label>Token (从 Web 端设置页面获取)</label>
-        <input type="password" id="token" placeholder="输入 JWT token" />
-      </div>
-      <div class="form-group">
-        <label>工作空间 ID</label>
-        <input type="number" id="workspaceId" placeholder="如: 1" />
-      </div>
-      <div class="form-group">
-        <label>本地同步文件夹</label>
-        <div class="folder-select">
-          <input type="text" id="localPath" placeholder="选择本地文件夹" readonly />
-          <button class="btn-default" onclick="selectFolder()">浏览</button>
-        </div>
-      </div>
-      <div style="display:flex; gap:8px; margin-top:16px">
-        <button class="btn-primary" id="startBtn" onclick="startSync()">开始同步</button>
-        <button class="btn-danger" id="stopBtn" onclick="stopSync()" disabled>停止同步</button>
-      </div>
+  <!-- Top Bar -->
+  <div class="topbar">
+    <span class="topbar-title">OmniAide 工作台</span>
+    <div class="topbar-actions">
+      <span id="syncIndicator" class="sync-indicator disconnected" onclick="showView('settings')">● 未连接</span>
+      <button class="icon-btn" onclick="showView('settings')" title="设置">⚙️</button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="nav-item active" onclick="showView('dashboard')" title="工作台">🏠</div>
+      <div class="nav-item" onclick="showView('settings')" title="设置">⚙️</div>
     </div>
 
-    <!-- Events -->
-    <div class="card">
-      <h3 style="font-size:15px; margin-bottom:10px">同步事件</h3>
-      <div id="eventList" class="event-list">
-        <div style="color:#909399; text-align:center; padding:20px">暂无事件</div>
+    <!-- Content -->
+    <div class="content">
+
+      <!-- Dashboard View -->
+      <div id="viewDashboard" class="view active">
+        <div class="welcome">
+          <h2 id="greeting">欢迎回来</h2>
+          <p id="welcomeSub">OmniAide 桌面工作台</p>
+        </div>
+
+        <!-- Quick Apps -->
+        <div class="section-title">快捷入口</div>
+        <div class="app-grid">
+          <div class="app-item" onclick="openWeb('/files')">
+            <div class="app-icon" style="background:#ecf5ff; color:#409EFF">📁</div>
+            <div class="app-name">文件</div>
+          </div>
+          <div class="app-item" onclick="openWeb('/workspaces')">
+            <div class="app-icon" style="background:#fdf6ec; color:#e6a23c">📦</div>
+            <div class="app-name">工作空间</div>
+          </div>
+          <div class="app-item" onclick="openWeb('/apps/todo')">
+            <div class="app-icon" style="background:#f0f9eb; color:#67c23a">✅</div>
+            <div class="app-name">待办</div>
+          </div>
+          <div class="app-item" onclick="openWeb('/settings')">
+            <div class="app-icon" style="background:#fef0f0; color:#f56c6c">⚙️</div>
+            <div class="app-name">设置</div>
+          </div>
+        </div>
+
+        <!-- Recent Files -->
+        <div class="section-title">最近文件</div>
+        <div id="recentFiles" class="file-list">
+          <div style="color:#909399; font-size:13px; text-align:center; padding:20px">启动同步后显示最近文件</div>
+        </div>
       </div>
+
+      <!-- Settings View -->
+      <div id="viewSettings" class="view">
+        <h2 style="font-size:18px; margin-bottom:16px">设置</h2>
+
+        <!-- Connection -->
+        <div class="settings-card">
+          <h3>服务器连接</h3>
+          <div class="form-group">
+            <label>服务器地址</label>
+            <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="http://localhost:8000" />
+          </div>
+          <div class="form-group">
+            <label>Token</label>
+            <input type="password" id="token" placeholder="从 Web 端获取的 JWT token" />
+          </div>
+          <div class="form-group">
+            <label>工作空间 ID</label>
+            <input type="number" id="workspaceId" placeholder="输入工作空间 ID" />
+          </div>
+        </div>
+
+        <!-- Sync Folder -->
+        <div class="settings-card">
+          <h3>本地同步</h3>
+          <div class="form-group">
+            <label>同步文件夹</label>
+            <div class="folder-select">
+              <input type="text" id="localPath" placeholder="选择本地文件夹" readonly onclick="selectFolder()" />
+              <button class="btn btn-default btn-sm" onclick="selectFolder()">浏览</button>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:4px">
+            <button class="btn btn-primary" id="startBtn" onclick="startSync()">开始同步</button>
+            <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" disabled>停止</button>
+          </div>
+        </div>
+
+        <!-- Sync Events -->
+        <div class="settings-card">
+          <h3>同步日志</h3>
+          <div id="eventList" class="event-list">
+            <div style="color:#909399; text-align:center; padding:12px; font-size:12px">暂无同步事件</div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
   <script>
     let config = {}
 
+    // View switching
+    function showView(name) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'))
+      document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'))
+      document.getElementById('view' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active')
+      document.querySelectorAll('.nav-item')[name === 'dashboard' ? 0 : 1].classList.add('active')
+    }
+
+    // Open in browser
+    function openWeb(path) {
+      const base = config.serverUrl || 'http://localhost:8000'
+      const url = base.replace(/:\d+$/, ':3000') + path
+      window.electronAPI.openExternal(url)
+    }
+
+    // Load config
     window.electronAPI.getConfig().then(c => {
       config = c
       document.getElementById('serverUrl').value = c.serverUrl || 'http://localhost:8000'
@@ -85,29 +215,35 @@
       }
     })
 
+    // Sync status
     window.electronAPI.onSyncStatus((status) => {
-      const bar = document.getElementById('statusBar')
-      bar.className = 'status-bar status-' + status
+      const indicator = document.getElementById('syncIndicator')
+      indicator.className = 'sync-indicator ' + status
       const labels = { connected: '● 已连接', disconnected: '● 未连接', syncing: '⟳ 同步中', connecting: '⟳ 连接中...' }
-      bar.textContent = labels[status] || status
+      indicator.textContent = labels[status] || status
     })
 
+    // Sync events
     window.electronAPI.onSyncEvent((event) => {
       const list = document.getElementById('eventList')
       const item = document.createElement('div')
       item.className = 'event-item'
-      const dir = event.direction === 'remote' ? '↓' : '↑'
+      const dir = event.direction === 'remote' ? '↓ 服务端' : '↑ 本地'
       const types = { create: '创建', modify: '修改', delete: '删除' }
-      item.innerHTML = `<span>${dir} ${types[event.event_type] || event.event_type}</span><span style="color:#909399">${event.file_path}</span>`
+      const time = new Date(event.timestamp || Date.now()).toLocaleTimeString()
+      item.innerHTML = `<span>${dir} ${types[event.event_type] || event.event_type} ${event.file_path}</span><span class="event-time">${time}</span>`
       list.insertBefore(item, list.firstChild)
       if (list.children.length > 50) list.removeChild(list.lastChild)
+      document.getElementById('recentFiles').innerHTML = `<div class="file-item"><span class="file-icon">📄</span><div class="file-info"><div class="file-name">${event.file_path}</div><div class="file-meta">${time}</div></div></div>${document.getElementById('recentFiles').innerHTML}`
     })
 
+    // Folder selection
     async function selectFolder() {
       const folder = await window.electronAPI.selectFolder()
       if (folder) document.getElementById('localPath').value = folder
     }
 
+    // Start/Stop sync
     async function startSync() {
       config = {
         serverUrl: document.getElementById('serverUrl').value,
@@ -115,22 +251,23 @@
         workspaceId: parseInt(document.getElementById('workspaceId').value),
         localPath: document.getElementById('localPath').value
       }
-
       if (!config.serverUrl || !config.token || !config.workspaceId || !config.localPath) {
         alert('请填写所有字段')
         return
       }
-
       await window.electronAPI.saveConfig(config)
       await window.electronAPI.startSync(config)
       document.getElementById('startBtn').disabled = true
       document.getElementById('stopBtn').disabled = false
+      document.getElementById('greeting').textContent = '同步已启动'
+      document.getElementById('welcomeSub').textContent = '本地文件夹 → ' + config.localPath
     }
 
     async function stopSync() {
       await window.electronAPI.stopSync()
       document.getElementById('startBtn').disabled = false
       document.getElementById('stopBtn').disabled = true
+      document.getElementById('greeting').textContent = '同步已暂停'
     }
   </script>
 </body>
