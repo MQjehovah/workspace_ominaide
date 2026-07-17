@@ -11,6 +11,7 @@ class NotesScreen extends StatefulWidget {
 class _NotesScreenState extends State<NotesScreen> {
   List<Map<String, dynamic>> _notes = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -19,14 +20,18 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Future<void> _loadNotes() async {
-    setState(() => _loading = true);
+    setState(() { _loading = true; _error = null; });
     try {
       final res = await ApiService().get('/plugins/notes/tree');
       if (res.statusCode == 200) {
-        final data = List<dynamic>.from(jsonDecode(res.body));
-        _notes = _flattenTree(data);
+        final data = jsonDecode(res.body);
+        _notes = data is List ? _flattenTree(data) : [];
+      } else {
+        _error = '服务器错误: ${res.statusCode}';
       }
-    } catch (_) {}
+    } catch (e) {
+      _error = '连接失败: $e';
+    }
     if (!mounted) return;
     setState(() => _loading = false);
   }
@@ -34,9 +39,12 @@ class _NotesScreenState extends State<NotesScreen> {
   List<Map<String, dynamic>> _flattenTree(List<dynamic> tree, {int depth = 0}) {
     final result = <Map<String, dynamic>>[];
     for (final n in tree) {
-      result.add({...Map<String, dynamic>.from(n), 'depth': depth});
-      if (n['children'] != null && (n['children'] as List).isNotEmpty) {
-        result.addAll(_flattenTree(n['children'], depth: depth + 1));
+      final map = Map<String, dynamic>.from(n as Map);
+      map['depth'] = depth;
+      result.add(map);
+      final children = map['children'] as List?;
+      if (children != null && children.isNotEmpty) {
+        result.addAll(_flattenTree(children, depth: depth + 1));
       }
     }
     return result;
@@ -44,9 +52,17 @@ class _NotesScreenState extends State<NotesScreen> {
 
   Future<void> _createNote() async {
     try {
-      await ApiService().post('/plugins/notes', {'title': '无标题', 'content': ''});
-      _loadNotes();
-    } catch (_) {}
+      final res = await ApiService().post('/plugins/notes', {'title': '无标题', 'content': ''});
+      if (res.statusCode == 201) {
+        await _loadNotes();
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+    }
   }
 
   void _openNote(Map<String, dynamic> note) {
@@ -66,31 +82,55 @@ class _NotesScreenState extends State<NotesScreen> {
       ),
       body: _loading
         ? const Center(child: CircularProgressIndicator())
-        : _notes.isEmpty
-          ? const Center(child: Text('暂无笔记', style: TextStyle(color: Colors.grey)))
-          : RefreshIndicator(
-              onRefresh: _loadNotes,
-              child: ListView.builder(
-                itemCount: _notes.length,
-                itemBuilder: (_, i) {
-                  final n = _notes[i];
-                  final depth = n['depth'] as int? ?? 0;
-                  final hasChildren = (n['children'] as List?)?.isNotEmpty ?? false;
-                  return Padding(
-                    padding: EdgeInsets.only(left: 16.0 * depth),
-                    child: ListTile(
-                      dense: true,
-                      leading: Icon(hasChildren ? Icons.folder : Icons.article_outlined, size: 20),
-                      title: Text(n['title'] ?? '无标题', style: const TextStyle(fontSize: 14)),
-                      subtitle: n['updated_at'] != null
-                        ? Text(n['updated_at'].toString().substring(0, 10), style: TextStyle(fontSize: 11, color: Colors.grey.shade500))
-                        : null,
-                      onTap: () => _openNote(n),
-                    ),
-                  );
-                },
+        : _error != null
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+                  const SizedBox(height: 12),
+                  Text(_error!, style: TextStyle(color: Colors.red.shade400, fontSize: 13)),
+                  const SizedBox(height: 16),
+                  ElevatedButton(onPressed: _loadNotes, child: const Text('重试')),
+                ],
               ),
-            ),
+            )
+          : _notes.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.article_outlined, size: 48, color: Colors.grey.shade300),
+                    const SizedBox(height: 12),
+                    Text('暂无笔记', style: TextStyle(color: Colors.grey.shade500)),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(onPressed: _createNote, icon: const Icon(Icons.add), label: const Text('新建笔记')),
+                  ],
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: _loadNotes,
+                child: ListView.builder(
+                  itemCount: _notes.length,
+                  itemBuilder: (_, i) {
+                    final n = _notes[i];
+                    final depth = n['depth'] as int? ?? 0;
+                    final hasChildren = (n['children'] as List?)?.isNotEmpty ?? false;
+                    return Padding(
+                      padding: EdgeInsets.only(left: 12.0 * depth),
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(hasChildren ? Icons.folder : Icons.article_outlined, size: 20, color: hasChildren ? Colors.amber : Colors.blue),
+                        title: Text(n['title'] ?? '无标题', style: const TextStyle(fontSize: 14)),
+                        subtitle: n['updated_at'] != null
+                          ? Text(n['updated_at'].toString().substring(0, 10), style: TextStyle(fontSize: 11, color: Colors.grey.shade500))
+                          : null,
+                        onTap: () => _openNote(n),
+                      ),
+                    );
+                  },
+                ),
+              ),
     );
   }
 }
@@ -134,13 +174,15 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await ApiService().put('/plugins/notes/${widget.note['id']}', {
+      final res = await ApiService().put('/plugins/notes/${widget.note['id']}', {
         'title': _titleCtrl.text,
         'content': _contentCtrl.text,
       });
       widget.onSaved();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存'), duration: Duration(seconds: 1)));
+      if (res.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存'), duration: Duration(seconds: 1)));
+      }
     } catch (_) {}
     if (mounted) setState(() => _saving = false);
   }
