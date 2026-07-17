@@ -179,6 +179,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .ProseMirror a { color:var(--accent);text-decoration:underline; }
 .ProseMirror img { max-width:100%;border-radius:6px;margin:0.5em 0; }
 .ProseMirror p.is-editor-empty:first-child::before { content:attr(data-placeholder);float:left;color:var(--muted);pointer-events:none;height:0; }
+.ProseMirror:focus { outline:none !important; }
+.ProseMirror { border:none !important; box-shadow:none !important; }
 </style>
 </head>
 <body>
