@@ -46,6 +46,9 @@
       </el-row>
     </template>
 
+    <div v-else-if="pluginName === 'notes'">
+      <NotesPage />
+    </div>
     <div v-else>
       <h2>{{ pluginName }}</h2>
       <p style="color:#909399">插件页面加载中...</p>
@@ -57,6 +60,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { Plus, Delete } from '@element-plus/icons-vue'
+import NotesPage from '@/views/notes/NotesPage.vue'
 import client from '@/api/client'
 
 const route = useRoute()

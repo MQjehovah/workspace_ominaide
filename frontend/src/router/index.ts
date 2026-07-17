@@ -30,6 +30,11 @@ const router = createRouter({
           component: () => import('@/views/Settings.vue')
         },
         {
+          path: 'notes',
+          name: 'Notes',
+          component: () => import('@/views/notes/NotesPage.vue')
+        },
+        {
           path: 'apps/:pluginName/:pathMatch(.*)*',
           name: 'PluginHost',
           component: () => import('@/core/layout/PluginHost.vue')
