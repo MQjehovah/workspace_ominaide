@@ -5,17 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OmniAide 工作台</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script type="importmap">
-{
-  "imports": {
-    "@tiptap/core": "https://cdn.jsdelivr.net/npm/@tiptap/core@2.11.5/+esm",
-    "@tiptap/starter-kit": "https://cdn.jsdelivr.net/npm/@tiptap/starter-kit@2.11.5/+esm",
-    "@tiptap/extension-underline": "https://cdn.jsdelivr.net/npm/@tiptap/extension-underline@2.11.5/+esm",
-    "@tiptap/extension-link": "https://cdn.jsdelivr.net/npm/@tiptap/extension-link@2.11.5/+esm",
-    "@tiptap/extension-placeholder": "https://cdn.jsdelivr.net/npm/@tiptap/extension-placeholder@2.11.5/+esm"
-  }
-}
-</script>
+
 
 
   <style>
@@ -796,38 +786,37 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
     function startEditor(content) {
       const el = document.getElementById('tiptapEditor')
-      el.innerHTML = ''
-      const s = document.createElement('script')
-      s.type = 'module'
-      s.textContent = `
-        import { Editor } from '@tiptap/core'
-        import StarterKit from '@tiptap/starter-kit'
-        import Underline from '@tiptap/extension-underline'
-        import Link from '@tiptap/extension-link'
-        import Placeholder from '@tiptap/extension-placeholder'
-        const md = ` + JSON.stringify(content || '') + `
-        const html = md && window.marked ? window.marked.parse(md) : md
-        const ed = new Editor({
-          element: document.getElementById('tiptapEditor'),
-          content: html || '',
-          editable: true,
-          extensions: [
-            StarterKit.configure({ heading: { levels: [1,2,3] } }),
-            Underline, Link.configure({ openOnClick: false }),
-            Placeholder.configure({ placeholder: '开始写点什么...' }),
-          ],
-          onUpdate: ({ editor: e }) => {
-            if (window._noteTimer) clearTimeout(window._noteTimer)
-            window._noteTimer = setTimeout(() => {
-              window._pendingMd = window.Turndown ? new window.TurndownService({ headingStyle: 'atx' }).turndown(e.getHTML()) : e.getHTML()
-              if (window._onNoteChange) window._onNoteChange()
-            }, 2000)
-          },
+      el.innerHTML = '<p style="color:var(--muted)">编辑器加载中...</p>'
+      import('https://cdn.jsdelivr.net/npm/@tiptap/core@2.11.5/+esm').then(mod => {
+        const { Editor } = mod
+        return Promise.all([
+          import('https://cdn.jsdelivr.net/npm/@tiptap/starter-kit@2.11.5/+esm'),
+          import('https://cdn.jsdelivr.net/npm/@tiptap/extension-underline@2.11.5/+esm'),
+          import('https://cdn.jsdelivr.net/npm/@tiptap/extension-link@2.11.5/+esm'),
+          import('https://cdn.jsdelivr.net/npm/@tiptap/extension-placeholder@2.11.5/+esm'),
+        ]).then(([sk, ul, lk, pl]) => {
+          el.innerHTML = ''
+          const md = content || ''
+          const html = md && window.marked ? window.marked.parse(md) : md
+          const ed = new Editor({
+            element: el, content: html || '',
+            extensions: [
+              sk.default.configure({ heading: { levels: [1,2,3] } }),
+              ul.default, lk.default.configure({ openOnClick: false }),
+              pl.default.configure({ placeholder: '开始写点什么...' }),
+            ],
+            onUpdate: ({ editor: e }) => {
+              if (window._noteTimer) clearTimeout(window._noteTimer)
+              window._noteTimer = setTimeout(() => {
+                window._pendingMd = window.Turndown ? new window.TurndownService({ headingStyle: 'atx' }).turndown(e.getHTML()) : e.getHTML()
+                if (window._onNoteChange) window._onNoteChange()
+              }, 2000)
+            },
+          })
+          window._tipEditor = ed
+          document.getElementById('tiptapToolbar').style.display = 'flex'
         })
-        window._tipEditor = ed
-        document.getElementById('tiptapToolbar').style.display = 'flex'
-      `
-      document.body.appendChild(s)
+      }).catch(e => { el.innerHTML = '<p style="color:#f56c6c">编辑器加载失败</p>'; console.error(e) })
     }
 
     function execFormat(cmd, val) {
