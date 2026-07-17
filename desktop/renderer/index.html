@@ -223,6 +223,9 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <h1 id="greetingText">欢迎回来</h1>
           <p id="subText">OmniAide 桌面工作台</p>
         </div>
+        <div class="section-label" style="margin-top:-12px">最近文件</div>
+        <div id="recentFiles" class="file-list"></div>
+        <div class="section-label" style="margin-top:20px">快捷入口</div>
 
         <div class="section-label">快捷入口</div>
         <div class="app-row">
@@ -244,11 +247,6 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
             </div>
             <span class="label">刷新</span>
           </div>
-        </div>
-
-        <div class="section-label">最近文件</div>
-        <div id="recentFiles" class="file-list">
-          <div class="empty-state">启动同步后显示最近文件</div>
         </div>
       </div>
 
@@ -362,14 +360,15 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         if (!res.ok) { const d = await res.json(); throw new Error(typeof d.detail === 'string' ? d.detail : '登录失败') }
         const data = await res.json()
         currentToken = data.access_token
-        config = { serverUrl, token: currentToken, workspaceId: null, localPath: '' }
+        config = { serverUrl, token: currentToken, workspaceId: null, localPath: '', username }
         await window.electronAPI.saveConfig(config)
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
         document.getElementById('loggedUser').textContent = username
-        document.getElementById('greetingText').textContent = '已登录'
-        document.getElementById('subText').textContent = username
+        document.getElementById('greetingText').textContent = username
+        document.getElementById('subText').textContent = 'OmniAide 桌面工作台'
         await loadWorkspaces()
+        await loadRecentFiles()
       } catch (e) {
         errEl.textContent = e.message
       } finally {
@@ -568,7 +567,33 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'))
       document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'))
       document.getElementById('view' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active')
-      document.querySelectorAll('.nav-item')[name === 'dashboard' ? 0 : 1].classList.add('active')
+      const idx = name === 'dashboard' ? 0 : name === 'files' ? 1 : 2
+      document.querySelectorAll('.nav-item')[idx].classList.add('active')
+      if (name === 'dashboard') loadRecentFiles()
+    }
+
+    async function loadRecentFiles() {
+      const el = document.getElementById('recentFiles')
+      try {
+        const res = await fetch(config.serverUrl + '/api/v1/files?page_size=10&status=active', {
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        if (!res.ok) { el.innerHTML = '<div class="empty-state">加载失败</div>'; return }
+        const data = await res.json()
+        if (!data.files || !data.files.length) {
+          el.innerHTML = '<div class="empty-state">暂无文件</div>'
+          return
+        }
+        el.innerHTML = data.files.map(f => {
+          const isImg = ['jpg','jpeg','png','gif','webp','svg','bmp'].includes((f.original_name||'').split('.').pop())
+          const icon = f.is_folder ? '📁' : isImg ? '🖼' : '📄'
+          const size = f.size ? (f.size/1024).toFixed(1) + ' KB' : ''
+          return '<div class="file-item" onclick="showView(\'files\')">' +
+            '<span class="file-icon">' + icon + '</span>' +
+            '<div class="file-info"><div class="file-name">' + f.original_name + '</div>' +
+            '<div class="file-meta">' + size + ' ' + (f.created_at?new Date(f.created_at).toLocaleDateString():'') + '</div></div></div>'
+        }).join('')
+      } catch(e) { el.innerHTML = '<div class="empty-state">加载失败</div>' }
     }
 
     function openWeb(path) {
@@ -585,7 +610,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
         document.getElementById('localPath').value = c.localPath || ''
-        document.getElementById('greetingText').textContent = '已连接'
+        document.getElementById('greetingText').textContent = c.username || '已连接'
+        loadRecentFiles()
         if (c.workspaceId && c.localPath) startSync()
       }
     })
