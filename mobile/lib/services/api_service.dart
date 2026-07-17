@@ -103,19 +103,23 @@ class ApiService {
   }
 
   Future<http.Response> get(String path) async {
-    return await http.get(Uri.parse('$_baseUrl/api/v1$path'), headers: _headers);
+    final prefix = path.startsWith('/plugins/') ? '/api' : '/api/v1';
+    return await http.get(Uri.parse('$_baseUrl$prefix$path'), headers: _headers);
   }
 
   Future<http.Response> post(String path, Map<String, dynamic> body) async {
-    return await http.post(Uri.parse('$_baseUrl/api/v1$path'), headers: _headers, body: jsonEncode(body));
+    final prefix = path.startsWith('/plugins/') ? '/api' : '/api/v1';
+    return await http.post(Uri.parse('$_baseUrl$prefix$path'), headers: _headers, body: jsonEncode(body));
   }
 
   Future<http.Response> put(String path, Map<String, dynamic> body) async {
-    return await http.put(Uri.parse('$_baseUrl/api/v1$path'), headers: _headers, body: jsonEncode(body));
+    final prefix = path.startsWith('/plugins/') ? '/api' : '/api/v1';
+    return await http.put(Uri.parse('$_baseUrl$prefix$path'), headers: _headers, body: jsonEncode(body));
   }
 
   Future<http.Response> delete(String path) async {
-    return await http.delete(Uri.parse('$_baseUrl/api/v1$path'), headers: _headers);
+    final prefix = path.startsWith('/plugins/') ? '/api' : '/api/v1';
+    return await http.delete(Uri.parse('$_baseUrl$prefix$path'), headers: _headers);
   }
 
   Future<String> callMCP(String toolName, Map<String, dynamic> args) async {
