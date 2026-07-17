@@ -12,6 +12,38 @@ from domains.file import service as file_service
 router = APIRouter(prefix="/api/v1/files", tags=["files"])
 
 
+@router.get("/temp/{object_key:path}")
+async def serve_temp_file(object_key: str):
+    """Serve a temp file directly via MinIO proxy."""
+    from core.minio.client import minio_client
+    from fastapi.responses import StreamingResponse
+    import urllib.parse
+    if not minio_client:
+        raise HTTPException(status_code=503, detail="MinIO unavailable")
+    try:
+        obj = minio_client.get_object("user-files", object_key)
+        return StreamingResponse(obj.stream(32*1024), media_type="application/octet-stream")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="File not found")
+
+
+@router.post("/upload-temp")
+async def get_temp_upload_url(
+    user: dict = Depends(get_current_user),
+):
+    """Get a presigned upload URL without creating a DB record. Used by notes plugin for images."""
+    import uuid
+    from core.minio.client import minio_client
+    from datetime import timedelta
+    if not minio_client:
+        raise HTTPException(status_code=503, detail="MinIO unavailable")
+    object_key = f"{user['id']}/{uuid.uuid4().hex}"
+    upload_url = minio_client.presigned_put_object(
+        "user-files", object_key, expires=timedelta(seconds=600)
+    )
+    return {"upload_url": upload_url, "object_key": object_key}
+
+
 @router.post("/folder", response_model=FileResponse, status_code=201)
 async def create_folder(
     req: CreateFolderRequest,

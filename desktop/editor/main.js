@@ -113,27 +113,17 @@ window.EditorAPI = {
   },
 
   async _uploadImage(file) {
-    const filename = `paste-${Date.now()}.${file.type.split('/')[1] || 'png'}`
     try {
-      const res = await fetch(`${this._baseUrl}/api/v1/files/upload-url`, {
+      const res = await fetch(`${this._baseUrl}/api/v1/files/upload-temp`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this._token },
-        body: JSON.stringify({ filename, mime_type: file.type, folder_path: '/' }),
-      })
-      if (!res.ok) return
-      const { upload_url, file_id } = await res.json()
-      await fetch(upload_url, { method: 'PUT', body: file })
-      await fetch(`${this._baseUrl}/api/v1/files/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this._token },
-        body: JSON.stringify({ file_id }),
-      })
-      const dlRes = await fetch(`${this._baseUrl}/api/v1/files/${file_id}/download-url`, {
         headers: { Authorization: 'Bearer ' + this._token },
       })
-      const dl = dlRes.ok ? (await dlRes.json()).download_url : ''
-      if (dl && this._editor) {
-        this._editor.chain().focus().setImage({ src: dl }).run()
+      if (!res.ok) return
+      const { upload_url, object_key } = await res.json()
+      await fetch(upload_url, { method: 'PUT', body: file })
+      const imgUrl = `${this._baseUrl}/api/v1/files/temp/${object_key}`
+      if (this._editor) {
+        this._editor.chain().focus().setImage({ src: imgUrl }).run()
       }
     } catch (e) {}
   },
