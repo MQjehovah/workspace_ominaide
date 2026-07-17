@@ -1,5 +1,4 @@
 const chokidar = require('chokidar')
-const WebSocket = require('ws')
 const fs = require('fs')
 const path = require('path')
 const axios = require('axios')
@@ -18,41 +17,8 @@ class SyncEngine {
 
   async start(config) {
     this.config = config
-    this.setStatus('connecting')
-
-    try {
-      // Connect WebSocket
-      this.ws = new WebSocket(
-        `${this._wsUrl()}/ws/sync/${config.workspaceId}?token=${config.token}`
-      )
-
-      this.ws.on('open', () => {
-        this.setStatus('connected')
-        this._startWatching()
-      })
-
-      this.ws.on('message', (data) => {
-        const event = JSON.parse(data.toString())
-        this._handleRemoteEvent(event)
-      })
-
-      this.ws.on('close', () => {
-        this.setStatus('disconnected')
-        this._stopWatching()
-        // Auto-reconnect after 5 seconds
-        setTimeout(() => {
-          if (this.config) this.start(this.config)
-        }, 5000)
-      })
-
-      this.ws.on('error', () => {
-        this.setStatus('disconnected')
-      })
-
-    } catch (err) {
-      this.setStatus('disconnected')
-      throw err
-    }
+    this.setStatus('syncing')
+    this._startWatching()
   }
 
   stop() {
@@ -83,10 +49,10 @@ class SyncEngine {
       ignored: /(^|[\/\\])\../  // ignore dot files
     })
 
-    const sendEvent = (eventType, filePath) => {
+    const sendEvent = async (eventType, filePath) => {
       const relativePath = path.relative(this.config.localPath, filePath)
       if (!relativePath || relativePath.startsWith('.')) return
-      
+
       this.pendingEvents++
       const event = {
         type: 'file_change',
@@ -95,12 +61,27 @@ class SyncEngine {
         timestamp: new Date().toISOString()
       }
 
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify(event))
-      }
-      
       if (this.onEvent) this.onEvent(event)
       this.setStatus('syncing')
+
+      // Upload file to server
+      if (eventType !== 'delete') {
+        try {
+          const serverPath = (this.config.serverPath || '/').replace(/\/?$/, '/') + relativePath.replace(/\\/g, '/')
+          const filename = path.basename(filePath)
+          const urlRes = await axios.post(`${this.config.serverUrl}/api/files/upload-url`, {
+            filename, folder_path: serverPath
+          }, { headers: { Authorization: 'Bearer ' + this.config.token } })
+          if (urlRes.data?.upload_url) {
+            const fs = require('fs')
+            const fileContent = fs.readFileSync(filePath)
+            await axios.put(urlRes.data.upload_url, fileContent, { headers: { 'Content-Type': 'application/octet-stream' } })
+            await axios.post(`${this.config.serverUrl}/api/files/confirm`, { file_id: urlRes.data.file_id }, { headers: { Authorization: 'Bearer ' + this.config.token } })
+          }
+        } catch (err) {
+          console.error('Upload failed:', err.message)
+        }
+      }
     }
 
     this.watcher.on('add', p => sendEvent('create', p))
