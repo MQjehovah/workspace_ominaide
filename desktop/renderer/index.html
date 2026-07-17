@@ -371,23 +371,21 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         <div id="syncSettings" style="display:block">
           <div class="settings-card">
             <h3>已登录 <span style="color:#34C759;font-size:12px;font-weight:400">●</span> <span id="loggedUser" style="font-weight:400;font-size:12px;color:var(--secondary)"></span></h3>
-            <div class="form-group">
-              <label>工作空间</label>
-              <select id="workspaceSelect" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none;background:var(--bg);color:var(--text)">
-                <option value="">选择工作空间...</option>
-              </select>
-            </div>
           </div>
 
           <div class="settings-card">
-            <h3>本地同步</h3>
+            <h3>文件夹同步</h3>
             <div class="form-group">
-              <label>同步文件夹</label>
+              <label>服务端目录</label>
+              <input type="text" id="serverPath" value="/" placeholder="/ 表示全部文件，如 /projects 表示只同步 projects 目录" />
+            </div>
+            <div class="form-group">
+              <label>本地文件夹</label>
               <div class="input-row">
                 <input type="text" id="localPath" placeholder="选择本地文件夹..." readonly onclick="selectFolder()" />
                 <button class="btn btn-ghost btn-sm" onclick="selectFolder()" style="flex-shrink:0">浏览</button>
-        </div>
-
+              </div>
+            </div>
             <div style="display:flex;gap:8px;margin-top:14px">
               <button class="btn btn-primary" id="startBtn" onclick="startSync()">开始同步</button>
               <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" disabled>停止</button>
@@ -452,7 +450,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         if (!res.ok) { const d = await res.json(); throw new Error(typeof d.detail === 'string' ? d.detail : '登录失败') }
         const data = await res.json()
         currentToken = data.access_token
-        config = { serverUrl, token: currentToken, workspaceId: null, localPath: '', username }
+        config = { serverUrl, token: currentToken, serverPath: '/', localPath: '', username }
         await window.electronAPI.saveConfig(config)
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
@@ -922,16 +920,14 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     }
 
     async function startSync() {
-      const wsSelect = document.getElementById('workspaceSelect')
-      const wsId = parseInt(wsSelect?.value || config.workspaceId)
       config = {
         serverUrl: config.serverUrl,
         token: currentToken || config.token,
-        workspaceId: wsId || config.workspaceId,
+        serverPath: document.getElementById('serverPath').value || '/',
         localPath: document.getElementById('localPath').value
       }
-      if (!config.token || !config.workspaceId || !config.localPath) {
-        alert('请先登录并选择工作空间和同步文件夹')
+      if (!config.token || !config.localPath) {
+        alert('请先登录并选择同步文件夹')
         return
       }
       await window.electronAPI.saveConfig(config)

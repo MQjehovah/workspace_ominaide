@@ -61,7 +61,7 @@ function updateTrayMenu(status) {
 
 // IPC handlers
 ipcMain.handle('get-config', () => {
-  return store.get('config', { serverUrl: 'http://localhost:8000', token: '', workspaceId: null, localPath: '' })
+  return store.get('config', { serverUrl: 'http://localhost:8000', token: '', serverPath: '/', localPath: '' })
 })
 
 ipcMain.handle('save-config', (event, config) => {
