@@ -7,8 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 async def lifespan(app: FastAPI):
     from core.minio.client import ensure_buckets
     from core.plugin.registry import discover_plugins
+    from domains.mcp.tools.register_core import register_core_tools
+
     await ensure_buckets()
     await discover_plugins(app)
+    register_core_tools()
     yield
     from core.database.redis import close_redis
     await close_redis()
