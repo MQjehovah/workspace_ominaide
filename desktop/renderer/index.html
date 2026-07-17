@@ -1,146 +1,229 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniAide 工作台</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; height: 100vh; display: flex; flex-direction: column; }
-    
-    /* Top Bar */
-    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 48px; background: #fff; border-bottom: 1px solid #e4e7ed; -webkit-app-region: drag; }
-    .topbar-title { font-size: 15px; font-weight: 600; }
-    .topbar-actions { display: flex; gap: 8px; -webkit-app-region: no-drag; }
-    
-    .sync-indicator { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 12px; font-size: 12px; cursor: pointer; }
-    .sync-indicator.connected { background: #f0f9eb; color: #67c23a; }
-    .sync-indicator.disconnected { background: #fef0f0; color: #f56c6c; }
-    .sync-indicator.syncing { background: #fdf6ec; color: #e6a23c; }
-    
-    .icon-btn { background: none; border: none; cursor: pointer; padding: 6px; border-radius: 6px; font-size: 18px; line-height: 1; color: #606266; }
-    .icon-btn:hover { background: #f5f7fa; }
-    
-    /* Main Layout */
-    .main { flex: 1; display: flex; overflow: hidden; }
-    .sidebar { width: 56px; background: #fff; border-right: 1px solid #e4e7ed; display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 4px; }
-    .nav-item { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; font-size: 20px; color: #909399; position: relative; }
-    .nav-item:hover { background: #f5f7fa; color: #409EFF; }
-    .nav-item.active { background: #ecf5ff; color: #409EFF; }
-    .nav-item .badge { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; }
-    .nav-item .badge.sync-active { background: #67c23a; }
-    
-    .content { flex: 1; overflow-y: auto; padding: 24px; }
-    
-    /* Views */
-    .view { display: none; }
-    .view.active { display: block; }
-    
-    /* Workbench / Dashboard */
-    .welcome h2 { font-size: 20px; margin-bottom: 4px; }
-    .welcome p { color: #909399; font-size: 13px; margin-bottom: 24px; }
-    
-    .section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #606266; }
-    
-    .app-grid { display: grid; grid-template-columns: repeat(auto-fill, 80px); gap: 12px; margin-bottom: 28px; }
-    .app-item { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 8px; border-radius: 10px; cursor: pointer; transition: background 0.15s; }
-    .app-item:hover { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-    .app-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-    .app-name { font-size: 11px; color: #606266; text-align: center; }
-    
-    .file-list { display: flex; flex-direction: column; gap: 6px; }
-    .file-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; cursor: pointer; background: #fff; border: 1px solid #ebeef5; }
-    .file-item:hover { border-color: #c6e2ff; }
-    .file-icon { font-size: 20px; }
-    .file-info { flex: 1; min-width: 0; }
-    .file-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .file-meta { font-size: 11px; color: #909399; }
-    
-    /* Settings View */
-    .settings-card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; border: 1px solid #ebeef5; }
-    .settings-card h3 { font-size: 14px; margin-bottom: 16px; color: #303133; }
-    .form-group { margin-bottom: 14px; }
-    .form-group label { display: block; font-size: 12px; color: #909399; margin-bottom: 4px; }
-    .form-group input { width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; outline: none; }
-    .form-group input:focus { border-color: #409EFF; }
-    .folder-select { display: flex; gap: 8px; }
-    .folder-select input { flex: 1; cursor: pointer; }
-    .btn { padding: 8px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
-    .btn-primary { background: #409EFF; color: #fff; }
-    .btn-primary:hover { background: #66b1ff; }
-    .btn-danger { background: #f56c6c; color: #fff; }
-    .btn-default { background: #f5f7fa; color: #606266; border: 1px solid #dcdfe6; }
-    .btn-default:hover { color: #409EFF; border-color: #c6e2ff; }
-    .btn-sm { padding: 6px 14px; font-size: 12px; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    
-    .event-list { max-height: 160px; overflow-y: auto; }
-    .event-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12px; border-bottom: 1px solid #f5f5f5; }
-    .event-item:last-child { border: none; }
-    .event-time { color: #c0c4cc; font-size: 11px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OmniAide 工作台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #FAFAFA;
+  --surface: #FFFFFF;
+  --text: #1D1D1F;
+  --secondary: #6E6E73;
+  --muted: #aeaeb2;
+  --accent: #007AFF;
+  --accent-rgb: 0, 122, 255;
+  --border: rgba(0,0,0,0.06);
+  --shadow: 0 2px 12px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.02);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-full: 50px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Inter', 'Segoe UI', sans-serif;
+}
+body { background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+
+/* Top Bar */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 44px; background: var(--surface);
+  border-bottom: 1px solid var(--border); -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+.topbar-title { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: var(--secondary); }
+.topbar-actions { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
+.sync-dot {
+  width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+  transition: background 0.3s;
+}
+.sync-dot.connected { background: #34C759; }
+.sync-dot.disconnected { background: #FF3B30; }
+.sync-dot.syncing { background: #FF9F0A; }
+.sync-label { font-size: 11px; color: var(--secondary); margin-left: 4px; }
+.icon-btn {
+  width: 28px; height: 28px; border-radius: 7px; border: none; background: transparent;
+  cursor: pointer; color: var(--secondary); display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.icon-btn:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+.icon-btn svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; }
+
+/* Main Layout */
+.main { flex: 1; display: flex; overflow: hidden; }
+.sidebar {
+  width: 52px; background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 2px;
+  flex-shrink: 0;
+}
+.nav-item {
+  width: 36px; height: 36px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--muted); position: relative;
+  transition: all 0.2s;
+}
+.nav-item:hover { background: rgba(0,0,0,0.04); color: var(--secondary); }
+.nav-item.active { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
+.nav-item svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.8; fill: none; }
+
+/* Content */
+.content { flex: 1; overflow-y: auto; padding: 28px 32px; }
+.view { display: none; }
+.view.active { display: block; }
+
+/* Dashboard */
+.greeting { margin-bottom: 28px; }
+.greeting h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; }
+.greeting p { font-size: 13px; color: var(--secondary); margin-top: 4px; }
+
+.section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+
+.app-row { display: flex; gap: 10px; margin-bottom: 32px; }
+.app-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: 72px; padding: 14px 0 10px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border);
+  cursor: pointer; transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+  box-shadow: var(--shadow);
+}
+.app-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.06); border-color: rgba(var(--accent-rgb),0.2); }
+.app-btn:active { transform: scale(0.97); }
+.app-btn .icon-wrap {
+  width: 32px; height: 32px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+}
+.app-btn .icon-wrap svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.8; fill: none; }
+.app-btn .label { font-size: 10px; font-weight: 500; color: var(--secondary); }
+
+/* File List */
+.file-list { display: flex; flex-direction: column; gap: 6px; }
+.file-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border);
+  cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow);
+}
+.file-item:hover { border-color: rgba(var(--accent-rgb),0.25); }
+.file-icon { width: 18px; height: 18px; flex-shrink: 0; }
+.file-icon svg { width: 18px; height: 18px; stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.file-info { flex: 1; min-width: 0; }
+.file-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.empty-state { text-align: center; padding: 32px 0; color: var(--muted); font-size: 13px; }
+
+/* Settings */
+.settings-card {
+  background: var(--surface); border-radius: var(--radius);
+  padding: 20px 24px; margin-bottom: 14px; border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.settings-card h3 { font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+.form-group { margin-bottom: 14px; }
+.form-group:last-child { margin-bottom: 0; }
+.form-group label { display: block; font-size: 11px; font-weight: 500; color: var(--secondary); margin-bottom: 5px; }
+.form-group input {
+  width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 12px; outline: none; background: var(--bg); color: var(--text);
+  transition: border-color 0.2s;
+}
+.form-group input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.12); }
+.input-row { display: flex; gap: 8px; }
+.input-row input { flex: 1; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 20px; border-radius: var(--radius-full);
+  font-size: 12px; font-weight: 500; border: none; cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { transform: translateY(-1px) scale(1.02); box-shadow: 0 4px 14px rgba(var(--accent-rgb),0.35); }
+.btn-primary:active { transform: scale(0.97); transition-duration: 0.1s; }
+.btn-danger { background: #FF3B30; color: #fff; }
+.btn-danger:hover { transform: translateY(-1px) scale(1.02); box-shadow: 0 4px 14px rgba(255,59,48,0.35); }
+.btn-ghost {
+  background: transparent; border: 1px solid var(--border); color: var(--secondary);
+}
+.btn-ghost:hover { background: rgba(0,0,0,0.03); color: var(--text); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+.btn-sm { padding: 7px 16px; font-size: 11px; }
+
+.event-list { max-height: 150px; overflow-y: auto; margin-top: 8px; }
+.event-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 11px; color: var(--secondary); border-bottom: 1px solid var(--border); }
+.event-item:last-child { border-bottom: none; }
+.event-time { color: var(--muted); font-size: 10px; }
+</style>
 </head>
 <body>
-  <!-- Top Bar -->
   <div class="topbar">
-    <span class="topbar-title">OmniAide 工作台</span>
+    <span class="topbar-title">OmniAide</span>
     <div class="topbar-actions">
-      <span id="syncIndicator" class="sync-indicator disconnected" onclick="showView('settings')">● 未连接</span>
-      <button class="icon-btn" onclick="showView('settings')" title="设置">⚙️</button>
+      <span class="sync-dot disconnected" id="syncDot"></span>
+      <span class="sync-label" id="syncLabel">未连接</span>
+      <button class="icon-btn" onclick="showView('settings')" title="设置">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
     </div>
   </div>
 
-  <!-- Main -->
   <div class="main">
-    <!-- Sidebar -->
     <div class="sidebar">
-      <div class="nav-item active" onclick="showView('dashboard')" title="工作台">🏠</div>
-      <div class="nav-item" onclick="showView('settings')" title="设置">⚙️</div>
+      <div class="nav-item active" onclick="showView('dashboard')" title="工作台">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </div>
+      <div class="nav-item" onclick="showView('settings')" title="设置">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </div>
     </div>
 
-    <!-- Content -->
     <div class="content">
-
-      <!-- Dashboard View -->
+      <!-- Dashboard -->
       <div id="viewDashboard" class="view active">
-        <div class="welcome">
-          <h2 id="greeting">欢迎回来</h2>
-          <p id="welcomeSub">OmniAide 桌面工作台</p>
+        <div class="greeting">
+          <h1 id="greetingText">欢迎回来</h1>
+          <p id="subText">OmniAide 桌面工作台</p>
         </div>
 
-        <!-- Quick Apps -->
-        <div class="section-title">快捷入口</div>
-        <div class="app-grid">
-          <div class="app-item" onclick="openWeb('/files')">
-            <div class="app-icon" style="background:#ecf5ff; color:#409EFF">📁</div>
-            <div class="app-name">文件</div>
+        <div class="section-label">快捷入口</div>
+        <div class="app-row">
+          <div class="app-btn" onclick="openWeb('/files')">
+            <div class="icon-wrap" style="background:rgba(0,122,255,0.1);color:#007AFF">
+              <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </div>
+            <span class="label">文件</span>
           </div>
-          <div class="app-item" onclick="openWeb('/workspaces')">
-            <div class="app-icon" style="background:#fdf6ec; color:#e6a23c">📦</div>
-            <div class="app-name">工作空间</div>
+          <div class="app-btn" onclick="openWeb('/workspaces')">
+            <div class="icon-wrap" style="background:rgba(52,199,89,0.1);color:#34C759">
+              <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <span class="label">工作空间</span>
           </div>
-          <div class="app-item" onclick="openWeb('/apps/todo')">
-            <div class="app-icon" style="background:#f0f9eb; color:#67c23a">✅</div>
-            <div class="app-name">待办</div>
+          <div class="app-btn" onclick="openWeb('/apps/todo')">
+            <div class="icon-wrap" style="background:rgba(255,159,10,0.1);color:#FF9F0A">
+              <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </div>
+            <span class="label">待办</span>
           </div>
-          <div class="app-item" onclick="openWeb('/settings')">
-            <div class="app-icon" style="background:#fef0f0; color:#f56c6c">⚙️</div>
-            <div class="app-name">设置</div>
+          <div class="app-btn" onclick="openWeb('/settings')">
+            <div class="icon-wrap" style="background:rgba(142,142,147,0.1);color:#8E8E93">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <span class="label">设置</span>
           </div>
         </div>
 
-        <!-- Recent Files -->
-        <div class="section-title">最近文件</div>
+        <div class="section-label">最近文件</div>
         <div id="recentFiles" class="file-list">
-          <div style="color:#909399; font-size:13px; text-align:center; padding:20px">启动同步后显示最近文件</div>
+          <div class="empty-state">启动同步后显示最近文件</div>
         </div>
       </div>
 
-      <!-- Settings View -->
+      <!-- Settings -->
       <div id="viewSettings" class="view">
-        <h2 style="font-size:18px; margin-bottom:16px">设置</h2>
+        <div class="greeting" style="margin-bottom:20px">
+          <h1 style="font-size:20px">设置</h1>
+        </div>
 
-        <!-- Connection -->
         <div class="settings-card">
           <h3>服务器连接</h3>
           <div class="form-group">
@@ -157,38 +240,34 @@
           </div>
         </div>
 
-        <!-- Sync Folder -->
         <div class="settings-card">
           <h3>本地同步</h3>
           <div class="form-group">
             <label>同步文件夹</label>
-            <div class="folder-select">
-              <input type="text" id="localPath" placeholder="选择本地文件夹" readonly onclick="selectFolder()" />
-              <button class="btn btn-default btn-sm" onclick="selectFolder()">浏览</button>
+            <div class="input-row">
+              <input type="text" id="localPath" placeholder="选择本地文件夹..." readonly onclick="selectFolder()" />
+              <button class="btn btn-ghost btn-sm" onclick="selectFolder()" style="flex-shrink:0">浏览</button>
             </div>
           </div>
-          <div style="display:flex; gap:8px; margin-top:4px">
+          <div style="display:flex; gap:8px; margin-top:14px">
             <button class="btn btn-primary" id="startBtn" onclick="startSync()">开始同步</button>
             <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" disabled>停止</button>
           </div>
         </div>
 
-        <!-- Sync Events -->
         <div class="settings-card">
           <h3>同步日志</h3>
           <div id="eventList" class="event-list">
-            <div style="color:#909399; text-align:center; padding:12px; font-size:12px">暂无同步事件</div>
+            <div class="empty-state">暂无同步事件</div>
           </div>
         </div>
       </div>
-
     </div>
   </div>
 
   <script>
     let config = {}
 
-    // View switching
     function showView(name) {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'))
       document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'))
@@ -196,54 +275,54 @@
       document.querySelectorAll('.nav-item')[name === 'dashboard' ? 0 : 1].classList.add('active')
     }
 
-    // Open in browser
     function openWeb(path) {
       const base = config.serverUrl || 'http://localhost:8000'
       const url = base.replace(/:\d+$/, ':3000') + path
       window.electronAPI.openExternal(url)
     }
 
-    // Load config
     window.electronAPI.getConfig().then(c => {
       config = c
       document.getElementById('serverUrl').value = c.serverUrl || 'http://localhost:8000'
       document.getElementById('token').value = c.token || ''
       document.getElementById('workspaceId').value = c.workspaceId || ''
       document.getElementById('localPath').value = c.localPath || ''
-      if (c.token && c.workspaceId && c.localPath) {
-        startSync()
-      }
+      if (c.token && c.workspaceId && c.localPath) startSync()
     })
 
-    // Sync status
     window.electronAPI.onSyncStatus((status) => {
-      const indicator = document.getElementById('syncIndicator')
-      indicator.className = 'sync-indicator ' + status
-      const labels = { connected: '● 已连接', disconnected: '● 未连接', syncing: '⟳ 同步中', connecting: '⟳ 连接中...' }
-      indicator.textContent = labels[status] || status
+      const dot = document.getElementById('syncDot')
+      const label = document.getElementById('syncLabel')
+      dot.className = 'sync-dot ' + status
+      const labels = { connected: '已连接', disconnected: '未连接', syncing: '同步中', connecting: '连接中...' }
+      label.textContent = labels[status] || status
     })
 
-    // Sync events
     window.electronAPI.onSyncEvent((event) => {
       const list = document.getElementById('eventList')
+      list.querySelector('.empty-state')?.remove()
       const item = document.createElement('div')
       item.className = 'event-item'
-      const dir = event.direction === 'remote' ? '↓ 服务端' : '↑ 本地'
+      const dir = event.direction === 'remote' ? '↓' : '↑'
       const types = { create: '创建', modify: '修改', delete: '删除' }
       const time = new Date(event.timestamp || Date.now()).toLocaleTimeString()
-      item.innerHTML = `<span>${dir} ${types[event.event_type] || event.event_type} ${event.file_path}</span><span class="event-time">${time}</span>`
+      item.innerHTML = '<span>' + dir + ' ' + (types[event.event_type] || event.event_type) + ' ' + event.file_path + '</span><span class="event-time">' + time + '</span>'
       list.insertBefore(item, list.firstChild)
       if (list.children.length > 50) list.removeChild(list.lastChild)
-      document.getElementById('recentFiles').innerHTML = `<div class="file-item"><span class="file-icon">📄</span><div class="file-info"><div class="file-name">${event.file_path}</div><div class="file-meta">${time}</div></div></div>${document.getElementById('recentFiles').innerHTML}`
+      
+      const rl = document.getElementById('recentFiles')
+      rl.querySelector('.empty-state')?.remove()
+      const fi = document.createElement('div')
+      fi.className = 'file-item'
+      fi.innerHTML = '<div class="file-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div class="file-info"><div class="file-name">' + event.file_path + '</div><div class="file-meta">' + time + '</div></div>'
+      rl.insertBefore(fi, rl.firstChild)
     })
 
-    // Folder selection
     async function selectFolder() {
       const folder = await window.electronAPI.selectFolder()
       if (folder) document.getElementById('localPath').value = folder
     }
 
-    // Start/Stop sync
     async function startSync() {
       config = {
         serverUrl: document.getElementById('serverUrl').value,
@@ -259,15 +338,16 @@
       await window.electronAPI.startSync(config)
       document.getElementById('startBtn').disabled = true
       document.getElementById('stopBtn').disabled = false
-      document.getElementById('greeting').textContent = '同步已启动'
-      document.getElementById('welcomeSub').textContent = '本地文件夹 → ' + config.localPath
+      document.getElementById('greetingText').textContent = '同步已启动'
+      document.getElementById('subText').textContent = '监视中: ' + config.localPath
     }
 
     async function stopSync() {
       await window.electronAPI.stopSync()
       document.getElementById('startBtn').disabled = false
       document.getElementById('stopBtn').disabled = true
-      document.getElementById('greeting').textContent = '同步已暂停'
+      document.getElementById('greetingText').textContent = '同步已暂停'
+      document.getElementById('subText').textContent = 'OmniAide 桌面工作台'
     }
   </script>
 </body>
