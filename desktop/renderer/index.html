@@ -314,7 +314,6 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         const data = await res.json()
         currentToken = data.access_token
         config = { serverUrl, token: currentToken, workspaceId: null, localPath: '' }
-        document.getElementById('serverUrl').value = serverUrl
         await window.electronAPI.saveConfig(config)
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
@@ -322,40 +321,6 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('greetingText').textContent = '已登录'
         document.getElementById('subText').textContent = username
         await loadWorkspaces()
-      } catch (e) {
-        errEl.textContent = e.message
-      } finally {
-        btn.disabled = false; btn.textContent = '登录'
-      }
-    }
-
-    async function doLogin() {
-      const serverUrl = document.getElementById('serverUrl').value
-      const username = document.getElementById('loginUsername').value
-      const password = document.getElementById('loginPassword').value
-      const errEl = document.getElementById('loginError')
-      const btn = document.getElementById('loginBtn')
-      if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return }
-      errEl.textContent = ''
-      btn.disabled = true; btn.textContent = '登录中...'
-      try {
-        const res = await fetch(serverUrl + '/api/v1/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        })
-        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '登录失败') }
-        const data = await res.json()
-        currentToken = data.access_token
-        config.token = currentToken
-        config.serverUrl = serverUrl
-        document.getElementById('syncSettings').style.display = 'block'
-        document.getElementById('loginCard').style.display = 'none'
-        document.getElementById('loggedUser').textContent = username
-        await loadWorkspaces()
-        await window.electronAPI.saveConfig(config)
-        document.getElementById('greetingText').textContent = '已登录'
-        document.getElementById('subText').textContent = username
       } catch (e) {
         errEl.textContent = e.message
       } finally {
@@ -413,14 +378,12 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
     window.electronAPI.getConfig().then(c => {
       config = c
-      document.getElementById('serverUrl').value = c.serverUrl || 'http://localhost:8000'
-      document.getElementById('localPath').value = c.localPath || ''
       if (c.token) {
         currentToken = c.token
+        document.getElementById('gateServerUrl').value = c.serverUrl || 'http://localhost:8000'
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
-        document.getElementById('syncSettings').style.display = 'block'
-        document.getElementById('loginCard').style.display = 'none'
+        document.getElementById('localPath').value = c.localPath || ''
         document.getElementById('greetingText').textContent = '已连接'
         if (c.workspaceId && c.localPath) startSync()
       }
@@ -463,7 +426,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       const wsSelect = document.getElementById('workspaceSelect')
       const wsId = parseInt(wsSelect?.value || config.workspaceId)
       config = {
-        serverUrl: document.getElementById('serverUrl').value,
+        serverUrl: config.serverUrl,
         token: currentToken || config.token,
         workspaceId: wsId || config.workspaceId,
         localPath: document.getElementById('localPath').value
