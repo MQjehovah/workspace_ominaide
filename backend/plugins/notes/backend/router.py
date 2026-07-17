@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
@@ -6,6 +7,34 @@ from plugins.notes.backend.schemas import NoteCreate, NoteUpdate, NoteResponse
 from plugins.notes.backend import service as notes_service
 
 router = APIRouter(tags=["notes-plugin"])
+
+
+class MoveNoteRequest(BaseModel):
+    parent_id: int | None = None
+    sort_order: int | None = None
+
+
+@router.get("/tree")
+async def get_tree(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tree = await notes_service.get_tree(db, user["id"])
+    return tree
+
+
+@router.post("/{note_id}/move", response_model=NoteResponse)
+async def move_note(
+    note_id: int,
+    req: MoveNoteRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        note = await notes_service.move_note(db, user["id"], note_id, req.parent_id, req.sort_order)
+        return NoteResponse.model_validate(note)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("", response_model=NoteResponse, status_code=201)

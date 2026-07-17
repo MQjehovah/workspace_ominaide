@@ -70,6 +70,40 @@ async def delete_note(db: AsyncSession, user_id: int, note_id: int):
     await db.flush()
 
 
+async def get_tree(db: AsyncSession, user_id: int) -> list[dict]:
+    """Get full note tree structure."""
+    result = await db.execute(
+        select(PluginNote).where(PluginNote.user_id == user_id).order_by(PluginNote.sort_order, PluginNote.updated_at.desc())
+    )
+    all_notes = list(result.scalars().all())
+    notes_dict = {n.id: {
+        "id": n.id, "title": n.title, "parent_id": n.parent_id,
+        "is_folder": bool(n.is_folder), "icon": n.icon,
+        "updated_at": n.updated_at.isoformat() if n.updated_at else None,
+        "children": [],
+    } for n in all_notes}
+    roots = []
+    for note_id, note in notes_dict.items():
+        parent_id = note["parent_id"]
+        if parent_id and parent_id in notes_dict:
+            notes_dict[parent_id]["children"].append(note)
+        else:
+            roots.append(note)
+    return roots
+
+
+async def move_note(db: AsyncSession, user_id: int, note_id: int, parent_id: int | None, sort_order: int | None = None):
+    note = await get_note(db, user_id, note_id)
+    if not note:
+        raise ValueError("Note not found")
+    note.parent_id = parent_id
+    if sort_order is not None:
+        note.sort_order = sort_order
+    await db.flush()
+    await db.refresh(note)
+    return note
+
+
 async def search_notes(
     db: AsyncSession, user_id: int, query: str
 ) -> list[PluginNote]:

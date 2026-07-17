@@ -169,8 +169,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .tt-btn:hover { background:rgba(0,0,0,0.04);color:var(--text); }
 .tt-btn.active { background:var(--accent);color:#fff; }
 .tt-sep { color:var(--border);margin:0 4px;font-size:12px; }
-.note-item.active { background:rgba(var(--accent-rgb),0.08);border-left:2px solid var(--accent);padding-left:10px !important; }
-.note-item:hover { background:rgba(0,0,0,0.02); }
+.note-item.active { background:rgba(var(--accent-rgb),0.08);color:var(--accent);font-weight:600; }
+.note-item:hover { background:rgba(0,0,0,0.03); }
 .note-item.active:hover { background:rgba(var(--accent-rgb),0.1); }
 #ttEditorContent .ProseMirror { outline:none; min-height:50px; }
 #ttEditorContent .ProseMirror h1 { font-size:1.6em;font-weight:700;margin:0.4em 0; }
@@ -321,9 +321,12 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <div style="width:220px;flex-shrink:0;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column">
             <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
               <span style="font-size:12px;font-weight:600">笔记</span>
-              <button class="icon-btn" onclick="createNote()" title="新建笔记"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" onclick="createFolder()" title="新建分组"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+                <button class="icon-btn" onclick="createNote()" title="新建笔记"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+              </div>
             </div>
-            <div id="noteList" style="flex:1;overflow-y:auto;font-size:12px">
+            <div id="noteList" style="flex:1;overflow-y:auto;font-size:12px;padding:4px 0">
               <div style="color:var(--muted);text-align:center;padding:20px">加载中...</div>
             </div>
           </div>
@@ -781,7 +784,55 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
     // === Notes (TipTap local bundle) ===
     let currentNoteId = null
-    let notesCache = []
+    let collapsedFolders = new Set()
+
+    function renderTree(tree, depth) {
+      let html = ''
+      for (const n of tree) {
+        const isFolder = n.is_folder
+        const isCollapsed = collapsedFolders.has(n.id)
+        const active = n.id === currentNoteId
+        const pad = depth * 16
+        html += '<div style="padding-left:' + pad + 'px">'
+        html += '<div class="note-item' + (active ? ' active' : '') + '" onclick="openNote(' + n.id + ')" style="display:flex;align-items:center;gap:4px;padding:6px 12px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:background 0.15s">'
+        if (isFolder) {
+          html += '<span style="font-size:10px;width:14px;cursor:pointer" onclick="event.stopPropagation();toggleFolder(' + n.id + ')">' + (isCollapsed ? '▶' : '▼') + '</span>'
+          html += '<span style="font-size:12px">📁</span>'
+        } else {
+          html += '<span style="width:14px"></span>'
+          html += '<span style="font-size:12px">📄</span>'
+        }
+        html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + (n.title || '无标题') + '</span>'
+        html += '</div>'
+        if (isFolder && !isCollapsed && n.children) {
+          html += renderTree(n.children, depth + 1)
+        }
+        html += '</div>'
+      }
+      return html
+    }
+
+    function toggleFolder(id) {
+      if (collapsedFolders.has(id)) collapsedFolders.delete(id)
+      else collapsedFolders.add(id)
+      loadNotes()
+    }
+
+    async function loadNotes() {
+      const list = document.getElementById('noteList')
+      try {
+        const res = await fetch(config.serverUrl + '/api/plugins/notes/tree', {
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        if (!res.ok) { list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>'; return }
+        const tree = await res.json()
+        if (!tree.length) {
+          list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">暂无笔记</div>'
+          return
+        }
+        list.innerHTML = renderTree(tree, 0)
+      } catch(e) { list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>' }
+    }
 
     function startEditor(content) {
       const el = document.getElementById('ttEditorContent')
@@ -802,32 +853,14 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       }
     }
 
-    async function loadNotes() {
-      const list = document.getElementById('noteList')
+    async function createNote(parentId) {
       try {
-        const res = await fetch(config.serverUrl + '/api/plugins/notes', {
-          headers: { Authorization: 'Bearer ' + currentToken }
-        })
-        if (!res.ok) { list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>'; return }
-        notesCache = await res.json()
-        if (!notesCache.length) {
-          list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">暂无笔记</div>'
-          return
-        }
-        list.innerHTML = notesCache.map(n => {
-          return '<div class="note-item' + (n.id === currentNoteId ? ' active' : '') + '" onclick="openNote(' + n.id + ')" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s">' +
-            '<div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (n.title || '无标题') + '</div>' +
-            '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + (n.updated_at ? new Date(n.updated_at).toLocaleDateString() : '') + '</div></div>'
-        }).join('')
-      } catch(e) { list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>' }
-    }
-
-    async function createNote() {
-      try {
+        const body = { title: '无标题', content: '' }
+        if (parentId) body.parent_id = parentId
         const res = await fetch(config.serverUrl + '/api/plugins/notes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
-          body: JSON.stringify({ title: '无标题', content: '' })
+          body: JSON.stringify(body)
         })
         if (!res.ok) return
         const note = await res.json()
