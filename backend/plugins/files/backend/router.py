@@ -5,7 +5,7 @@ from core.auth.dependencies import get_current_user
 from plugins.files.backend.schemas import (
     UploadUrlRequest, UploadUrlResponse, ConfirmUploadRequest,
     UpdateTagsRequest, FileQueryParams, FileResponse, FileListResponse,
-    CreateFolderRequest,
+    CreateFolderRequest, RenameFileRequest, MoveFileRequest,
 )
 from plugins.files.backend import service as file_service
 
@@ -225,5 +225,33 @@ async def permanent_delete(
     try:
         await file_service.permanent_delete(db, user["id"], file_id)
         return {"message": "File permanently deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put("/{file_id}/rename", response_model=FileResponse)
+async def rename_file(
+    file_id: int,
+    req: RenameFileRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        file_record = await file_service.rename_file(db, user["id"], file_id, req.new_name)
+        return FileResponse.model_validate(file_record)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put("/{file_id}/move", response_model=FileResponse)
+async def move_file(
+    file_id: int,
+    req: MoveFileRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        file_record = await file_service.move_file(db, user["id"], file_id, req.new_folder_path)
+        return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

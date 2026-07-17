@@ -405,6 +405,13 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
   </div>
   </div>
 
+  <!-- File Context Menu -->
+  <div id="fileMenu" style="display:none;position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.1);z-index:300;width:140px;overflow:hidden;font-size:12px">
+    <div onclick="fileMenuAction('rename')" style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">重命名</div>
+    <div onclick="fileMenuAction('delete')" style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">删除</div>
+    <div onclick="fileMenuAction('move')" style="padding:10px 16px;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">移动到...</div>
+  </div>
+
   <!-- New Folder Dialog -->
   <div id="newFolderDialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;align-items:center;justify-content:center" onclick="if(event.target===this)document.getElementById('newFolderDialog').style.display='none'">
     <div style="background:var(--surface);border-radius:var(--radius);padding:24px;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.15)">
@@ -526,7 +533,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       grid.innerHTML = allFiles.map(f => {
         if (f.is_folder) {
           const folderPath = (f.folder_path.replace(/\/+$/, '') || '') + '/' + f.original_name + '/'
-          return '<div class="file-card" onclick="loadFiles(\'' + folderPath + '\')">' +
+          return '<div class="file-card" oncontextmenu="showFileMenu(event,' + f.id + ',\'' + f.original_name + '\',true)" onclick="loadFiles(\'' + folderPath + '\')">' +
             '<div class="fc-icon">📁</div>' +
             '<div class="fc-name">' + f.original_name + '</div>' +
             '<div class="fc-meta">文件夹</div></div>'
@@ -540,11 +547,71 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         const icon = isImg ? '🖼' : isVideo ? '🎬' : isAudio ? '🎵' : isPdf ? '📄' : isZip ? '📦' : '📄'
         const size = f.size ? (f.size / 1024).toFixed(f.size > 1024*1024 ? 2 : 0) + (f.size > 1024*1024 ? ' MB' : ' KB') : ''
         const time = f.created_at ? new Date(f.created_at).toLocaleDateString() : ''
-        return '<div class="file-card" onclick="previewFile(' + f.id + ')">' +
+        return '<div class="file-card" oncontextmenu="showFileMenu(event,' + f.id + ',\'' + f.original_name.replace(/'/g, "\\'") + '\',false)" onclick="previewFile(' + f.id + ')">' +
           '<div class="fc-icon">' + icon + '</div>' +
           '<div class="fc-name">' + f.original_name + '</div>' +
           '<div class="fc-meta">' + size + ' ' + time + '</div></div>'
       }).join('')
+    }
+
+    let _menuFileId = null
+    let _menuFileName = ''
+    let _menuIsFolder = false
+
+    function showFileMenu(event, id, name, isFolder) {
+      event.preventDefault()
+      _menuFileId = id; _menuFileName = name; _menuIsFolder = isFolder
+      const m = document.getElementById('fileMenu')
+      m.style.display = 'block'
+      m.style.left = event.clientX + 'px'
+      m.style.top = event.clientY + 'px'
+    }
+
+    document.addEventListener('click', function(e) {
+      const m = document.getElementById('fileMenu')
+      if (m && !e.target.closest('#fileMenu')) m.style.display = 'none'
+    })
+
+    function fileMenuAction(action) {
+      document.getElementById('fileMenu').style.display = 'none'
+      if (action === 'rename') {
+        const name = prompt('新名称:', _menuFileName)
+        if (name && name !== _menuFileName) renameFile(_menuFileId, name)
+      } else if (action === 'delete') {
+        if (confirm('确定删除？')) deleteFile(_menuFileId)
+      } else if (action === 'move') {
+        const path = prompt('目标目录路径（如 /projects ）:', currentFolder)
+        if (path) moveFile(_menuFileId, path)
+      }
+    }
+
+    async function renameFile(id, name) {
+      try {
+        await fetch(config.serverUrl + '/api/files/' + id + '/rename', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
+          body: JSON.stringify({ new_name: name })
+        })
+        loadFiles()
+      } catch(e) {}
+    }
+
+    async function deleteFile(id) {
+      try {
+        await fetch(config.serverUrl + '/api/files/' + id, {
+          method: 'DELETE', headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        loadFiles()
+      } catch(e) {}
+    }
+
+    async function moveFile(id, path) {
+      try {
+        await fetch(config.serverUrl + '/api/files/' + id + '/move', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
+          body: JSON.stringify({ new_folder_path: path })
+        })
+        loadFiles()
+      } catch(e) {}
     }
 
     function goBackFolder() {

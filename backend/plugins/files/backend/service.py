@@ -214,3 +214,29 @@ async def permanent_delete(db: AsyncSession, user_id: int, file_id: int):
 
     await db.delete(file_record)
     await db.flush()
+
+
+async def rename_file(db: AsyncSession, user_id: int, file_id: int, new_name: str) -> File:
+    result = await db.execute(
+        select(File).where(File.id == file_id, File.user_id == user_id)
+    )
+    file_record = result.scalar_one_or_none()
+    if not file_record:
+        raise ValueError("File not found")
+    file_record.original_name = new_name
+    await db.flush()
+    await db.refresh(file_record)
+    return file_record
+
+
+async def move_file(db: AsyncSession, user_id: int, file_id: int, new_folder_path: str) -> File:
+    result = await db.execute(
+        select(File).where(File.id == file_id, File.user_id == user_id)
+    )
+    file_record = result.scalar_one_or_none()
+    if not file_record:
+        raise ValueError("File not found")
+    file_record.folder_path = new_folder_path
+    await db.flush()
+    await db.refresh(file_record)
+    return file_record

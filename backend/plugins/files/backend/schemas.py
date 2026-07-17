@@ -44,6 +44,14 @@ class UploadUrlRequest(BaseModel):
     bucket: str | None = None
 
 
+class RenameFileRequest(BaseModel):
+    new_name: str
+
+
+class MoveFileRequest(BaseModel):
+    new_folder_path: str
+
+
 class UploadUrlResponse(BaseModel):
     upload_url: str
     file_id: int
