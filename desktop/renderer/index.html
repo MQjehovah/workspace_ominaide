@@ -12,8 +12,7 @@
     "@tiptap/starter-kit": "https://cdn.jsdelivr.net/npm/@tiptap/starter-kit@2.11.5/+esm",
     "@tiptap/extension-underline": "https://cdn.jsdelivr.net/npm/@tiptap/extension-underline@2.11.5/+esm",
     "@tiptap/extension-link": "https://cdn.jsdelivr.net/npm/@tiptap/extension-link@2.11.5/+esm",
-    "@tiptap/extension-placeholder": "https://cdn.jsdelivr.net/npm/@tiptap/extension-placeholder@2.11.5/+esm",
-    "tiptap-markdown": "https://cdn.jsdelivr.net/npm/tiptap-markdown@0.9.0/+esm"
+    "@tiptap/extension-placeholder": "https://cdn.jsdelivr.net/npm/@tiptap/extension-placeholder@2.11.5/+esm"
   }
 }
 </script>
@@ -806,31 +805,26 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         import Underline from '@tiptap/extension-underline'
         import Link from '@tiptap/extension-link'
         import Placeholder from '@tiptap/extension-placeholder'
-        import Markdown from 'tiptap-markdown'
-        const mdContent = ` + JSON.stringify(content || '') + `
+        const md = ` + JSON.stringify(content || '') + `
+        const html = md && window.marked ? window.marked.parse(md) : md
         const ed = new Editor({
           element: document.getElementById('tiptapEditor'),
-          content: '',
+          content: html || '',
           editable: true,
           extensions: [
             StarterKit.configure({ heading: { levels: [1,2,3] } }),
             Underline, Link.configure({ openOnClick: false }),
             Placeholder.configure({ placeholder: '开始写点什么...' }),
-            Markdown,
           ],
-          onCreate: ({ editor: e }) => {
-            if (mdContent) e.commands.setContent(mdContent)
-          },
           onUpdate: ({ editor: e }) => {
             if (window._noteTimer) clearTimeout(window._noteTimer)
             window._noteTimer = setTimeout(() => {
-              try { window._pendingMd = e.storage.markdown.getMarkdown() } catch(ex) {}
+              window._pendingMd = window.Turndown ? new window.TurndownService({ headingStyle: 'atx' }).turndown(e.getHTML()) : e.getHTML()
               if (window._onNoteChange) window._onNoteChange()
             }, 2000)
           },
         })
         window._tipEditor = ed
-        window._tipReady = true
         document.getElementById('tiptapToolbar').style.display = 'flex'
       `
       document.body.appendChild(s)
