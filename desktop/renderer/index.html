@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OmniAide 工作�?/title>
+<title>OmniAide 工作台</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 
 
 
+  <script src="../dist-editor/assets/index-D_-Th3k2.js"></script>
   <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -169,8 +170,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .tt-btn:hover { background:rgba(0,0,0,0.04);color:var(--text); }
 .tt-btn.active { background:var(--accent);color:#fff; }
 .tt-sep { color:var(--border);margin:0 4px;font-size:12px; }
-.note-item.active { background:rgba(var(--accent-rgb),0.08);color:var(--accent);font-weight:600; }
-.note-item:hover { background:rgba(0,0,0,0.03); }
+.note-item.active { background:rgba(var(--accent-rgb),0.08);border-left:2px solid var(--accent);padding-left:10px !important; }
+.note-item:hover { background:rgba(0,0,0,0.02); }
 .note-item.active:hover { background:rgba(var(--accent-rgb),0.1); }
 .note-item:hover .add-child { opacity:1 !important; }
 #ttEditorContent .ProseMirror { outline:none; min-height:50px; }
@@ -206,8 +207,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <input type="text" id="gateServerUrl" value="http://localhost:8000" placeholder="http://localhost:8000" />
         </div>
         <div class="form-group">
-          <label>用户�?/label>
-          <input type="text" id="gateUsername" placeholder="用户�? autofocus />
+          <label>用户名</label>
+          <input type="text" id="gateUsername" placeholder="用户名" autofocus />
         </div>
         <div class="form-group">
           <label>密码</label>
@@ -225,8 +226,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     <span class="topbar-title">OmniAide</span>
     <div class="topbar-actions">
       <span class="sync-dot disconnected" id="syncDot"></span>
-      <span class="sync-label" id="syncLabel">未连�?/span>
-      <button class="icon-btn" onclick="doLogout()" title="退出登�?>
+      <span class="sync-label" id="syncLabel">未连接</span>
+      <button class="icon-btn" onclick="doLogout()" title="退出登录">
         <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </div>
@@ -234,7 +235,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
   <div class="main">
     <div class="sidebar">
-      <div class="nav-item" onclick="showView('dashboard')" title="工作�?>
+      <div class="nav-item" onclick="showView('dashboard')" title="工作台">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </div>
       <div class="nav-item" onclick="showView('files');loadFiles()" title="文件">
@@ -247,7 +248,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       <div class="nav-item" id="navUser" onclick="showUserMenu()" style="font-size:10px;font-weight:600;color:var(--secondary);cursor:pointer;position:relative" title="用户"></div>
       <div id="userMenu" style="display:none;position:absolute;bottom:100px;left:56px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.1);z-index:200;width:140px;overflow:hidden;font-size:12px">
         <div onclick="showView('settings')" style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">个人中心</div>
-        <div onclick="doLogout()" style="padding:10px 16px;cursor:pointer;color:#FF3B30;transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">退出登�?/div>
+        <div onclick="doLogout()" style="padding:10px 16px;cursor:pointer;color:#FF3B30;transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">退出登录</div>
       </div>
       <div class="nav-item" onclick="showView('settings')" title="设置">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -259,13 +260,13 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       <div id="viewDashboard" class="view active">
         <div class="greeting">
           <h1 id="greetingText">欢迎回来</h1>
-          <p id="subText">OmniAide 桌面工作�?/p>
+          <p id="subText">OmniAide 桌面工作台</p>
         </div>
         <!-- AI Prompt Bar -->
         <div style="margin-bottom:24px">
           <div style="display:flex;gap:8px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:8px 12px;box-shadow:var(--shadow);transition:border-color 0.2s" id="aiBar">
-            <input type="text" id="chatInput" placeholder="�?AI 提问..." style="flex:1;border:none;outline:none;font-size:13px;background:transparent;color:var(--text)" onkeydown="if(event.key==='Enter')sendChat()" />
-            <button class="btn btn-primary btn-sm" onclick="sendChat()" style="flex-shrink:0;padding:6px 16px">发�?/button>
+            <input type="text" id="chatInput" placeholder="向 AI 提问..." style="flex:1;border:none;outline:none;font-size:13px;background:transparent;color:var(--text)" onkeydown="if(event.key==='Enter')sendChat()" />
+            <button class="btn btn-primary btn-sm" onclick="sendChat()" style="flex-shrink:0;padding:6px 16px">发送</button>
           </div>
           <div id="chatMessages" style="margin-top:8px;max-height:160px;overflow-y:auto;display:none"></div>
         </div>
@@ -292,7 +293,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           </div>
         </div>
 
-        <div class="section-label">最近文�?/div>
+        <div class="section-label">最近文件</div>
         <div id="recentFiles" class="file-list"></div>
       </div>
 
@@ -300,7 +301,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       <div id="viewFiles" class="view">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <div style="display:flex;align-items:center;gap:4px">
-            <button class="icon-btn" onclick="loadFiles('/')" title="根目�?><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></button>
+            <button class="icon-btn" onclick="loadFiles('/')" title="根目录"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></button>
             <button class="icon-btn" onclick="goBackFolder()" title="上级目录"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
             <button class="icon-btn" onclick="loadFiles()" title="刷新"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
           </div>
@@ -312,7 +313,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         </div>
         <div id="folderBreadcrumb" style="font-size:12px;margin-bottom:12px;color:var(--secondary)"></div>
         <div id="fileGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
-          <div class="empty-state" style="grid-column:1/-1">加载�?..</div>
+          <div class="empty-state" style="grid-column:1/-1">加载中...</div>
         </div>
       </div>
 
@@ -324,14 +325,14 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
               <span style="font-size:12px;font-weight:600">笔记</span>
               <button class="icon-btn" onclick="createNote()" title="新建笔记"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
             </div>
-            <div id="noteList" style="flex:1;overflow-y:auto;font-size:12px;padding:4px 0">
-              <div style="color:var(--muted);text-align:center;padding:20px">加载�?..</div>
+            <div id="noteList" style="flex:1;overflow-y:auto;font-size:12px">
+              <div style="color:var(--muted);text-align:center;padding:20px">加载中...</div>
             </div>
           </div>
           <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column">
             <div id="noteEditor" style="display:none;flex:1;flex-direction:column;min-height:0;overflow:hidden">
               <div style="padding:14px 20px 6px;">
-                <input type="text" id="noteTitle" placeholder="无标�? style="width:100%;border:none;outline:none;font-size:18px;font-weight:700;background:transparent;color:var(--text)" />
+                <input type="text" id="noteTitle" placeholder="无标题" style="width:100%;border:none;outline:none;font-size:18px;font-weight:700;background:transparent;color:var(--text)" />
               </div>
 
               <div id="ttEditor" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
@@ -344,19 +345,19 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
                   <button class="tt-btn" data-cmd="h2">H2</button>
                   <button class="tt-btn" data-cmd="h3">H3</button>
                   <span class="tt-sep">|</span>
-                  <button class="tt-btn" data-cmd="bulletList">�?/button>
+                  <button class="tt-btn" data-cmd="bulletList">≡</button>
                   <button class="tt-btn" data-cmd="orderedList">#</button>
                   <button class="tt-btn" data-cmd="blockquote">"</button>
                 </div>
                 <div id="ttEditorContent" style="flex:1;padding:16px 20px;overflow-y:auto;outline:none"></div>
               </div>
               <div style="padding:6px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
-                <button class="btn btn-primary btn-sm" onclick="saveNote()">保存</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteCurrentNote()" style="color:#f56c6c">删除</button>
               </div>
             </div>
             <div id="noteEmpty" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px">
-              选择或创建一篇笔�?            </div>
+              选择或创建一篇笔记
+            </div>
           </div>
         </div>
       </div>
@@ -369,7 +370,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
         <div id="syncSettings" style="display:block">
           <div class="settings-card">
-            <h3>已登�?<span style="color:#34C759;font-size:12px;font-weight:400">�?/span> <span id="loggedUser" style="font-weight:400;font-size:12px;color:var(--secondary)"></span></h3>
+            <h3>已登录 <span style="color:#34C759;font-size:12px;font-weight:400">●</span> <span id="loggedUser" style="font-weight:400;font-size:12px;color:var(--secondary)"></span></h3>
             <div class="form-group">
               <label>工作空间</label>
               <select id="workspaceSelect" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none;background:var(--bg);color:var(--text)">
@@ -381,16 +382,16 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <div class="settings-card">
             <h3>本地同步</h3>
             <div class="form-group">
-              <label>同步文件�?/label>
+              <label>同步文件夹</label>
               <div class="input-row">
-                <input type="text" id="localPath" placeholder="选择本地文件�?.." readonly onclick="selectFolder()" />
+                <input type="text" id="localPath" placeholder="选择本地文件夹..." readonly onclick="selectFolder()" />
                 <button class="btn btn-ghost btn-sm" onclick="selectFolder()" style="flex-shrink:0">浏览</button>
         </div>
 
             <div style="display:flex;gap:8px;margin-top:14px">
-              <button class="btn btn-primary" id="startBtn" onclick="startSync()">开始同�?/button>
+              <button class="btn btn-primary" id="startBtn" onclick="startSync()">开始同步</button>
               <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" disabled>停止</button>
-              <button class="btn btn-ghost btn-sm" onclick="doLogout()" style="margin-left:auto">退�?/button>
+              <button class="btn btn-ghost btn-sm" onclick="doLogout()" style="margin-left:auto">退出</button>
             </div>
           </div>
 
@@ -409,8 +410,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
   <!-- New Folder Dialog -->
   <div id="newFolderDialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;align-items:center;justify-content:center" onclick="if(event.target===this)document.getElementById('newFolderDialog').style.display='none'">
     <div style="background:var(--surface);border-radius:var(--radius);padding:24px;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.15)">
-      <div style="font-weight:600;font-size:14px;margin-bottom:16px">新建文件�?/div>
-      <input type="text" id="newFolderName" placeholder="文件夹名�? style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;margin-bottom:16px" onkeydown="if(event.key==='Enter')doCreateFolder()" />
+      <div style="font-weight:600;font-size:14px;margin-bottom:16px">新建文件夹</div>
+      <input type="text" id="newFolderName" placeholder="文件夹名称" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;margin-bottom:16px" onkeydown="if(event.key==='Enter')doCreateFolder()" />
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('newFolderDialog').style.display='none'">取消</button>
         <button class="btn btn-primary btn-sm" onclick="doCreateFolder()">创建</button>
@@ -439,9 +440,9 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       const password = document.getElementById('gatePassword').value
       const errEl = document.getElementById('gateLoginError')
       const btn = document.getElementById('gateLoginBtn')
-      if (!username || !password) { errEl.textContent = '请输入用户名和密�?; return }
+      if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return }
       errEl.textContent = ''
-      btn.disabled = true; btn.textContent = '登录�?..'
+      btn.disabled = true; btn.textContent = '登录中...'
       try {
         const res = await fetch(serverUrl + '/api/auth/login', {
           method: 'POST',
@@ -458,7 +459,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('loggedUser').textContent = username
         document.getElementById('navUser').textContent = username.charAt(0).toUpperCase()
         document.getElementById('greetingText').textContent = username
-        document.getElementById('subText').textContent = 'OmniAide 桌面工作�?
+        document.getElementById('subText').textContent = 'OmniAide 桌面工作台'
         await loadWorkspaces()
         await loadRecentFiles()
       } catch (e) {
@@ -478,7 +479,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       document.getElementById('gatePassword').value = ''
       document.getElementById('workspaceSelect').innerHTML = '<option value="">选择工作空间...</option>'
       document.getElementById('syncDot').className = 'sync-dot disconnected'
-      document.getElementById('syncLabel').textContent = '未连�?
+      document.getElementById('syncLabel').textContent = '未连接'
       document.getElementById('startBtn').disabled = false
       document.getElementById('stopBtn').disabled = true
     }
@@ -490,7 +491,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     async function loadFiles(folder) {
       if (folder !== undefined) currentFolder = folder.replace(/\/+/g, '/')
       const grid = document.getElementById('fileGrid')
-      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">加载�?..</div>'
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">加载中...</div>'
       try {
         const q = 'page_size=100&folder_path=' + encodeURIComponent(currentFolder)
         const res = await fetch(config.serverUrl + '/api/files?' + q, {
@@ -530,7 +531,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           return '<div class="file-card" onclick="loadFiles(\'' + folderPath + '\')">' +
             '<div class="fc-icon">📁</div>' +
             '<div class="fc-name">' + f.original_name + '</div>' +
-            '<div class="fc-meta">文件�?/div></div>'
+            '<div class="fc-meta">文件夹</div></div>'
         }
         const ext = (f.original_name || '').split('.').pop().toLowerCase()
         const isImg = ['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext)
@@ -709,7 +710,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       const msgs = document.getElementById('chatMessages')
       msgs.style.display = 'block'
       msgs.innerHTML += '<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><div style="background:var(--accent);color:#fff;border-radius:12px 12px 4px 12px;padding:6px 10px;font-size:12px;max-width:80%">' + escapeHtml(msg) + '</div></div>'
-      msgs.innerHTML += '<div style="display:flex;margin-bottom:6px" id="thinkingMsg"><div style="background:var(--bg);border-radius:12px 12px 12px 4px;padding:6px 10px;font-size:11px;color:var(--muted)">�?/div></div>'
+      msgs.innerHTML += '<div style="display:flex;margin-bottom:6px" id="thinkingMsg"><div style="background:var(--bg);border-radius:12px 12px 12px 4px;padding:6px 10px;font-size:11px;color:var(--muted)">●</div></div>'
       msgs.scrollTop = msgs.scrollHeight
       fetch(config.serverUrl + '/api/mcp/call', {
         method: 'POST',
@@ -746,7 +747,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
         document.getElementById('localPath').value = c.localPath || ''
-        document.getElementById('greetingText').textContent = c.username || '已连�?
+        document.getElementById('greetingText').textContent = c.username || '已连接'
         loadRecentFiles()
         if (c.workspaceId && c.localPath) startSync()
       }
@@ -756,7 +757,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       const dot = document.getElementById('syncDot')
       const label = document.getElementById('syncLabel')
       dot.className = 'sync-dot ' + status
-      const labels = { connected: '已连�?, disconnected: '未连�?, syncing: '同步�?, connecting: '连接�?..' }
+      const labels = { connected: '已连接', disconnected: '未连接', syncing: '同步中', connecting: '连接中...' }
       label.textContent = labels[status] || status
     })
 
@@ -765,7 +766,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       list.querySelector('.empty-state')?.remove()
       const item = document.createElement('div')
       item.className = 'event-item'
-      const dir = event.direction === 'remote' ? '�? : '�?
+      const dir = event.direction === 'remote' ? '↓' : '↑'
       const types = { create: '创建', modify: '修改', delete: '删除' }
       const time = new Date(event.timestamp || Date.now()).toLocaleTimeString()
       item.innerHTML = '<span>' + dir + ' ' + (types[event.event_type] || event.event_type) + ' ' + event.file_path + '</span><span class="event-time">' + time + '</span>'
@@ -782,6 +783,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
     // === Notes (TipTap local bundle) ===
     let currentNoteId = null
+    let notesCache = []
+
     let collapsedFolders = new Set()
 
     function renderTree(tree, depth) {
@@ -794,12 +797,12 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         html += '<div style="padding-left:' + pad + 'px">'
         html += '<div class="note-item' + (active ? ' active' : '') + '" onclick="openNote(' + n.id + ')" style="display:flex;align-items:center;gap:4px;padding:5px 10px;cursor:pointer;border-radius:5px;margin:1px 6px;transition:background 0.15s">'
         if (hasChildren) {
-          html += '<span style="font-size:8px;width:12px;cursor:pointer" onclick="event.stopPropagation();toggleFolder(' + n.id + ')">' + (isCollapsed ? '�? : '�?) + '</span>'
+          html += '<span style="font-size:8px;width:12px;cursor:pointer" onclick="event.stopPropagation();toggleFolder(' + n.id + ')">' + (isCollapsed ? '▶' : '▼') + '</span>'
         } else {
           html += '<span style="width:12px"></span>'
         }
         html += '<span style="font-size:12px">📄</span>'
-        html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + (n.title || '无标�?) + '</span>'
+        html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + (n.title || '无标题') + '</span>'
         html += '<span class="add-child" onclick="event.stopPropagation();createNote(' + n.id + ')" style="font-size:14px;line-height:1;opacity:0;cursor:pointer;padding:0 2px;transition:opacity 0.15s;color:var(--accent)">+</span>'
         html += '</div>'
         if (hasChildren && !isCollapsed) {
@@ -816,22 +819,6 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       loadNotes()
     }
 
-    async function loadNotes() {
-      const list = document.getElementById('noteList')
-      try {
-        const res = await fetch(config.serverUrl + '/api/plugins/notes/tree', {
-          headers: { Authorization: 'Bearer ' + currentToken }
-        })
-        if (!res.ok) { list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>'; return }
-        const tree = await res.json()
-        if (!tree.length) {
-          list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">暂无笔记</div>'
-          return
-        }
-        list.innerHTML = renderTree(tree, 0)
-      } catch(e) { list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>' }
-    }
-
     function startEditor(content) {
       const el = document.getElementById('ttEditorContent')
       el.innerHTML = ''
@@ -843,17 +830,30 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         window._loadingEditor = true
         const s = document.createElement('script')
         s.src = '../dist-editor/editor.js'
-        s.onload = () => {
-          window._loadingEditor = false
-          startEditor(content)
-        }
+        s.onload = () => { window._loadingEditor = false; startEditor(content) }
         document.head.appendChild(s)
       }
     }
 
+    async function loadNotes() {
+      const list = document.getElementById('noteList')
+      try {
+        const res = await fetch(config.serverUrl + '/api/plugins/notes/tree', {
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        if (!res.ok) { list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>'; return }
+        const data = await res.json()
+        if (!data.length) {
+          list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">暂无笔记</div>'
+          return
+        }
+        list.innerHTML = renderTree(data, 0)
+      } catch(e) { list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>' }
+    }
+
     async function createNote(parentId) {
       try {
-        const body = { title: '无标�?, content: '' }
+        const body = { title: '无标题', content: '' }
         if (parentId) body.parent_id = parentId
         const res = await fetch(config.serverUrl + '/api/plugins/notes', {
           method: 'POST',
@@ -863,10 +863,10 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         if (!res.ok) return
         const note = await res.json()
         currentNoteId = note.id
-        document.getElementById('noteTitle').value = note.title || ''
+        document.getElementById('noteTitle').value = ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
-        startEditor(note.content || '')
+        startEditor('')
         await loadNotes()
       } catch(e) {}
     }
@@ -938,16 +938,16 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       await window.electronAPI.startSync(config)
       document.getElementById('startBtn').disabled = true
       document.getElementById('stopBtn').disabled = false
-      document.getElementById('greetingText').textContent = '同步已启�?
-      document.getElementById('subText').textContent = '监视�? ' + config.localPath
+      document.getElementById('greetingText').textContent = '同步已启动'
+      document.getElementById('subText').textContent = '监视中: ' + config.localPath
     }
 
     async function stopSync() {
       await window.electronAPI.stopSync()
       document.getElementById('startBtn').disabled = false
       document.getElementById('stopBtn').disabled = true
-      document.getElementById('greetingText').textContent = '同步已暂�?
-      document.getElementById('subText').textContent = 'OmniAide 桌面工作�?
+      document.getElementById('greetingText').textContent = '同步已暂停'
+      document.getElementById('subText').textContent = 'OmniAide 桌面工作台'
     }
   </script>
 </body>
