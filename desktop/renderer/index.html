@@ -172,6 +172,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .note-item.active { background:rgba(var(--accent-rgb),0.08);color:var(--accent);font-weight:600; }
 .note-item:hover { background:rgba(0,0,0,0.03); }
 .note-item.active:hover { background:rgba(var(--accent-rgb),0.1); }
+.note-item:hover .add-child { opacity:1 !important; }
 #ttEditorContent .ProseMirror { outline:none; min-height:50px; }
 #ttEditorContent .ProseMirror h1 { font-size:1.6em;font-weight:700;margin:0.4em 0; }
 #ttEditorContent .ProseMirror h2 { font-size:1.3em;font-weight:600;margin:0.3em 0; }
@@ -321,10 +322,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <div style="width:220px;flex-shrink:0;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column">
             <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
               <span style="font-size:12px;font-weight:600">笔记</span>
-              <div style="display:flex;gap:2px">
-                <button class="icon-btn" onclick="createNote(currentNoteId)" title="新建子笔记" id="addChildBtn" style="display:none"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
-                <button class="icon-btn" onclick="createNote()" title="新建笔记"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
-              </div>
+              <button class="icon-btn" onclick="createNote()" title="新建笔记"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
             </div>
             <div id="noteList" style="flex:1;overflow-y:auto;font-size:12px;padding:4px 0">
               <div style="color:var(--muted);text-align:center;padding:20px">加载中...</div>
@@ -802,6 +800,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         }
         html += '<span style="font-size:12px">📄</span>'
         html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + (n.title || '无标题') + '</span>'
+        html += '<span class="add-child" onclick="event.stopPropagation();createNote(' + n.id + ')" style="font-size:14px;line-height:1;opacity:0;cursor:pointer;padding:0 2px;transition:opacity 0.15s;color:var(--accent)">+</span>'
         html += '</div>'
         if (hasChildren && !isCollapsed) {
           html += renderTree(n.children, depth + 1)
@@ -864,7 +863,6 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         if (!res.ok) return
         const note = await res.json()
         currentNoteId = note.id
-        document.getElementById('addChildBtn').style.display = ''
         document.getElementById('noteTitle').value = note.title || ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
@@ -881,7 +879,6 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         })
         if (!res.ok) return
         const note = await res.json()
-        document.getElementById('addChildBtn').style.display = ''
         document.getElementById('noteTitle').value = note.title || ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
