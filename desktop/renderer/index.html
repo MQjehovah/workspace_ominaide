@@ -180,9 +180,9 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 #tiptapEditor img { max-width:100%;border-radius:6px;margin:0.5em 0; }
 #tiptapEditor:empty:before { content:attr(data-placeholder); color:var(--muted); pointer-events:none; }
 #tiptapEditor:focus { outline:none !important; }
-#tiptapEditor::-webkit-scrollbar { width:4px; }
-#tiptapEditor::-webkit-scrollbar-thumb { background:var(--border);border-radius:2px; }
-#tiptapEditor::-webkit-scrollbar-track { background:transparent; }
+#tiptapEditor::-webkit-scrollbar { width:6px; }
+#tiptapEditor::-webkit-scrollbar-thumb { background:#c0c4cc;border-radius:3px; }
+#tiptapEditor::-webkit-scrollbar-thumb:hover { background:#909399; }
 </style>
 </head>
 <body>
@@ -322,7 +322,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
             </div>
           </div>
           <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column">
-            <div id="noteEditor" style="display:none;flex:1;flex-direction:column">
+            <div id="noteEditor" style="display:none;flex:1;flex-direction:column;min-height:0;overflow:hidden">
               <div style="padding:14px 20px 6px;">
                 <input type="text" id="noteTitle" placeholder="无标题" style="width:100%;border:none;outline:none;font-size:18px;font-weight:700;background:transparent;color:var(--text)" />
               </div>
