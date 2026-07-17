@@ -1,0 +1,9 @@
+{
+  "name": "workspaces",
+  "version": "1.0.0",
+  "title": "工作空间",
+  "description": "本地文件夹与服务端双向同步",
+  "icon": "Management",
+  "permissions": [],
+  "routes": { "main": "/workspaces" }
+}

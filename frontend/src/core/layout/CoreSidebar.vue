@@ -10,16 +10,6 @@
       <span v-else>OA</span>
     </div>
 
-    <!-- Core Navigation -->
-    <el-menu-item index="/files">
-      <el-icon><Folder /></el-icon>
-      <span>文件</span>
-    </el-menu-item>
-    <el-menu-item index="/workspaces">
-      <el-icon><Management /></el-icon>
-      <span>工作空间</span>
-    </el-menu-item>
-
     <!-- Plugin Apps (dynamic from store) -->
     <template v-if="pluginStore.installed.length">
       <el-divider style="margin:8px 0">
@@ -58,7 +48,7 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Management, Setting, User, SwitchButton } from '@element-plus/icons-vue'
+import { Setting, User, SwitchButton } from '@element-plus/icons-vue'
 import { usePluginStore } from '@/stores/core/plugin'
 import { useAuthStore } from '@/stores/auth'
 

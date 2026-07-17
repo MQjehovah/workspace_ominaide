@@ -1,0 +1,9 @@
+{
+  "name": "files",
+  "version": "1.0.0",
+  "title": "文件",
+  "description": "文件管理与网盘",
+  "icon": "Folder",
+  "permissions": [],
+  "routes": { "main": "/files" }
+}

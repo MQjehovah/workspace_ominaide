@@ -24,14 +24,14 @@ onMounted(async () => {
   try {
     const plugins = await fetchPlugins()
     for (const p of plugins) {
-      const isNotes = p.name === 'notes'
+      const routeMap: Record<string, string> = { notes: '/notes' }
       pluginStore.register({
         name: p.name,
         title: p.title,
         icon: p.icon || 'Connection',
         description: p.description || undefined,
         version: p.version,
-        routes: { main: isNotes ? '/notes' : `/apps/${p.name}` }
+        routes: { main: routeMap[p.name] || `/apps/${p.name}` }
       })
     }
   } catch (e) {
