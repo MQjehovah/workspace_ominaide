@@ -22,10 +22,10 @@ class _MusicScreenState extends State<MusicScreen> {
   void initState() {
     super.initState();
     _loadTracks();
-    _player.onPositionChanged.listen((p) => setState(() => _position = p));
-    _player.onDurationChanged.listen((d) => setState(() => _duration = d));
-    _player.onPlayerComplete.listen((_) => setState(() { _playing = false; _currentId = null; }));
-    _player.onPlayerStateChanged.listen((s) => setState(() => _playing = s == PlayerState.playing));
+    _player.onPositionChanged.listen((p) { if (mounted) setState(() => _position = p); });
+    _player.onDurationChanged.listen((d) { if (mounted) setState(() => _duration = d); });
+    _player.onPlayerComplete.listen((_) { if (mounted) setState(() { _playing = false; _currentId = null; }); });
+    _player.onPlayerStateChanged.listen((s) { if (mounted) setState(() => _playing = s == PlayerState.playing); });
   }
 
   Future<void> _loadTracks() async {
