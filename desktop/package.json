@@ -1,0 +1,19 @@
+{
+  "name": "omniaide-desktop",
+  "version": "0.1.0",
+  "description": "OmniAide Desktop Sync Client",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "ws": "^8.16.0",
+    "axios": "^1.7.0",
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0"
+  }
+}

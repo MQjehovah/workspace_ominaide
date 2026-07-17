@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniAide 桌面同步</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+    .container { max-width: 480px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 22px; margin-bottom: 20px; }
+    .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .form-group { margin-bottom: 14px; }
+    label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px; }
+    button { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #409EFF; color: #fff; }
+    .btn-primary:hover { background: #66b1ff; }
+    .btn-danger { background: #f56c6c; color: #fff; }
+    .btn-default { background: #ecf5ff; color: #409EFF; border: 1px solid #b3d8ff; }
+    .status-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 6px; font-size: 13px; }
+    .status-connected { background: #f0f9eb; color: #67c23a; }
+    .status-disconnected { background: #fef0f0; color: #f56c6c; }
+    .status-syncing { background: #fdf6ec; color: #e6a23c; }
+    .event-list { max-height: 200px; overflow-y: auto; }
+    .event-item { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; display: flex; justify-content: space-between; }
+    .folder-select { display: flex; gap: 8px; }
+    .folder-select input { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="container" id="app">
+    <h1>🔄 OmniAide 同步</h1>
+    
+    <!-- Status -->
+    <div id="statusBar" class="status-bar status-disconnected">● 未连接</div>
+    
+    <!-- Settings -->
+    <div class="card">
+      <div class="form-group">
+        <label>服务器地址</label>
+        <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="http://localhost:8000" />
+      </div>
+      <div class="form-group">
+        <label>Token (从 Web 端设置页面获取)</label>
+        <input type="password" id="token" placeholder="输入 JWT token" />
+      </div>
+      <div class="form-group">
+        <label>工作空间 ID</label>
+        <input type="number" id="workspaceId" placeholder="如: 1" />
+      </div>
+      <div class="form-group">
+        <label>本地同步文件夹</label>
+        <div class="folder-select">
+          <input type="text" id="localPath" placeholder="选择本地文件夹" readonly />
+          <button class="btn-default" onclick="selectFolder()">浏览</button>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:16px">
+        <button class="btn-primary" id="startBtn" onclick="startSync()">开始同步</button>
+        <button class="btn-danger" id="stopBtn" onclick="stopSync()" disabled>停止同步</button>
+      </div>
+    </div>
+
+    <!-- Events -->
+    <div class="card">
+      <h3 style="font-size:15px; margin-bottom:10px">同步事件</h3>
+      <div id="eventList" class="event-list">
+        <div style="color:#909399; text-align:center; padding:20px">暂无事件</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let config = {}
+
+    window.electronAPI.getConfig().then(c => {
+      config = c
+      document.getElementById('serverUrl').value = c.serverUrl || 'http://localhost:8000'
+      document.getElementById('token').value = c.token || ''
+      document.getElementById('workspaceId').value = c.workspaceId || ''
+      document.getElementById('localPath').value = c.localPath || ''
+      if (c.token && c.workspaceId && c.localPath) {
+        startSync()
+      }
+    })
+
+    window.electronAPI.onSyncStatus((status) => {
+      const bar = document.getElementById('statusBar')
+      bar.className = 'status-bar status-' + status
+      const labels = { connected: '● 已连接', disconnected: '● 未连接', syncing: '⟳ 同步中', connecting: '⟳ 连接中...' }
+      bar.textContent = labels[status] || status
+    })
+
+    window.electronAPI.onSyncEvent((event) => {
+      const list = document.getElementById('eventList')
+      const item = document.createElement('div')
+      item.className = 'event-item'
+      const dir = event.direction === 'remote' ? '↓' : '↑'
+      const types = { create: '创建', modify: '修改', delete: '删除' }
+      item.innerHTML = `<span>${dir} ${types[event.event_type] || event.event_type}</span><span style="color:#909399">${event.file_path}</span>`
+      list.insertBefore(item, list.firstChild)
+      if (list.children.length > 50) list.removeChild(list.lastChild)
+    })
+
+    async function selectFolder() {
+      const folder = await window.electronAPI.selectFolder()
+      if (folder) document.getElementById('localPath').value = folder
+    }
+
+    async function startSync() {
+      config = {
+        serverUrl: document.getElementById('serverUrl').value,
+        token: document.getElementById('token').value,
+        workspaceId: parseInt(document.getElementById('workspaceId').value),
+        localPath: document.getElementById('localPath').value
+      }
+
+      if (!config.serverUrl || !config.token || !config.workspaceId || !config.localPath) {
+        alert('请填写所有字段')
+        return
+      }
+
+      await window.electronAPI.saveConfig(config)
+      await window.electronAPI.startSync(config)
+      document.getElementById('startBtn').disabled = true
+      document.getElementById('stopBtn').disabled = false
+    }
+
+    async function stopSync() {
+      await window.electronAPI.stopSync()
+      document.getElementById('startBtn').disabled = false
+      document.getElementById('stopBtn').disabled = true
+    }
+  </script>
+</body>
+</html>
