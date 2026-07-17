@@ -479,13 +479,12 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         currentToken = data.access_token
         config = { serverUrl, token: currentToken, serverPath: '/', localPath: '', username }
         await window.electronAPI.saveConfig(config)
+        document.getElementById('serverPath').value = '/'
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
         document.getElementById('loggedUser').textContent = username
-        document.getElementById('navUser').textContent = username.charAt(0).toUpperCase()
         document.getElementById('greetingText').textContent = username
         document.getElementById('subText').textContent = 'OmniAide 桌面工作台'
-        await loadWorkspaces()
         await loadRecentFiles()
       } catch (e) {
         errEl.textContent = e.message
@@ -869,6 +868,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('gateServerUrl').value = c.serverUrl || 'http://localhost:8000'
         document.getElementById('loginGate').style.display = 'none'
         document.getElementById('appMain').style.display = 'flex'
+        document.getElementById('serverPath').value = c.serverPath || '/'
         document.getElementById('localPath').value = c.localPath || ''
         document.getElementById('greetingText').textContent = c.username || '已连接'
         loadRecentFiles()
