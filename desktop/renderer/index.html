@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OmniAide 工作台</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tiptap/core@2.11.5/style.css">
+  <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
   --bg: #FAFAFA;
@@ -161,6 +162,20 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .event-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 11px; color: var(--secondary); border-bottom: 1px solid var(--border); }
 .event-item:last-child { border-bottom: none; }
 .event-time { color: var(--muted); font-size: 10px; }
+.tiptap-toolbar { display: flex; align-items: center; }
+.tt-btn { padding:3px 8px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:transparent;color:var(--secondary); }
+.tt-btn:hover { background:rgba(0,0,0,0.04);color:var(--text); }
+.tt-btn.active { background:var(--accent);color:#fff; }
+.tt-sep { color:var(--border);margin:0 4px;font-size:12px; }
+.ProseMirror h1 { font-size:1.6em;font-weight:700;margin:0.4em 0; }
+.ProseMirror h2 { font-size:1.3em;font-weight:600;margin:0.3em 0; }
+.ProseMirror h3 { font-size:1.1em;font-weight:600;margin:0.3em 0; }
+.ProseMirror p { margin:0.3em 0; }
+.ProseMirror ul, .ProseMirror ol { padding-left:1.5em; }
+.ProseMirror blockquote { border-left:3px solid var(--accent);margin:0.5em 0;padding:0.3em 1em;color:var(--secondary); }
+.ProseMirror a { color:var(--accent);text-decoration:underline; }
+.ProseMirror img { max-width:100%;border-radius:6px;margin:0.5em 0; }
+.ProseMirror p.is-editor-empty:first-child::before { content:attr(data-placeholder);float:left;color:var(--muted);pointer-events:none;height:0; }
 </style>
 </head>
 <body>
@@ -295,12 +310,28 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           </div>
           <div style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column">
             <div id="noteEditor" style="display:none;flex:1;flex-direction:column">
-              <div style="padding:16px 20px 8px;border-bottom:1px solid var(--border)">
+              <div style="padding:14px 20px 6px;border-bottom:1px solid var(--border)">
                 <input type="text" id="noteTitle" placeholder="无标题" style="width:100%;border:none;outline:none;font-size:18px;font-weight:700;background:transparent;color:var(--text)" />
               </div>
-              <textarea id="noteContent" placeholder="开始写点什么..." style="flex:1;padding:16px 20px;border:none;outline:none;font-size:13px;line-height:1.7;resize:none;background:transparent;color:var(--text);font-family:inherit"></textarea>
-              <div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
+              <div id="tiptapToolbar" class="tiptap-toolbar" style="display:none;padding:6px 12px;border-bottom:1px solid var(--border);gap:2px;flex-wrap:wrap">
+                <button class="tt-btn" data-cmd="bold" title="加粗"><strong>B</strong></button>
+                <button class="tt-btn" data-cmd="italic" title="斜体"><em>I</em></button>
+                <button class="tt-btn" data-cmd="underline" title="下划线"><u>U</u></button>
+                <span class="tt-sep">|</span>
+                <button class="tt-btn" data-cmd="h1" title="标题 1">H1</button>
+                <button class="tt-btn" data-cmd="h2" title="标题 2">H2</button>
+                <button class="tt-btn" data-cmd="h3" title="标题 3">H3</button>
+                <span class="tt-sep">|</span>
+                <button class="tt-btn" data-cmd="bulletList" title="无序列表">≡</button>
+                <button class="tt-btn" data-cmd="orderedList" title="有序列表">#</button>
+                <button class="tt-btn" data-cmd="blockquote" title="引用">"</button>
+                <span class="tt-sep">|</span>
+                <button class="tt-btn" data-cmd="link" title="链接">🔗</button>
+              </div>
+              <div id="tiptapEditor" style="flex:1;padding:16px 20px;overflow-y:auto;outline:none;font-size:14px;line-height:1.8;color:var(--text)"></div>
+              <div style="padding:6px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
                 <button class="btn btn-primary btn-sm" onclick="saveNote()">保存</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteCurrentNote()" style="color:#f56c6c">删除</button>
               </div>
             </div>
             <div id="noteEmpty" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px">
@@ -720,6 +751,109 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     let currentNoteId = null
     let notesCache = []
     let autoSaveTimer = null
+    let tipEditor = null
+
+    // Load TipTap from CDN
+    function loadTipTap(callback) {
+      if (window.Tiptap) { callback(); return }
+      const s = document.createElement('script')
+      s.type = 'importmap'
+      s.textContent = JSON.stringify({
+        imports: {
+          '@tiptap/core': 'https://cdn.jsdelivr.net/npm/@tiptap/core@2.11.5/+esm',
+          '@tiptap/starter-kit': 'https://cdn.jsdelivr.net/npm/@tiptap/starter-kit@2.11.5/+esm',
+          '@tiptap/extension-underline': 'https://cdn.jsdelivr.net/npm/@tiptap/extension-underline@2.11.5/+esm',
+          '@tiptap/extension-link': 'https://cdn.jsdelivr.net/npm/@tiptap/extension-link@2.11.5/+esm',
+          '@tiptap/extension-placeholder': 'https://cdn.jsdelivr.net/npm/@tiptap/extension-placeholder@2.11.5/+esm',
+        }
+      })
+      document.head.appendChild(s)
+      const m = document.createElement('script')
+      m.type = 'module'
+      m.textContent = `
+        import { Editor } from '@tiptap/core'
+        import StarterKit from '@tiptap/starter-kit'
+        import Underline from '@tiptap/extension-underline'
+        import Link from '@tiptap/extension-link'
+        import Placeholder from '@tiptap/extension-placeholder'
+        window.__createTipEditor = (el, content, readonly, onUpdate) => {
+          return new Editor({
+            element: el,
+            content: content || '',
+            editable: !readonly,
+            extensions: [
+              StarterKit.configure({ heading: { levels: [1,2,3] } }),
+              Underline,
+              Link.configure({ openOnClick: false }),
+              Placeholder.configure({ placeholder: '开始写点什么...' }),
+            ],
+            onUpdate: ({ editor }) => { if (onUpdate) onUpdate(editor.getHTML()) },
+          })
+        }
+        window.__tipTapReady = true
+        if (window.__onTipTapReady) window.__onTipTapReady()
+      `
+      document.body.appendChild(m)
+      window.__onTipTapReady = callback
+    }
+
+    function initTipEditor(content) {
+      if (tipEditor) tipEditor.destroy()
+      const el = document.getElementById('tiptapEditor')
+      el.innerHTML = ''
+      tipEditor = window.__createTipEditor(el, content || '', false, (html) => {
+        if (autoSaveTimer) clearTimeout(autoSaveTimer)
+        autoSaveTimer = setTimeout(saveNote, 2000)
+      })
+      document.getElementById('tiptapToolbar').style.display = 'flex'
+      updateToolbar()
+    }
+
+    function updateToolbar() {
+      document.querySelectorAll('.tt-btn').forEach(btn => {
+        btn.onclick = () => {
+          if (!tipEditor) return
+          const cmd = btn.dataset.cmd
+          if (cmd === 'bold') tipEditor.chain().focus().toggleBold().run()
+          else if (cmd === 'italic') tipEditor.chain().focus().toggleItalic().run()
+          else if (cmd === 'underline') tipEditor.chain().focus().toggleUnderline().run()
+          else if (cmd === 'h1') tipEditor.chain().focus().toggleHeading({ level: 1 }).run()
+          else if (cmd === 'h2') tipEditor.chain().focus().toggleHeading({ level: 2 }).run()
+          else if (cmd === 'h3') tipEditor.chain().focus().toggleHeading({ level: 3 }).run()
+          else if (cmd === 'bulletList') tipEditor.chain().focus().toggleBulletList().run()
+          else if (cmd === 'orderedList') tipEditor.chain().focus().toggleOrderedList().run()
+          else if (cmd === 'blockquote') tipEditor.chain().focus().toggleBlockquote().run()
+          else if (cmd === 'link') {
+            const prev = tipEditor.getAttributes('link').href || ''
+            const url = prompt('输入链接 URL:', prev)
+            if (url === null) return
+            if (url === '') { tipEditor.chain().focus().unsetLink().run(); return }
+            tipEditor.chain().focus().setLink({ href: url }).run()
+          }
+          tipEditor.chain().focus().run()
+          updateToolbarActive()
+        }
+      })
+    }
+
+    function updateToolbarActive() {
+      if (!tipEditor) return
+      document.querySelectorAll('.tt-btn').forEach(btn => {
+        const cmd = btn.dataset.cmd
+        let active = false
+        if (cmd === 'bold') active = tipEditor.isActive('bold')
+        else if (cmd === 'italic') active = tipEditor.isActive('italic')
+        else if (cmd === 'underline') active = tipEditor.isActive('underline')
+        else if (cmd === 'h1') active = tipEditor.isActive('heading', { level: 1 })
+        else if (cmd === 'h2') active = tipEditor.isActive('heading', { level: 2 })
+        else if (cmd === 'h3') active = tipEditor.isActive('heading', { level: 3 })
+        else if (cmd === 'bulletList') active = tipEditor.isActive('bulletList')
+        else if (cmd === 'orderedList') active = tipEditor.isActive('orderedList')
+        else if (cmd === 'blockquote') active = tipEditor.isActive('blockquote')
+        else if (cmd === 'link') active = tipEditor.isActive('link')
+        btn.classList.toggle('active', active)
+      })
+    }
 
     async function loadNotes() {
       const list = document.getElementById('noteList')
@@ -753,10 +887,10 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         const note = await res.json()
         currentNoteId = note.id
         document.getElementById('noteTitle').value = ''
-        document.getElementById('noteContent').value = ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
         document.getElementById('noteTitle').focus()
+        loadTipTap(() => initTipEditor(''))
         await loadNotes()
       } catch(e) {}
     }
@@ -770,9 +904,9 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         if (!res.ok) return
         const note = await res.json()
         document.getElementById('noteTitle').value = note.title || ''
-        document.getElementById('noteContent').value = note.content || ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
+        loadTipTap(() => initTipEditor(note.content || ''))
         await loadNotes()
       } catch(e) {}
     }
@@ -780,13 +914,31 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     async function saveNote() {
       if (!currentNoteId) return
       const title = document.getElementById('noteTitle').value
-      const content = document.getElementById('noteContent').value
+      const content = tipEditor ? tipEditor.getHTML() : ''
       try {
         await fetch(config.serverUrl + '/api/plugins/notes/' + currentNoteId, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
           body: JSON.stringify({ title, content })
         })
+        await loadNotes()
+      } catch(e) {}
+    }
+
+    async function deleteCurrentNote() {
+      if (!currentNoteId) return
+      if (!confirm('确定删除此笔记？')) return
+      try {
+        await fetch(config.serverUrl + '/api/plugins/notes/' + currentNoteId, {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        if (tipEditor) tipEditor.destroy()
+        tipEditor = null
+        currentNoteId = null
+        document.getElementById('noteEditor').style.display = 'none'
+        document.getElementById('noteEmpty').style.display = 'flex'
+        document.getElementById('tiptapToolbar').style.display = 'none'
         await loadNotes()
       } catch(e) {}
     }
