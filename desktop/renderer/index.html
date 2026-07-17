@@ -8,7 +8,6 @@
 
 
 
-  <script src="../dist-editor/editor.js"></script>
   <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -791,6 +790,15 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       if (window.EditorAPI) {
         window.EditorAPI.init(el, content || '', currentNoteId, config.serverUrl, currentToken)
         window.EditorAPI._onSave = () => loadNotes()
+      } else if (!window._loadingEditor) {
+        window._loadingEditor = true
+        const s = document.createElement('script')
+        s.src = '../dist-editor/editor.js'
+        s.onload = () => {
+          window._loadingEditor = false
+          startEditor(content)
+        }
+        document.head.appendChild(s)
       }
     }
 
