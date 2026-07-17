@@ -397,7 +397,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     let currentFolder = '/'
 
     async function loadFiles(folder) {
-      if (folder !== undefined) currentFolder = folder
+      if (folder !== undefined) currentFolder = folder.replace(/\/+/g, '/')
       const grid = document.getElementById('fileGrid')
       grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">加载中...</div>'
       try {

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from minio import Minio
@@ -24,7 +24,6 @@ async def create_folder(
     db: AsyncSession, user_id: int, req: CreateFolderRequest
 ) -> File:
     bucket = f"ws-{user_id}" if req.workspace_id else DEFAULT_BUCKET
-    folder_path = req.parent_path.rstrip("/") + "/" + req.name
     object_key = f"folder:{user_id}/{uuid.uuid4().hex}"
 
     folder = File(
@@ -34,12 +33,13 @@ async def create_folder(
         object_key=object_key,
         original_name=req.name,
         is_folder=True,
-        folder_path=folder_path,
+        folder_path=req.parent_path,
         mime_type="application/folder",
         status="active",
     )
     db.add(folder)
     await db.flush()
+    await db.refresh(folder)
     return folder
 
 
@@ -61,10 +61,14 @@ async def generate_upload_url(
     )
     db.add(file_record)
     await db.flush()
+    await db.refresh(file_record)
 
-    upload_url = minio_client.presigned_put_object(
-        bucket, object_key, expires=UPLOAD_URL_EXPIRY
-    )
+    if minio_client:
+        upload_url = minio_client.presigned_put_object(
+            bucket, object_key, expires=timedelta(seconds=UPLOAD_URL_EXPIRY)
+        )
+    else:
+        upload_url = ""
 
     return upload_url, file_record.id, object_key
 
@@ -85,6 +89,7 @@ async def confirm_upload(db: AsyncSession, user_id: int, file_id: int) -> File:
 
     file_record.status = "active"
     await db.flush()
+    await db.refresh(file_record)
     return file_record
 
 
@@ -131,10 +136,12 @@ async def get_file(db: AsyncSession, user_id: int, file_id: int) -> File | None:
 
 
 async def get_download_url(file_record: File) -> str:
+    if not minio_client:
+        return ""
     return minio_client.presigned_get_object(
         file_record.bucket,
         file_record.object_key,
-        expires=DOWNLOAD_URL_EXPIRY,
+        expires=timedelta(seconds=DOWNLOAD_URL_EXPIRY),
     )
 
 
