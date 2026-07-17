@@ -36,6 +36,9 @@ window.EditorAPI = {
         clearTimeout(this._saveTimer)
         this._saveTimer = setTimeout(() => this.save(), 2000)
       },
+      editorProps: {
+        handlePaste: (view, event) => this._handlePaste(event),
+      },
     })
     this._setupToolbar()
   },
@@ -91,6 +94,47 @@ window.EditorAPI = {
         body: JSON.stringify({ content: md }),
       })
       if (this._onSave) this._onSave()
+    } catch (e) {}
+  },
+
+  _handlePaste(event) {
+    const items = event.clipboardData?.items
+    if (!items) return false
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        event.preventDefault()
+        const file = item.getAsFile()
+        if (!file) return true
+        this._uploadImage(file)
+        return true
+      }
+    }
+    return false
+  },
+
+  async _uploadImage(file) {
+    const filename = `paste-${Date.now()}.${file.type.split('/')[1] || 'png'}`
+    try {
+      const res = await fetch(`${this._baseUrl}/api/v1/files/upload-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this._token },
+        body: JSON.stringify({ filename, mime_type: file.type, folder_path: '/' }),
+      })
+      if (!res.ok) return
+      const { upload_url, file_id } = await res.json()
+      await fetch(upload_url, { method: 'PUT', body: file })
+      await fetch(`${this._baseUrl}/api/v1/files/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this._token },
+        body: JSON.stringify({ file_id }),
+      })
+      const dlRes = await fetch(`${this._baseUrl}/api/v1/files/${file_id}/download-url`, {
+        headers: { Authorization: 'Bearer ' + this._token },
+      })
+      const dl = dlRes.ok ? (await dlRes.json()).download_url : ''
+      if (dl && this._editor) {
+        this._editor.chain().focus().setImage({ src: dl }).run()
+      }
     } catch (e) {}
   },
 
