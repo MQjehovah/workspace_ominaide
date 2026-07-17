@@ -53,11 +53,20 @@ class SyncEngine {
       const localPath = this.config.localPath
       if (!localPath) return
 
-      // Fetch all active files from server
-      const res = await axios.get(`${this.config.serverUrl}/api/files?page_size=500`, {
-        headers: { Authorization: 'Bearer ' + this.config.token }
-      })
-      const serverFiles = res.data?.files || []
+      // Fetch all active files from server (paginate)
+      let allServerFiles = []
+      let page = 1
+      while (true) {
+        const res = await axios.get(`${this.config.serverUrl}/api/files?page=${page}&page_size=200`, {
+          headers: { Authorization: 'Bearer ' + this.config.token }
+        })
+        const data = res.data
+        if (!data || !data.files) break
+        allServerFiles = allServerFiles.concat(data.files)
+        if (data.files.length < 200) break
+        page++
+      }
+      const serverFiles = allServerFiles
 
       // Build set of server files (relative to serverPath)
       const serverPaths = new Set()
