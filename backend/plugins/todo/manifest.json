@@ -1,0 +1,11 @@
+{
+  "name": "todo",
+  "version": "1.0.0",
+  "title": "待办事项",
+  "description": "看板式待办管理，支持自然语言创建",
+  "icon": "Check",
+  "permissions": [],
+  "routes": {
+    "main": "/apps/todo"
+  }
+}

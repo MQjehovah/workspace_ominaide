@@ -6,6 +6,9 @@ import core.plugin.models  # noqa
 import domains.auth.models  # noqa
 import domains.file.models  # noqa
 import domains.workspace.models  # noqa
+import domains.sync.models  # noqa
+import plugins.todo.backend.models  # noqa
+import core.database.redis  # noqa
 
 
 async def init_db():
