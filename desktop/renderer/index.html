@@ -167,6 +167,9 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .tt-btn:hover { background:rgba(0,0,0,0.04);color:var(--text); }
 .tt-btn.active { background:var(--accent);color:#fff; }
 .tt-sep { color:var(--border);margin:0 4px;font-size:12px; }
+.note-item.active { background:rgba(var(--accent-rgb),0.08);border-left:2px solid var(--accent);padding-left:10px !important; }
+.note-item:hover { background:rgba(0,0,0,0.02); }
+.note-item.active:hover { background:rgba(var(--accent-rgb),0.1); }
 .ProseMirror h1 { font-size:1.6em;font-weight:700;margin:0.4em 0; }
 .ProseMirror h2 { font-size:1.3em;font-weight:600;margin:0.3em 0; }
 .ProseMirror h3 { font-size:1.1em;font-weight:600;margin:0.3em 0; }
@@ -314,12 +317,12 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
               <div style="color:var(--muted);text-align:center;padding:20px">加载中...</div>
             </div>
           </div>
-          <div style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column">
-            <div id="noteEditor" style="display:none;flex:1;flex-direction:column">
-              <div style="padding:14px 20px 6px;border-bottom:1px solid var(--border)">
+          <div style="flex:1;background:var(--surface);overflow:hidden;display:flex;flex-direction:column">
+            <div id="noteEditor" style="display:none;flex:1;flex-direction:column;min-height:0">
+              <div style="padding:14px 20px 6px;">
                 <input type="text" id="noteTitle" placeholder="无标题" style="width:100%;border:none;outline:none;font-size:18px;font-weight:700;background:transparent;color:var(--text)" />
               </div>
-              <div id="tiptapToolbar" class="tiptap-toolbar" style="display:none;padding:6px 12px;border-bottom:1px solid var(--border);gap:2px;flex-wrap:wrap">
+              <div id="tiptapToolbar" class="tiptap-toolbar" style="display:none;padding:4px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);gap:2px;flex-wrap:wrap">
                 <button class="tt-btn" data-cmd="bold" title="加粗"><strong>B</strong></button>
                 <button class="tt-btn" data-cmd="italic" title="斜体"><em>I</em></button>
                 <button class="tt-btn" data-cmd="underline" title="下划线"><u>U</u></button>
@@ -334,7 +337,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
                 <span class="tt-sep">|</span>
                 <button class="tt-btn" data-cmd="link" title="链接">🔗</button>
               </div>
-              <div id="tiptapEditor" style="flex:1;padding:16px 20px;overflow-y:auto;outline:none;font-size:14px;line-height:1.8;color:var(--text)"></div>
+              <div id="tiptapEditor" style="flex:1;min-height:0;padding:16px 20px;overflow-y:auto;outline:none;font-size:14px;line-height:1.8;color:var(--text)"></div>
               <div style="padding:6px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
                 <button class="btn btn-primary btn-sm" onclick="saveNote()">保存</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteCurrentNote()" style="color:#f56c6c">删除</button>
@@ -887,8 +890,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           return
         }
         list.innerHTML = notesCache.map(n => {
-          const active = n.id === currentNoteId ? ' style="background:rgba(var(--accent-rgb),0.08)"' : ''
-          return '<div class="note-item"' + active + ' onclick="openNote(' + n.id + ')" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s">' +
+          return '<div class="note-item' + (n.id === currentNoteId ? ' active' : '') + '" onclick="openNote(' + n.id + ')" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s">' +
             '<div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (n.title || '无标题') + '</div>' +
             '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + (n.updated_at ? new Date(n.updated_at).toLocaleDateString() : '') + '</div></div>'
         }).join('')
