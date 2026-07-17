@@ -155,6 +155,34 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 </style>
 </head>
 <body>
+  <!-- Login Gate (shown when not authenticated) -->
+  <div id="loginGate" style="display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg)">
+    <div style="width:340px">
+      <div style="text-align:center;margin-bottom:28px">
+        <div style="font-size:22px;font-weight:700;letter-spacing:-0.03em">OmniAide</div>
+        <div style="font-size:12px;color:var(--secondary);margin-top:4px">登录到服务器</div>
+      </div>
+      <div class="settings-card" style="padding:24px">
+        <div class="form-group">
+          <label>服务器地址</label>
+          <input type="text" id="gateServerUrl" value="http://localhost:8000" placeholder="http://localhost:8000" />
+        </div>
+        <div class="form-group">
+          <label>用户名</label>
+          <input type="text" id="gateUsername" placeholder="用户名" autofocus />
+        </div>
+        <div class="form-group">
+          <label>密码</label>
+          <input type="password" id="gatePassword" placeholder="密码" onkeydown="if(event.key==='Enter')doGateLogin()" />
+        </div>
+        <button class="btn btn-primary" id="gateLoginBtn" onclick="doGateLogin()" style="width:100%;justify-content:center;margin-top:4px">登录</button>
+        <div id="gateLoginError" style="font-size:12px;color:#FF3B30;text-align:center;margin-top:8px;min-height:18px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App (shown after login) -->
+  <div id="appMain" style="display:none;flex-direction:column;height:100vh">
   <div class="topbar">
     <span class="topbar-title">OmniAide</span>
     <div class="topbar-actions">
@@ -224,29 +252,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <h1 style="font-size:20px">设置</h1>
         </div>
 
-        <!-- Login -->
-        <div class="settings-card" id="loginCard">
-          <h3>登录</h3>
-          <div class="form-group">
-            <label>服务器地址</label>
-            <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="http://localhost:8000" />
-          </div>
-          <div class="form-group">
-            <label>用户名</label>
-            <input type="text" id="loginUsername" placeholder="用户名" />
-          </div>
-          <div class="form-group">
-            <label>密码</label>
-            <input type="password" id="loginPassword" placeholder="密码" @keyup.enter="doLogin" />
-          </div>
-          <div style="display:flex; gap:8px; align-items:center">
-            <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">登录</button>
-            <span id="loginError" style="font-size:12px;color:#FF3B30"></span>
-          </div>
-        </div>
-
-        <!-- Sync Settings (shown after login) -->
-        <div id="syncSettings" style="display:none">
+        <div id="syncSettings" style="display:block">
           <div class="settings-card">
             <h3>已登录 <span style="color:#34C759;font-size:12px;font-weight:400">●</span> <span id="loggedUser" style="font-weight:400;font-size:12px;color:var(--secondary)"></span></h3>
             <div class="form-group">
@@ -283,10 +289,45 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       </div>
     </div>
   </div>
+  </div>
 
   <script>
     let config = {}
     let currentToken = ''
+
+    async function doGateLogin() {
+      const serverUrl = document.getElementById('gateServerUrl').value
+      const username = document.getElementById('gateUsername').value
+      const password = document.getElementById('gatePassword').value
+      const errEl = document.getElementById('gateLoginError')
+      const btn = document.getElementById('gateLoginBtn')
+      if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return }
+      errEl.textContent = ''
+      btn.disabled = true; btn.textContent = '登录中...'
+      try {
+        const res = await fetch(serverUrl + '/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        })
+        if (!res.ok) { const d = await res.json(); throw new Error(typeof d.detail === 'string' ? d.detail : '登录失败') }
+        const data = await res.json()
+        currentToken = data.access_token
+        config = { serverUrl, token: currentToken, workspaceId: null, localPath: '' }
+        document.getElementById('serverUrl').value = serverUrl
+        await window.electronAPI.saveConfig(config)
+        document.getElementById('loginGate').style.display = 'none'
+        document.getElementById('appMain').style.display = 'flex'
+        document.getElementById('loggedUser').textContent = username
+        document.getElementById('greetingText').textContent = '已登录'
+        document.getElementById('subText').textContent = username
+        await loadWorkspaces()
+      } catch (e) {
+        errEl.textContent = e.message
+      } finally {
+        btn.disabled = false; btn.textContent = '登录'
+      }
+    }
 
     async function doLogin() {
       const serverUrl = document.getElementById('serverUrl').value
@@ -327,9 +368,9 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       currentToken = ''
       config = { serverUrl: config.serverUrl || 'http://localhost:8000', token: '', workspaceId: null, localPath: '' }
       await window.electronAPI.saveConfig(config)
-      document.getElementById('syncSettings').style.display = 'none'
-      document.getElementById('loginCard').style.display = 'block'
-      document.getElementById('loginPassword').value = ''
+      document.getElementById('appMain').style.display = 'none'
+      document.getElementById('loginGate').style.display = 'flex'
+      document.getElementById('gatePassword').value = ''
       document.getElementById('workspaceSelect').innerHTML = '<option value="">选择工作空间...</option>'
       document.getElementById('greetingText').textContent = '欢迎回来'
       document.getElementById('subText').textContent = 'OmniAide 桌面工作台'
@@ -374,12 +415,14 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       config = c
       document.getElementById('serverUrl').value = c.serverUrl || 'http://localhost:8000'
       document.getElementById('localPath').value = c.localPath || ''
-      if (c.token && c.workspaceId && c.localPath) {
+      if (c.token) {
         currentToken = c.token
+        document.getElementById('loginGate').style.display = 'none'
+        document.getElementById('appMain').style.display = 'flex'
         document.getElementById('syncSettings').style.display = 'block'
         document.getElementById('loginCard').style.display = 'none'
         document.getElementById('greetingText').textContent = '已连接'
-        startSync()
+        if (c.workspaceId && c.localPath) startSync()
       }
     })
 
