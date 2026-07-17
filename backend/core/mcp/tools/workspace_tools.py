@@ -1,7 +1,7 @@
 import json
 from core.mcp.core import MCPCallResponse, MCPContent
 from core.mcp.registry import tool_registry, MCPTool
-from core.workspace.service import get_workspaces
+from plugins.workspaces.backend.service import get_workspaces
 
 
 async def list_workspaces_tool(user_id: int, args: dict) -> MCPCallResponse:

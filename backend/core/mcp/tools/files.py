@@ -1,8 +1,8 @@
 import json
 from core.mcp.core import MCPCallResponse, MCPContent, MCPResource
 from core.mcp.registry import tool_registry, MCPTool
-from core.file.service import get_files, get_file as get_file_record, get_download_url
-from core.file.schemas import FileQueryParams
+from plugins.files.backend.service import get_files, get_file as get_file_record, get_download_url
+from plugins.files.backend.schemas import FileQueryParams
 
 
 async def search_files(user_id: int, args: dict) -> MCPCallResponse:
@@ -28,7 +28,7 @@ async def search_files(user_id: int, args: dict) -> MCPCallResponse:
 
     if not results:
         from sqlalchemy import select, or_
-        from core.file.models import File
+        from plugins.files.backend.models import File
         from core.database.session import async_session
 
         async with async_session() as db:

@@ -7,8 +7,8 @@ async def get_system_context(user_id: int, args: dict) -> MCPCallResponse:
     """Get current user context: system info, stats, etc."""
     from core.database.session import async_session
     from sqlalchemy import select, func
-    from core.file.models import File
-    from core.workspace.models import Workspace
+    from plugins.files.backend.models import File
+    from plugins.workspaces.backend.models import Workspace
 
     async with async_session() as db:
         file_count = (await db.execute(
