@@ -20,6 +20,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from domains.auth.router import router as auth_router
+app.include_router(auth_router)
+
 
 @app.get("/health")
 async def health():
