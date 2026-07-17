@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OmniAide 工作台</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="https://cdn.jsdelivr.net/npm/turndown@7.2.0/dist/turndown.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
 
   <style>
@@ -344,11 +343,17 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
                 <button class="tt-btn" onclick="insertLink()" title="链接">🔗</button>
                 <button class="tt-btn" onclick="insertImage()" title="插入图片">🖼</button>
               </div>
-              <div id="tiptapEditor" contenteditable="true" data-placeholder="开始写点什么..." oninput="triggerAutoSave()" style="flex:1;padding:16px 20px;overflow-y:auto;outline:none;font-size:14px;line-height:1.8;color:var(--text)"></div>
-              <div style="padding:6px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
-                <button class="btn btn-primary btn-sm" onclick="saveNote()">保存</button>
-                <button class="btn btn-ghost btn-sm" onclick="deleteCurrentNote()" style="color:#f56c6c">删除</button>
+              <textarea id="tiptapEditor" placeholder="开始写点什么..." oninput="triggerAutoSave()" style="flex:1;padding:16px 20px;border:none;outline:none;resize:none;font-size:13px;line-height:1.8;font-family:monospace;background:transparent;color:var(--text)"></textarea>
+              <div style="padding:6px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:space-between;align-items:center">
+                <div style="display:flex;gap:4px">
+                  <button class="btn btn-ghost btn-sm" onclick="togglePreview()" id="previewBtn">预览</button>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn btn-primary btn-sm" onclick="saveNote()">保存</button>
+                  <button class="btn btn-ghost btn-sm" onclick="deleteCurrentNote()" style="color:#f56c6c">删除</button>
+                </div>
               </div>
+              <div id="previewPane" style="display:none;flex:1;padding:16px 20px;overflow-y:auto;font-size:14px;line-height:1.8;color:var(--text);border-top:1px solid var(--border)"></div>
             </div>
             <div id="noteEmpty" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px">
               选择或创建一篇笔记
@@ -781,19 +786,43 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     let notesCache = []
     let autoSaveTimer = null
 
+    let previewMode = false
+
     function execFormat(cmd, val) {
-      document.getElementById('tiptapEditor').focus()
-      document.execCommand(cmd, false, val || null)
-      updateActiveBtns()
+      const ta = document.getElementById('tiptapEditor')
+      const start = ta.selectionStart, end = ta.selectionEnd
+      const text = ta.value, sel = text.substring(start, end)
+      let insert = '', before = '', after = ''
+      if (cmd === 'bold') { before = '**'; after = '**' }
+      else if (cmd === 'italic') { before = '*'; after = '*' }
+      else if (cmd === 'underline') { before = '<u>'; after = '</u>' }
+      else if (cmd === 'h1') { before = '\n# '; after = '' }
+      else if (cmd === 'h2') { before = '\n## '; after = '' }
+      else if (cmd === 'h3') { before = '\n### '; after = '' }
+      else if (cmd === 'bulletList') { before = '\n- '; after = '' }
+      else if (cmd === 'orderedList') { before = '\n1. '; after = '' }
+      else if (cmd === 'blockquote') { before = '\n> '; after = '' }
+      ta.value = text.substring(0, start) + before + sel + after + text.substring(end)
+      ta.focus()
+      ta.selectionStart = start + before.length
+      ta.selectionEnd = start + before.length + sel.length
       triggerAutoSave()
     }
 
     function insertLink() {
-      const url = prompt('输入链接 URL:', 'https://')
-      if (url) document.execCommand('createLink', false, url)
+      const ta = document.getElementById('tiptapEditor')
+      const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd) || '链接文字'
+      const url = prompt('输入 URL:', 'https://')
+      if (!url) return
+      const md = '[' + sel + '](' + url + ')'
+      const start = ta.selectionStart, end = ta.selectionEnd
+      ta.value = ta.value.substring(0, start) + md + ta.value.substring(end)
+      ta.focus()
+      ta.selectionStart = start + md.length
+      triggerAutoSave()
     }
 
-    function insertImage() {
+    async function insertImage() {
       const input = document.createElement('input')
       input.type = 'file'
       input.accept = 'image/*'
@@ -818,27 +847,33 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
             headers: { Authorization: 'Bearer ' + currentToken }
           })
           const dl = dlRes.ok ? (await dlRes.json()).download_url : ''
-          document.execCommand('insertHTML', false, '<img src="' + dl + '" alt="' + file.name + '" style="max-width:100%">')
+          const ta = document.getElementById('tiptapEditor')
+          const md = '\n![' + file.name + '](' + dl + ')\n'
+          const pos = ta.selectionStart
+          ta.value = ta.value.substring(0, pos) + md + ta.value.substring(ta.selectionEnd)
+          ta.focus()
+          ta.selectionStart = pos + md.length
           triggerAutoSave()
         } catch(e) {}
       }
       input.click()
     }
 
-    function updateActiveBtns() {
-      document.querySelectorAll('.tt-btn').forEach(b => {
-        const c = b.dataset.cmd
-        let a = false
-        if (c === 'bold') a = document.queryCommandState('bold')
-        else if (c === 'italic') a = document.queryCommandState('italic')
-        else if (c === 'underline') a = document.queryCommandState('underline')
-        else if (c === 'h1') a = document.queryCommandState('formatBlock') && document.queryCommandValue('formatBlock') === 'h1'
-        else if (c === 'h2') a = document.queryCommandState('formatBlock') && document.queryCommandValue('formatBlock') === 'h2'
-        else if (c === 'h3') a = document.queryCommandState('formatBlock') && document.queryCommandValue('formatBlock') === 'h3'
-        else if (c === 'bulletList') a = document.queryCommandState('insertUnorderedList')
-        else if (c === 'orderedList') a = document.queryCommandState('insertOrderedList')
-        b.classList.toggle('active', a)
-      })
+    function togglePreview() {
+      const ta = document.getElementById('tiptapEditor')
+      const preview = document.getElementById('previewPane')
+      const btn = document.getElementById('previewBtn')
+      previewMode = !previewMode
+      if (previewMode) {
+        preview.innerHTML = window.marked ? marked.parse(ta.value) : ta.value
+        ta.style.display = 'none'
+        preview.style.display = 'block'
+        btn.textContent = '编辑'
+      } else {
+        ta.style.display = 'block'
+        preview.style.display = 'none'
+        btn.textContent = '预览'
+      }
     }
 
     function triggerAutoSave() {
@@ -877,7 +912,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         const note = await res.json()
         currentNoteId = note.id
         document.getElementById('noteTitle').value = ''
-        document.getElementById('tiptapEditor').innerHTML = ''
+        document.getElementById('tiptapEditor').value = ''
+        document.getElementById('previewPane').style.display = 'none'
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
         document.getElementById('tiptapToolbar').style.display = 'flex'
@@ -895,11 +931,13 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         if (!res.ok) return
         const note = await res.json()
         document.getElementById('noteTitle').value = note.title || ''
-        const md = note.content || ''
-        document.getElementById('tiptapEditor').innerHTML = window.marked ? marked.parse(md) : md
+        document.getElementById('tiptapEditor').value = note.content || ''
+        document.getElementById('previewPane').style.display = 'none'
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
         document.getElementById('tiptapToolbar').style.display = 'flex'
+        previewMode = false
+        document.getElementById('previewBtn').textContent = '预览'
         await loadNotes()
       } catch(e) {}
     }
@@ -907,8 +945,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     async function saveNote() {
       if (!currentNoteId) return
       const title = document.getElementById('noteTitle').value
-      const html = document.getElementById('tiptapEditor').innerHTML
-      const content = window.Turndown ? new TurndownService({ headingStyle: 'atx' }).turndown(html) : html
+      const content = document.getElementById('tiptapEditor').value
       try {
         await fetch(config.serverUrl + '/api/plugins/notes/' + currentNoteId, {
           method: 'PUT',
