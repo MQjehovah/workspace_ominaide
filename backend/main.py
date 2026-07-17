@@ -39,6 +39,9 @@ app.include_router(workspace_router)
 from domains.sync.router import router as sync_router
 app.include_router(sync_router)
 
+from domains.mcp.router import router as mcp_router
+app.include_router(mcp_router)
+
 
 @app.websocket("/ws/sync/{workspace_id}")
 async def sync_websocket(websocket: WebSocket, workspace_id: int):
