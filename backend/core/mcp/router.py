@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from core.auth.dependencies import get_current_user
-from domains.mcp.registry import tool_registry
-from domains.mcp.core import MCPCallRequest
+from core.mcp.registry import tool_registry
+from core.mcp.core import MCPCallRequest
 
 router = APIRouter(prefix="/api/v1/mcp", tags=["mcp"])
 

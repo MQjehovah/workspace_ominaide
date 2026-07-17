@@ -1,8 +1,8 @@
 import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from domains.workspace.models import Workspace
-from domains.workspace.schemas import WorkspaceCreate, WorkspaceUpdate
+from plugins.workspaces.backend.models import Workspace
+from plugins.workspaces.backend.schemas import WorkspaceCreate, WorkspaceUpdate
 from core.minio.client import minio_client
 
 

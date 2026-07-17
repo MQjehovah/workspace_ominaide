@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 async def lifespan(app: FastAPI):
     from core.minio.client import ensure_buckets
     from core.plugin.registry import discover_plugins
-    from domains.mcp.tools.register_core import register_core_tools
+    from core.mcp.tools.register_core import register_core_tools
 
     await ensure_buckets()
     await discover_plugins(app)
@@ -27,22 +27,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from domains.auth.router import router as auth_router
+from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)
 
 from core.plugin.router import router as plugin_router
 app.include_router(plugin_router)
 
-from domains.file.router import router as file_router
+from plugins.files.backend.router import router as file_router
 app.include_router(file_router)
 
-from domains.workspace.router import router as workspace_router
+from plugins.workspaces.backend.router import router as workspace_router
 app.include_router(workspace_router)
 
-from domains.sync.router import router as sync_router
+from plugins.sync.backend.router import router as sync_router
 app.include_router(sync_router)
 
-from domains.mcp.router import router as mcp_router
+from core.mcp.router import router as mcp_router
 app.include_router(mcp_router)
 
 
@@ -58,7 +58,7 @@ async def sync_websocket(websocket: WebSocket, workspace_id: int):
     user_id = int(payload["sub"])
 
     from core.database.session import async_session
-    from domains.workspace.service import get_workspace as get_ws
+    from plugins.workspaces.backend.service import get_workspace as get_ws
 
     async with async_session() as db:
         ws = await get_ws(db, user_id, workspace_id)
@@ -66,17 +66,17 @@ async def sync_websocket(websocket: WebSocket, workspace_id: int):
             await websocket.close(code=4003)
             return
 
-        from domains.sync.websocket_manager import manager
+        from plugins.sync.backend.websocket_manager import manager
         await manager.connect(websocket, user_id, workspace_id)
         try:
             while True:
                 data = await websocket.receive_json()
                 if data.get("type") == "sync_ack":
-                    from domains.sync.service import mark_synced
+                    from plugins.sync.backend.service import mark_synced
                     await mark_synced(db, data.get("event_id"))
                     await db.commit()
                 elif data.get("type") == "conflict":
-                    from domains.sync.service import mark_conflicted
+                    from plugins.sync.backend.service import mark_conflicted
                     await mark_conflicted(db, data.get("event_id"))
                     await db.commit()
         except WebSocketDisconnect:

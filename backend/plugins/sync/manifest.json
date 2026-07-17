@@ -1,0 +1,9 @@
+{
+  "name": "sync",
+  "version": "1.0.0",
+  "title": "同步",
+  "description": "文件同步引擎",
+  "icon": "Refresh",
+  "permissions": [],
+  "routes": { "main": "/sync" }
+}

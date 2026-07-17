@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
-from domains.file.schemas import (
+from plugins.files.backend.schemas import (
     UploadUrlRequest, UploadUrlResponse, ConfirmUploadRequest,
     UpdateTagsRequest, FileQueryParams, FileResponse, FileListResponse,
     CreateFolderRequest,
 )
-from domains.file import service as file_service
+from plugins.files.backend import service as file_service
 
 router = APIRouter(prefix="/api/v1/files", tags=["files"])
 

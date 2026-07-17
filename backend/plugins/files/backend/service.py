@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from minio import Minio
 from core.config.settings import settings
 from core.minio.client import minio_client
-from domains.file.models import File
-from domains.file.schemas import UploadUrlRequest, FileQueryParams, CreateFolderRequest
+from plugins.files.backend.models import File
+from plugins.files.backend.schemas import UploadUrlRequest, FileQueryParams, CreateFolderRequest
 
 
 DEFAULT_BUCKET = "user-files"

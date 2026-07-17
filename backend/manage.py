@@ -3,10 +3,10 @@ from core.database.session import engine
 from core.database.base import Base
 # Import all models to ensure they're registered
 import core.plugin.models  # noqa
-import domains.auth.models  # noqa
-import domains.file.models  # noqa
-import domains.workspace.models  # noqa
-import domains.sync.models  # noqa
+import core.auth.domain.models  # noqa
+import plugins.files.backend.models  # noqa
+import plugins.workspaces.backend.models  # noqa
+import plugins.sync.backend.models  # noqa
 import plugins.todo.backend.models  # noqa
 import plugins.notes.backend.models  # noqa
 import core.database.redis  # noqa

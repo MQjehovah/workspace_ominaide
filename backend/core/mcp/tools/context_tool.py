@@ -1,14 +1,14 @@
 import json
 from datetime import datetime, timezone
-from domains.mcp.core import MCPCallResponse, MCPContent
+from core.mcp.core import MCPCallResponse, MCPContent
 
 
 async def get_system_context(user_id: int, args: dict) -> MCPCallResponse:
     """Get current user context: system info, stats, etc."""
     from core.database.session import async_session
     from sqlalchemy import select, func
-    from domains.file.models import File
-    from domains.workspace.models import Workspace
+    from core.file.models import File
+    from core.workspace.models import Workspace
 
     async with async_session() as db:
         file_count = (await db.execute(

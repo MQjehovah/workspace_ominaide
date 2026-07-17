@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
-from domains.sync.schemas import SyncEventResponse, SyncEventListResponse
-from domains.sync.service import get_sync_events, mark_synced, mark_conflicted
-from domains.workspace.service import get_workspace
+from plugins.sync.backend.schemas import SyncEventResponse, SyncEventListResponse
+from plugins.sync.backend.service import get_sync_events, mark_synced, mark_conflicted
+from plugins.workspaces.backend.service import get_workspace
 
 router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
 

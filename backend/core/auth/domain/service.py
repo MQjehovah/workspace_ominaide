@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from domains.auth.models import User
-from domains.auth.schemas import RegisterRequest
+from core.auth.domain.models import User
+from core.auth.domain.schemas import RegisterRequest
 from core.auth.password import hash_password, verify_password
 from core.auth.jwt import create_access_token
 

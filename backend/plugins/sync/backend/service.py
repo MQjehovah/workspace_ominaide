@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from domains.sync.models import SyncEvent
-from domains.sync.websocket_manager import manager
+from plugins.sync.backend.models import SyncEvent
+from plugins.sync.backend.websocket_manager import manager
 from core.database.redis import get_redis
 
 

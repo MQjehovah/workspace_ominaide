@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
-from domains.workspace.schemas import (
+from plugins.workspaces.backend.schemas import (
     WorkspaceCreate, WorkspaceUpdate, WorkspaceResponse,
 )
-from domains.workspace import service as workspace_service
-from domains.file.service import get_files
-from domains.file.schemas import FileQueryParams, FileResponse, FileListResponse
+from plugins.workspaces.backend import service as workspace_service
+from plugins.files.backend.service import get_files
+from plugins.files.backend.schemas import FileQueryParams, FileResponse, FileListResponse
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
 
