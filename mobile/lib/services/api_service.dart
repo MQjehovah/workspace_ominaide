@@ -39,9 +39,9 @@ class ApiService {
 
   bool get isLoggedIn => _token != null;
 
-  Future<String> login(String username, String password) async {
+  Future<String> login(String serverUrl, String username, String password) async {
     final res = await http.post(
-      Uri.parse('$_baseUrl/api/v1/auth/login'),
+      Uri.parse('$serverUrl/api/v1/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
     );
@@ -50,7 +50,7 @@ class ApiService {
       throw Exception(detail['detail'] ?? 'Login failed');
     }
     final data = jsonDecode(res.body);
-    await saveAuth(data['access_token'], _baseUrl);
+    await saveAuth(data['access_token'], serverUrl);
     return data['access_token'];
   }
 
