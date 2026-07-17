@@ -10,6 +10,8 @@ class FileResponse(BaseModel):
     bucket: str
     object_key: str
     original_name: str
+    is_folder: bool = False
+    folder_path: str | None = "/"
     size: int
     mime_type: str | None = None
     tags: list[str] | None = None
@@ -28,10 +30,17 @@ class FileListResponse(BaseModel):
     page_size: int
 
 
+class CreateFolderRequest(BaseModel):
+    name: str
+    workspace_id: int | None = None
+    parent_path: str = "/"
+
+
 class UploadUrlRequest(BaseModel):
     filename: str
     mime_type: str | None = None
     workspace_id: int | None = None
+    folder_path: str = "/"
     bucket: str | None = None
 
 
@@ -58,3 +67,5 @@ class FileQueryParams(BaseModel):
     mime_type: str | None = None
     search: str | None = None
     favorite: bool | None = None
+    folder_path: str | None = None
+    is_folder: bool | None = None

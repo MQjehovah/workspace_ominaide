@@ -262,11 +262,13 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       <div id="viewFiles" class="view">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
           <h1 style="font-size:20px">文件</h1>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="showNewFolderDialog()">+ 新建文件夹</button>
             <button class="btn btn-primary btn-sm" onclick="uploadFile()">上传</button>
             <input type="file" id="fileInput" style="display:none" onchange="handleFileSelect(event)" multiple />
           </div>
         </div>
+        <div id="folderBreadcrumb" style="font-size:12px;margin-bottom:12px;color:var(--secondary)"></div>
         <div id="fileGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
           <div class="empty-state" style="grid-column:1/-1">加载中...</div>
         </div>
@@ -315,6 +317,18 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       </div>
     </div>
   </div>
+  </div>
+
+  <!-- New Folder Dialog -->
+  <div id="newFolderDialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;align-items:center;justify-content:center" onclick="if(event.target===this)document.getElementById('newFolderDialog').style.display='none'">
+    <div style="background:var(--surface);border-radius:var(--radius);padding:24px;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.15)">
+      <div style="font-weight:600;font-size:14px;margin-bottom:16px">新建文件夹</div>
+      <input type="text" id="newFolderName" placeholder="文件夹名称" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;margin-bottom:16px" onkeydown="if(event.key==='Enter')doCreateFolder()" />
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('newFolderDialog').style.display='none'">取消</button>
+        <button class="btn btn-primary btn-sm" onclick="doCreateFolder()">创建</button>
+      </div>
+    </div>
   </div>
 
   <!-- Preview Dialog -->
@@ -384,41 +398,86 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
     // === File Management ===
     let allFiles = []
+    let currentFolder = '/'
 
-    async function loadFiles() {
+    async function loadFiles(folder) {
+      if (folder !== undefined) currentFolder = folder
       const grid = document.getElementById('fileGrid')
       grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">加载中...</div>'
       try {
-        const res = await fetch(config.serverUrl + '/api/v1/files?page_size=100', {
+        const q = 'page_size=100&folder_path=' + encodeURIComponent(currentFolder)
+        const res = await fetch(config.serverUrl + '/api/v1/files?' + q, {
           headers: { Authorization: 'Bearer ' + currentToken }
         })
         if (!res.ok) return
         const data = await res.json()
         allFiles = data.files || []
         renderFiles()
+        renderBreadcrumb()
       } catch (e) {
         grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">加载失败</div>'
       }
     }
 
+    function renderBreadcrumb() {
+      const el = document.getElementById('folderBreadcrumb')
+      const parts = currentFolder.split('/').filter(Boolean)
+      let html = '<a href="#" onclick="loadFiles(\'/\')" style="color:var(--accent);text-decoration:none">全部</a>'
+      let path = ''
+      parts.forEach((p, i) => {
+        path += '/' + p
+        html += ' / <a href="#" onclick="loadFiles(\'' + path + '/\')" style="color:var(--accent);text-decoration:none">' + p + '</a>'
+      })
+      el.innerHTML = html
+    }
+
     function renderFiles() {
       const grid = document.getElementById('fileGrid')
       if (!allFiles.length) {
-        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">暂无文件</div>'
+        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">空文件夹</div>'
         return
       }
       grid.innerHTML = allFiles.map(f => {
+        if (f.is_folder) {
+          return '<div class="file-card" onclick="loadFiles(\'' + f.folder_path + '/\')">' +
+            '<div class="fc-icon">📁</div>' +
+            '<div class="fc-name">' + f.original_name + '</div>' +
+            '<div class="fc-meta">文件夹</div></div>'
+        }
         const ext = (f.original_name || '').split('.').pop().toLowerCase()
         const isImg = ['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext)
-        const icon = isImg ? '🖼' : ['mp4','webm','mkv'].includes(ext) ? '🎬' : ['mp3','wav','flac'].includes(ext) ? '🎵' : ['pdf'].includes(ext) ? '📄' : ['zip','rar','7z'].includes(ext) ? '📦' : '📄'
+        const isVideo = ['mp4','webm','mkv','avi'].includes(ext)
+        const isAudio = ['mp3','wav','flac','aac'].includes(ext)
+        const isPdf = ext === 'pdf'
+        const isZip = ['zip','rar','7z','tar','gz'].includes(ext)
+        const icon = isImg ? '🖼' : isVideo ? '🎬' : isAudio ? '🎵' : isPdf ? '📄' : isZip ? '📦' : '📄'
         const size = f.size ? (f.size / 1024).toFixed(f.size > 1024*1024 ? 2 : 0) + (f.size > 1024*1024 ? ' MB' : ' KB') : ''
         const time = f.created_at ? new Date(f.created_at).toLocaleDateString() : ''
         return '<div class="file-card" onclick="previewFile(' + f.id + ')">' +
           '<div class="fc-icon">' + icon + '</div>' +
           '<div class="fc-name">' + f.original_name + '</div>' +
-          '<div class="fc-meta">' + size + ' ' + time + '</div>' +
-          '</div>'
+          '<div class="fc-meta">' + size + ' ' + time + '</div></div>'
       }).join('')
+    }
+
+    function showNewFolderDialog() {
+      document.getElementById('newFolderName').value = ''
+      document.getElementById('newFolderDialog').style.display = 'flex'
+      document.getElementById('newFolderName').focus()
+    }
+
+    async function doCreateFolder() {
+      const name = document.getElementById('newFolderName').value.trim()
+      if (!name) return
+      try {
+        await fetch(config.serverUrl + '/api/v1/files/folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
+          body: JSON.stringify({ name, parent_path: currentFolder })
+        })
+        document.getElementById('newFolderDialog').style.display = 'none'
+        await loadFiles()
+      } catch (e) { alert('创建失败') }
     }
 
     function uploadFile() {

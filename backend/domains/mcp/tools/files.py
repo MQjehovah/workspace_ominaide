@@ -6,36 +6,54 @@ from domains.file.schemas import FileQueryParams
 
 
 async def search_files(user_id: int, args: dict) -> MCPCallResponse:
-    """Semantic file search (placeholder - Qdrant integration in Task 3)."""
+    """Semantic file search using Qdrant, with fallback to filename search."""
     query = args.get("query", "")
     limit = args.get("limit", 10)
     workspace_id = args.get("workspace_id")
 
-    from sqlalchemy import select, or_
-    from domains.file.models import File
-    from core.database.session import async_session
+    results = []
 
-    async with async_session() as db:
-        q = select(File).where(File.user_id == user_id, File.status == "active")
-        if query:
-            q = q.where(File.original_name.ilike(f"%{query}%"))
-        if workspace_id:
-            q = q.where(File.workspace_id == workspace_id)
-        q = q.limit(limit)
-        result = await db.execute(q)
-        files = list(result.scalars().all())
+    try:
+        from core.ai.qdrant_index import search_similar
+        semantic_results = await search_similar(
+            user_id=user_id,
+            query=query,
+            limit=limit,
+            workspace_id=workspace_id,
+        )
+        if semantic_results:
+            results = semantic_results
+    except Exception:
+        pass
 
-    results = [
-        {
-            "id": f.id,
-            "name": f.original_name,
-            "size": f.size,
-            "mime_type": f.mime_type,
-            "workspace_id": f.workspace_id,
-            "created_at": f.created_at.isoformat() if f.created_at else None,
-        }
-        for f in files
-    ]
+    if not results:
+        from sqlalchemy import select, or_
+        from domains.file.models import File
+        from core.database.session import async_session
+
+        async with async_session() as db:
+            q = select(File).where(File.user_id == user_id, File.status == "active")
+            if query:
+                like = f"%{query}%"
+                q = q.where(File.original_name.ilike(like))
+            if workspace_id:
+                q = q.where(File.workspace_id == workspace_id)
+            q = q.limit(limit)
+            result = await db.execute(q)
+            files = list(result.scalars().all())
+
+        results = [
+            {
+                "file_id": f.id,
+                "filename": f.original_name,
+                "file_size": f.size,
+                "mime_type": f.mime_type,
+                "workspace_id": f.workspace_id,
+                "score": 0.0,
+            }
+            for f in files
+        ]
+
     return MCPCallResponse(content=[MCPContent(text=json.dumps(results, ensure_ascii=False, default=str))])
 
 

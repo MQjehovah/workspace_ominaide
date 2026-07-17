@@ -1,14 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
 from domains.file.schemas import (
     UploadUrlRequest, UploadUrlResponse, ConfirmUploadRequest,
     UpdateTagsRequest, FileQueryParams, FileResponse, FileListResponse,
+    CreateFolderRequest,
 )
 from domains.file import service as file_service
 
 router = APIRouter(prefix="/api/v1/files", tags=["files"])
+
+
+@router.post("/folder", response_model=FileResponse, status_code=201)
+async def create_folder(
+    req: CreateFolderRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    folder = await file_service.create_folder(db, user["id"], req)
+    return FileResponse.model_validate(folder)
 
 
 @router.post("/upload-url", response_model=UploadUrlResponse)
@@ -26,14 +37,45 @@ async def get_upload_url(
 @router.post("/confirm", response_model=FileResponse)
 async def confirm_upload(
     req: ConfirmUploadRequest,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         file_record = await file_service.confirm_upload(db, user["id"], req.file_id)
+        background_tasks.add_task(index_file_for_search, file_record, user["id"])
         return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+async def index_file_for_search(file_record, user_id: int):
+    try:
+        from core.ai.qdrant_index import index_file
+        from core.ai.text_extractor import extract_text
+        from core.minio.client import minio_client
+        import tempfile, os
+
+        temp_dir = tempfile.gettempdir()
+        safe_name = file_record.object_key.replace('/', '_').replace('\\', '_')
+        local_path = os.path.join(temp_dir, f"idx_{file_record.id}_{safe_name}")
+
+        try:
+            minio_client.fget_object(file_record.bucket, file_record.object_key, local_path)
+            content = await extract_text(local_path, file_record.mime_type)
+            await index_file(
+                file_id=file_record.id,
+                user_id=user_id,
+                filename=file_record.original_name,
+                content=content,
+                workspace_id=file_record.workspace_id,
+                file_size=file_record.size,
+            )
+        finally:
+            if os.path.exists(local_path):
+                os.remove(local_path)
+    except Exception:
+        pass
 
 
 @router.get("", response_model=FileListResponse)
@@ -45,6 +87,8 @@ async def list_files(
     bucket: str | None = None,
     mime_type: str | None = None,
     favorite: bool | None = None,
+    folder_path: str | None = None,
+    is_folder: bool | None = None,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -52,6 +96,7 @@ async def list_files(
         page=page, page_size=page_size, status=status,
         workspace_id=workspace_id, bucket=bucket,
         mime_type=mime_type, favorite=favorite,
+        folder_path=folder_path, is_folder=is_folder,
     )
     files, total = await file_service.get_files(db, user["id"], params)
     return FileListResponse(

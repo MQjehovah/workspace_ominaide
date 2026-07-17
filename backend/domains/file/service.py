@@ -6,7 +6,7 @@ from minio import Minio
 from core.config.settings import settings
 from core.minio.client import minio_client
 from domains.file.models import File
-from domains.file.schemas import UploadUrlRequest, FileQueryParams
+from domains.file.schemas import UploadUrlRequest, FileQueryParams, CreateFolderRequest
 
 
 DEFAULT_BUCKET = "user-files"
@@ -18,6 +18,29 @@ def _generate_object_key(user_id: int, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
     unique = uuid.uuid4().hex
     return f"{user_id}/{unique}{'.' + ext if ext else ''}"
+
+
+async def create_folder(
+    db: AsyncSession, user_id: int, req: CreateFolderRequest
+) -> File:
+    bucket = f"ws-{user_id}" if req.workspace_id else DEFAULT_BUCKET
+    folder_path = req.parent_path.rstrip("/") + "/" + req.name
+    object_key = f"folder:{user_id}/{uuid.uuid4().hex}"
+
+    folder = File(
+        user_id=user_id,
+        workspace_id=req.workspace_id,
+        bucket=bucket,
+        object_key=object_key,
+        original_name=req.name,
+        is_folder=True,
+        folder_path=folder_path,
+        mime_type="application/folder",
+        status="active",
+    )
+    db.add(folder)
+    await db.flush()
+    return folder
 
 
 async def generate_upload_url(
@@ -33,6 +56,7 @@ async def generate_upload_url(
         original_name=req.filename,
         mime_type=req.mime_type or "application/octet-stream",
         workspace_id=req.workspace_id,
+        folder_path=req.folder_path,
         status="uploading",
     )
     db.add(file_record)
@@ -79,6 +103,12 @@ async def get_files(
         query = query.where(File.mime_type.like(f"{params.mime_type}%"))
     if params.favorite is not None:
         query = query.where(File.is_favorite == params.favorite)
+    if params.folder_path is not None:
+        query = query.where(File.folder_path == params.folder_path)
+    if params.is_folder is not None:
+        query = query.where(File.is_folder == params.is_folder)
+
+
 
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)

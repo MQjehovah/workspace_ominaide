@@ -11,6 +11,8 @@ class File(Base):
     bucket = Column(String(50), nullable=False)
     object_key = Column(String(500), nullable=False)
     original_name = Column(String(255), nullable=False)
+    is_folder = Column(Boolean, default=False)
+    folder_path = Column(String(500), nullable=True, default="/", index=True)
     size = Column(BigInteger, default=0)
     mime_type = Column(String(100), nullable=True)
     tags = Column(JSON, nullable=True)

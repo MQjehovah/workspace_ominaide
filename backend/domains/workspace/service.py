@@ -11,8 +11,12 @@ async def create_workspace(
 ) -> Workspace:
     bucket = f"ws-{user_id}-{uuid.uuid4().hex[:8]}"
 
-    if not minio_client.bucket_exists(bucket):
-        minio_client.make_bucket(bucket)
+    if minio_client:
+        try:
+            if not minio_client.bucket_exists(bucket):
+                minio_client.make_bucket(bucket)
+        except Exception:
+            pass  # MinIO unavailable, workspace still created
 
     workspace = Workspace(
         user_id=user_id,
@@ -86,10 +90,11 @@ async def delete_workspace(
     if not workspace:
         raise ValueError("Workspace not found")
 
-    try:
-        minio_client.remove_bucket(workspace.bucket)
-    except Exception:
-        pass
+    if minio_client:
+        try:
+            minio_client.remove_bucket(workspace.bucket)
+        except Exception:
+            pass
 
     await db.delete(workspace)
     await db.flush()
