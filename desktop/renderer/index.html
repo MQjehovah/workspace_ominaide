@@ -180,7 +180,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .ProseMirror img { max-width:100%;border-radius:6px;margin:0.5em 0; }
 .ProseMirror p.is-editor-empty:first-child::before { content:attr(data-placeholder);float:left;color:var(--muted);pointer-events:none;height:0; }
 .ProseMirror:focus { outline:none !important; }
-.ProseMirror { border:none !important; box-shadow:none !important; }
+.ProseMirror { border:none !important; box-shadow:none !important; min-height:100%; }
+.ProseMirror p { margin:0.5em 0; }
 </style>
 </head>
 <body>
@@ -319,8 +320,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
               <div style="color:var(--muted);text-align:center;padding:20px">加载中...</div>
             </div>
           </div>
-          <div style="flex:1;background:var(--surface);overflow:hidden;display:flex;flex-direction:column">
-            <div id="noteEditor" style="display:none;flex:1;flex-direction:column;min-height:0">
+          <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column">
+            <div id="noteEditor" style="display:none;flex:1;flex-direction:column">
               <div style="padding:14px 20px 6px;">
                 <input type="text" id="noteTitle" placeholder="无标题" style="width:100%;border:none;outline:none;font-size:18px;font-weight:700;background:transparent;color:var(--text)" />
               </div>
@@ -339,7 +340,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
                 <span class="tt-sep">|</span>
                 <button class="tt-btn" data-cmd="link" title="链接">🔗</button>
               </div>
-              <div id="tiptapEditor" style="flex:1;min-height:0;padding:16px 20px;overflow-y:auto;outline:none;font-size:14px;line-height:1.8;color:var(--text)"></div>
+              <div id="tiptapEditor" style="flex:1;padding:16px 20px;overflow-y:auto;outline:none;font-size:14px;line-height:1.8;color:var(--text)"></div>
               <div style="padding:6px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
                 <button class="btn btn-primary btn-sm" onclick="saveNote()">保存</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteCurrentNote()" style="color:#f56c6c">删除</button>
