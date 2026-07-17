@@ -19,14 +19,12 @@ class SyncEngine {
     this.config = config
     this.setStatus('syncing')
     this._startWatching()
+    this._startPolling()
   }
 
   stop() {
     this._stopWatching()
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
-    }
+    this._stopPolling()
     this.config = null
     this.setStatus('disconnected')
   }
@@ -36,6 +34,61 @@ class SyncEngine {
       status: this.status,
       pendingEvents: this.pendingEvents,
       localPath: this.config?.localPath || ''
+    }
+  }
+
+  _startPolling() {
+    if (!this.config?.localPath || !this.config?.serverUrl) return
+    this._pollOnce()
+    this._pollTimer = setInterval(() => this._pollOnce(), 30000) // every 30 seconds
+  }
+
+  _stopPolling() {
+    if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null }
+  }
+
+  async _pollOnce() {
+    try {
+      const folder = this.config.serverPath || '/'
+      const res = await axios.get(`${this.config.serverUrl}/api/files?page_size=200&folder_path=${encodeURIComponent(folder)}`, {
+        headers: { Authorization: 'Bearer ' + this.config.token }
+      })
+      const files = res.data?.files || []
+      const localPath = this.config.localPath
+      for (const f of files) {
+        if (f.is_folder) continue
+        const relPath = f.folder_path.replace(/\/$/, '') + '/' + f.original_name
+        const localFile = path.join(localPath, relPath)
+        if (!fs.existsSync(localFile)) {
+          this._downloadFile(f.id, localFile, relPath)
+        }
+      }
+    } catch (err) {
+      // Silent
+    }
+  }
+
+  async _downloadFile(fileId, localPath, relPath) {
+    try {
+      const res = await axios.get(`${this.config.serverUrl}/api/files/${fileId}/download-url`, {
+        headers: { Authorization: 'Bearer ' + this.config.token }
+      })
+      const downloadUrl = res.data.download_url
+      if (!downloadUrl) return
+      const fileRes = await axios.get(downloadUrl, { responseType: 'stream' })
+      const dir = path.dirname(localPath)
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      const writer = fs.createWriteStream(localPath)
+      fileRes.data.pipe(writer)
+      await new Promise((resolve, reject) => {
+        writer.on('finish', () => {
+          if (this.onEvent) this.onEvent({ direction: 'remote', file_path: relPath, event_type: 'create' })
+          resolve()
+        })
+        writer.on('error', reject)
+      })
+    } catch (err) {
+      console.error('Download failed:', err.message)
     }
   }
 
@@ -94,51 +147,6 @@ class SyncEngine {
       this.watcher.close()
       this.watcher = null
     }
-  }
-
-  _handleRemoteEvent(event) {
-    // Server tells us a file changed remotely
-    if (this.onEvent) this.onEvent({ ...event, direction: 'remote' })
-    
-    if (!this.config?.localPath) return
-    
-    const localPath = path.join(this.config.localPath, event.file_path)
-    
-    if (event.event_type === 'delete') {
-      try { fs.unlinkSync(localPath) } catch {}
-    } else {
-      // Download file from server
-      this._downloadFile(event.file_id, localPath)
-    }
-  }
-
-  async _downloadFile(fileId, localPath) {
-    try {
-      const res = await axios.get(
-        `${this.config.serverUrl}/api/v1/files/${fileId}/download-url`,
-        { headers: { Authorization: `Bearer ${this.config.token}` } }
-      )
-      const downloadUrl = res.data.download_url
-      const fileRes = await axios.get(downloadUrl, { responseType: 'stream' })
-      
-      const dir = path.dirname(localPath)
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true })
-      }
-      
-      const writer = fs.createWriteStream(localPath)
-      fileRes.data.pipe(writer)
-      await new Promise((resolve, reject) => {
-        writer.on('finish', resolve)
-        writer.on('error', reject)
-      })
-    } catch (err) {
-      console.error('Download failed:', err.message)
-    }
-  }
-
-  _wsUrl() {
-    return this.config.serverUrl.replace(/^http/, 'ws')
   }
 
   setStatus(status) {
