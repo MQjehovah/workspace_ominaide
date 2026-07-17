@@ -322,7 +322,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
             <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
               <span style="font-size:12px;font-weight:600">笔记</span>
               <div style="display:flex;gap:2px">
-                <button class="icon-btn" onclick="createFolder()" title="新建分组"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+                <button class="icon-btn" onclick="createNote(currentNoteId)" title="新建子笔记" id="addChildBtn" style="display:none"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
                 <button class="icon-btn" onclick="createNote()" title="新建笔记"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
               </div>
             </div>
@@ -789,22 +789,21 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     function renderTree(tree, depth) {
       let html = ''
       for (const n of tree) {
-        const isFolder = n.is_folder
+        const hasChildren = n.children && n.children.length > 0
         const isCollapsed = collapsedFolders.has(n.id)
         const active = n.id === currentNoteId
         const pad = depth * 16
         html += '<div style="padding-left:' + pad + 'px">'
-        html += '<div class="note-item' + (active ? ' active' : '') + '" onclick="openNote(' + n.id + ')" style="display:flex;align-items:center;gap:4px;padding:6px 12px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:background 0.15s">'
-        if (isFolder) {
-          html += '<span style="font-size:10px;width:14px;cursor:pointer" onclick="event.stopPropagation();toggleFolder(' + n.id + ')">' + (isCollapsed ? '▶' : '▼') + '</span>'
-          html += '<span style="font-size:12px">📁</span>'
+        html += '<div class="note-item' + (active ? ' active' : '') + '" onclick="openNote(' + n.id + ')" style="display:flex;align-items:center;gap:4px;padding:5px 10px;cursor:pointer;border-radius:5px;margin:1px 6px;transition:background 0.15s">'
+        if (hasChildren) {
+          html += '<span style="font-size:8px;width:12px;cursor:pointer" onclick="event.stopPropagation();toggleFolder(' + n.id + ')">' + (isCollapsed ? '▶' : '▼') + '</span>'
         } else {
-          html += '<span style="width:14px"></span>'
-          html += '<span style="font-size:12px">📄</span>'
+          html += '<span style="width:12px"></span>'
         }
+        html += '<span style="font-size:12px">📄</span>'
         html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + (n.title || '无标题') + '</span>'
         html += '</div>'
-        if (isFolder && !isCollapsed && n.children) {
+        if (hasChildren && !isCollapsed) {
           html += renderTree(n.children, depth + 1)
         }
         html += '</div>'
@@ -865,10 +864,11 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         if (!res.ok) return
         const note = await res.json()
         currentNoteId = note.id
-        document.getElementById('noteTitle').value = ''
+        document.getElementById('addChildBtn').style.display = ''
+        document.getElementById('noteTitle').value = note.title || ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
-        startEditor('')
+        startEditor(note.content || '')
         await loadNotes()
       } catch(e) {}
     }
@@ -881,6 +881,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         })
         if (!res.ok) return
         const note = await res.json()
+        document.getElementById('addChildBtn').style.display = ''
         document.getElementById('noteTitle').value = note.title || ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
