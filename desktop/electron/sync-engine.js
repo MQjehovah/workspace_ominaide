@@ -120,10 +120,11 @@ class SyncEngine {
       // Upload file to server
       if (eventType !== 'delete') {
         try {
-          const serverPath = (this.config.serverPath || '/').replace(/\/?$/, '/') + relativePath.replace(/\\/g, '/')
-          const filename = path.basename(filePath)
+          const relParts = relativePath.replace(/\\/g, '/').split('/')
+          const filename = relParts.pop()
+          const folderPath = (this.config.serverPath || '/').replace(/\/+$/, '') + (relParts.length ? '/' + relParts.join('/') : '') + '/'
           const urlRes = await axios.post(`${this.config.serverUrl}/api/files/upload-url`, {
-            filename, folder_path: serverPath
+            filename, folder_path: folderPath
           }, { headers: { Authorization: 'Bearer ' + this.config.token } })
           if (urlRes.data?.upload_url) {
             const fs = require('fs')

@@ -814,7 +814,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('localPath').value = c.localPath || ''
         document.getElementById('greetingText').textContent = c.username || '已连接'
         loadRecentFiles()
-        if (c.workspaceId && c.localPath) startSync()
+        if (c.serverPath && c.localPath) startSync()
       }
     })
 
