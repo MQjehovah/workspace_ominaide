@@ -9,7 +9,7 @@ from plugins.workspaces.backend import service as workspace_service
 from plugins.files.backend.service import get_files
 from plugins.files.backend.schemas import FileQueryParams, FileResponse, FileListResponse
 
-router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
+router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 
 @router.post("", response_model=WorkspaceResponse, status_code=201)

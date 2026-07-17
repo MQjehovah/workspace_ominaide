@@ -5,7 +5,7 @@ from core.auth.domain.service import register, login
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)

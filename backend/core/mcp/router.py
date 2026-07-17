@@ -3,7 +3,7 @@ from core.auth.dependencies import get_current_user
 from core.mcp.registry import tool_registry
 from core.mcp.core import MCPCallRequest
 
-router = APIRouter(prefix="/api/v1/mcp", tags=["mcp"])
+router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
 
 @router.get("/tools")

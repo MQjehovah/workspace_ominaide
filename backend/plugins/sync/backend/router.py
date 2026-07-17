@@ -6,7 +6,7 @@ from plugins.sync.backend.schemas import SyncEventResponse, SyncEventListRespons
 from plugins.sync.backend.service import get_sync_events, mark_synced, mark_conflicted
 from plugins.workspaces.backend.service import get_workspace
 
-router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
+router = APIRouter(prefix="/api/sync", tags=["sync"])
 
 
 @router.get("/events", response_model=SyncEventListResponse)

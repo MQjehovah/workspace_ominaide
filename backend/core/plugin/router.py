@@ -4,7 +4,7 @@ from core.database.session import get_db
 from core.plugin.schemas import PluginInfo, PluginToggleResponse
 from core.plugin import registry as plugin_registry
 
-router = APIRouter(prefix="/api/v1/plugins", tags=["plugins"])
+router = APIRouter(prefix="/api/plugins", tags=["plugins"])
 
 
 @router.get("", response_model=list[PluginInfo])

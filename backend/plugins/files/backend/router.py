@@ -9,7 +9,7 @@ from plugins.files.backend.schemas import (
 )
 from plugins.files.backend import service as file_service
 
-router = APIRouter(prefix="/api/v1/files", tags=["files"])
+router = APIRouter(prefix="/api/files", tags=["files"])
 
 
 @router.get("/note/{object_key:path}")
