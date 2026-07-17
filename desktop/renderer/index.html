@@ -435,7 +435,8 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       }
       grid.innerHTML = allFiles.map(f => {
         if (f.is_folder) {
-          return '<div class="file-card" onclick="loadFiles(\'' + f.folder_path + '/\')">' +
+          const folderPath = (f.folder_path.replace(/\/+$/, '') || '') + '/' + f.original_name + '/'
+          return '<div class="file-card" onclick="loadFiles(\'' + folderPath + '\')">' +
             '<div class="fc-icon">📁</div>' +
             '<div class="fc-name">' + f.original_name + '</div>' +
             '<div class="fc-meta">文件夹</div></div>'
