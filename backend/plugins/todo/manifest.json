@@ -7,5 +7,30 @@
   "permissions": [],
   "routes": {
     "main": "/apps/todo"
-  }
+  },
+  "tools": [
+    {
+      "name": "create_todo_item",
+      "description": "创建新的待办事项",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string", "description": "待办标题"},
+          "description": {"type": "string", "description": "详细描述"},
+          "priority": {"type": "integer", "description": "优先级 (0-3)", "default": 0}
+        },
+        "required": ["title"]
+      }
+    },
+    {
+      "name": "list_todo_items",
+      "description": "列出待办事项，可按状态筛选",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string", "description": "筛选: pending, in_progress, done"}
+        }
+      }
+    }
+  ]
 }

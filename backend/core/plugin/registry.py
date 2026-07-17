@@ -50,6 +50,7 @@ async def discover_plugins(app: FastAPI):
 
             if record.enabled:
                 await _register_plugin_routes(app, name, plugin_dir)
+                _register_plugin_tools(manifest, name)
 
         await db.commit()
 
@@ -83,6 +84,11 @@ async def toggle_plugin(db: AsyncSession, name: str) -> PluginRegistry:
     record.enabled = not record.enabled
     await db.flush()
     return record
+
+
+def _register_plugin_tools(manifest: dict, plugin_name: str):
+    from domains.mcp.tools.plugin_tools import register_plugin_tools_from_manifest
+    register_plugin_tools_from_manifest(manifest, plugin_name)
 
 
 async def uninstall_plugin(db: AsyncSession, app: FastAPI, name: str):
