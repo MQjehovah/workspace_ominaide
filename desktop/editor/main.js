@@ -114,14 +114,14 @@ window.EditorAPI = {
 
   async _uploadImage(file) {
     try {
-      const res = await fetch(`${this._baseUrl}/api/v1/files/upload-temp`, {
+      const res = await fetch(`${this._baseUrl}/api/v1/files/upload/note`, {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + this._token },
       })
       if (!res.ok) return
       const { upload_url, object_key } = await res.json()
       await fetch(upload_url, { method: 'PUT', body: file })
-      const imgUrl = `${this._baseUrl}/api/v1/files/temp/${object_key}`
+      const imgUrl = `${this._baseUrl}/api/v1/files/note/${object_key}`
       if (this._editor) {
         this._editor.chain().focus().setImage({ src: imgUrl }).run()
       }

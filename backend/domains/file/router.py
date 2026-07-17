@@ -12,22 +12,21 @@ from domains.file import service as file_service
 router = APIRouter(prefix="/api/v1/files", tags=["files"])
 
 
-@router.get("/temp/{object_key:path}")
-async def serve_temp_file(object_key: str):
-    """Serve a temp file directly via MinIO proxy."""
+@router.get("/note/{object_key:path}")
+async def serve_note_file(object_key: str):
+    """Serve a note attachment directly via MinIO proxy."""
     from core.minio.client import minio_client
     from fastapi.responses import StreamingResponse
-    import urllib.parse
     if not minio_client:
         raise HTTPException(status_code=503, detail="MinIO unavailable")
     try:
         obj = minio_client.get_object("user-files", object_key)
         return StreamingResponse(obj.stream(32*1024), media_type="application/octet-stream")
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=404, detail="File not found")
 
 
-@router.post("/upload-temp")
+@router.post("/upload/note")
 async def get_temp_upload_url(
     user: dict = Depends(get_current_user),
 ):
