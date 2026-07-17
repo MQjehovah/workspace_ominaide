@@ -1,0 +1,9 @@
+{
+  "name": "notes",
+  "version": "1.0.0",
+  "title": "笔记",
+  "description": "类 Notion 笔记系统，支持 Markdown 编辑和目录组织",
+  "icon": "Book",
+  "permissions": [],
+  "routes": { "main": "/apps/notes" }
+}
