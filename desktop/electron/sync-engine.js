@@ -72,9 +72,9 @@ class SyncEngine {
       const serverPaths = new Set()
       for (const f of serverFiles) {
         if (f.is_folder) continue
-        const fileRel = (f.folder_path || '/').replace(/\/+$/, '') + '/' + (f.original_name || '')
-        if (fileRel.startsWith(serverPrefix + '/') || (serverPrefix === '' || serverPrefix === '/')) {
-          const rel = serverPrefix === '/' || serverPrefix === '' ? fileRel.replace(/^\//, '') : fileRel.slice(serverPrefix.length + 1)
+        const fileRel = ((f.folder_path || '/') + (f.original_name || '')).replace(/\/+/g, '/')
+        if (serverPrefix === '' || serverPrefix === '/' || fileRel.startsWith(serverPrefix + '/') || fileRel === serverPrefix) {
+          const rel = (serverPrefix === '' || serverPrefix === '/') ? fileRel.replace(/^\//, '') : fileRel.slice(serverPrefix.length + 1)
           serverPaths.add(rel)
           const localFile = path.join(localPath, rel)
           if (!fs.existsSync(localFile)) {
@@ -108,7 +108,9 @@ class SyncEngine {
     try {
       const relParts = relativePath.replace(/\\/g, '/').split('/')
       const filename = relParts.pop()
-      const folderPath = (this.config.serverPath || '/').replace(/\/+$/, '') + (relParts.length ? '/' + relParts.join('/') : '') + '/'
+      const base = (this.config.serverPath || '/').replace(/\/+$/, '') || ''
+      const sub = relParts.length ? '/' + relParts.join('/') : ''
+      const folderPath = base + sub + '/'
       const urlRes = await axios.post(`${this.config.serverUrl}/api/files/upload-url`, {
         filename, folder_path: folderPath
       }, { headers: { Authorization: 'Bearer ' + this.config.token } })
