@@ -224,41 +224,60 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <h1 style="font-size:20px">设置</h1>
         </div>
 
-        <div class="settings-card">
-          <h3>服务器连接</h3>
+        <!-- Login -->
+        <div class="settings-card" id="loginCard">
+          <h3>登录</h3>
           <div class="form-group">
             <label>服务器地址</label>
             <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="http://localhost:8000" />
           </div>
           <div class="form-group">
-            <label>Token</label>
-            <input type="password" id="token" placeholder="从 Web 端获取的 JWT token" />
+            <label>用户名</label>
+            <input type="text" id="loginUsername" placeholder="用户名" />
           </div>
           <div class="form-group">
-            <label>工作空间 ID</label>
-            <input type="number" id="workspaceId" placeholder="输入工作空间 ID" />
+            <label>密码</label>
+            <input type="password" id="loginPassword" placeholder="密码" @keyup.enter="doLogin" />
+          </div>
+          <div style="display:flex; gap:8px; align-items:center">
+            <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">登录</button>
+            <span id="loginError" style="font-size:12px;color:#FF3B30"></span>
           </div>
         </div>
 
-        <div class="settings-card">
-          <h3>本地同步</h3>
-          <div class="form-group">
-            <label>同步文件夹</label>
-            <div class="input-row">
-              <input type="text" id="localPath" placeholder="选择本地文件夹..." readonly onclick="selectFolder()" />
-              <button class="btn btn-ghost btn-sm" onclick="selectFolder()" style="flex-shrink:0">浏览</button>
+        <!-- Sync Settings (shown after login) -->
+        <div id="syncSettings" style="display:none">
+          <div class="settings-card">
+            <h3>已登录 <span style="color:#34C759;font-size:12px;font-weight:400">●</span> <span id="loggedUser" style="font-weight:400;font-size:12px;color:var(--secondary)"></span></h3>
+            <div class="form-group">
+              <label>工作空间</label>
+              <select id="workspaceSelect" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none;background:var(--bg);color:var(--text)">
+                <option value="">选择工作空间...</option>
+              </select>
             </div>
           </div>
-          <div style="display:flex; gap:8px; margin-top:14px">
-            <button class="btn btn-primary" id="startBtn" onclick="startSync()">开始同步</button>
-            <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" disabled>停止</button>
-          </div>
-        </div>
 
-        <div class="settings-card">
-          <h3>同步日志</h3>
-          <div id="eventList" class="event-list">
-            <div class="empty-state">暂无同步事件</div>
+          <div class="settings-card">
+            <h3>本地同步</h3>
+            <div class="form-group">
+              <label>同步文件夹</label>
+              <div class="input-row">
+                <input type="text" id="localPath" placeholder="选择本地文件夹..." readonly onclick="selectFolder()" />
+                <button class="btn btn-ghost btn-sm" onclick="selectFolder()" style="flex-shrink:0">浏览</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <button class="btn btn-primary" id="startBtn" onclick="startSync()">开始同步</button>
+              <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" disabled>停止</button>
+              <button class="btn btn-ghost btn-sm" onclick="doLogout()" style="margin-left:auto">退出</button>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <h3>同步日志</h3>
+            <div id="eventList" class="event-list">
+              <div class="empty-state">暂无同步事件</div>
+            </div>
           </div>
         </div>
       </div>
@@ -267,6 +286,76 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
   <script>
     let config = {}
+    let currentToken = ''
+
+    async function doLogin() {
+      const serverUrl = document.getElementById('serverUrl').value
+      const username = document.getElementById('loginUsername').value
+      const password = document.getElementById('loginPassword').value
+      const errEl = document.getElementById('loginError')
+      const btn = document.getElementById('loginBtn')
+      if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return }
+      errEl.textContent = ''
+      btn.disabled = true; btn.textContent = '登录中...'
+      try {
+        const res = await fetch(serverUrl + '/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        })
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '登录失败') }
+        const data = await res.json()
+        currentToken = data.access_token
+        config.token = currentToken
+        config.serverUrl = serverUrl
+        document.getElementById('syncSettings').style.display = 'block'
+        document.getElementById('loginCard').style.display = 'none'
+        document.getElementById('loggedUser').textContent = username
+        await loadWorkspaces()
+        await window.electronAPI.saveConfig(config)
+        document.getElementById('greetingText').textContent = '已登录'
+        document.getElementById('subText').textContent = username
+      } catch (e) {
+        errEl.textContent = e.message
+      } finally {
+        btn.disabled = false; btn.textContent = '登录'
+      }
+    }
+
+    async function doLogout() {
+      await window.electronAPI.stopSync()
+      currentToken = ''
+      config = { serverUrl: config.serverUrl || 'http://localhost:8000', token: '', workspaceId: null, localPath: '' }
+      await window.electronAPI.saveConfig(config)
+      document.getElementById('syncSettings').style.display = 'none'
+      document.getElementById('loginCard').style.display = 'block'
+      document.getElementById('loginPassword').value = ''
+      document.getElementById('workspaceSelect').innerHTML = '<option value="">选择工作空间...</option>'
+      document.getElementById('greetingText').textContent = '欢迎回来'
+      document.getElementById('subText').textContent = 'OmniAide 桌面工作台'
+      document.getElementById('syncDot').className = 'sync-dot disconnected'
+      document.getElementById('syncLabel').textContent = '未连接'
+      document.getElementById('startBtn').disabled = false
+      document.getElementById('stopBtn').disabled = true
+    }
+
+    async function loadWorkspaces() {
+      try {
+        const res = await fetch(config.serverUrl + '/api/v1/workspaces', {
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        if (!res.ok) return
+        const workspaces = await res.json()
+        const sel = document.getElementById('workspaceSelect')
+        sel.innerHTML = '<option value="">选择工作空间...</option>'
+        workspaces.forEach(w => {
+          const opt = document.createElement('option')
+          opt.value = w.id
+          opt.textContent = w.name + ' (ID: ' + w.id + ')'
+          sel.appendChild(opt)
+        })
+      } catch (e) {}
+    }
 
     function showView(name) {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'))
@@ -284,10 +373,14 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     window.electronAPI.getConfig().then(c => {
       config = c
       document.getElementById('serverUrl').value = c.serverUrl || 'http://localhost:8000'
-      document.getElementById('token').value = c.token || ''
-      document.getElementById('workspaceId').value = c.workspaceId || ''
       document.getElementById('localPath').value = c.localPath || ''
-      if (c.token && c.workspaceId && c.localPath) startSync()
+      if (c.token && c.workspaceId && c.localPath) {
+        currentToken = c.token
+        document.getElementById('syncSettings').style.display = 'block'
+        document.getElementById('loginCard').style.display = 'none'
+        document.getElementById('greetingText').textContent = '已连接'
+        startSync()
+      }
     })
 
     window.electronAPI.onSyncStatus((status) => {
@@ -324,14 +417,16 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     }
 
     async function startSync() {
+      const wsSelect = document.getElementById('workspaceSelect')
+      const wsId = parseInt(wsSelect?.value || config.workspaceId)
       config = {
         serverUrl: document.getElementById('serverUrl').value,
-        token: document.getElementById('token').value,
-        workspaceId: parseInt(document.getElementById('workspaceId').value),
+        token: currentToken || config.token,
+        workspaceId: wsId || config.workspaceId,
         localPath: document.getElementById('localPath').value
       }
-      if (!config.serverUrl || !config.token || !config.workspaceId || !config.localPath) {
-        alert('请填写所有字段')
+      if (!config.token || !config.workspaceId || !config.localPath) {
+        alert('请先登录并选择工作空间和同步文件夹')
         return
       }
       await window.electronAPI.saveConfig(config)
