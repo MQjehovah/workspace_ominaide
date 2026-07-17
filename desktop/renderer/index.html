@@ -8,6 +8,7 @@
 
 
 
+  <script src="../dist-editor/assets/index-CIe-B06U.js"></script>
   <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -172,7 +173,23 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .note-item.active { background:rgba(var(--accent-rgb),0.08);border-left:2px solid var(--accent);padding-left:10px !important; }
 .note-item:hover { background:rgba(0,0,0,0.02); }
 .note-item.active:hover { background:rgba(var(--accent-rgb),0.1); }
-#editorFrame { border:none; }
+#ttEditorContent .ProseMirror { outline:none; min-height:100px; }
+#ttEditorContent .ProseMirror h1 { font-size:1.6em;font-weight:700;margin:0.4em 0; }
+#ttEditorContent .ProseMirror h2 { font-size:1.3em;font-weight:600;margin:0.3em 0; }
+#ttEditorContent .ProseMirror h3 { font-size:1.1em;font-weight:600;margin:0.3em 0; }
+#ttEditorContent .ProseMirror p { margin:0.3em 0; }
+#ttEditorContent .ProseMirror ul, #ttEditorContent .ProseMirror ol { padding-left:1.5em; }
+#ttEditorContent .ProseMirror blockquote { border-left:3px solid var(--accent);margin:0.5em 0;padding:0.3em 1em;color:var(--secondary); }
+#ttEditorContent .ProseMirror a { color:var(--accent);text-decoration:underline; }
+#ttEditorContent .ProseMirror img { max-width:100%;border-radius:6px;margin:0.5em 0; }
+#ttEditorContent .ProseMirror p.is-editor-empty:first-child::before { content:attr(data-placeholder);float:left;color:var(--muted);pointer-events:none;height:0; }
+#ttEditorContent { overflow-y:auto; }
+#ttEditorContent::-webkit-scrollbar { width:6px; }
+#ttEditorContent::-webkit-scrollbar-thumb { background:#c0c4cc;border-radius:3px; }
+.tt-btn { padding:3px 8px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:transparent;color:var(--secondary); }
+.tt-btn:hover { background:rgba(0,0,0,0.04);color:var(--text); }
+.tt-btn.active { background:var(--accent);color:#fff; }
+.tt-sep { color:var(--border);margin:0 4px;font-size:12px; }
 </style>
 </head>
 <body>
@@ -317,7 +334,22 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
                 <input type="text" id="noteTitle" placeholder="无标题" style="width:100%;border:none;outline:none;font-size:18px;font-weight:700;background:transparent;color:var(--text)" />
               </div>
 
-              <iframe id="editorFrame" style="flex:1;border:none"></iframe>
+              <div id="ttEditor" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+                <div id="ttToolbar" class="tiptap-toolbar" style="display:none;padding:4px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+                  <button class="tt-btn" data-cmd="bold" style="font-weight:700">B</button>
+                  <button class="tt-btn" data-cmd="italic" style="font-style:italic">I</button>
+                  <button class="tt-btn" data-cmd="underline" style="text-decoration:underline">U</button>
+                  <span class="tt-sep">|</span>
+                  <button class="tt-btn" data-cmd="h1">H1</button>
+                  <button class="tt-btn" data-cmd="h2">H2</button>
+                  <button class="tt-btn" data-cmd="h3">H3</button>
+                  <span class="tt-sep">|</span>
+                  <button class="tt-btn" data-cmd="bulletList">≡</button>
+                  <button class="tt-btn" data-cmd="orderedList">#</button>
+                  <button class="tt-btn" data-cmd="blockquote">"</button>
+                </div>
+                <div id="ttEditorContent" style="flex:1;padding:16px 20px;overflow-y:auto;outline:none"></div>
+              </div>
               <div style="padding:6px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
                 <button class="btn btn-ghost btn-sm" onclick="deleteCurrentNote()" style="color:#f56c6c">删除</button>
               </div>
@@ -748,21 +780,17 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       rl.insertBefore(fi, rl.firstChild)
     })
 
-    // === Notes (TipTap via iframe) ===
+    // === Notes (TipTap local bundle) ===
     let currentNoteId = null
     let notesCache = []
 
     function startEditor(content) {
-      const iframe = document.getElementById('editorFrame')
-      iframe.src = '../dist-editor/index.html'
-      iframe.onload = () => {
-        iframe.contentWindow.postMessage({
-          type: 'init',
-          apiBase: config.serverUrl,
-          apiToken: currentToken,
-          noteId: currentNoteId,
-          content: content || '',
-        }, '*')
+      const el = document.getElementById('ttEditorContent')
+      el.innerHTML = ''
+      document.getElementById('ttToolbar').style.display = 'flex'
+      if (window.EditorAPI) {
+        window.EditorAPI.init(el, content || '', currentNoteId, config.serverUrl, currentToken)
+        window.EditorAPI._onSave = () => loadNotes()
       }
     }
 
@@ -799,7 +827,6 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('noteTitle').value = ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
-        document.getElementById('editorFrame').src = '../dist-editor/index.html'
         startEditor('')
         await loadNotes()
       } catch(e) {}
@@ -816,7 +843,6 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         document.getElementById('noteTitle').value = note.title || ''
         document.getElementById('noteEditor').style.display = 'flex'
         document.getElementById('noteEmpty').style.display = 'none'
-        document.getElementById('editorFrame').src = '../dist-editor/index.html'
         startEditor(note.content || '')
         await loadNotes()
       } catch(e) {}
@@ -824,11 +850,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
     async function saveNote() {
       if (!currentNoteId) return
-      const iframe = document.getElementById('editorFrame')
-      if (iframe.contentWindow && iframe.contentWindow.__saveNote) {
-        iframe.contentWindow.__saveNote()
-      }
-      // Also save title
+      if (window.EditorAPI) window.EditorAPI.save()
       const title = document.getElementById('noteTitle').value
       try {
         await fetch(config.serverUrl + '/api/plugins/notes/' + currentNoteId, {
@@ -848,11 +870,9 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           method: 'DELETE',
           headers: { Authorization: 'Bearer ' + currentToken }
         })
-        if (window._tipEditor) { window._tipEditor.destroy(); window._tipEditor = null }
         currentNoteId = null
         document.getElementById('noteEditor').style.display = 'none'
         document.getElementById('noteEmpty').style.display = 'flex'
-        document.getElementById('tiptapToolbar').style.display = 'none'
         await loadNotes()
       } catch(e) {}
     }
