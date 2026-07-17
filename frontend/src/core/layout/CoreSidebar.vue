@@ -37,11 +37,19 @@
 
     <!-- Spacer + User + Settings at bottom -->
     <div style="flex:1"></div>
-    <el-menu-item v-if="auth.user" style="cursor:default;opacity:0.7">
-      <el-icon><User /></el-icon>
-      <span>{{ auth.user.username }}</span>
-    </el-menu-item>
-    <el-menu-item index="/settings">
+    <el-dropdown v-if="auth.user" trigger="click" @command="handleUserCmd">
+      <el-menu-item style="cursor:pointer">
+        <el-icon><User /></el-icon>
+        <span>{{ auth.user.username }}</span>
+      </el-menu-item>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item command="profile"><el-icon><Setting /></el-icon>个人中心</el-dropdown-item>
+          <el-dropdown-item command="logout" divided style="color:#f56c6c"><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
+    <el-menu-item index="/settings" v-else>
       <el-icon><Setting /></el-icon>
       <span>设置</span>
     </el-menu-item>
@@ -49,13 +57,19 @@
 </template>
 
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
-import { Folder, Management, Setting, User } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Folder, Management, Setting, User, SwitchButton } from '@element-plus/icons-vue'
 import { usePluginStore } from '@/stores/core/plugin'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()
 const route = useRoute()
+const router = useRouter()
 const pluginStore = usePluginStore()
 const auth = useAuthStore()
+
+function handleUserCmd(cmd: string) {
+  if (cmd === 'profile') router.push('/settings')
+  else if (cmd === 'logout') { auth.logout(); router.push('/login') }
+}
 </script>
