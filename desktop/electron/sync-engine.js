@@ -72,7 +72,9 @@ class SyncEngine {
       const serverPaths = new Set()
       for (const f of serverFiles) {
         if (f.is_folder) continue
-        const fileRel = ((f.folder_path || '/') + (f.original_name || '')).replace(/\/+/g, '/')
+        const fp = (f.folder_path || '/').replace(/\/+$/, '')
+        const fn = f.original_name || ''
+        const fileRel = fp.endsWith('/' + fn) ? fp : (fp + '/' + fn).replace(/\/+/g, '/')
         if (serverPrefix === '' || serverPrefix === '/' || fileRel.startsWith(serverPrefix + '/') || fileRel === serverPrefix) {
           const rel = (serverPrefix === '' || serverPrefix === '/') ? fileRel.replace(/^\//, '') : fileRel.slice(serverPrefix.length + 1)
           serverPaths.add(rel)
@@ -132,10 +134,15 @@ class SyncEngine {
       })
       const downloadUrl = res.data.download_url
       if (!downloadUrl) return
-      const fileRes = await axios.get(downloadUrl, { responseType: 'stream' })
-      const dir = path.dirname(localPath)
+      // Ensure parent directory exists and localPath is a file, not a directory
+      let targetPath = localPath
+      if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory()) {
+        targetPath = path.join(targetPath, path.basename(targetPath))
+      }
+      const dir = path.dirname(targetPath)
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-      const writer = fs.createWriteStream(localPath)
+      const fileRes = await axios.get(downloadUrl, { responseType: 'stream' })
+      const writer = fs.createWriteStream(targetPath)
       fileRes.data.pipe(writer)
       await new Promise((resolve, reject) => {
         writer.on('finish', () => {
