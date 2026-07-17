@@ -8,10 +8,19 @@
     "start": "electron ."
   },
   "dependencies": {
-    "chokidar": "^3.6.0",
-    "ws": "^8.16.0",
+    "@tiptap/core": "^3.28.0",
+    "@tiptap/extension-image": "^3.28.0",
+    "@tiptap/extension-link": "^3.28.0",
+    "@tiptap/extension-placeholder": "^3.28.0",
+    "@tiptap/extension-underline": "^3.28.0",
+    "@tiptap/starter-kit": "^3.28.0",
     "axios": "^1.7.0",
-    "electron-store": "^8.2.0"
+    "chokidar": "^3.6.0",
+    "electron-store": "^8.2.0",
+    "marked": "^18.0.6",
+    "turndown": "^7.2.4",
+    "vite": "^8.1.5",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "electron": "^30.0.0"

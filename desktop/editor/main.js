@@ -2,6 +2,7 @@ import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
+import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import TurndownService from 'turndown'
 import { marked } from 'marked'
@@ -29,16 +30,31 @@ window.EditorAPI = {
       extensions: [
         StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
         Underline,
+        Image.configure({ inline: true }),
         Link.configure({ openOnClick: false }),
         Placeholder.configure({ placeholder: '开始写点什么...' }),
       ],
+      editorProps: {
+        handlePaste: (view, event) => {
+          const items = event.clipboardData?.items
+          if (items) {
+            for (const item of items) {
+              if (item.type.startsWith('image/')) {
+                event.preventDefault()
+                const file = item.getAsFile()
+                if (file) this._uploadImage(file)
+                return true
+              }
+            }
+          }
+          return false
+        },
+      },
       onUpdate: () => {
         clearTimeout(this._saveTimer)
         this._saveTimer = setTimeout(() => this.save(), 2000)
       },
     })
-    // Paste handler for images
-    el.addEventListener('paste', (e) => this._handlePaste(e))
     this._setupToolbar()
   },
 
@@ -94,31 +110,6 @@ window.EditorAPI = {
       })
       if (this._onSave) this._onSave()
     } catch (e) {}
-  },
-
-  _handlePaste(event) {
-    // Try clipboard items first
-    const items = event.clipboardData?.items
-    if (items) {
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          event.preventDefault()
-          const file = item.getAsFile()
-          if (file) { this._uploadImage(file); return }
-        }
-      }
-    }
-    // Try clipboard files
-    const files = event.clipboardData?.files
-    if (files) {
-      for (const file of files) {
-        if (file.type.startsWith('image/')) {
-          event.preventDefault()
-          this._uploadImage(file)
-          return
-        }
-      }
-    }
   },
 
   async _uploadImage(file) {
