@@ -377,7 +377,10 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
             <h3>文件夹同步</h3>
             <div class="form-group">
               <label>服务端目录</label>
-              <input type="text" id="serverPath" value="/" placeholder="/ 表示全部文件，如 /projects 表示只同步 projects 目录" />
+              <div class="input-row">
+                <input type="text" id="serverPath" value="/" placeholder="/ 表示全部文件" readonly onclick="pickServerFolder()" />
+                <button class="btn btn-ghost btn-sm" onclick="pickServerFolder()" style="flex-shrink:0">浏览</button>
+              </div>
             </div>
             <div class="form-group">
               <label>本地文件夹</label>
@@ -410,6 +413,23 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     <div onclick="fileMenuAction('rename')" style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">重命名</div>
     <div onclick="fileMenuAction('delete')" style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">删除</div>
     <div onclick="fileMenuAction('move')" style="padding:10px 16px;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(0,0,0,0.03)'" onmouseout="this.style.background=''">移动到...</div>
+  </div>
+
+  <!-- Server Folder Picker Dialog -->
+  <div id="serverFolderDialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;align-items:center;justify-content:center" onclick="if(event.target===this)closeServerFolder()">
+    <div style="background:var(--surface);border-radius:var(--radius);padding:20px;max-width:400px;width:90%;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.15)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-weight:600;font-size:14px">选择服务端目录</span>
+        <button class="icon-btn" onclick="closeServerFolder()" style="font-size:18px;line-height:1">&times;</button>
+      </div>
+      <div id="serverFolderList" style="flex:1;overflow-y:auto;font-size:13px">
+        <div style="color:var(--muted);text-align:center;padding:20px">加载中...</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <button class="btn btn-ghost btn-sm" onclick="selectServerFolder('/')" style="flex:1">根目录 /</button>
+        <button class="btn btn-primary btn-sm" onclick="closeServerFolder()">取消</button>
+      </div>
+    </div>
   </div>
 
   <!-- New Folder Dialog -->
@@ -619,6 +639,44 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       if (parts.length <= 1) { loadFiles('/'); return }
       parts.pop()
       loadFiles('/' + parts.join('/') + '/')
+    }
+
+    function pickServerFolder() {
+      document.getElementById('serverFolderDialog').style.display = 'flex'
+      _loadServerFolders('/')
+    }
+
+    let _currentServerFolder = '/'
+
+    async function _loadServerFolders(path) {
+      const el = document.getElementById('serverFolderList')
+      _currentServerFolder = path
+      try {
+        const res = await fetch(config.serverUrl + '/api/files?page_size=200&folder_path=' + encodeURIComponent(path), {
+          headers: { Authorization: 'Bearer ' + currentToken }
+        })
+        if (!res.ok) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>'; return }
+        const data = await res.json()
+        const folders = (data.files || []).filter(f => f.is_folder)
+        if (!folders.length) {
+          el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">无子目录</div>'
+          return
+        }
+        el.innerHTML = folders.map(f => {
+          const fPath = (f.folder_path.replace(/\/+$/, '') || '') + '/' + f.original_name + '/'
+          return '<div onclick="selectServerFolder(\'' + fPath + '\')" style="padding:8px 12px;cursor:pointer;border-radius:6px;display:flex;align-items:center;gap:8px;transition:background 0.15s" onmouseover="this.style.background=\'rgba(0,0,0,0.03)\'" onmouseout="this.style.background=\'\'">' +
+            '<span>📁</span><span>' + f.original_name + '</span></div>'
+        }).join('')
+      } catch(e) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">加载失败</div>' }
+    }
+
+    function selectServerFolder(path) {
+      document.getElementById('serverPath').value = path
+      closeServerFolder()
+    }
+
+    function closeServerFolder() {
+      document.getElementById('serverFolderDialog').style.display = 'none'
     }
 
     function showNewFolderDialog() {
