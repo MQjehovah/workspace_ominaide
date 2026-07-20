@@ -7,14 +7,17 @@
       </div>
       <div v-if="loading" v-loading="true" style="height:100%" />
       <div v-else class="note-list">
-        <div v-for="note in notes" :key="note.id"
-          class="note-item"
-          :class="{ active: note.id === currentId }"
-          @click="openNote(note.id)">
-          <div class="note-item-title">{{ note.title || '无标题' }}</div>
-          <div class="note-item-date">{{ formatDate(note.updated_at) }}</div>
-        </div>
-        <el-empty v-if="!notes.length" description="暂无笔记" :image-size="60" />
+        <TreeNode
+          v-for="node in tree"
+          :key="node.id"
+          :node="node"
+          :current-id="currentId"
+          :depth="0"
+          @select="openNote"
+          @create-child="createChildNote"
+          @delete="deleteNode"
+        />
+        <el-empty v-if="!tree.length" description="暂无笔记" :image-size="60" />
       </div>
     </div>
     <div class="editor-panel" v-if="currentId">
@@ -42,45 +45,59 @@ import { ref, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import TipTapEditor from './TipTapEditor.vue'
+import TreeNode from './TreeNode.vue'
 
-interface Note {
-  id: number; title: string; content: string | null
-  updated_at: string; created_at: string
-}
-
-const notes = ref<Note[]>([])
+const tree = ref<any[]>([])
 const currentId = ref<number | null>(null)
 const noteTitle = ref('')
 const noteContent = ref('')
 const loading = ref(true)
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
-async function loadNotes() {
+async function loadTree() {
   try {
-    const res = await client.get('/plugins/notes')
-    notes.value = res.data
+    const res = await client.get('/plugins/notes/tree')
+    tree.value = res.data
   } catch (e) { console.error(e) }
   finally { loading.value = false }
+}
+
+function flattenTree(nodes: any[]): any[] {
+  const result: any[] = []
+  for (const n of nodes) {
+    result.push(n)
+    if (n.children?.length) result.push(...flattenTree(n.children))
+  }
+  return result
 }
 
 async function createNote() {
   try {
     const res = await client.post('/plugins/notes', { title: '无标题', content: '' })
-    const note = res.data as Note
-    currentId.value = note.id
-    noteTitle.value = ''
-    noteContent.value = ''
-    await loadNotes()
+    if (res.data?.id) {
+      currentId.value = res.data.id; noteTitle.value = ''; noteContent.value = ''
+    }
+    await loadTree()
+  } catch (e) { console.error(e) }
+}
+
+async function createChildNote(parentId: number) {
+  try {
+    await client.post('/plugins/notes', { title: '无标题', content: '', parent_id: parentId })
+    await loadTree()
   } catch (e) { console.error(e) }
 }
 
 async function openNote(id: number) {
+  const allNotes = flattenTree(tree.value)
+  const note = allNotes.find((n: any) => n.id === id)
+  if (note?.is_folder) return
   currentId.value = id
   try {
     const res = await client.get(`/plugins/notes/${id}`)
-    const note = res.data as Note
-    noteTitle.value = note.title || ''
-    noteContent.value = note.content || ''
+    const n = res.data
+    noteTitle.value = n.title || ''
+    noteContent.value = n.content || ''
   } catch (e) { console.error(e) }
 }
 
@@ -90,7 +107,7 @@ async function saveNote() {
     await client.put(`/plugins/notes/${currentId.value}`, {
       title: noteTitle.value, content: noteContent.value,
     })
-    await loadNotes()
+    await loadTree()
   } catch (e) { console.error(e) }
 }
 
@@ -103,17 +120,20 @@ async function deleteNote() {
   if (!currentId.value) return
   try {
     await client.delete(`/plugins/notes/${currentId.value}`)
-    currentId.value = null
-    await loadNotes()
+    currentId.value = null; noteTitle.value = ''; noteContent.value = ''
+    await loadTree()
   } catch (e) { console.error(e) }
 }
 
-function formatDate(date: string) {
-  if (!date) return ''
-  return new Date(date).toLocaleDateString()
+async function deleteNode(id: number) {
+  try {
+    await client.delete(`/plugins/notes/${id}`)
+    if (currentId.value === id) { currentId.value = null; noteTitle.value = ''; noteContent.value = '' }
+    await loadTree()
+  } catch (e) { console.error(e) }
 }
 
-onMounted(loadNotes)
+onMounted(loadTree)
 </script>
 
 <style scoped>
@@ -122,11 +142,6 @@ onMounted(loadNotes)
 .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #dcdfe6; }
 .sidebar-title { font-size: 14px; font-weight: 600; }
 .note-list { flex: 1; overflow-y: auto; }
-.note-item { padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background 0.15s; }
-.note-item:hover { background: #f5f7fa; }
-.note-item.active { background: #ecf5ff; }
-.note-item-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.note-item-date { font-size: 11px; color: #c0c4cc; margin-top: 2px; }
 .editor-panel { flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .editor-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .title-input :deep(.el-input__inner) { font-size: 24px; font-weight: 700; border: none; padding-left: 0; }

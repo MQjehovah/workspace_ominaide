@@ -35,7 +35,7 @@ const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const editorExtensions = [
-  StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+  StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false, underline: false }),
   Underline,
   Link.configure({ openOnClick: false }),
   Image.configure({ inline: true }),
@@ -71,6 +71,19 @@ const editor = useEditor({
       }
       return false
     },
+    handleDrop: async (view, event) => {
+      const files = event.dataTransfer?.files
+      if (!files || files.length === 0) return false
+      event.preventDefault()
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) {
+          uploadImage(file)
+        } else {
+          uploadFile(file)
+        }
+      }
+      return true
+    },
   },
   onUpdate: ({ editor }) => {
     const md = renderToMarkdown({ content: editor.getJSON(), extensions: editorExtensions })
@@ -86,27 +99,34 @@ watch(() => props.modelValue, (val) => {
   if (html) editor.value.commands.setContent(html)
 })
 
-async function uploadImage(file: File) {
+async function uploadFileViaApi(file: File, isImage: boolean): Promise<string | null> {
   try {
-    const res = await window.mqbox?.api.post('/files/upload/note', {})
-    if (!res?.upload_url || !res?.object_key) return
-    await fetch(res.upload_url, { method: 'PUT', body: file })
     const serverUrl = await window.mqbox?.config.get('serverUrl') || 'http://localhost:8000'
-    const imgUrl = `${serverUrl}/api/files/note/${res.object_key}`
-    editor.value?.chain().focus().setImage({ src: imgUrl }).run()
-  } catch {}
+    const token = await window.mqbox?.config.get('token') || ''
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${serverUrl}/api/files/upload/note/direct`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    })
+    const data = await res.json()
+    if (!data?.object_key) return null
+    return `${serverUrl}/api/files/note/${data.object_key}`
+  } catch { return null }
+}
+
+async function uploadImage(file: File) {
+  const url = await uploadFileViaApi(file, true)
+  if (url) editor.value?.chain().focus().setImage({ src: url }).run()
 }
 
 async function uploadFile(file: File) {
-  try {
-    const res = await window.mqbox?.api.post('/files/upload/note', {})
-    if (!res?.upload_url || !res?.object_key) return
-    await fetch(res.upload_url, { method: 'PUT', body: file })
-    const serverUrl = await window.mqbox?.config.get('serverUrl') || 'http://localhost:8000'
-    const fileUrl = `${serverUrl}/api/files/note/${res.object_key}`
-    const linkHtml = `<a href="${fileUrl}" onclick="event.preventDefault();window.mqbox?.shell.openExternal('${fileUrl}')">📎 ${file.name}</a>`
+  const fileUrl = await uploadFileViaApi(file, false)
+  if (fileUrl) {
+    const linkHtml = `<a href="${fileUrl}">📎 ${file.name}</a>`
     editor.value?.chain().focus().insertContent(linkHtml).run()
-  } catch {}
+  }
 }
 
 function setLink() {

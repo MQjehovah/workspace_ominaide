@@ -69,7 +69,7 @@ function showSearchWindow() {
 }
 
 function createTray() {
-  const icon = nativeImage.createEmpty()
+  const icon = nativeImage.createFromPath(join(__dirname, '../../assets/tray-icon.png'))
   tray = new Tray(icon)
   tray.setToolTip('OmniAide')
   const contextMenu = Menu.buildFromTemplate([

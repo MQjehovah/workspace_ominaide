@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+import io
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
@@ -16,13 +18,15 @@ router = APIRouter(prefix="/api/files", tags=["files"])
 @router.get("/note/{object_key:path}")
 async def serve_note_file(object_key: str):
     """Serve a note attachment directly via MinIO proxy."""
+    import mimetypes
     from core.minio.client import minio_client
     from fastapi.responses import StreamingResponse
     if not minio_client:
         raise HTTPException(status_code=503, detail="MinIO unavailable")
     try:
         obj = minio_client.get_object("user-files", object_key)
-        return StreamingResponse(obj.stream(32*1024), media_type="application/octet-stream")
+        mime_type = mimetypes.guess_type(object_key)[0] or "application/octet-stream"
+        return StreamingResponse(obj.stream(32*1024), media_type=mime_type)
     except Exception:
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -33,6 +37,7 @@ async def get_temp_upload_url(
 ):
     """Get a presigned upload URL without creating a DB record. Used by notes plugin for images."""
     import uuid
+    import os
     from core.minio.client import minio_client
     from datetime import timedelta
     if not minio_client:
@@ -41,7 +46,26 @@ async def get_temp_upload_url(
     upload_url = minio_client.presigned_put_object(
         "user-files", object_key, expires=timedelta(seconds=600)
     )
+    # Replace internal MinIO host with public server URL
+    public_host = os.environ.get("PUBLIC_HOST", "mqgeek.com")
+    upload_url = upload_url.replace("minio:9000", f"{public_host}:9000")
     return {"upload_url": upload_url, "object_key": object_key}
+
+
+@router.post("/upload/note/direct")
+async def direct_upload_note_file(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Upload a file directly through the backend (no presigned URL). Used when MinIO is not publicly accessible."""
+    import uuid
+    from core.minio.client import minio_client
+    if not minio_client:
+        raise HTTPException(status_code=503, detail="MinIO unavailable")
+    object_key = f"{user['id']}/{uuid.uuid4().hex}{Path(file.filename).suffix if file.filename else ''}"
+    content = await file.read()
+    minio_client.put_object("user-files", object_key, io.BytesIO(content), len(content))
+    return {"upload_url": "", "object_key": object_key}
 
 
 @router.post("/folder", response_model=FileResponse, status_code=201)
