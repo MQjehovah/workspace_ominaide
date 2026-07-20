@@ -36,7 +36,7 @@ export async function initPlugins() {
         if (plugin.panel) {
           panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
         }
-        console.log(`Plugin activated: ${info.manifest.displayName}`)
+        console.log(`Plugin activated: ${info.manifest.id}`)
       }
     } catch (e) {
       console.error(`Failed to activate plugin ${id}:`, e)
