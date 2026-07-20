@@ -1,7 +1,7 @@
 import axios from 'axios'
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, mkdirSync, cpSync } from 'fs'
+import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync } from 'fs'
 import { getPlugins, getPanels, getSearchProviders, executeCommand, getPluginPage } from '../plugin/host'
 import { setAuth } from '../plugin/sandbox'
 import { getConfig, setConfig } from '../config'
@@ -124,5 +124,20 @@ export function registerIpcHandlers() {
   ipcMain.handle('shell:open-external', (_, url: string) => {
     const { shell } = require('electron')
     shell.openExternal(url)
+  })
+
+  ipcMain.handle('file:open-url', async (_, url: string, name: string) => {
+    const { shell } = require('electron')
+    const tmp = join(app.getPath('temp'), 'omniaide-' + name)
+    try {
+      const res = await axios.get(url, { responseType: 'arraybuffer' })
+      writeFileSync(tmp, Buffer.from(res.data))
+      shell.openPath(tmp)
+    } catch {}
+  })
+
+  ipcMain.handle('dialog:select-folder', async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return result.canceled ? null : result.filePaths[0]
   })
 }

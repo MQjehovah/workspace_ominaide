@@ -3,6 +3,7 @@ import { join } from 'path'
 import { initPlugins } from './plugin/host'
 import { registerIpcHandlers } from './ipc'
 import { setupShortcut } from './shortcut'
+import { startSync, stopSync } from './sync/syncWorker'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
@@ -78,7 +79,10 @@ app.whenReady().then(async () => {
   createTray()
   showLogin()
   await setupShortcut({ search: showSearchWindow, toggle: showMainPanel })
+  startSync()
 })
+
+ipcMain.handle('sync:restart', async () => { try { await startSync() } catch (e: any) { console.error('[sync] restart error:', e.message) }; return { success: true } })
 
 ipcMain.handle('window:quit', () => { isQuitting = true; app.quit() })
 
