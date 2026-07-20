@@ -37,7 +37,7 @@ function showLogin() {
 
 function showMainPanel() {
   if (mainPanel) { mainPanel.focus(); return }
-  mainPanel = createRenderer('main', { width: 280, height: 600 })
+  mainPanel = createRenderer('main', { width: 300, height: 600 })
   if (loginWindow) { loginWindow.close(); loginWindow = null }
   mainPanel.on('closed', () => { mainPanel = null })
 }

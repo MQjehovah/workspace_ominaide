@@ -127,7 +127,7 @@ onMounted(() => loadPlugins())
 </template>
 
 <style scoped>
-.main-panel { width:280px; height:600px; border-radius:12px; background:#fff; box-shadow:0 4px 20px rgba(0,0,0,0.18); border:1px solid #e0e0e0; display:flex; flex-direction:column; position:relative; overflow:hidden; }
+.main-panel { width:300px; height:600px; border-radius:12px; background:#fff; box-shadow:0 4px 20px rgba(0,0,0,0.18); border:1px solid #e0e0e0; display:flex; flex-direction:column; position:relative; overflow:hidden; }
 
 .title-bar { height:32px; background:#f5f5f5; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e0e0e0; -webkit-app-region:drag; }
 .title-text { font-size:13px; color:#666; font-weight:500; }
