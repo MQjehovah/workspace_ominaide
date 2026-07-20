@@ -27,7 +27,6 @@ function createWindow(view: string = 'main') {
   } else {
     win.loadFile(join(__dirname, '../../dist/index.html'), { query: { view } })
   }
-  win.webContents.openDevTools()
   return win
 }
 
