@@ -56,6 +56,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
   const context: PluginContext = {
     plugin: pluginInfo,
     api,
+    clipboard: perms.includes('clipboard') ? clipboard : null,
     storage: {
       get: async (key: string) => {
         if (!storage) return null

@@ -1,4 +1,5 @@
 import { join } from 'path'
+import { clipboard, BrowserWindow } from 'electron'
 import type { PluginInfo, PluginPanel, PluginModule, SearchProvider } from '../../shared/types'
 import { loadPlugins } from './loader'
 import { createSandbox } from './sandbox'
@@ -40,6 +41,23 @@ export async function initPlugins() {
       console.error(`Failed to activate plugin ${id}:`, e)
     }
   }
+
+  startClipboardWatcher()
+}
+
+let lastClipboard = ''
+
+function startClipboardWatcher() {
+  setInterval(() => {
+    try {
+      const text = clipboard.readText()
+      if (text && text !== lastClipboard) {
+        lastClipboard = text
+        executeCommand('clipboard-history', 'onClipboardChange', text)
+        BrowserWindow.getAllWindows().forEach(win => win.webContents.send('clipboard:updated'))
+      }
+    } catch {}
+  }, 500)
 }
 
 export function getPlugins(): PluginInfo[] {

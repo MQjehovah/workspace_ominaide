@@ -54,7 +54,10 @@ async function refreshPanel(pluginId: string) {
   panelData.value[pluginId] = await window.mqbox?.plugin.execute(pluginId, 'getPanelData', {})
 }
 
-onMounted(() => loadPlugins())
+onMounted(() => {
+  loadPlugins()
+  window.mqbox?.clipboard?.onUpdated(() => refreshPanel('clipboard-history'))
+})
 </script>
 
 <template>

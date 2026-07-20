@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+const clipboardListeners: (() => void)[] = []
+
+ipcRenderer.on('clipboard:updated', () => {
+  clipboardListeners.forEach(fn => fn())
+})
+
 contextBridge.exposeInMainWorld('mqbox', {
   plugin: {
     list: () => ipcRenderer.invoke('plugin:list'),
@@ -29,6 +35,11 @@ contextBridge.exposeInMainWorld('mqbox', {
     openSearch: () => ipcRenderer.invoke('window:open-search'),
     openPluginManager: () => ipcRenderer.invoke('window:open-plugin-manager'),
     hide: () => ipcRenderer.invoke('window:hide'),
+  },
+  clipboard: {
+    onUpdated: (callback: () => void) => {
+      clipboardListeners.push(callback)
+    },
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),

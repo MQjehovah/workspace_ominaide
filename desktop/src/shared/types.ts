@@ -54,6 +54,7 @@ export interface PluginContext {
     put: (path: string, body?: any) => Promise<any>
     delete: (path: string) => Promise<any>
   }
+  clipboard: Electron.Clipboard | null
   storage: {
     get: (key: string) => Promise<any>
     set: (key: string, value: any) => Promise<void>

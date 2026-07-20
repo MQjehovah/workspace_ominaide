@@ -7,6 +7,7 @@ interface HistoryItem {
 }
 
 let history: HistoryItem[] = []
+let pluginCtx: any = null
 
 function formatTime(timestamp: number) {
   const date = new Date(timestamp)
@@ -23,8 +24,7 @@ export default {
   page: Page,
 
   activate(context: any) {
-    console.log('clipboard-history plugin activating...')
-    console.log('context.clipboard:', !!context.clipboard)
+    pluginCtx = context
 
     context.registerCommand('getPanelData', async () => {
       return {
@@ -107,9 +107,8 @@ export default {
   },
 
   deactivate() {
-    const context = (this as any).context
-    if (context?.storage) {
-      context.storage.set('history', history)
+    if (pluginCtx?.storage) {
+      pluginCtx.storage.set('history', history)
     }
   }
 }

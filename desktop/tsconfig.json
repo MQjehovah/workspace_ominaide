@@ -17,5 +17,6 @@
     }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "plugins/**/*.ts"],
+  "exclude": ["plugins/**/vite.config.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
