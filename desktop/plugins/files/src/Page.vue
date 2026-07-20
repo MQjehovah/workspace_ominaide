@@ -16,7 +16,7 @@
           刷新
         </button>
         <button class="pan-btn" @click="openSyncPanel">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/><path d="M19 12H5"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s1-5 5-8c4-3 9-3 13 0 3 2 5 5 5 8"/><path d="M23 12s-1 5-5 8c-4 3-9 3-13 0-3-2-5-5-5-8"/><polyline points="17 16 23 16 23 22"/><polyline points="7 8 1 8 1 2"/></svg>
           同步
         </button>
         <span class="pan-total">{{ files.length + folders.length }} 项</span>
@@ -66,7 +66,7 @@
                 </button>
               </template>
               <button v-else class="pa-btn" title="设置同步" @click="setupSync(f)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 2L4 12l16 10V2z" fill="currentColor" stroke="none"/><path d="M3 12h14" stroke="currentColor"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s1-5 5-8c4-3 9-3 13 0 3 2 5 5 5 8"/><path d="M23 12s-1 5-5 8c-4 3-9 3-13 0-3-2-5-5-5-8"/><polyline points="17 16 23 16 23 22"/><polyline points="7 8 1 8 1 2"/></svg>
               </button>
               <button class="pa-btn danger" title="删除" @click="trashFile(f)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
             </div>
@@ -401,14 +401,20 @@ function handleFileSelect(e: Event) {
 }
 
 async function uploadFiles(list: File[]) {
+  const serverUrl = await window.mqbox?.config.get('serverUrl') || 'http://localhost:8000'
+  const token = await window.mqbox?.config.get('token') || ''
   for (const file of list) {
     const item = { name: file.name, status: 'uploading', statusText: '上传中...' }
     uploadQueue.value.push(item)
     try {
-      const info = await window.mqbox?.api.post('/files/upload-url', { filename: file.name, mime_type: file.type || 'application/octet-stream', folder_path: currentPath.value })
-      if (!info?.upload_url) { item.status = 'error'; item.statusText = '获取地址失败'; continue }
-      await fetch(info.upload_url, { method: 'PUT', body: file })
-      await window.mqbox?.api.post('/files/confirm', { file_id: info.file_id })
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch(`${serverUrl}/api/files/upload/direct?folder_path=${encodeURIComponent(currentPath.value)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      })
+      if (!res.ok) { item.status = 'error'; item.statusText = '上传失败'; continue }
       item.status = 'done'; item.statusText = '完成'
     } catch { item.status = 'error'; item.statusText = '失败' }
   }

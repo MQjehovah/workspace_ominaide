@@ -31,6 +31,28 @@ async def serve_note_file(object_key: str):
         raise HTTPException(status_code=404, detail="File not found")
 
 
+@router.post("/upload/direct")
+async def direct_upload_file(
+    file: UploadFile = File(...),
+    folder_path: str = Query("/"),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a file directly through the backend (no presigned URL)."""
+    from core.minio.client import minio_client
+    req = UploadUrlRequest(
+        filename=file.filename or "untitled",
+        mime_type=file.content_type or "application/octet-stream",
+        folder_path=folder_path,
+    )
+    upload_url, file_id, object_key = await file_service.generate_upload_url(db, user["id"], req)
+    content = await file.read()
+    if minio_client:
+        minio_client.put_object("user-files", object_key, io.BytesIO(content), len(content))
+    record = await file_service.confirm_upload(db, user["id"], file_id)
+    return {"id": record.id, "object_key": object_key}
+
+
 @router.post("/upload/note")
 async def get_temp_upload_url(
     user: dict = Depends(get_current_user),

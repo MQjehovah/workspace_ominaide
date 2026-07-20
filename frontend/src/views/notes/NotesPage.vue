@@ -32,7 +32,7 @@
           </el-popconfirm>
         </div>
       </div>
-      <TipTapEditor v-model="noteContent" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
+      <TipTapEditor :key="currentId" v-model="noteContent" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
     </div>
     <div v-else class="empty-state">
       <el-empty description="选择或创建一篇笔记" :image-size="80" />

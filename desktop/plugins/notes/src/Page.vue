@@ -27,7 +27,7 @@
           <button class="del-btn" @click="deleteNote">删除</button>
         </div>
       </div>
-      <TipTapEditor v-model="content" @update:model-value="scheduleSave" />
+      <TipTapEditor :key="currentId" v-model="content" @update:model-value="scheduleSave" />
     </div>
     <div class="empty-area" v-else>
       <p>选择或创建一篇笔记</p>
