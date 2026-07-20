@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { ipcMain, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { app } from 'electron'
@@ -57,6 +58,32 @@ export function registerIpcHandlers() {
     return results.slice(0, 20)
   })
   ipcMain.handle('search:get-providers', () => getSearchProviders().map(p => ({ keyword: p.keyword, name: p.name, priority: p.priority })))
+
+  // API proxy
+  const getApiConfig = async () => {
+    await configDb.read()
+    return { serverUrl: configDb.data?.serverUrl || 'http://localhost:8000', token: configDb.data?.token || '' }
+  }
+  ipcMain.handle('api:get', async (_, path: string) => {
+    const c = await getApiConfig()
+    const res = await axios.get(`${c.serverUrl}/api${path}`, { headers: { Authorization: 'Bearer ' + c.token } })
+    return res.data
+  })
+  ipcMain.handle('api:post', async (_, path: string, body?: any) => {
+    const c = await getApiConfig()
+    const res = await axios.post(`${c.serverUrl}/api${path}`, body, { headers: { Authorization: 'Bearer ' + c.token } })
+    return res.data
+  })
+  ipcMain.handle('api:put', async (_, path: string, body?: any) => {
+    const c = await getApiConfig()
+    const res = await axios.put(`${c.serverUrl}/api${path}`, body, { headers: { Authorization: 'Bearer ' + c.token } })
+    return res.data
+  })
+  ipcMain.handle('api:delete', async (_, path: string) => {
+    const c = await getApiConfig()
+    const res = await axios.delete(`${c.serverUrl}/api${path}`, { headers: { Authorization: 'Bearer ' + c.token } })
+    return res.data
+  })
 
   // Window
   ipcMain.handle('window:hide', () => {

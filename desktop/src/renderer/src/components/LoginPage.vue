@@ -32,7 +32,6 @@ async function login() {
     const data = await res.json()
     await window.mqbox.config.set('serverUrl', serverUrl.value)
     await window.mqbox.config.set('token', data.access_token)
-    // Switch to main view without reload
     if ((window as any).setLoggedIn) (window as any).setLoggedIn()
     window.history.replaceState(null, '', '?view=main')
   } catch (e: any) { error.value = e.message }
