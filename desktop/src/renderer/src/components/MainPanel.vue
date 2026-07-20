@@ -113,14 +113,6 @@ onMounted(() => loadPlugins())
       </div>
     </div>
 
-    <!-- Bottom Actions -->
-    <div class="bottom-area">
-      <button class="search-btn" @click="openSearch">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        搜索 (Ctrl+Space)
-      </button>
-    </div>
-
     <!-- Resize Handle -->
     <div class="resize-handle"></div>
   </div>
@@ -153,13 +145,10 @@ onMounted(() => loadPlugins())
 .menu-item.danger svg { color:#E53935; }
 .menu-divider { height:1px; background:#e0e0e0; margin:0 8px; }
 
-.panels-area { flex:1; min-height:0; overflow-y:auto; padding:8px 12px 60px; }
+.panels-area { flex:1; min-height:0; overflow-y:auto; padding:8px 12px; scrollbar-width:none; }
+.panels-area::-webkit-scrollbar { display:none; }
 .panels-list { display:flex; flex-direction:column; gap:6px; }
 .loading-state { display:flex; align-items:center; justify-content:center; height:100px; color:#666; font-size:14px; }
-
-.bottom-area { position:absolute; bottom:0; left:0; right:0; padding:8px 12px; background:#fff; border-top:1px solid #f0f0f0; }
-.search-btn { height:36px; border-radius:8px; border:1px solid #0078D4; background:#fff; display:flex; align-items:center; justify-content:center; gap:6px; width:100%; cursor:pointer; color:#0078D4; font-size:12px; }
-.search-btn:hover { background:#e8f4fd; }
 
 .resize-handle { position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:se-resize; -webkit-app-region:no-drag; }
 </style>
