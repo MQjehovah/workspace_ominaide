@@ -4,6 +4,7 @@ import { initPlugins } from './plugin/host'
 import { registerIpcHandlers } from './ipc'
 import { setupShortcut } from './shortcut'
 import { startSync, stopSync } from './sync/syncWorker'
+import { getConfig } from './config'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
@@ -42,18 +43,29 @@ function showLogin() {
 }
 
 function showMainPanel() {
-  if (mainPanel) { mainPanel.focus(); return }
-  mainPanel = createRenderer('main', { width: 300, height: 600 })
-  if (loginWindow) { loginWindow.close(); loginWindow = null }
-  mainPanel.on('closed', () => { mainPanel = null })
+  getConfig().then(cfg => {
+    if (!cfg.token) {
+      if (mainPanel) { mainPanel.hide() }
+      showLogin()
+      return
+    }
+    if (loginWindow) { loginWindow.close(); loginWindow = null }
+    if (mainPanel) { mainPanel.show(); mainPanel.focus(); return }
+    mainPanel = createRenderer('main', { width: 300, height: 600 })
+    mainPanel.on('closed', () => { mainPanel = null })
+    startSync()
+  })
 }
 
 function showSearchWindow() {
-  if (searchWindow) { searchWindow.close(); searchWindow = null; return }
-  searchWindow = createRenderer('search', { width: 640, height: 400, transparent: true })
-  searchWindow.on('blur', () => { searchWindow?.close(); searchWindow = null })
-  searchWindow.on('closed', () => { searchWindow = null })
-  searchWindow.setAlwaysOnTop(true, 'floating')
+  getConfig().then(cfg => {
+    if (!cfg.token) { showLogin(); return }
+    if (searchWindow) { searchWindow.close(); searchWindow = null; return }
+    searchWindow = createRenderer('search', { width: 640, height: 400, transparent: true })
+    searchWindow.on('blur', () => { searchWindow?.close(); searchWindow = null })
+    searchWindow.on('closed', () => { searchWindow = null })
+    searchWindow.setAlwaysOnTop(true, 'floating')
+  })
 }
 
 function createTray() {
@@ -77,9 +89,13 @@ app.whenReady().then(async () => {
   registerIpcHandlers()
   await initPlugins()
   createTray()
-  showLogin()
+  const cfg = await getConfig()
   await setupShortcut({ search: showSearchWindow, toggle: showMainPanel })
-  startSync()
+  if (cfg.token) {
+    showMainPanel()
+  } else {
+    showLogin()
+  }
 })
 
 ipcMain.handle('sync:restart', async () => { try { await startSync() } catch (e: any) { console.error('[sync] restart error:', e.message) }; return { success: true } })
@@ -91,7 +107,9 @@ app.on('before-quit', () => { isQuitting = true })
 
 ipcMain.handle('window:open-main', () => showMainPanel())
 
-ipcMain.handle('window:open-page', (_, pluginId) => {
+ipcMain.handle('window:open-page', async (_, pluginId) => {
+  const cfg = await getConfig()
+  if (!cfg.token) return
   const win = new BrowserWindow({
     width: 900, height: 700,
     webPreferences: { preload: preloadPath, contextIsolation: true },

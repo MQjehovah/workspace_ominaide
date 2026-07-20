@@ -14,7 +14,6 @@ export function registerIpcHandlers() {
 
   // Auth
   ipcMain.handle('auth:set', (_, serverUrl: string, token: string) => setAuth(serverUrl, token))
-
   // Plugin management
   ipcMain.handle('plugin:list', async () => {
     const cfg = await getConfig()
@@ -164,7 +163,9 @@ export function registerIpcHandlers() {
   })
 
   // Window
-  ipcMain.handle('window:open-search', () => {
+  ipcMain.handle('window:open-search', async () => {
+    const cfg = await getConfig()
+    if (!cfg.token) return
     const searchWin = new BrowserWindow({
       width: 640, height: 400, resizable: false, frame: false, transparent: true,
       webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true },
@@ -175,7 +176,9 @@ export function registerIpcHandlers() {
     searchWin.loadURL(url)
     searchWin.on('blur', () => searchWin.close())
   })
-  ipcMain.handle('window:open-plugin-manager', () => {
+  ipcMain.handle('window:open-plugin-manager', async () => {
+    const cfg = await getConfig()
+    if (!cfg.token) return
     const win = new BrowserWindow({
       width: 500, height: 640, frame: false, resizable: true, show: false,
       webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true },
@@ -185,9 +188,6 @@ export function registerIpcHandlers() {
       : 'file://' + join(__dirname, '../../dist/index.html').replace(/\\/g, '/') + '?view=plugin-manager'
     win.loadURL(url)
     win.once('ready-to-show', () => win.show())
-  })
-  ipcMain.handle('window:close', () => {
-    BrowserWindow.getFocusedWindow()?.close()
   })
   ipcMain.handle('window:hide', () => {
     BrowserWindow.getFocusedWindow()?.hide()

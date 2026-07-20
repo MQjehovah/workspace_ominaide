@@ -43,7 +43,12 @@ function getComponent(pluginId: string) { return pluginComponents[pluginId] || n
 function openPluginPage(pluginId: string) { window.mqbox?.window.openPage(pluginId) }
 function openSearch() { window.mqbox?.window.openSearch() }
 function openManager() { showUserMenu.value = false; window.mqbox?.window.openPluginManager() }
-function handleClose() { window.mqbox?.window.close() }
+function handleClose() { window.mqbox?.window.hide() }
+
+async function logout() {
+  await window.mqbox?.config.set('token', '')
+  window.mqbox?.window.openMain()
+}
 
 async function executeCommand(pluginId: string, command: string, args?: unknown) {
   await window.mqbox?.plugin.execute(pluginId, command, args || {})
@@ -103,7 +108,10 @@ onMounted(() => {
         </button>
         <div class="menu-divider"></div>
         <button class="menu-item danger" @click="showUserMenu = false; window.mqbox?.window.hide()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg> 退出
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg> 隐藏
+        </button>
+        <button class="menu-item danger" @click="showUserMenu = false; logout()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg> 退出登录
         </button>
       </div>
     </div>
