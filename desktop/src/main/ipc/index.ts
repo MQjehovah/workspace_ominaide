@@ -1,44 +1,34 @@
 import axios from 'axios'
 import { ipcMain, BrowserWindow } from 'electron'
 import { join } from 'path'
-import { app } from 'electron'
-import { Low } from 'lowdb'
-import { JSONFile } from 'lowdb/node'
 import { getPlugins, getPanels, getSearchProviders, executeCommand, getPluginPage } from '../plugin/host'
 import { setAuth } from '../plugin/sandbox'
-
-const configFile = join(app.getPath('userData'), 'config.json')
-const adapter = new JSONFile<Record<string, any>>(configFile)
-const configDb = new Low(adapter, {})
+import { getConfig, setConfig } from '../config'
+import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
 
 export function registerIpcHandlers() {
   // Config
-  ipcMain.handle('config:get', async (_, key: string) => {
-    await configDb.read()
-    return configDb.data?.[key]
-  })
-  ipcMain.handle('config:set', async (_, key: string, value: any) => {
-    await configDb.read()
-    configDb.data![key] = value
-    await configDb.write()
-  })
+  ipcMain.handle('config:get', async (_, key: string) => getConfig()?.[key])
+  ipcMain.handle('config:set', async (_, key: string, value: any) => setConfig(key, value))
 
   // Auth
-  ipcMain.handle('auth:set', (_, serverUrl: string, token: string) => {
-    setAuth(serverUrl, token)
-  })
+  ipcMain.handle('auth:set', (_, serverUrl: string, token: string) => setAuth(serverUrl, token))
 
-  // Plugin
+  // Plugin management
   ipcMain.handle('plugin:list', () => getPlugins())
   ipcMain.handle('plugin:get-panels', () => getPanels())
-  ipcMain.handle('plugin:get-page', (_, pluginId: string) => {
-    const page = getPluginPage(pluginId)
-    return page ? { pluginId, hasPage: true } : null
-  })
+  ipcMain.handle('plugin:get-page', (_, pluginId: string) => ({ pluginId, hasPage: !!getPluginPage(pluginId) }))
   ipcMain.handle('plugin:execute', async (_, pluginId: string, command: string, args?: unknown) => {
     try { return await executeCommand(pluginId, command, args) }
     catch (e) { return { error: (e as Error).message } }
   })
+
+  // Shortcuts
+  ipcMain.handle('shortcut:list', () => getCustomShortcuts())
+  ipcMain.handle('shortcut:add', (_, binding: any) => addCustomShortcut(binding))
+  ipcMain.handle('shortcut:remove', (_, accelerator: string) => removeCustomShortcut(accelerator))
+  ipcMain.handle('shortcut:get-builtin', () => getBuiltinShortcuts())
+  ipcMain.handle('shortcut:update-builtin', (_, key: string, accelerator: string) => updateBuiltinShortcut(key, accelerator))
 
   // Search
   ipcMain.handle('search:plugin', async (_, keyword: string, query: string) => {
@@ -61,28 +51,24 @@ export function registerIpcHandlers() {
   ipcMain.handle('search:get-providers', () => getSearchProviders().map(p => ({ keyword: p.keyword, name: p.name, priority: p.priority })))
 
   // API proxy
-  const getApiConfig = async () => {
-    await configDb.read()
-    return { serverUrl: configDb.data?.serverUrl || 'http://localhost:8000', token: configDb.data?.token || '' }
-  }
   ipcMain.handle('api:get', async (_, path: string) => {
-    const c = await getApiConfig()
-    const res = await axios.get(`${c.serverUrl}/api${path}`, { headers: { Authorization: 'Bearer ' + c.token } })
+    const c = getConfig()
+    const res = await axios.get(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
     return res.data
   })
   ipcMain.handle('api:post', async (_, path: string, body?: any) => {
-    const c = await getApiConfig()
-    const res = await axios.post(`${c.serverUrl}/api${path}`, body, { headers: { Authorization: 'Bearer ' + c.token } })
+    const c = getConfig()
+    const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
     return res.data
   })
   ipcMain.handle('api:put', async (_, path: string, body?: any) => {
-    const c = await getApiConfig()
-    const res = await axios.put(`${c.serverUrl}/api${path}`, body, { headers: { Authorization: 'Bearer ' + c.token } })
+    const c = getConfig()
+    const res = await axios.put(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
     return res.data
   })
   ipcMain.handle('api:delete', async (_, path: string) => {
-    const c = await getApiConfig()
-    const res = await axios.delete(`${c.serverUrl}/api${path}`, { headers: { Authorization: 'Bearer ' + c.token } })
+    const c = getConfig()
+    const res = await axios.delete(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
     return res.data
   })
 
@@ -90,16 +76,19 @@ export function registerIpcHandlers() {
   ipcMain.handle('window:open-search', () => {
     const searchWin = new BrowserWindow({
       width: 640, height: 400, resizable: false, frame: false, transparent: true,
-      webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
-        contextIsolation: true,
-      },
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true },
     })
     searchWin.loadURL('file://' + join(__dirname, '../../dist/index.html').replace(/\\/g, '/') + '?view=search')
     searchWin.on('blur', () => searchWin.close())
   })
+  ipcMain.handle('window:open-plugin-manager', () => {
+    const win = new BrowserWindow({
+      width: 560, height: 520, frame: false, resizable: false,
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true },
+    })
+    win.loadURL('file://' + join(__dirname, '../../dist/index.html').replace(/\\/g, '/') + '?view=plugin-manager')
+  })
   ipcMain.handle('window:hide', () => {
-    const win = BrowserWindow.getFocusedWindow()
-    win?.hide()
+    BrowserWindow.getFocusedWindow()?.hide()
   })
 }

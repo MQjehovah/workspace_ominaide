@@ -1,7 +1,8 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, globalShortcut, shell } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell } from 'electron'
 import { join } from 'path'
-import { initPlugins, getPlugins, executeCommand } from './plugin/host'
+import { initPlugins } from './plugin/host'
 import { registerIpcHandlers } from './ipc'
+import { setupShortcut } from './shortcut'
 
 let mainPanel: BrowserWindow | null = null
 let loginWindow: BrowserWindow | null = null
@@ -68,7 +69,7 @@ app.whenReady().then(async () => {
   await initPlugins()
   createTray()
   showLogin()
-  globalShortcut.register('Ctrl+Space', showSearchWindow)
+  setupShortcut({ search: showSearchWindow, toggle: showMainPanel })
 })
 
 app.on('window-all-closed', () => {})

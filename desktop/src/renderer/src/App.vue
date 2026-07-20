@@ -4,6 +4,7 @@
     <MainPanel v-else-if="view === 'main'" />
     <SearchBox v-else-if="view === 'search'" />
     <PluginPage v-else-if="view === 'plugin-page'" />
+    <PluginManager v-else-if="view === 'plugin-manager'" />
   </div>
   <div v-else-if="error" class="error">{{ error }}</div>
   <div v-else class="loading"><p>加载中...</p></div>
@@ -14,6 +15,7 @@ import { ref, onMounted, onErrorCaptured } from 'vue'
 import MainPanel from './components/MainPanel.vue'
 import SearchBox from './components/SearchBox.vue'
 import PluginPage from './components/PluginPage.vue'
+import PluginManager from './components/PluginManager.vue'
 import LoginPage from './components/LoginPage.vue'
 
 const ready = ref(false)
