@@ -1,11 +1,12 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, globalShortcut, shell } from 'electron'
 import { join } from 'path'
-import { initPlugins, getPluginInfo, executeCommand } from './plugin/host'
+import { initPlugins, getPlugins, executeCommand } from './plugin/host'
 import { registerIpcHandlers } from './ipc'
 
 let mainWindow: BrowserWindow | null = null
 let searchWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let isQuitting = false
 
 function createWindow(view: string = 'main') {
   const win = new BrowserWindow({
@@ -24,7 +25,7 @@ function createWindow(view: string = 'main') {
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=${view}`)
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'), { query: { view } })
+    win.loadFile(join(__dirname, '../../dist/index.html'), { query: { view } })
   }
   return win
 }
@@ -49,7 +50,7 @@ function createTray() {
   const contextMenu = Menu.buildFromTemplate([
     { label: '打开 OmniAide', click: showMainWindow },
     { type: 'separator' },
-    { label: '退出', click: () => { app.isQuitting = true; app.quit() } },
+    { label: '退出', click: () => { isQuitting = true; app.quit() } },
   ])
   tray.setContextMenu(contextMenu)
   tray.on('click', showMainWindow)
@@ -65,7 +66,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {})
-app.on('before-quit', () => { app.isQuitting = true })
+app.on('before-quit', () => { isQuitting = true })
 
 ipcMain.handle('window:open-page', (_, pluginId) => {
   const win = new BrowserWindow({
@@ -77,7 +78,7 @@ ipcMain.handle('window:open-page', (_, pluginId) => {
   })
   const url = process.env.VITE_DEV_SERVER_URL
     ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}`
-    : `file://${join(__dirname, '../renderer/index.html')}?view=plugin-page&pluginId=${pluginId}`
+    : `file://${join(__dirname, '../../dist/index.html')}?view=plugin-page&pluginId=${pluginId}`
   win.loadURL(url)
 })
 

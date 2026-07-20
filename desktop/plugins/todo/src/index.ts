@@ -1,4 +1,4 @@
-import type { PluginModule, PluginContext } from '../../src/shared/types'
+import type { PluginModule, PluginContext } from '../../../src/shared/types'
 
 interface Todo {
   id: string

@@ -20,19 +20,20 @@ export async function initPlugins() {
     try {
       const modulePath = join(getPluginDir(info), info.manifest.main || 'dist/index.js')
       const fileUrl = 'file:///' + modulePath.replace(/\\/g, '/')
-      const mod: PluginModule = await import(/* @vite-ignore */ fileUrl)
+      const mod = await import(/* @vite-ignore */ fileUrl)
+      const plugin: PluginModule = mod.default || mod
       
-      if (mod.default?.activate) {
+      if (plugin?.activate) {
         const cmdMap = new Map<string, Function>()
         commands.set(id, cmdMap)
         
         const ctx = createSandbox(info, cmdMap, searchProviders)
-        await mod.default.activate(ctx)
+        await plugin.activate(ctx)
         
-        modules.set(id, mod.default)
+        modules.set(id, plugin)
         plugins.set(id, info)
         
-        if (mod.default.panel) {
+        if (plugin.panel) {
           panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
         }
         console.log(`Plugin activated: ${info.manifest.displayName}`)

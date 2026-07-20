@@ -5,30 +5,41 @@
     <PluginPage v-else-if="view === 'plugin-page'" />
     <LoginPage v-else />
   </div>
+  <div v-else-if="error" class="error">{{ error }}</div>
   <div v-else class="loading">
     <p>加载中...</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onErrorCaptured } from 'vue'
 import MainPanel from './components/MainPanel.vue'
 import SearchBox from './components/SearchBox.vue'
 import PluginPage from './components/PluginPage.vue'
 import LoginPage from './components/LoginPage.vue'
 
 const ready = ref(false)
+const error = ref('')
 const params = new URLSearchParams(window.location.search)
 const view = ref(params.get('view') || 'main')
 
+onErrorCaptured((err) => {
+  error.value = String(err)
+  return false
+})
+
 onMounted(async () => {
-  // Wait for preload to inject window.mqbox
-  let tries = 0
-  while (!window.mqbox && tries < 20) {
-    await new Promise(r => setTimeout(r, 100))
-    tries++
+  try {
+    let tries = 0
+    while (!window.mqbox && tries < 20) {
+      await new Promise(r => setTimeout(r, 100))
+      tries++
+    }
+    if (!window.mqbox) error.value = 'Preload bridge not loaded'
+    ready.value = true
+  } catch (e: any) {
+    error.value = String(e)
   }
-  ready.value = true
 })
 </script>
 
