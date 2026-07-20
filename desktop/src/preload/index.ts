@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('mqbox', {
     openSearch: () => ipcRenderer.invoke('window:open-search'),
     openPluginManager: () => ipcRenderer.invoke('window:open-plugin-manager'),
     hide: () => ipcRenderer.invoke('window:hide'),
+    quit: () => ipcRenderer.invoke('window:quit'),
   },
   clipboard: {
     onUpdated: (callback: () => void) => {

@@ -32,7 +32,7 @@ function createRenderer(view: string, opts: { width: number; height: number; fra
 
 function showLogin() {
   if (loginWindow) { loginWindow.focus(); return }
-  loginWindow = createRenderer('login', { width: 400, height: 520 })
+  loginWindow = createRenderer('login', { width: 340, height: 260 })
   loginWindow.on('closed', () => { loginWindow = null })
 }
 
@@ -71,6 +71,8 @@ app.whenReady().then(async () => {
   showLogin()
   setupShortcut({ search: showSearchWindow, toggle: showMainPanel })
 })
+
+ipcMain.handle('window:quit', () => { isQuitting = true; app.quit() })
 
 app.on('window-all-closed', () => {})
 app.on('before-quit', () => { isQuitting = true })
