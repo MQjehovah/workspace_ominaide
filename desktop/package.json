@@ -10,6 +10,12 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",
+    "@tiptap/extension-image": "^3.28.0",
+    "@tiptap/extension-link": "^3.28.0",
+    "@tiptap/extension-placeholder": "^3.28.0",
+    "@tiptap/extension-underline": "^3.28.0",
+    "@tiptap/starter-kit": "^3.28.0",
+    "@tiptap/vue-3": "^3.28.0",
     "axios": "^1.7.0",
     "chokidar": "^3.6.0",
     "element-plus": "^2.5.0",
