@@ -45,6 +45,14 @@ export default {
       return { success: false }
     })
 
+    context.registerCommand('open', async () => {
+      context.openPage('quick-notes')
+    })
+
+    context.registerCommand('view', async (args: any) => {
+      context.openPage('quick-notes')
+    })
+
     context.registerCommand('list', async (args?: any) => {
       let result = [...notes]
       if (args?.tag) {

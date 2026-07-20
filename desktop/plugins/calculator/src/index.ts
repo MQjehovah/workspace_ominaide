@@ -9,6 +9,10 @@ export default {
     context.registerCommand('getPanelData', async () => ({}))
     context.registerCommand('getPageData', async () => ({}))
 
+    context.registerCommand('open', async () => {
+      context.openPage('calculator')
+    })
+
     context.registerSearchProvider({
       keyword: 'calc',
       name: '计算器',

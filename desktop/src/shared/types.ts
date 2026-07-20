@@ -55,6 +55,7 @@ export interface PluginContext {
     delete: (path: string) => Promise<any>
   }
   clipboard: Electron.Clipboard | null
+  shell: { openPath: (path: string) => Promise<string>; openExternal: (url: string) => Promise<void> } | null
   storage: {
     get: (key: string) => Promise<any>
     set: (key: string, value: any) => Promise<void>
@@ -62,6 +63,7 @@ export interface PluginContext {
   notification: {
     show: (title: string, body?: string) => void
   }
+  openPage: (pluginId: string) => void
   registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => void
   registerSearchProvider: (provider: SearchProvider) => void
 }

@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { join } from 'path'
-import { app, Notification, clipboard, shell } from 'electron'
+import { app, Notification, clipboard, shell, BrowserWindow } from 'electron'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import type { PluginInfo, PluginContext } from '../../shared/types'
@@ -23,7 +23,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
 
   // Shell API
   const shellApi = perms.includes('shell')
-    ? { openExternal: (url: string) => shell.openExternal(url) }
+    ? { openPath: (path: string) => shell.openPath(path), openExternal: (url: string) => shell.openExternal(url) }
     : null
 
   const api = {
@@ -57,6 +57,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     plugin: pluginInfo,
     api,
     clipboard: perms.includes('clipboard') ? clipboard : null,
+    shell: shellApi,
     storage: {
       get: async (key: string) => {
         if (!storage) return null
@@ -71,6 +72,17 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
       },
     },
     notification: notification || { show: () => {} },
+    openPage: (pluginId: string) => {
+      const preloadPath = join(__dirname, '../../preload/index.js')
+      const win = new BrowserWindow({
+        width: 900, height: 700,
+        webPreferences: { preload: preloadPath, contextIsolation: true },
+      })
+      const url = process.env.VITE_DEV_SERVER_URL
+        ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}`
+        : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}`
+      win.loadURL(url)
+    },
     registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => {
       commands.set(name, handler)
     },

@@ -77,7 +77,11 @@ export async function executeCommand(pluginId: string, command: string, args?: u
   if (!cmdMap) throw new Error(`Plugin ${pluginId} not found`)
   const handler = cmdMap.get(command)
   if (!handler) throw new Error(`Command ${command} not found in plugin ${pluginId}`)
-  return handler(args)
+  const result = await handler(args)
+  if (pluginId === 'clipboard-history' && command === 'copy') {
+    BrowserWindow.getAllWindows().forEach(win => win.webContents.send('clipboard:updated'))
+  }
+  return result
 }
 
 export function getPluginPage(pluginId: string): any {

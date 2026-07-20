@@ -9,7 +9,7 @@
     "displayName": "文件搜索",
     "icon": "Search",
     "keywords": ["f", "file", "搜索"],
-    "permissions": [],
+    "permissions": ["shell"],
     "builtin": true
   },
   "devDependencies": {

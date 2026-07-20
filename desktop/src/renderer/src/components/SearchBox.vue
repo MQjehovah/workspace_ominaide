@@ -47,12 +47,23 @@ function handleInput() {
 function selectNext() { if (selectedIndex.value < results.value.length - 1) selectedIndex.value++ }
 function selectPrev() { if (selectedIndex.value > 0) selectedIndex.value-- }
 
-async function executeSelected() {
-  const r = results.value[selectedIndex.value]
-  if (!r) return
-  if (r.action && r.pluginId) {
+function doAction(pluginId: string, action: string, actionArgs: any) {
+  const fn = window.mqbox?.plugin?.execute
+  if (!fn) return
+  const args = actionArgs ? JSON.parse(JSON.stringify(actionArgs)) : {}
+  return fn(pluginId, action, args)
+}
+
+function selectIndex(i: number) {
+  selectedIndex.value = i
+  const r = results.value[i]
+  if (r?.action && r.pluginId) {
     const action = r.action.includes(':') ? r.action.split(':').slice(1).join(':') : r.action
-    await window.mqbox?.plugin.execute(r.pluginId, action, r.actionArgs || {})
+    const p = doAction(r.pluginId, action, r.actionArgs)
+    if (p?.then) {
+      p.then(() => window.mqbox?.window.hide())
+      return
+    }
   }
   window.mqbox?.window.hide()
 }
@@ -60,7 +71,7 @@ async function executeSelected() {
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowDown') { e.preventDefault(); selectNext() }
   else if (e.key === 'ArrowUp') { e.preventDefault(); selectPrev() }
-  else if (e.key === 'Enter') { e.preventDefault(); executeSelected() }
+  else if (e.key === 'Enter') { e.preventDefault(); selectIndex(selectedIndex.value) }
   else if (e.key === 'Escape') { window.mqbox?.window.hide() }
 }
 
@@ -91,7 +102,7 @@ onUnmounted(() => { if (debounceTimer) clearTimeout(debounceTimer) })
       </div>
     </div>
     <div v-if="results.length > 0" class="results-panel">
-      <div v-for="(r, i) in results" :key="i" :class="['result-item', { active: i === selectedIndex }]" @click="selectedIndex = i; executeSelected()" @mouseenter="selectedIndex = i">
+        <div v-for="(r, i) in results" :key="i" :class="['result-item', { active: i === selectedIndex }]" @click="selectIndex(i)" @mouseenter="selectedIndex = i">
         <div class="r-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z"/></svg>
         </div>

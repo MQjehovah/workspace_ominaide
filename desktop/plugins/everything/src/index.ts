@@ -40,6 +40,12 @@ export default {
   async activate(context: PluginContext) {
     context.registerCommand('getPanelData', async () => null)
 
+    context.registerCommand('open', async (args: any) => {
+      if (args?.path && context.shell) {
+        await context.shell.openPath(args.path)
+      }
+    })
+
     context.registerSearchProvider({
       keyword: '',
       name: '本地搜索',

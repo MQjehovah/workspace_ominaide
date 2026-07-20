@@ -90,6 +90,14 @@ export default {
     context.registerCommand('getPanelData', async () => getState())
     context.registerCommand('getPageData', async () => getState())
 
+    context.registerCommand('open', async () => {
+      context.openPage('player')
+    })
+
+    context.registerCommand('search', async (args: any) => {
+      context.openPage('player')
+    })
+
     context.registerCommand('createPlaylist', async (args: any) => {
       const name = args?.name || '新建歌单'
       const playlist: PlaylistInfo = {
