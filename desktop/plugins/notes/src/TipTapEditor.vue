@@ -41,16 +41,20 @@ const editor = useEditor({
     Placeholder.configure({ placeholder: '开始写点什么...' }),
   ],
   editorProps: {
-    handlePaste: (view, event) => {
+    handlePaste: async (view, event) => {
       const items = event.clipboardData?.items
       if (!items) return false
-      for (const item of items) {
+      for (const item of Array.from(items)) {
+        if (item.kind !== 'file') continue
+        event.preventDefault()
+        const file = item.getAsFile()
+        if (!file) continue
         if (item.type.startsWith('image/')) {
-          event.preventDefault()
-          const file = item.getAsFile()
-          if (file) uploadImage(file)
-          return true
+          uploadImage(file)
+        } else {
+          uploadFile(file)
         }
+        return true
       }
       return false
     },
@@ -66,6 +70,18 @@ async function uploadImage(file: File) {
     const serverUrl = await window.mqbox?.config.get('serverUrl') || 'http://localhost:8000'
     const imgUrl = `${serverUrl}/api/files/note/${res.object_key}`
     editor.value?.chain().focus().setImage({ src: imgUrl }).run()
+  } catch {}
+}
+
+async function uploadFile(file: File) {
+  try {
+    const res = await window.mqbox?.api.post('/files/upload/note', {})
+    if (!res?.upload_url || !res?.object_key) return
+    await fetch(res.upload_url, { method: 'PUT', body: file })
+    const serverUrl = await window.mqbox?.config.get('serverUrl') || 'http://localhost:8000'
+    const fileUrl = `${serverUrl}/api/files/note/${res.object_key}`
+    const linkHtml = `<a href="${fileUrl}" download="${file.name}">📎 ${file.name}</a>`
+    editor.value?.chain().focus().insertContent(linkHtml).run()
   } catch {}
 }
 
