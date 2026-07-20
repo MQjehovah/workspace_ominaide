@@ -19,7 +19,8 @@ export async function initPlugins() {
   for (const [id, info] of loaded) {
     try {
       const modulePath = join(getPluginDir(info), info.manifest.main || 'dist/index.js')
-      const mod: PluginModule = await import(/* @vite-ignore */ modulePath.replace(/\\/g, '/'))
+      const fileUrl = 'file:///' + modulePath.replace(/\\/g, '/')
+      const mod: PluginModule = await import(/* @vite-ignore */ fileUrl)
       
       if (mod.default?.activate) {
         const cmdMap = new Map<string, Function>()
