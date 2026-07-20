@@ -369,15 +369,15 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <button class="btn btn-primary btn-sm" onclick="createTodo()">添加</button>
         </div>
         <div style="display:flex;gap:12px;height:calc(100vh - 200px)">
-          <div class="todo-col" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+          <div class="todo-col" ondragover="event.preventDefault()" ondrop="moveTodoToCol(0)" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border)">待处理</div>
             <div id="todoPending" class="todo-list" style="flex:1;overflow-y:auto;padding:6px"></div>
           </div>
-          <div class="todo-col" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+          <div class="todo-col" ondragover="event.preventDefault()" ondrop="moveTodoToCol(1)" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border)">进行中</div>
             <div id="todoProgress" class="todo-list" style="flex:1;overflow-y:auto;padding:6px"></div>
           </div>
-          <div class="todo-col" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+          <div class="todo-col" ondragover="event.preventDefault()" ondrop="moveTodoToCol(2)" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border)">已完成</div>
             <div id="todoDone" class="todo-list" style="flex:1;overflow-y:auto;padding:6px"></div>
           </div>
@@ -728,27 +728,18 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
         '</div>'
     }
 
-    // Drag & drop between columns
-    var dragTodoId = null
-    document.addEventListener('dragover', e => e.preventDefault())
-    document.addEventListener('drop', async e => {
-      const col = e.target.closest('.todo-col')
-      if (!col || !dragTodoId) return
-      const cols = document.querySelectorAll('.todo-col')
-      let idx = -1
-      for (let i = 0; i < cols.length; i++) { if (cols[i] === col) { idx = i; break } }
+    function moveTodoToCol(colIdx) {
+      const id = window.dragTodoId
+      if (!id) return
+      window.dragTodoId = null
       const statusList = ['pending', 'in_progress', 'done']
-      const newStatus = statusList[idx]
+      const newStatus = statusList[colIdx]
       if (!newStatus) return
-      try {
-        await fetch(config.serverUrl + '/api/plugins/todo/items/' + dragTodoId, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
-          body: JSON.stringify({ status: newStatus })
-        })
-        loadTodos()
-      } catch(e) {}
-      dragTodoId = null
-    })
+      fetch(config.serverUrl + '/api/plugins/todo/items/' + id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
+        body: JSON.stringify({ status: newStatus })
+      }).then(r => { if (r.ok) loadTodos() }).catch(() => {})
+    }
 
     async function createTodo() {
       const input = document.getElementById('todoInput')
