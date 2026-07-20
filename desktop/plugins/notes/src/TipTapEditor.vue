@@ -65,6 +65,7 @@ onBeforeUnmount(() => editor.value?.destroy())
 .toolbar button.active { background:#409EFF; color:#fff; }
 .sep { color:#e0e0e0; margin:0 4px; font-size:12px; }
 .editor-content { flex:1; padding:16px 20px; overflow-y:auto; outline:none; font-size:14px; line-height:1.8; }
+.editor-content :deep(.ProseMirror) { outline:none !important; border:none !important; box-shadow:none !important; }
 .editor-content :deep(h1) { font-size:1.6em; font-weight:700; margin:0.4em 0; }
 .editor-content :deep(h2) { font-size:1.3em; font-weight:600; margin:0.3em 0; }
 .editor-content :deep(h3) { font-size:1.1em; font-weight:600; margin:0.3em 0; }
