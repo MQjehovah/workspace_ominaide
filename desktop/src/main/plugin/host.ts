@@ -33,9 +33,7 @@ export async function initPlugins() {
         modules.set(id, plugin)
         plugins.set(id, info)
         
-        if (plugin.panel) {
-          panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
-        }
+        panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
         console.log(`Plugin activated: ${info.manifest.id}`)
       }
     } catch (e) {
