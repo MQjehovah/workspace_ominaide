@@ -1,0 +1,20 @@
+{
+  "name": "omniaide-everything",
+  "version": "1.0.0",
+  "displayName": "文件搜索",
+  "description": "搜索服务端文件",
+  "main": "dist/index.js",
+  "omniaide": {
+    "id": "everything",
+    "displayName": "文件搜索",
+    "icon": "Search",
+    "keywords": ["f", "file", "搜索"],
+    "permissions": [],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40"
+  }
+}
