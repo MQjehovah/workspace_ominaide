@@ -90,6 +90,7 @@ declare global {
         set: (key: string, value: any) => Promise<void>
       }
       window: {
+        openMain: () => void
         openPage: (pluginId: string) => void
         openSearch: () => void
         hide: () => void

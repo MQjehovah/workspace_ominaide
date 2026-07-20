@@ -32,8 +32,7 @@ async function login() {
     const data = await res.json()
     await window.mqbox.config.set('serverUrl', serverUrl.value)
     await window.mqbox.config.set('token', data.access_token)
-    if ((window as any).setLoggedIn) (window as any).setLoggedIn()
-    window.history.replaceState(null, '', '?view=main')
+    window.mqbox.window.openMain()
   } catch (e: any) { error.value = e.message }
   finally { loading.value = false }
 }

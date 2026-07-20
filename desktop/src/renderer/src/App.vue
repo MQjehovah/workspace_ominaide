@@ -1,14 +1,12 @@
 <template>
   <div v-if="ready">
-    <MainPanel v-if="view === 'main' && loggedIn" />
-    <SearchBox v-else-if="view === 'search' && loggedIn" />
+    <LoginPage v-if="view === 'login'" @logged-in="onLoggedIn" />
+    <MainPanel v-else-if="view === 'main'" />
+    <SearchBox v-else-if="view === 'search'" />
     <PluginPage v-else-if="view === 'plugin-page'" />
-    <LoginPage v-else />
   </div>
   <div v-else-if="error" class="error">{{ error }}</div>
-  <div v-else class="loading">
-    <p>加载中...</p>
-  </div>
+  <div v-else class="loading"><p>加载中...</p></div>
 </template>
 
 <script setup lang="ts">
@@ -19,15 +17,11 @@ import PluginPage from './components/PluginPage.vue'
 import LoginPage from './components/LoginPage.vue'
 
 const ready = ref(false)
-const loggedIn = ref(false)
 const error = ref('')
 const params = new URLSearchParams(window.location.search)
-const view = ref(params.get('view') || 'main')
+const view = ref(params.get('view') || 'login')
 
-onErrorCaptured((err) => {
-  error.value = String(err)
-  return false
-})
+onErrorCaptured((err) => { error.value = String(err); return false })
 
 onMounted(async () => {
   try {
@@ -38,18 +32,13 @@ onMounted(async () => {
     }
     if (!window.mqbox) { error.value = 'Preload bridge not loaded'; return }
     ready.value = true
-    // Check if already logged in
-    try {
-      const token = await window.mqbox.config.get('token')
-      loggedIn.value = !!token
-    } catch { loggedIn.value = false }
-  } catch (e: any) {
-    error.value = String(e)
-  }
-});
+  } catch (e: any) { error.value = String(e) }
+})
 
-// Expose for LoginPage to call after login
-(window as any).setLoggedIn = () => { loggedIn.value = true }
+function onLoggedIn() {
+  // Close login window, open main panel
+  window.mqbox.window.openMain()
+}
 </script>
 
 <style scoped>

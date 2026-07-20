@@ -3,44 +3,51 @@ import { join } from 'path'
 import { initPlugins, getPlugins, executeCommand } from './plugin/host'
 import { registerIpcHandlers } from './ipc'
 
-let mainWindow: BrowserWindow | null = null
+let mainPanel: BrowserWindow | null = null
+let loginWindow: BrowserWindow | null = null
 let searchWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 
-function createWindow(view: string = 'main') {
-  const win = new BrowserWindow({
-    width: view === 'search' ? 640 : 380,
-    height: view === 'search' ? 400 : 600,
-    resizable: false,
-    frame: false,
-    transparent: view === 'search',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  })
+const preloadPath = join(__dirname, '../preload/index.js')
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=${view}`)
-  } else {
-    win.loadFile(join(__dirname, '../../dist/index.html'), { query: { view } })
-  }
+function createRenderer(view: string, opts: { width: number; height: number; frame?: boolean; transparent?: boolean; resizable?: boolean }) {
+  const win = new BrowserWindow({
+    width: opts.width,
+    height: opts.height,
+    resizable: opts.resizable ?? false,
+    frame: opts.frame ?? false,
+    transparent: opts.transparent ?? false,
+    show: false,
+    webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
+  })
+  const url = process.env.VITE_DEV_SERVER_URL
+    ? `${process.env.VITE_DEV_SERVER_URL}?view=${view}`
+    : `file://${join(__dirname, '../../dist/index.html').replace(/\\/g, '/')}?view=${view}`
+  win.loadURL(url)
+  win.once('ready-to-show', () => win.show())
   return win
 }
 
-function showMainWindow() {
-  if (mainWindow) { mainWindow.show(); return }
-  mainWindow = createWindow('main')
-  mainWindow.on('closed', () => { mainWindow = null })
+function showLogin() {
+  if (loginWindow) { loginWindow.focus(); return }
+  loginWindow = createRenderer('login', { width: 400, height: 520 })
+  loginWindow.on('closed', () => { loginWindow = null })
+}
+
+function showMainPanel() {
+  if (mainPanel) { mainPanel.focus(); return }
+  mainPanel = createRenderer('main', { width: 300, height: 600 })
+  if (loginWindow) { loginWindow.close(); loginWindow = null }
+  mainPanel.on('closed', () => { mainPanel = null })
 }
 
 function showSearchWindow() {
-  if (searchWindow) { searchWindow.show(); return }
-  searchWindow = createWindow('search')
+  if (searchWindow) { searchWindow.close(); searchWindow = null; return }
+  searchWindow = createRenderer('search', { width: 640, height: 400, transparent: true })
   searchWindow.on('blur', () => { searchWindow?.close(); searchWindow = null })
   searchWindow.on('closed', () => { searchWindow = null })
+  searchWindow.setAlwaysOnTop(true, 'floating')
 }
 
 function createTray() {
@@ -48,37 +55,35 @@ function createTray() {
   tray = new Tray(icon)
   tray.setToolTip('OmniAide')
   const contextMenu = Menu.buildFromTemplate([
-    { label: '打开 OmniAide', click: showMainWindow },
+    { label: '打开 OmniAide', click: showMainPanel },
     { type: 'separator' },
     { label: '退出', click: () => { isQuitting = true; app.quit() } },
   ])
   tray.setContextMenu(contextMenu)
-  tray.on('click', showMainWindow)
+  tray.on('click', showMainPanel)
 }
 
 app.whenReady().then(async () => {
   registerIpcHandlers()
   await initPlugins()
   createTray()
-  showMainWindow()
-
+  showLogin()
   globalShortcut.register('Alt+Space', showSearchWindow)
 })
 
 app.on('window-all-closed', () => {})
 app.on('before-quit', () => { isQuitting = true })
 
+ipcMain.handle('window:open-main', () => showMainPanel())
+
 ipcMain.handle('window:open-page', (_, pluginId) => {
   const win = new BrowserWindow({
     width: 900, height: 700,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-    },
+    webPreferences: { preload: preloadPath, contextIsolation: true },
   })
   const url = process.env.VITE_DEV_SERVER_URL
     ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}`
-    : `file://${join(__dirname, '../../dist/index.html')}?view=plugin-page&pluginId=${pluginId}`
+    : `file://${join(__dirname, '../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}`
   win.loadURL(url)
 })
 

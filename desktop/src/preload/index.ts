@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('mqbox', {
     set: (key: string, value: any) => ipcRenderer.invoke('config:set', key, value),
   },
   window: {
+    openMain: () => ipcRenderer.invoke('window:open-main'),
     openPage: (pluginId: string) => ipcRenderer.invoke('window:open-page', pluginId),
     openSearch: () => ipcRenderer.invoke('window:open-search'),
     hide: () => ipcRenderer.invoke('window:hide'),
