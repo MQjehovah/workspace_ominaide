@@ -64,7 +64,7 @@ async function save() {
 <style scoped>
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; z-index:1000; }
 .card { width:420px; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.15); overflow:hidden; }
-.card-hd { display:flex; justify-content:space-between; align-items:center; padding:14px 20px; border-bottom:1px solid #e8e8e8; font-weight:600; font-size:14px; -webkit-app-region:drag; }
+.card-hd { display:flex; justify-content:space-between; align-items:center; padding:14px 20px; border-bottom:1px solid #e8e8e8; font-weight:600; font-size:14px;}
 .close-btn { border:none; background:transparent; cursor:pointer; color:#999; font-size:16px; padding:4px; }
 .card-body { padding:20px; max-height:380px; overflow-y:auto; }
 .section { margin-bottom:20px; }

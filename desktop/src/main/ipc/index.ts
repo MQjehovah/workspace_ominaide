@@ -1,6 +1,7 @@
 import axios from 'axios'
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
 import { join } from 'path'
+import { existsSync, readFileSync, mkdirSync, cpSync } from 'fs'
 import { getPlugins, getPanels, getSearchProviders, executeCommand, getPluginPage } from '../plugin/host'
 import { setAuth } from '../plugin/sandbox'
 import { getConfig, setConfig } from '../config'
@@ -21,6 +22,33 @@ export function registerIpcHandlers() {
   ipcMain.handle('plugin:execute', async (_, pluginId: string, command: string, args?: unknown) => {
     try { return await executeCommand(pluginId, command, args) }
     catch (e) { return { error: (e as Error).message } }
+  })
+  ipcMain.handle('plugin:set-enabled', async (_, pluginId: string, enabled: boolean) => {
+    const cfg = await getConfig()
+    const disabled = cfg.disabledPlugins || []
+    if (enabled) {
+      cfg.disabledPlugins = disabled.filter((id: string) => id !== pluginId)
+    } else {
+      if (!disabled.includes(pluginId)) disabled.push(pluginId)
+      cfg.disabledPlugins = disabled
+    }
+    await setConfig('disabledPlugins', cfg.disabledPlugins)
+  })
+  ipcMain.handle('plugin:import', async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    if (result.canceled) return { success: false }
+    const pluginPath = result.filePaths[0]
+    const pkgPath = join(pluginPath, 'package.json')
+    if (!existsSync(pkgPath)) return { success: false, error: '所选目录没有 package.json' }
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+      const pluginId = pkg.omniaide?.id || pkg.name
+      const dest = join(__dirname, '../../../plugins', pluginId)
+      if (existsSync(dest)) return { success: false, error: '插件 ' + pluginId + ' 已存在' }
+      mkdirSync(dest, { recursive: true })
+      cpSync(pluginPath, dest, { recursive: true })
+      return { success: true, pluginId }
+    } catch { return { success: false, error: '导入失败' } }
   })
 
   // Shortcuts
@@ -83,7 +111,7 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('window:open-plugin-manager', () => {
     const win = new BrowserWindow({
-      width: 560, height: 480, frame: false, resizable: false, show: false,
+      width: 500, height: 640, frame: false, resizable: true, show: false,
       webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true },
     })
     win.loadURL('file://' + join(__dirname, '../../dist/index.html').replace(/\\/g, '/') + '?view=plugin-manager')

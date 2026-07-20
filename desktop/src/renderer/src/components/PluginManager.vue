@@ -9,7 +9,6 @@
         <button class="close-btn" @click="close">✕</button>
       </div>
 
-      <!-- Plugins Tab -->
       <div v-if="tab === 'plugins'" class="card-body">
         <div v-for="p in plugins" :key="p.id" class="plugin-item">
           <div class="plugin-icon" :style="{ background: getColor(p.id) + '20' }">
@@ -19,11 +18,14 @@
             <span class="plugin-name">{{ p.manifest?.displayName || p.id }}</span>
             <span class="plugin-desc">{{ p.manifest?.description || '' }}</span>
           </div>
-          <label class="switch"><input type="checkbox" :checked="p.enabled" @change="togglePlugin(p)" /><span class="slider"></span></label>
+          <div class="plugin-actions">
+            <button class="cfg-btn" title="配置" @click="openConfig(p)">⚙</button>
+            <label class="switch"><input type="checkbox" :checked="p.enabled" @change="togglePlugin(p)" /><span class="slider"></span></label>
+          </div>
         </div>
+        <button class="import-btn" @click="importPlugin">+ 导入插件</button>
       </div>
 
-      <!-- Shortcuts Tab -->
       <div v-if="tab === 'shortcuts'" class="card-body">
         <div class="section-title">系统快捷键</div>
         <div v-for="s in builtinShortcuts" :key="s.key" class="shortcut-item">
@@ -55,11 +57,14 @@
         <button v-else class="add-btn" @click="showAddForm = true">+ 添加快捷键</button>
       </div>
     </div>
+
+    <PluginConfig v-if="configPluginId" :plugin-id="configPluginId" @close="configPluginId = ''" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import PluginConfig from './PluginConfig.vue'
 
 const tab = ref('plugins')
 const plugins = ref<any[]>([])
@@ -70,6 +75,7 @@ const recording = ref(false)
 const recordTarget = ref('')
 const editingBuiltin = ref('')
 const newBinding = ref<any>({ pluginId: '', command: '', accelerator: '' })
+const configPluginId = ref('')
 
 const pluginColors: Record<string, string> = { screenshot: '#28A745', 'quick-notes': '#DC3545', 'clipboard-history': '#0078D4', todo: '#FF9800', player: '#E91E63', files: '#2196F3', notes: '#FF9800', calculator: '#9C27B0', everything: '#666' }
 function getColor(id: string) { return pluginColors[id] || '#666' }
@@ -87,7 +93,18 @@ function getCommands(pluginId: string): string[] {
 
 async function togglePlugin(p: any) {
   p.enabled = !p.enabled
-  // In a full implementation this would call enable/disable IPC
+  await window.mqbox.plugin.setEnabled(p.id, p.enabled)
+}
+
+async function importPlugin() {
+  const result = await window.mqbox.plugin.importPlugin()
+  if (result?.success) {
+    await load()
+  }
+}
+
+function openConfig(p: any) {
+  configPluginId.value = p.id
 }
 
 async function removeShortcut(accelerator: string) {
@@ -121,15 +138,13 @@ function onKeydown(e: KeyboardEvent) {
   const acc = [...mods, key].join('+')
   if (recordTarget.value === 'builtin') {
     window.mqbox.shortcut.updateBuiltin(editingBuiltin.value, acc)
-    builtinShortcuts.value = awaitBuiltin()
+    builtinShortcuts.value = window.mqbox.shortcut.getBuiltin()
     editingBuiltin.value = ''
   } else {
     newBinding.value.accelerator = acc
   }
   recording.value = false
 }
-
-async function awaitBuiltin() { return await window.mqbox.shortcut.getBuiltin() }
 
 function close() { window.close() }
 
@@ -138,13 +153,13 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 </script>
 
 <style scoped>
-.overlay { position:fixed; inset:0; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; z-index:1000; }
-.card { width:500px; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.15); display:flex; flex-direction:column; overflow:hidden; }
-.card-hd { display:flex; align-items:center; padding:10px 16px; border-bottom:1px solid #e8e8e8; }
-.tabs { display:flex; gap:4px; flex:1; justify-content:center; }
-.tabs button { padding:4px 16px; border-radius:6px; border:none; background:transparent; cursor:pointer; font-size:13px; color:#666; }
+.overlay { height:100vh; display:flex; flex-direction:column; background:#fff; }
+.card { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.card-hd { display:flex; align-items:center; padding:12px 16px; border-bottom:1px solid #e8e8e8; }
+.tabs { display:flex; gap:4px; flex:1; justify-content:center;  -webkit-app-region:drag; }
+.tabs button { padding:4px 16px; border-radius:6px; border:none; background:transparent; cursor:pointer; font-size:13px; color:#666; -webkit-app-region:no-drag; }
 .tabs button.active { background:#e8f4fd; color:#0078D4; font-weight:500; }
-.close-btn { border:none; background:transparent; cursor:pointer; color:#999; font-size:16px; }
+.close-btn { border:none; background:transparent; cursor:pointer; color:#999; font-size:16px; -webkit-app-region:no-drag; }
 .card-body { flex:1; overflow-y:auto; padding:12px 16px; }
 .plugin-item { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #f5f5f5; }
 .plugin-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; position:relative; }
@@ -152,12 +167,17 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 .plugin-info { flex:1; }
 .plugin-name { font-size:13px; font-weight:500; display:block; }
 .plugin-desc { font-size:11px; color:#999; }
+.plugin-actions { display:flex; align-items:center; gap:8px; }
+.cfg-btn { border:none; background:transparent; cursor:pointer; font-size:16px; color:#999; padding:2px 4px; border-radius:4px; }
+.cfg-btn:hover { background:#f0f0f0; color:#333; }
 .switch { position:relative; width:36px; height:20px; flex-shrink:0; }
 .switch input { opacity:0; width:0; height:0; }
 .slider { position:absolute; cursor:pointer; inset:0; background:#ddd; border-radius:20px; transition:0.2s; }
 .slider::before { content:''; position:absolute; height:16px; width:16px; left:2px; bottom:2px; background:#fff; border-radius:50%; transition:0.2s; }
 .switch input:checked + .slider { background:#0078D4; }
 .switch input:checked + .slider::before { transform:translateX(16px); }
+.import-btn { width:100%; padding:10px; border:1px dashed #d0d0d0; border-radius:8px; background:transparent; cursor:pointer; font-size:13px; color:#999; margin-top:12px; }
+.import-btn:hover { border-color:#0078D4; color:#0078D4; }
 .section-title { font-size:11px; font-weight:600; color:#999; text-transform:uppercase; margin-bottom:8px; }
 .shortcut-item { display:flex; justify-content:space-between; align-items:center; padding:8px 0; font-size:13px; }
 .shortcut-info { }

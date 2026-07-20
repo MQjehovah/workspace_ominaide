@@ -24,7 +24,7 @@ export async function setupShortcut(callbacks: Record<string, () => void>) {
   builtinCallbacks = callbacks
   const config = await getConfig()
 
-  const builtins = config.shortcut || { toggle: 'Ctrl+Space', search: 'Ctrl+Shift+Space' }
+  const builtins = config.shortcut || { toggle: 'Ctrl+Shift+Space', search: 'Ctrl+Space' }
   for (const [key, acc] of Object.entries(builtins)) {
     const cb = builtinCallbacks[key]
     if (cb && typeof acc === 'string') {
@@ -80,8 +80,8 @@ export async function getBuiltinShortcuts(): Promise<BuiltinShortcut[]> {
   const config = await getConfig()
   const s = config.shortcut || {}
   return [
-    { key: 'toggle', label: '打开/隐藏面板', accelerator: s.toggle || 'Ctrl+Space', editable: true },
-    { key: 'search', label: '全局搜索', accelerator: s.search || 'Ctrl+Shift+Space', editable: true },
+    { key: 'toggle', label: '打开/隐藏面板', accelerator: s.toggle || 'Ctrl+Shift+Space', editable: true },
+    { key: 'search', label: '全局搜索', accelerator: s.search || 'Ctrl+Space', editable: true },
   ]
 }
 

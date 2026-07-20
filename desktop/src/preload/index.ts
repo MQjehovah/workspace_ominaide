@@ -23,6 +23,10 @@ contextBridge.exposeInMainWorld('mqbox', {
     getPage: (pluginId: string) => ipcRenderer.invoke('plugin:get-page', pluginId),
     execute: (pluginId: string, command: string, args?: unknown) =>
       ipcRenderer.invoke('plugin:execute', pluginId, command, args),
+    setEnabled: (pluginId: string, enabled: boolean) =>
+      ipcRenderer.invoke('plugin:set-enabled', pluginId, enabled),
+    importPlugin: () =>
+      ipcRenderer.invoke('plugin:import'),
   },
   search: {
     plugin: (keyword: string, query: string) => ipcRenderer.invoke('search:plugin', keyword, query),
