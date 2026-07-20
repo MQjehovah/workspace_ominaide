@@ -45,6 +45,9 @@ app.include_router(sync_router)
 from core.mcp.router import router as mcp_router
 app.include_router(mcp_router)
 
+from core.events.router import router as events_router
+app.include_router(events_router)
+
 
 @app.websocket("/ws/sync/{workspace_id}")
 async def sync_websocket(websocket: WebSocket, workspace_id: int):

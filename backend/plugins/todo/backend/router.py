@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
+from core.events.recorder import record_event
 from plugins.todo.backend.schemas import TodoCreate, TodoUpdate, TodoResponse
 from plugins.todo.backend import service as todo_service
 
@@ -15,6 +16,7 @@ async def create_todo(
     db: AsyncSession = Depends(get_db),
 ):
     todo = await todo_service.create_todo(db, user["id"], req)
+    await record_event(db, user["id"], "todo.created", "todo", todo.id, f"创建待办: {todo.title}")
     return TodoResponse.model_validate(todo)
 
 
@@ -51,6 +53,8 @@ async def update_todo(
 ):
     try:
         todo = await todo_service.update_todo(db, user["id"], todo_id, req)
+        changes = {k: v for k, v in req.model_dump(exclude_none=True).items() if v is not None}
+        await record_event(db, user["id"], "todo.updated", "todo", todo_id, f"修改待办: {todo.title}", changes)
         return TodoResponse.model_validate(todo)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -63,7 +67,10 @@ async def delete_todo(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        todo = await todo_service.get_todo(db, user["id"], todo_id)
+        title = todo.title if todo else ""
         await todo_service.delete_todo(db, user["id"], todo_id)
+        await record_event(db, user["id"], "todo.deleted", "todo", todo_id, f"删除待办: {title}")
         return {"message": "Todo deleted"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
