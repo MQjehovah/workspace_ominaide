@@ -88,6 +88,9 @@ ipcMain.handle('start-sync', async (event, config) => {
   syncEngine.onEvent = (event) => {
     if (mainWindow) mainWindow.webContents.send('sync-event', event)
   }
+  syncEngine.onUnauthorized = () => {
+    if (mainWindow) mainWindow.webContents.send('sync-unauthorized')
+  }
   await syncEngine.start(config)
   return true
 })

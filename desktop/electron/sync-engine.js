@@ -102,7 +102,7 @@ class SyncEngine {
       }
       walkDir(localPath, '')
     } catch (err) {
-      // Silent
+      if (err.response?.status === 401 && this.onUnauthorized) this.onUnauthorized()
     }
   }
 
@@ -123,7 +123,7 @@ class SyncEngine {
         if (this.onEvent) this.onEvent({ direction: 'local', file_path: relativePath, event_type: 'create' })
       }
     } catch (err) {
-      console.error('Upload failed:', err.message)
+      if (err.response?.status === 401 && this.onUnauthorized) this.onUnauthorized()
     }
   }
 

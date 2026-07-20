@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSyncStatus: () => ipcRenderer.invoke('get-sync-status'),
   onSyncStatus: (callback) => ipcRenderer.on('sync-status', (e, status) => callback(status)),
   onSyncEvent: (callback) => ipcRenderer.on('sync-event', (e, event) => callback(event)),
+  onUnauthorized: (callback) => ipcRenderer.on('sync-unauthorized', () => callback()),
   openExternal: (url) => ipcRenderer.invoke('open-external', url)
 })

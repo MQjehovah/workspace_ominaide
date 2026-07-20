@@ -884,6 +884,10 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
       label.textContent = labels[status] || status
     })
 
+    window.electronAPI.onUnauthorized(() => {
+      doLogout()
+    })
+
     window.electronAPI.onSyncEvent((event) => {
       const list = document.getElementById('eventList')
       list.querySelector('.empty-state')?.remove()
