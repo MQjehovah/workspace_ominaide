@@ -73,28 +73,30 @@ onUnmounted(() => { if (debounceTimer) clearTimeout(debounceTimer) })
 <template>
   <div class="search-overlay" @click.self="window.mqbox?.window.hide()">
     <div class="search-box">
-      <div class="input-wrap">
-        <svg v-if="!isLoading" class="s-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
-        <svg v-else class="s-icon spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
-        </svg>
-        <input ref="inputRef" v-model="query" type="text" placeholder="输入关键词搜索..." @input="handleInput" @keydown="handleKeydown" />
-        <button v-if="query" class="clear-btn" @click="clearSearch">✕</button>
-      </div>
-      <div v-if="results.length" class="results-wrap">
-        <div v-for="(r, i) in results" :key="i" :class="['result-item', { active: i === selectedIndex }]" @click="selectedIndex = i; executeSelected()" @mouseenter="selectedIndex = i">
-          <div class="r-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z"/></svg>
-          </div>
-          <div class="r-body">
-            <div class="r-title">{{ r.title }}</div>
-            <div v-if="r.subtitle" class="r-sub">{{ r.subtitle }}</div>
+      <div class="search-inner">
+        <div class="input-wrap">
+          <svg v-if="!isLoading" class="s-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <svg v-else class="s-icon spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
+          </svg>
+          <input ref="inputRef" v-model="query" type="text" placeholder="输入关键词搜索..." @input="handleInput" @keydown="handleKeydown" />
+          <button v-if="query" class="clear-btn" @click="clearSearch">✕</button>
+        </div>
+        <div v-if="results.length > 0" class="results-wrap">
+          <div v-for="(r, i) in results" :key="i" :class="['result-item', { active: i === selectedIndex }]" @click="selectedIndex = i; executeSelected()" @mouseenter="selectedIndex = i">
+            <div class="r-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z"/></svg>
+            </div>
+            <div class="r-body">
+              <div class="r-title">{{ r.title }}</div>
+              <div v-if="r.subtitle" class="r-sub">{{ r.subtitle }}</div>
+            </div>
           </div>
         </div>
+        <div v-if="!query" class="hint">输入关键词搜索插件和命令</div>
       </div>
-      <div v-if="!query" class="hint">输入关键词搜索插件和命令</div>
     </div>
   </div>
 </template>
@@ -105,8 +107,9 @@ body, html { margin:0; padding:0; background:transparent !important; overflow:hi
 
 <style scoped>
 .search-overlay { width:100vw; height:100vh; display:flex; justify-content:center; padding-top:48px; }
-.search-box { width:640px; min-height:140px; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.15); }
-.input-wrap { display:flex; align-items:center; gap:10px; padding:14px 18px; background:#f5f7fa; margin:12px; border-radius:10px; }
+.search-box { width:640px; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.15); overflow:hidden; }
+.search-inner { padding:16px; }
+.input-wrap { display:flex; align-items:center; gap:10px; padding:12px 16px; background:#f5f7fa; border-radius:10px; }
 .s-icon { width:20px; height:20px; color:#c0c4cc; flex-shrink:0; }
 .spin { animation:spin 0.8s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg) } }
@@ -114,7 +117,7 @@ body, html { margin:0; padding:0; background:transparent !important; overflow:hi
 .input-wrap input::placeholder { color:#c0c4cc; }
 .clear-btn { border:none; background:transparent; color:#c0c4cc; cursor:pointer; font-size:16px; padding:2px 6px; border-radius:4px; }
 .clear-btn:hover { background:#e4e7ed; color:#909399; }
-.results-wrap { max-height:300px; overflow-y:auto; padding:0 8px 8px; }
+.results-wrap { max-height:260px; overflow-y:auto; margin-top:12px; }
 .results-wrap::-webkit-scrollbar { width:4px; }
 .results-wrap::-webkit-scrollbar-thumb { background:#e4e7ed; border-radius:2px; }
 .results-wrap::-webkit-scrollbar-thumb:hover { background:#c0c4cc; }
@@ -126,5 +129,5 @@ body, html { margin:0; padding:0; background:transparent !important; overflow:hi
 .r-title { font-size:13px; color:#303133; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .r-sub { font-size:11px; color:#999; margin-top:2px; }
 .status { text-align:center; padding:20px; color:#c0c4cc; font-size:13px; }
-.hint { text-align:center; padding:8px 0 16px; color:#c0c4cc; font-size:12px; }
+.hint { text-align:center; margin-top:12px; color:#c0c4cc; font-size:12px; }
 </style>
