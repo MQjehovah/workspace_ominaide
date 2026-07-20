@@ -46,6 +46,7 @@ export function registerIpcHandlers() {
     const results: any[] = []
     for (const p of providers) {
       if (keyword && p.keyword !== keyword) continue
+      if (!keyword && p.keyword !== '') continue
       try {
         const res = await Promise.race([
           Promise.resolve(p.onSearch(query)),

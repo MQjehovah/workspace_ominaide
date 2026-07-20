@@ -19,7 +19,7 @@ export default {
     context.registerCommand('getPanelData', async () => null)
 
     context.registerSearchProvider({
-      keyword: 'f',
+      keyword: '',
       name: '文件搜索',
       priority: 100,
       onSearch: async (query: string) => {

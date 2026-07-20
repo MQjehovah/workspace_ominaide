@@ -25,10 +25,15 @@ function handleInput() {
     const parts = q.split(/\s+/)
     const firstWord = parts[0]
     const rest = parts.slice(1).join(' ')
-    const matched = providers.value.find(p => p.keyword === firstWord)
-    if (!matched) { isLoading.value = false; results.value = []; return }
+    let matched = providers.value.find(p => p.keyword === firstWord)
+    let searchKeyword = matched ? firstWord : ''
+    let searchQuery = matched ? (rest || '') : q
+    if (!matched) {
+      matched = providers.value.find(p => p.keyword === '')
+      if (!matched) { isLoading.value = false; results.value = []; return }
+    }
     try {
-      const pluginResults = await window.mqbox?.search?.plugin(firstWord, rest || '') || []
+      const pluginResults = await window.mqbox?.search?.plugin(searchKeyword, searchQuery) || []
       results.value = pluginResults.map((r: any) => ({
         title: r.title, subtitle: r.subtitle || '',
         action: r.action, actionArgs: r.actionArgs, pluginId: r.pluginId,
