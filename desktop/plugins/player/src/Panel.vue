@@ -1,218 +1,78 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-
-interface Track {
-  id: string
-  name: string
-  source: 'local' | 'url'
-  path: string
-  artist?: string
-}
-
-interface PlaylistInfo {
-  id: string
-  name: string
-  trackIds: string[]
-}
-
-interface Props {
-  data: {
-    playlists: PlaylistInfo[]
-    tracks: Record<string, Track>
-    currentPlaylistId: string | null
-    currentPlaylist: PlaylistInfo | null
-    currentTrackId: string | null
-    currentTrack: Track | null
-    currentPlaylistTracks: Track[]
-    isPlaying: boolean
-    currentTime: number
-    duration: number
-    volume: number
-    playMode: 'sequence' | 'loop' | 'shuffle'
-  }
+const props = defineProps<{
+  data: { currentTrack: any; isPlaying: boolean; currentTime: number; duration: number; playMode: string; playlists: any[]; currentPlaylistTracks: any[] }
   execute: (action: string, args?: unknown) => Promise<unknown>
-  openPage: () => void
-  refresh: () => Promise<void>
-}
-
-const props = defineProps<Props>()
-
-const showPlaylistMenu = ref(false)
-
-const progress = computed(() => {
-  if (!props.data.duration) return 0
-  return (props.data.currentTime / props.data.duration) * 100
-})
-
-function formatTime(seconds: number) {
-  if (!seconds || isNaN(seconds)) return '0:00'
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-const handlePlayPause = () => {
-  if (props.data.isPlaying) {
-    props.execute('pause')
-  } else {
-    props.execute('play', { trackId: props.data.currentTrackId })
-  }
-}
-
-function selectPlaylist(id: string) {
-  props.execute('selectPlaylist', { playlistId: id })
-}
-
-function playTrack(id: string) {
-  props.execute('play', { trackId: id })
-  showPlaylistMenu.value = false
-}
+  openPage: () => void; refresh: () => Promise<void>
+}>()
+const showMenu = ref(false)
+const progress = computed(() => props.data.duration ? (props.data.currentTime / props.data.duration) * 100 : 0)
+function fmt(s: number) { if (!s || isNaN(s)) return '0:00'; return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}` }
 </script>
 
 <template>
-  <div class="player-panel rounded-lg bg-white border border-gray-200 p-2.5 flex flex-col gap-2">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center">
-          <svg class="w-4.5 h-4.5 text-pink-500" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-          </svg>
-        </div>
-        <span class="text-sm text-gray-800 font-semibold">播放器</span>
+  <div class="panel">
+    <div class="panel-hd">
+      <div class="panel-icon pink">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
       </div>
-      <div class="flex items-center gap-1">
-        <button
-          class="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 text-xs"
-          :title="data.playMode === 'sequence' ? '顺序播放' : data.playMode === 'loop' ? '循环播放' : '随机播放'"
-          @click="execute('toggleMode')"
-        >
-          {{ data.playMode === 'sequence' ? '▶▶' : data.playMode === 'loop' ? '🔁' : '🎲' }}
-        </button>
-        <button class="text-gray-400 cursor-pointer hover:text-gray-600" @click="openPage">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="m9 18 6-6-6-6"/>
-          </svg>
-        </button>
+      <div class="panel-info"><span class="panel-title">播放器</span></div>
+      <button class="panel-btn" @click="openPage"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
+
+    <div v-if="data.currentTrack" class="track-info">
+      <div class="track-name">{{ data.currentTrack.name }}</div>
+      <div class="track-artist">{{ data.currentTrack.artist || '' }}</div>
+      <div class="progress-bar">
+        <div class="progress-fill" :style="{ width: progress + '%' }"></div>
+      </div>
+      <div class="time-row">
+        <span>{{ fmt(data.currentTime) }}</span>
+        <span>{{ fmt(data.duration) }}</span>
       </div>
     </div>
 
-    <!-- Now playing -->
-    <div v-if="data.currentTrack" class="flex flex-col gap-1.5">
-      <div class="flex flex-col">
-        <span class="text-xs text-gray-800 truncate font-medium">{{ data.currentTrack.name }}</span>
-        <span v-if="data.currentTrack.artist" class="text-xs text-gray-400 truncate">{{ data.currentTrack.artist }}</span>
-      </div>
-
-      <div class="flex items-center gap-1">
-        <span class="text-xs text-gray-500 w-8">{{ formatTime(data.currentTime) }}</span>
-        <div
-          class="flex-1 h-1 rounded-full bg-gray-200 overflow-hidden cursor-pointer relative"
-          @click="(e: MouseEvent) => execute('seek', { percent: e.offsetX / (e.target as HTMLElement).offsetWidth })"
-        >
-          <div class="h-full rounded-full bg-pink-500" :style="{ width: progress + '%' }"></div>
-        </div>
-        <span class="text-xs text-gray-500 w-8">{{ formatTime(data.duration) }}</span>
-      </div>
+    <div class="controls">
+      <button class="ctrl-btn sm" @click="execute('prev')">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
+      <button class="play-btn" @click="data.isPlaying ? execute('pause') : execute('play', { trackId: data.currentTrack?.id })">
+        <svg v-if="data.isPlaying" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="ctrl-btn sm" @click="execute('next')">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+      </button>
     </div>
 
-    <!-- Controls (centered) + playlist icon (absolute right) -->
-    <div class="relative flex items-center justify-center gap-2">
-      <button
-        class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
-        @click="execute('prev')"
-      >
-        <svg class="w-3 h-3 text-gray-600" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
-        </svg>
-      </button>
-      <button
-        class="w-8 h-8 rounded-full bg-pink-500 flex items-center justify-center hover:bg-pink-600"
-        @click="handlePlayPause"
-      >
-        <svg v-if="data.isPlaying" class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-        </svg>
-        <svg v-else class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M8 5v14l11-7z"/>
-        </svg>
-      </button>
-      <button
-        class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
-        @click="execute('next')"
-      >
-        <svg class="w-3 h-3 text-gray-600" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
-        </svg>
-      </button>
-
-      <!-- Playlist icon (absolute right, doesn't affect centering) -->
-      <div v-if="data.playlists.length > 0" class="absolute right-0">
-        <button
-          class="w-6 h-6 rounded-md bg-gray-50 hover:bg-gray-100 flex items-center justify-center border border-gray-200"
-          :title="data.currentPlaylist?.name"
-          @click="showPlaylistMenu = !showPlaylistMenu"
-        >
-          <svg class="w-3.5 h-3.5 text-pink-500" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm14 0v6l5-3z"/>
-          </svg>
-        </button>
-
-        <!-- Dropdown: playlist tabs + track list -->
-        <div
-          v-if="showPlaylistMenu"
-          class="absolute bottom-full right-0 mb-1 bg-white rounded-md shadow-lg border border-gray-200 z-50 w-[200px]"
-        >
-          <!-- Playlist switcher row -->
-          <div v-if="data.playlists.length > 1" class="flex gap-0.5 p-1 border-b border-gray-100 overflow-x-auto">
-            <button
-              v-for="pl in data.playlists"
-              :key="pl.id"
-              class="shrink-0 px-2 py-1 rounded text-xs whitespace-nowrap"
-              :class="data.currentPlaylistId === pl.id ? 'bg-pink-500 text-white' : 'text-gray-500 hover:bg-gray-100'"
-              @click="selectPlaylist(pl.id)"
-            >
-              {{ pl.name }}
-            </button>
-          </div>
-
-          <!-- Track list -->
-          <div class="max-h-48 overflow-y-auto p-1">
-            <div v-if="!data.currentPlaylist || data.currentPlaylistTracks.length === 0" class="text-xs text-gray-400 text-center py-3">
-              歌单为空
-            </div>
-            <button
-              v-for="(track, index) in data.currentPlaylistTracks"
-              :key="track.id"
-              class="w-full px-2 py-1 rounded text-left text-xs flex items-center gap-1.5 hover:bg-gray-50"
-              :class="{ 'bg-pink-50 text-pink-600': data.currentTrackId === track.id, 'text-gray-600': data.currentTrackId !== track.id }"
-              @click="playTrack(track.id)"
-            >
-              <span class="w-4 text-gray-400 shrink-0">{{ index + 1 }}</span>
-              <span class="truncate flex-1">{{ track.name }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Empty state -->
-    <div v-if="!data.currentTrack && data.playlists.length === 0" class="flex items-center justify-center gap-2 py-1">
-      <button
-        class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
-        @click="openPage"
-      >
-        <svg class="w-4 h-4 text-gray-600" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M8 5v14l11-7z"/>
-        </svg>
-      </button>
-      <span class="text-xs text-gray-400">打开播放器添加歌曲</span>
-    </div>
+    <div v-if="!data.currentTrack" class="empty" @click="openPage">打开播放器添加歌曲</div>
   </div>
 </template>
 
 <style scoped>
-.player-panel {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
+.panel { background:#fff; border-radius:10px; border:1px solid #e8e8e8; padding:12px; }
+.panel-hd { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.panel-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.panel-icon.pink { background:#fce4ec; }
+.panel-icon svg { width:16px; height:16px; color:#E91E63; }
+.panel-info { flex:1; }
+.panel-title { font-size:13px; font-weight:600; color:#1e1e1e; }
+.panel-btn { border:none; background:transparent; cursor:pointer; color:#ccc; padding:4px; border-radius:4px; }
+.panel-btn:hover { background:#f5f5f5; color:#666; }
+.track-info { margin-bottom:8px; }
+.track-name { font-size:12px; font-weight:500; color:#333; }
+.track-artist { font-size:11px; color:#999; }
+.progress-bar { height:4px; background:#eee; border-radius:2px; margin:6px 0; cursor:pointer; overflow:hidden; }
+.progress-fill { height:100%; background:#E91E63; border-radius:2px; }
+.time-row { display:flex; justify-content:space-between; font-size:10px; color:#999; }
+.controls { display:flex; align-items:center; justify-content:center; gap:12px; }
+.ctrl-btn { width:24px; height:24px; border-radius:12px; border:none; background:#f0f0f0; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+.ctrl-btn:hover { background:#e0e0e0; }
+.ctrl-btn svg { width:12px; height:12px; color:#666; }
+.ctrl-btn.sm { width:20px; height:20px; }
+.play-btn { width:32px; height:32px; border-radius:16px; border:none; background:#E91E63; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.play-btn:hover { background:#d81b60; }
+.play-btn svg { width:16px; height:16px; color:#fff; }
+.empty { text-align:center; padding:12px; color:#999; font-size:12px; cursor:pointer; }
+.empty:hover { color:#E91E63; }
 </style>

@@ -1,143 +1,67 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { Note } from './types'
-import NoteDetail from './NoteDetail.vue'
-
+import { computed } from 'vue'
 interface Props {
-  data: {
-    notes: Note[]
-  }
+  data: { notes: { id: string; content: string; time: number; tags: string[] }[] }
   execute: (action: string, args?: unknown) => Promise<unknown>
-  openPage: () => void
-  refresh: () => Promise<void>
+  openPage: () => void; refresh: () => Promise<void>
 }
-
 const props = defineProps<Props>()
-
-const recentNotes = computed(() => {
-  return props.data.notes.slice(0, 2)
-})
-
-// 笔记详情面板
-const selectedNote = ref<Note | null>(null)
-
-const handleSelectNote = (note: Note) => {
-  selectedNote.value = note
-}
-
-const handleCloseDetail = () => {
-  selectedNote.value = null
-}
-
-const handleNoteUpdated = (updated: Note) => {
-  // 同步更新本地数据中的笔记内容
-  const idx = props.data.notes.findIndex((n: Note) => n.id === updated.id)
-  if (idx !== -1) {
-    props.data.notes[idx] = updated
-  }
-  selectedNote.value = updated
-}
-
-const handleNoteDeleted = async (_id: string) => {
-  selectedNote.value = null
-  await props.refresh()
-}
-
-const formatTime = (timestamp: number) => {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-
-  if (diffMins < 1) return '刚刚'
-  if (diffMins < 60) return `${diffMins}分钟前`
-  if (diffHours < 24) return `${diffHours}小时前`
-  if (diffDays < 7) return `${diffDays}天前`
-  return date.toLocaleDateString()
+const recentNotes = computed(() => props.data.notes.slice(0, 2))
+function formatTime(t: number) {
+  const d = new Date(t), n = new Date()
+  const diff = n.getTime() - t
+  if (diff < 60000) return '刚刚'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
+  return `${d.getMonth() + 1}/${d.getDate()}`
 }
 </script>
 
 <template>
-  <div class="quick-notes-panel rounded-lg bg-white border border-gray-200 p-2.5 flex flex-col gap-2">
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 rounded-lg bg-yellow-50 flex items-center justify-center">
-          <svg class="w-4.5 h-4.5 text-yellow-500" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19 3H4.99c-1.11 0-1.98.89-1.98 2L3 19c0 1.11.88 2 1.99 2H19c1.1 0 2-.89 2-2V5c0-1.11-.9-2-2-2zM19 15H5V5h14v10z"/>
-          </svg>
-        </div>
-        <div class="flex flex-col gap-0.5">
-          <span class="text-sm text-gray-800 font-semibold">快速笔记</span>
-          <span class="text-xs text-gray-400">{{ data.notes.length }} 条笔记</span>
-        </div>
+  <div class="panel">
+    <div class="panel-hd">
+      <div class="panel-icon yellow">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H4.99c-1.11 0-1.98.89-1.98 2L3 19c0 1.11.88 2 1.99 2H19c1.1 0 2-.89 2-2V5c0-1.11-.9-2-2-2zM19 15H5V5h14v10z"/></svg>
       </div>
-      <button class="text-gray-400 cursor-pointer" @click="openPage">
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="m9 18 6-6-6-6"/>
-        </svg>
+      <div class="panel-info">
+        <span class="panel-title">快速笔记</span>
+        <span class="panel-meta">{{ data.notes.length }} 条笔记</span>
+      </div>
+      <button class="panel-btn" @click="openPage">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
       </button>
     </div>
-
-    <div v-if="recentNotes.length > 0" class="flex flex-col gap-1.5">
-      <div
-        v-for="note in recentNotes"
-        :key="note.id"
-        class="p-2 rounded-md bg-gray-50 hover:bg-gray-100 cursor-pointer"
-        @click="handleSelectNote(note)"
-      >
-        <div class="text-xs text-gray-800 line-clamp-2">{{ note.content }}</div>
-        <div class="flex items-center gap-1 mt-1">
-          <span class="text-xs text-gray-400">{{ formatTime(note.time) }}</span>
-          <div v-if="note.tags.length > 0" class="flex gap-0.5">
-            <span
-              v-for="tag in note.tags.slice(0, 2)"
-              :key="tag"
-              class="text-xs px-1 py-0.5 rounded bg-yellow-100 text-yellow-600"
-            >
-              {{ tag }}
-            </span>
-          </div>
+    <div v-if="recentNotes.length" class="notes-list">
+      <div v-for="note in recentNotes" :key="note.id" class="note-item">
+        <div class="note-text">{{ note.content }}</div>
+        <div class="note-meta">
+          <span>{{ formatTime(note.time) }}</span>
+          <span v-for="tag in note.tags.slice(0,2)" :key="tag" class="tag">{{ tag }}</span>
         </div>
       </div>
     </div>
-
-    <div v-else class="flex items-center justify-center py-3">
-      <span class="text-xs text-gray-400">暂无笔记</span>
-    </div>
-
-    <button
-      class="w-full h-7 rounded-md bg-yellow-500 text-white text-xs font-medium hover:bg-yellow-600 flex items-center justify-center gap-1"
-      @click="execute('add', { content: '', tags: [] })"
-    >
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 5v14M5 12h14"/>
-      </svg>
-      添加笔记
-    </button>
+    <div v-else class="empty">暂无笔记</div>
+    <button class="add-btn" @click="execute('add', { content: '', tags: [] })">+ 添加笔记</button>
   </div>
-
-  <!-- 笔记详情弹窗 -->
-  <NoteDetail
-    v-if="selectedNote"
-    :note="selectedNote"
-    :execute="execute"
-    @close="handleCloseDetail"
-    @updated="handleNoteUpdated"
-    @deleted="handleNoteDeleted"
-  />
 </template>
 
 <style scoped>
-.quick-notes-panel {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+.panel { background:#fff; border-radius:10px; border:1px solid #e8e8e8; padding:12px; display:flex; flex-direction:column; gap:8px; }
+.panel-hd { display:flex; align-items:center; gap:10px; }
+.panel-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.panel-icon.yellow { background:#fff8e1; }
+.panel-icon svg { width:16px; height:16px; color:#FF9800; }
+.panel-info { flex:1; }
+.panel-title { font-size:13px; font-weight:600; color:#1e1e1e; display:block; }
+.panel-meta { font-size:11px; color:#999; }
+.panel-btn { border:none; background:transparent; cursor:pointer; color:#ccc; padding:4px; border-radius:4px; }
+.panel-btn:hover { background:#f5f5f5; color:#666; }
+.notes-list { display:flex; flex-direction:column; gap:6px; }
+.note-item { padding:8px; background:#f8f9fa; border-radius:6px; }
+.note-text { font-size:12px; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.note-meta { display:flex; align-items:center; gap:4px; margin-top:4px; font-size:10px; color:#999; }
+.tag { padding:1px 6px; background:#fff3e0; color:#FF9800; border-radius:4px; }
+.empty { text-align:center; padding:8px; color:#ccc; font-size:12px; }
+.add-btn { height:28px; border-radius:6px; border:none; background:#FF9800; color:#fff; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; }
+.add-btn:hover { background:#f57c00; }
 </style>
