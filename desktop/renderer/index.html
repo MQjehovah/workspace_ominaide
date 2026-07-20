@@ -368,16 +368,16 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
           <input type="text" id="todoInput" placeholder="添加待办... 回车创建" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;outline:none" onkeydown="if(event.key==='Enter')createTodo()" />
           <button class="btn btn-primary btn-sm" onclick="createTodo()">添加</button>
         </div>
-        <div style="display:flex;gap:12px;height:calc(100vh - 200px)">
-          <div class="todo-col" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:12px;height:calc(100vh - 200px)" id="todoBoard">
+          <div class="todo-col" data-col="0" ondragover="event.preventDefault()" ondrop="dropTodo(event,0)" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border)">待处理</div>
             <div id="todoPending" class="todo-list" style="flex:1;overflow-y:auto;padding:6px"></div>
           </div>
-          <div class="todo-col" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+          <div class="todo-col" data-col="1" ondragover="event.preventDefault()" ondrop="dropTodo(event,1)" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border)">进行中</div>
             <div id="todoProgress" class="todo-list" style="flex:1;overflow-y:auto;padding:6px"></div>
           </div>
-          <div class="todo-col" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+          <div class="todo-col" data-col="2" ondragover="event.preventDefault()" ondrop="dropTodo(event,2)" style="flex:1;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:10px 14px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border)">已完成</div>
             <div id="todoDone" class="todo-list" style="flex:1;overflow-y:auto;padding:6px"></div>
           </div>
@@ -718,28 +718,25 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     }
 
     function renderTodoCard(t) {
-      const prevBtn = t.status === 'done' ? '' : '<button class="icon-btn" onclick="moveTodo(' + t.id + ',\'' + {'in_progress':'pending','done':'in_progress'}[t.status] + '\')" style="font-size:10px">◀</button>'
-      const nextBtn = t.status === 'pending' ? '' : '<button class="icon-btn" onclick="moveTodo(' + t.id + ',\'' + {'pending':'in_progress','in_progress':'done'}[t.status] + '\')" style="font-size:10px">▶</button>'
-      return '<div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid var(--border);font-size:12px">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
-        '<div style="display:flex;align-items:center;gap:4px">' +
-        prevBtn +
+      return '<div draggable="true" style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid var(--border);cursor:grab;font-size:12px" ' +
+        'ondragstart="event.dataTransfer.setData(\'text/plain\',\'' + t.id + '\');this.style.opacity=\'0.5\'" ' +
+        'ondragend="this.style.opacity=\'1\'">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
         '<span style="flex:1;' + (t.status === 'done' ? 'text-decoration:line-through;color:var(--muted)' : '') + '">' + (t.title || '') + '</span>' +
-        nextBtn +
-        '</div>' +
-        '<button class="icon-btn" onclick="deleteTodo(' + t.id + ')" style="flex-shrink:0;font-size:14px">&times;</button></div>' +
+        '<button class="icon-btn" onclick="event.stopPropagation();deleteTodo(' + t.id + ')" style="flex-shrink:0;font-size:14px">&times;</button></div>' +
         '</div>'
     }
 
-    async function moveTodo(id, newStatus) {
+    function dropTodo(event, colIdx) {
+      const id = event.dataTransfer.getData('text/plain')
+      if (!id) return
+      const statusList = ['pending', 'in_progress', 'done']
+      const newStatus = statusList[colIdx]
       if (!newStatus) return
-      try {
-        const res = await fetch(config.serverUrl + '/api/plugins/todo/items/' + id, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
-          body: JSON.stringify({ status: newStatus })
-        })
-        if (res.ok) loadTodos()
-      } catch(e) {}
+      fetch(config.serverUrl + '/api/plugins/todo/items/' + id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
+        body: JSON.stringify({ status: newStatus })
+      }).then(r => r.ok && loadTodos()).catch(() => {})
     }
 
     async function createTodo() {
