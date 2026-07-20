@@ -31,10 +31,28 @@ function createWindow() {
   })
 }
 
+let trayIcon
+
+function createTrayIcon(color) {
+  const size = 16
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="${color}" stroke="#fff" stroke-width="0.5"/>
+  </svg>`
+  const dataUrl = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64')
+  return nativeImage.createFromDataURL(dataUrl)
+}
+
+const trayColors = {
+  connected: '#34C759',
+  disconnected: '#FF3B30',
+  syncing: '#FF9F0A',
+  conflict: '#FF3B30'
+}
+
 function createTray() {
-  const icon = nativeImage.createEmpty()
-  tray = new Tray(icon)
-  tray.setToolTip('OmniAide Sync')
+  trayIcon = createTrayIcon('#FF3B30')
+  tray = new Tray(trayIcon)
+  tray.setToolTip('OmniAide')
   updateTrayMenu('disconnected')
   tray.on('click', () => {
     if (mainWindow) mainWindow.show()
@@ -42,17 +60,15 @@ function createTray() {
 }
 
 function updateTrayMenu(status) {
-  const icons = {
-    connected: path.join(__dirname, '..', 'assets', 'tray-connected.png'),
-    disconnected: path.join(__dirname, '..', 'assets', 'tray-disconnected.png'),
-    syncing: path.join(__dirname, '..', 'assets', 'tray-syncing.png'),
-    conflict: path.join(__dirname, '..', 'assets', 'tray-conflict.png')
-  }
+  const color = trayColors[status] || '#FF3B30'
+  trayIcon = createTrayIcon(color)
+  tray.setImage(trayIcon)
   
+  const statusLabels = { connected: '已连接', disconnected: '未连接', syncing: '同步中', connecting: '连接中...' }
   const contextMenu = Menu.buildFromTemplate([
     { label: '打开 OmniAide', click: () => mainWindow.show() },
     { type: 'separator' },
-    { label: `状态: ${status}`, enabled: false },
+    { label: `状态: ${statusLabels[status] || status}`, enabled: false },
     { type: 'separator' },
     { label: '退出', click: () => { app.isQuitting = true; app.quit() } }
   ])
