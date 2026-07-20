@@ -3,7 +3,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
-from plugins.sync.backend.schemas import SyncEventResponse, SyncEventListResponse, SyncFolderResponse, SyncFolderCreate, SyncFolderListResponse
+from plugins.sync.backend.schemas import SyncEventResponse, SyncEventListResponse, SyncFolderResponse, SyncFolderCreate, SyncFolderUpdate, SyncFolderListResponse
 from plugins.sync.backend.models import SyncFolder, SyncEvent
 from plugins.sync.backend.service import get_sync_events, mark_synced, mark_conflicted
 
@@ -35,6 +35,25 @@ async def create_sync_folder(
         local_path=req.local_path,
     )
     db.add(folder)
+    await db.flush()
+    await db.refresh(folder)
+    return SyncFolderResponse.model_validate(folder)
+
+
+@router.put("/folders/{folder_id}", response_model=SyncFolderResponse)
+async def update_sync_folder(
+    folder_id: int,
+    req: SyncFolderUpdate,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(SyncFolder).where(SyncFolder.id == folder_id, SyncFolder.user_id == user["id"])
+    )
+    folder = result.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Sync folder not found")
+    folder.enabled = req.enabled
     await db.flush()
     await db.refresh(folder)
     return SyncFolderResponse.model_validate(folder)

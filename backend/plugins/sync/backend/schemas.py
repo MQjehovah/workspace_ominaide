@@ -28,6 +28,10 @@ class SyncFolderCreate(BaseModel):
     local_path: str
 
 
+class SyncFolderUpdate(BaseModel):
+    enabled: bool
+
+
 class SyncFolderResponse(BaseModel):
     id: int
     server_path: str

@@ -56,7 +56,18 @@
             <div class="pr-date">{{ formatDate(f.updated_at) }}</div>
             <div class="pr-actions" @click.stop>
               <button class="pa-btn" title="重命名" @click="startRename(f)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-              <button class="pa-btn" title="同步" @click="setupSync(f)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/><path d="M19 12H5"/></svg></button>
+              <template v-if="getSyncInfo(f)">
+                <button class="pa-btn" :title="getSyncInfo(f).enabled ? '暂停同步' : '恢复同步'" @click="toggleSync(getSyncInfo(f))">
+                  <svg v-if="getSyncInfo(f).enabled" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
+                </button>
+                <button class="pa-btn danger" title="删除同步" @click="deleteSync(getSyncInfo(f).id)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                </button>
+              </template>
+              <button v-else class="pa-btn" title="设置同步" @click="setupSync(f)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 2L4 12l16 10V2z" fill="currentColor" stroke="none"/><path d="M3 12h14" stroke="currentColor"/></svg>
+              </button>
               <button class="pa-btn danger" title="删除" @click="trashFile(f)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
             </div>
           </div>
@@ -237,7 +248,14 @@
               <div class="sync-path"><span class="sync-label">本地:</span> {{ sf.local_path }}</div>
               <span class="sync-status" :class="sf.enabled ? 'on' : 'off'">{{ sf.enabled ? '同步中' : '已暂停' }}</span>
             </div>
-            <button class="pa-btn danger" title="删除" @click="deleteSync(sf.id)">🗑</button>
+            <div class="sync-item-actions">
+              <button class="pa-btn" :title="sf.enabled ? '暂停' : '恢复'" @click="toggleSync(sf)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect v-if="sf.enabled" x="6" y="4" width="4" height="16" rx="1"/><rect v-if="sf.enabled" x="14" y="4" width="4" height="16" rx="1"/><polygon v-else points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
+              </button>
+              <button class="pa-btn danger" title="删除" @click="deleteSync(sf.id)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -452,6 +470,11 @@ async function confirmMove() {
 const showSyncPanel = ref(false)
 const syncFolders = ref<any[]>([])
 
+function getSyncInfo(folder: any) {
+  const folderPath = (folder.folder_path?.replace(/\/+$/, '') || '') + '/' + folder.original_name + '/'
+  return syncFolders.value.find((s: any) => s.server_path === folderPath)
+}
+
 function openSyncPanel() {
   showSyncPanel.value = true
   loadSyncFolders()
@@ -471,6 +494,10 @@ async function setupSync(folder: any) {
   await window.mqbox?.api.post('/sync/folders', { server_path: serverPath, local_path: localPath })
   await loadSyncFolders()
   window.mqbox?.sync.restart()
+}
+
+async function toggleSync(sf: any) {
+  try { await window.mqbox?.api.put(`/sync/folders/${sf.id}`, { enabled: !sf.enabled }); await loadSyncFolders(); window.mqbox?.sync.restart() } catch {}
 }
 
 async function deleteSync(id: number) {
@@ -627,6 +654,7 @@ onMounted(() => loadFiles('/'))
 .sync-status { font-size:11px; padding:2px 10px; border-radius:4px; }
 .sync-status.on { background:#e8f5e9; color:#2e7d32; }
 .sync-status.off { background:#f5f5f5; color:#999; }
+.sync-item-actions { display:flex; align-items:center; gap:4px; }
 
 ::-webkit-scrollbar { width:6px; }
 ::-webkit-scrollbar-track { background:transparent; }
