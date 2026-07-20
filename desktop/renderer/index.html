@@ -621,11 +621,12 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
     async function moveFile(id, path) {
       try {
-        await fetch(config.serverUrl + '/api/files/' + id + '/move', {
+        const normalizedPath = (path || '/').replace(/\/+$/, '') + '/'
+        const res = await fetch(config.serverUrl + '/api/files/' + id + '/move', {
           method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
-          body: JSON.stringify({ new_folder_path: path })
+          body: JSON.stringify({ new_folder_path: normalizedPath })
         })
-        loadFiles()
+        if (res.ok) loadFiles()
       } catch(e) {}
     }
 
