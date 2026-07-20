@@ -105,7 +105,7 @@ body, html { margin:0; padding:0; background:transparent !important; overflow:hi
 
 <style scoped>
 .search-overlay { width:100vw; height:100vh; display:flex; justify-content:center; padding-top:48px; }
-.search-box { width:640px; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.15); }
+.search-box { width:640px; min-height:140px; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.15); }
 .input-wrap { display:flex; align-items:center; gap:10px; padding:14px 18px; background:#f5f7fa; margin:12px; border-radius:10px; }
 .s-icon { width:20px; height:20px; color:#c0c4cc; flex-shrink:0; }
 .spin { animation:spin 0.8s linear infinite; }

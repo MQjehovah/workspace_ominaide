@@ -68,7 +68,7 @@ app.whenReady().then(async () => {
   await initPlugins()
   createTray()
   showLogin()
-  globalShortcut.register('Alt+Space', showSearchWindow)
+  globalShortcut.register('Ctrl+Space', showSearchWindow)
 })
 
 app.on('window-all-closed', () => {})
