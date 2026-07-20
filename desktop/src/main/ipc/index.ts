@@ -83,10 +83,11 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('window:open-plugin-manager', () => {
     const win = new BrowserWindow({
-      width: 560, height: 520, frame: false, resizable: false,
+      width: 560, height: 480, frame: false, resizable: false, show: false,
       webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true },
     })
     win.loadURL('file://' + join(__dirname, '../../dist/index.html').replace(/\\/g, '/') + '?view=plugin-manager')
+    win.once('ready-to-show', () => win.show())
   })
   ipcMain.handle('window:hide', () => {
     BrowserWindow.getFocusedWindow()?.hide()

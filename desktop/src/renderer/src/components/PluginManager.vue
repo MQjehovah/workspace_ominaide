@@ -1,13 +1,13 @@
 <template>
-  <div class="overlay" @click.self="close">
+  <div class="overlay">
     <div class="card">
-      <div class="card-hd">
-        <span>管理</span>
-        <div class="tabs">
+      <div class="card-hd" style="-webkit-app-region:drag">
+        <span style="-webkit-app-region:no-drag">管理</span>
+        <div class="tabs" style="-webkit-app-region:no-drag">
           <button :class="{ active: tab === 'plugins' }" @click="tab = 'plugins'">插件</button>
           <button :class="{ active: tab === 'shortcuts' }" @click="tab = 'shortcuts'">快捷键</button>
         </div>
-        <button class="close-btn" @click="close">✕</button>
+        <button class="close-btn" @click="close" style="-webkit-app-region:no-drag">✕</button>
       </div>
 
       <!-- Plugins Tab -->
@@ -140,9 +140,9 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 
 <style scoped>
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; z-index:1000; }
-.card { width:500px; max-height:460px; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.15); display:flex; flex-direction:column; overflow:hidden; }
-.card-hd { display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid #e8e8e8; -webkit-app-region:drag; }
-.card-hd span { font-weight:600; font-size:14px; }
+.card { width:500px; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.15); display:flex; flex-direction:column; overflow:hidden; }
+.card-hd { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid #e8e8e8; }
+.card-hd > span { font-weight:600; font-size:14px; min-width:40px; }
 .tabs { display:flex; gap:4px; flex:1; justify-content:center; }
 .tabs button { padding:4px 16px; border-radius:6px; border:none; background:transparent; cursor:pointer; font-size:13px; color:#666; }
 .tabs button.active { background:#e8f4fd; color:#0078D4; font-weight:500; }
