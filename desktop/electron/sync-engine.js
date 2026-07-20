@@ -13,6 +13,9 @@ class SyncEngine {
     this.onStatusChange = null
     this.onEvent = null
     this.ignoreNextChange = false
+    this._syncedPaths = new Set()  // tracks files that were synced in previous cycle
+    this._prevServerPaths = new Set()
+    this._prevLocalPaths = new Set()
   }
 
   async start(config) {
@@ -40,7 +43,7 @@ class SyncEngine {
   _startPolling() {
     if (!this.config?.localPath || !this.config?.serverUrl) return
     this._pollOnce()
-    this._pollTimer = setInterval(() => this._pollOnce(), 30000) // every 30 seconds
+    this._pollTimer = setInterval(() => this._pollOnce(), 30000)
   }
 
   _stopPolling() {
@@ -53,7 +56,7 @@ class SyncEngine {
       const localPath = this.config.localPath
       if (!localPath) return
 
-      // Fetch all active files from server (paginate)
+      // Fetch all active files from server
       let allServerFiles = []
       let page = 1
       while (true) {
@@ -66,26 +69,42 @@ class SyncEngine {
         if (data.files.length < 200) break
         page++
       }
-      const serverFiles = allServerFiles
 
-      // Build set of server files (relative to serverPath)
-      const serverPaths = new Set()
-      for (const f of serverFiles) {
+      // Build current server paths set
+      const currentServerPaths = new Set()
+      const serverFileMap = {}
+      for (const f of allServerFiles) {
         if (f.is_folder) continue
         const fp = (f.folder_path || '/').replace(/\/+$/, '')
         const fn = f.original_name || ''
         const fileRel = fp.endsWith('/' + fn) ? fp : (fp + '/' + fn).replace(/\/+/g, '/')
         if (serverPrefix === '' || serverPrefix === '/' || fileRel.startsWith(serverPrefix + '/') || fileRel === serverPrefix) {
           const rel = (serverPrefix === '' || serverPrefix === '/') ? fileRel.replace(/^\//, '') : fileRel.slice(serverPrefix.length + 1)
-          serverPaths.add(rel)
+          currentServerPaths.add(rel)
+          serverFileMap[rel] = f
+        }
+      }
+
+      // Handle server deletions (was synced, now gone from server)
+      for (const rel of this._prevServerPaths) {
+        if (!currentServerPaths.has(rel)) {
           const localFile = path.join(localPath, rel)
-          if (!fs.existsSync(localFile)) {
-            this._downloadFile(f.id, localFile, rel)
+          if (fs.existsSync(localFile)) {
+            try { fs.unlinkSync(localFile); if (this.onEvent) this.onEvent({ direction: 'remote', file_path: rel, event_type: 'delete' }) } catch {}
           }
         }
       }
 
-      // Upload local files not on server
+      // Download new/modified server files
+      for (const [rel, f] of Object.entries(serverFileMap)) {
+        const localFile = path.join(localPath, rel)
+        if (!fs.existsSync(localFile)) {
+          this._downloadFile(f.id, localFile, rel)
+        }
+      }
+
+      // Walk local files
+      const currentLocalPaths = new Set()
       const walkDir = (dir, prefix) => {
         let entries
         try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
@@ -95,12 +114,41 @@ class SyncEngine {
           const relPath = prefix ? prefix + '/' + entry.name : entry.name
           if (entry.isDirectory()) {
             walkDir(fullPath, relPath)
-          } else if (!serverPaths.has(relPath)) {
-            this._uploadFile(fullPath, relPath)
+          } else {
+            currentLocalPaths.add(relPath)
           }
         }
       }
       walkDir(localPath, '')
+
+      // Handle local deletions (was synced, now gone from local)
+      for (const rel of this._prevLocalPaths) {
+        if (!currentLocalPaths.has(rel) && this._syncedPaths.has(rel)) {
+          const serverFile = serverFileMap[rel]
+          if (serverFile?.id) {
+            try {
+              await axios.delete(`${this.config.serverUrl}/api/files/${serverFile.id}`, {
+                headers: { Authorization: 'Bearer ' + this.config.token }
+              })
+              if (this.onEvent) this.onEvent({ direction: 'local', file_path: rel, event_type: 'delete' })
+            } catch {}
+          }
+        }
+      }
+
+      // Upload new local files
+      for (const rel of currentLocalPaths) {
+        if (!currentServerPaths.has(rel) && !this._syncedPaths.has(rel)) {
+          this._uploadFile(path.join(localPath, rel), rel)
+        }
+      }
+
+      // Update state
+      this._prevServerPaths = new Set(currentServerPaths)
+      this._prevLocalPaths = new Set(currentLocalPaths)
+      for (const rel of currentServerPaths) this._syncedPaths.add(rel)
+      for (const rel of currentLocalPaths) this._syncedPaths.add(rel)
+
     } catch (err) {
       if (err.response?.status === 401 && this.onUnauthorized) this.onUnauthorized()
     }
