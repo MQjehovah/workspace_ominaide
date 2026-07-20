@@ -30,11 +30,11 @@ async function login() {
     })
     if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '登录失败') }
     const data = await res.json()
-    await window.mqbox.api.post('/auth/login', { username: username.value, password: password.value })
-    window.mqbox.config.set('serverUrl', serverUrl.value)
-    window.mqbox.config.set('token', data.access_token)
-    // Reload with main view
-    window.location.search = '?view=main'
+    await window.mqbox.config.set('serverUrl', serverUrl.value)
+    await window.mqbox.config.set('token', data.access_token)
+    // Switch to main view without reload
+    if ((window as any).setLoggedIn) (window as any).setLoggedIn()
+    window.history.replaceState(null, '', '?view=main')
   } catch (e: any) { error.value = e.message }
   finally { loading.value = false }
 }

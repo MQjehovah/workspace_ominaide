@@ -1,7 +1,7 @@
 <template>
   <div v-if="ready">
-    <MainPanel v-if="view === 'main'" />
-    <SearchBox v-else-if="view === 'search'" />
+    <MainPanel v-if="view === 'main' && loggedIn" />
+    <SearchBox v-else-if="view === 'search' && loggedIn" />
     <PluginPage v-else-if="view === 'plugin-page'" />
     <LoginPage v-else />
   </div>
@@ -19,6 +19,7 @@ import PluginPage from './components/PluginPage.vue'
 import LoginPage from './components/LoginPage.vue'
 
 const ready = ref(false)
+const loggedIn = ref(false)
 const error = ref('')
 const params = new URLSearchParams(window.location.search)
 const view = ref(params.get('view') || 'main')
@@ -35,12 +36,20 @@ onMounted(async () => {
       await new Promise(r => setTimeout(r, 100))
       tries++
     }
-    if (!window.mqbox) error.value = 'Preload bridge not loaded'
+    if (!window.mqbox) { error.value = 'Preload bridge not loaded'; return }
     ready.value = true
+    // Check if already logged in
+    try {
+      const token = await window.mqbox.config.get('token')
+      loggedIn.value = !!token
+    } catch { loggedIn.value = false }
   } catch (e: any) {
     error.value = String(e)
   }
 })
+
+// Expose for LoginPage to call after login
+(window as any).setLoggedIn = () => { loggedIn.value = true }
 </script>
 
 <style scoped>
