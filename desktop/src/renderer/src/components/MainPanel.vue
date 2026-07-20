@@ -1,86 +1,165 @@
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
+
+const pluginComponents: Record<string, any> = {
+  'todo': defineAsyncComponent(() => import('@plugins/todo/src/Panel.vue')),
+  'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Panel.vue')),
+  'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Panel.vue')),
+  'player': defineAsyncComponent(() => import('@plugins/player/src/Panel.vue')),
+  'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Panel.vue')),
+  'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Panel.vue')),
+}
+
+const pluginList = ref<any[]>([])
+const panels = ref<any[]>([])
+const isLoading = ref(false)
+const panelData = ref<Record<string, any>>({})
+const showUserMenu = ref(false)
+
+const pluginColors: Record<string, string> = {
+  screenshot: '#28A745', 'quick-notes': '#DC3545', 'clipboard-history': '#0078D4',
+  todo: '#FF9800', player: '#E91E63', calculator: '#666',
+}
+
+async function loadPlugins() {
+  isLoading.value = true
+  try {
+    pluginList.value = await window.mqbox?.plugin.list() || []
+    panels.value = await window.mqbox?.plugin.getPanels() || []
+    for (const panel of panels.value) {
+      try {
+        const data = await window.mqbox?.plugin.execute(panel.pluginId, 'getPanelData', {})
+        if (data !== undefined && data !== null) panelData.value[panel.pluginId] = data
+      } catch {}
+    }
+  } catch {}
+  isLoading.value = false
+}
+
+function getComponent(pluginId: string) { return pluginComponents[pluginId] || null }
+
+function openPluginPage(pluginId: string) { window.mqbox?.window.openPage(pluginId) }
+function openSearch() { window.mqbox?.window.openSearch() }
+function handleClose() { window.mqbox?.window.hide() }
+
+async function executeCommand(pluginId: string, command: string, args?: unknown) {
+  await window.mqbox?.plugin.execute(pluginId, command, args || {})
+  panelData.value[pluginId] = await window.mqbox?.plugin.execute(pluginId, 'getPanelData', {})
+}
+
+async function refreshPanel(pluginId: string) {
+  panelData.value[pluginId] = await window.mqbox?.plugin.execute(pluginId, 'getPanelData', {})
+}
+
+onMounted(() => loadPlugins())
+</script>
+
 <template>
   <div class="main-panel">
-    <div class="header" style="-webkit-app-region:drag">
-      <span class="title">OmniAide</span>
-      <el-button text circle @click="openSearch" title="搜索">
-        <el-icon><Search /></el-icon>
-      </el-button>
+    <!-- Title Bar -->
+    <div class="title-bar">
+      <span class="title-text">OmniAide</span>
+      <div class="title-actions">
+        <button class="title-btn" @click="handleClose">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
     </div>
 
-    <div class="panels">
-      <div v-for="p in panels" :key="p.id" class="panel-item">
-        <div class="panel-header">
-          <span class="panel-title">{{ p.manifest?.displayName || p.pluginId }}</span>
-          <el-button text size="small" @click="openPage(p.pluginId)">›</el-button>
-        </div>
-        <div class="panel-body">
-          <component
-            :is="getComponent(p.pluginId)"
-            :data="panelData[p.pluginId]"
-            :execute="(cmd: string, args?: any) => execute(p.pluginId, cmd, args)"
-            :open-page="() => openPage(p.pluginId)"
-            :refresh="() => loadPanels()"
-          />
+    <!-- User Area -->
+    <div class="user-area">
+      <div class="user-avatar" @click="showUserMenu = !showUserMenu">
+        <span>U</span>
+      </div>
+      <div class="user-info" @click="showUserMenu = !showUserMenu">
+        <span class="user-name">OmniAide</span>
+        <div class="user-status">
+          <div class="status-dot"></div>
+          <span>在线</span>
         </div>
       </div>
-      <div v-if="!panels.length" class="empty">暂无面板</div>
+      <button class="settings-btn" @click="openSearch">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+      </button>
+
+      <!-- User Menu -->
+      <div v-if="showUserMenu" class="user-menu" @click.stop>
+        <button class="menu-item" @click="showUserMenu = false; openSearch()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> 搜索
+        </button>
+        <div class="menu-divider"></div>
+        <button class="menu-item danger" @click="showUserMenu = false; window.mqbox?.window.hide()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg> 退出
+        </button>
+      </div>
     </div>
 
-    <div class="footer">
-      <el-button text size="small" @click="openSearch"><el-icon><Search /></el-icon> 搜索</el-button>
+    <!-- Plugin Panels -->
+    <div class="panels-area">
+      <div v-if="isLoading" class="loading-state">加载中...</div>
+      <div v-else class="panels-list">
+        <template v-for="panel in panels" :key="panel.id">
+          <component
+            v-if="getComponent(panel.pluginId) && panelData[panel.pluginId]"
+            :is="getComponent(panel.pluginId)"
+            :data="panelData[panel.pluginId]"
+            :execute="(cmd: string, args?: any) => executeCommand(panel.pluginId, cmd, args)"
+            :open-page="() => openPluginPage(panel.pluginId)"
+            :refresh="() => refreshPanel(panel.pluginId)"
+          />
+        </template>
+      </div>
     </div>
+
+    <!-- Bottom Actions -->
+    <div class="bottom-area">
+      <button class="search-btn" @click="openSearch">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        搜索 (Ctrl+Space)
+      </button>
+    </div>
+
+    <!-- Resize Handle -->
+    <div class="resize-handle"></div>
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, onMounted, defineAsyncComponent } from 'vue'
-import { Search } from '@element-plus/icons-vue'
-
-const panels = ref<any[]>([])
-const panelData = ref<Record<string, any>>({})
-
-const pluginComponents: Record<string, any> = {
-  todo: defineAsyncComponent(() => import('@plugins/todo/src/Panel.vue')),
-  'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Panel.vue')),
-  'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Panel.vue')),
-  player: defineAsyncComponent(() => import('@plugins/player/src/Panel.vue')),
-  screenshot: defineAsyncComponent(() => import('@plugins/screenshot/src/Panel.vue')),
-  calculator: defineAsyncComponent(() => import('@plugins/calculator/src/Panel.vue')),
-}
-
-function getComponent(pluginId: string) {
-  return pluginComponents[pluginId]
-}
-
-async function loadPanels() {
-  const list = await window.mqbox.plugin.list()
-  const panelList = await window.mqbox.plugin.getPanels()
-  panels.value = panelList.map((p: any) => ({ ...p, manifest: list.find((l: any) => l.id === p.pluginId)?.manifest }))
-  for (const p of panelList) {
-    const data = await window.mqbox.plugin.execute(p.pluginId, 'getPanelData')
-    if (data) panelData.value[p.pluginId] = data
-  }
-}
-
-function openSearch() { window.mqbox.window.openSearch() }
-function openPage(pluginId: string) { window.mqbox.window.openPage(pluginId) }
-async function execute(pluginId: string, cmd: string, args?: unknown) {
-  await window.mqbox.plugin.execute(pluginId, cmd, args)
-  loadPanels()
-}
-
-onMounted(loadPanels)
-</script>
-
 <style scoped>
-.main-panel { height:100vh; display:flex; flex-direction:column; background:#f5f7fa; }
-.header { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#fff; border-bottom:1px solid #e4e7ed; }
-.title { font-size:16px; font-weight:700; }
-.panels { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:12px; }
-.panel-item { background:#fff; border-radius:10px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-.panel-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-.panel-title { font-size:13px; font-weight:600; color:#303133; }
-.panel-body { font-size:12px; }
-.empty { text-align:center; padding:40px; color:#c0c4cc; }
-.footer { padding:8px 16px; border-top:1px solid #e4e7ed; background:#fff; }
+.main-panel { width:280px; height:600px; border-radius:12px; background:#fff; box-shadow:0 4px 20px rgba(0,0,0,0.18); border:1px solid #e0e0e0; display:flex; flex-direction:column; position:relative; overflow:hidden; }
+
+.title-bar { height:32px; background:#f5f5f5; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e0e0e0; -webkit-app-region:drag; }
+.title-text { font-size:13px; color:#666; font-weight:500; }
+.title-actions { display:flex; gap:8px; -webkit-app-region:no-drag; }
+.title-btn { width:24px; height:24px; border-radius:12px; background:#fff; border:1px solid #e0e0e0; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#666; }
+.title-btn:hover { background:#ebebeb; }
+
+.user-area { height:56px; display:flex; align-items:center; gap:12px; padding:0 16px; position:relative; }
+.user-avatar { width:40px; height:40px; border-radius:20px; background:#0078D4; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.user-avatar span { color:#fff; font-size:16px; font-weight:600; }
+.user-info { flex:1; cursor:pointer; }
+.user-name { font-size:14px; color:#1e1e1e; font-weight:600; display:block; }
+.user-status { display:flex; align-items:center; gap:4px; }
+.status-dot { width:8px; height:8px; border-radius:4px; background:#28A745; }
+.user-status span { font-size:12px; color:#28A745; }
+.settings-btn { width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:transparent; cursor:pointer; color:#666; border:none; }
+.settings-btn:hover { background:#f5f5f5; }
+
+.user-menu { position:absolute; top:56px; left:12px; width:160px; background:#fff; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.15); border:1px solid #e0e0e0; padding:4px 0; z-index:50; }
+.menu-item { width:100%; display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:13px; color:#333; background:none; border:none; cursor:pointer; }
+.menu-item:hover { background:#f5f5f5; }
+.menu-item.danger { color:#E53935; }
+.menu-item.danger svg { color:#E53935; }
+.menu-divider { height:1px; background:#e0e0e0; margin:0 8px; }
+
+.panels-area { flex:1; min-height:0; overflow-y:auto; padding:8px 12px 60px; }
+.panels-list { display:flex; flex-direction:column; gap:6px; }
+.loading-state { display:flex; align-items:center; justify-content:center; height:100px; color:#666; font-size:14px; }
+
+.bottom-area { position:absolute; bottom:0; left:0; right:0; padding:8px 12px; background:#fff; border-top:1px solid #f0f0f0; }
+.search-btn { height:36px; border-radius:8px; border:1px solid #0078D4; background:#fff; display:flex; align-items:center; justify-content:center; gap:6px; width:100%; cursor:pointer; color:#0078D4; font-size:12px; }
+.search-btn:hover { background:#e8f4fd; }
+
+.resize-handle { position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:se-resize; -webkit-app-region:no-drag; }
 </style>
