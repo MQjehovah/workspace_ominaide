@@ -92,4 +92,9 @@ export function registerIpcHandlers() {
   ipcMain.handle('window:hide', () => {
     BrowserWindow.getFocusedWindow()?.hide()
   })
+
+  ipcMain.handle('shell:open-external', (_, url: string) => {
+    const { shell } = require('electron')
+    shell.openExternal(url)
+  })
 }

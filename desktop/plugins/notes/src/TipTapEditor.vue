@@ -80,7 +80,7 @@ async function uploadFile(file: File) {
     await fetch(res.upload_url, { method: 'PUT', body: file })
     const serverUrl = await window.mqbox?.config.get('serverUrl') || 'http://localhost:8000'
     const fileUrl = `${serverUrl}/api/files/note/${res.object_key}`
-    const linkHtml = `<a href="${fileUrl}" download="${file.name}">📎 ${file.name}</a>`
+    const linkHtml = `<a href="${fileUrl}" onclick="event.preventDefault();window.mqbox?.shell.openExternal('${fileUrl}')">📎 ${file.name}</a>`
     editor.value?.chain().focus().insertContent(linkHtml).run()
   } catch {}
 }

@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('mqbox', {
     openPluginManager: () => ipcRenderer.invoke('window:open-plugin-manager'),
     hide: () => ipcRenderer.invoke('window:hide'),
   },
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
+  },
   api: {
     get: (path: string) => ipcRenderer.invoke('api:get', path),
     post: (path: string, body?: any) => ipcRenderer.invoke('api:post', path, body),
