@@ -16,6 +16,7 @@ async def create_todo(db: AsyncSession, user_id: int, req: TodoCreate) -> Plugin
     )
     db.add(todo)
     await db.flush()
+    await db.refresh(todo)
     return todo
 
 
@@ -66,6 +67,7 @@ async def update_todo(db: AsyncSession, user_id: int, todo_id: int, req: TodoUpd
         todo.tags = req.tags
 
     await db.flush()
+    await db.refresh(todo)
     return todo
 
 

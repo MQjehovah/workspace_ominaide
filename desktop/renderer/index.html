@@ -718,23 +718,27 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     }
 
     function renderTodoCard(t) {
-      const nextStatus = { pending: 'in_progress', in_progress: 'done', done: 'pending' }
+      const prevBtn = t.status === 'done' ? '' : '<button class="icon-btn" onclick="moveTodo(' + t.id + ',\'' + {'in_progress':'pending','done':'in_progress'}[t.status] + '\')" style="font-size:10px">◀</button>'
+      const nextBtn = t.status === 'pending' ? '' : '<button class="icon-btn" onclick="moveTodo(' + t.id + ',\'' + {'pending':'in_progress','in_progress':'done'}[t.status] + '\')" style="font-size:10px">▶</button>'
       return '<div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid var(--border);font-size:12px">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
-        '<span onclick="toggleTodo(' + t.id + ',\'' + nextStatus[t.status] + '\')" style="flex:1;cursor:pointer;' + (t.status === 'done' ? 'text-decoration:line-through;color:var(--muted)' : '') + '">' + (t.title || '') + '</span>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+        '<div style="display:flex;align-items:center;gap:4px">' +
+        prevBtn +
+        '<span style="flex:1;' + (t.status === 'done' ? 'text-decoration:line-through;color:var(--muted)' : '') + '">' + (t.title || '') + '</span>' +
+        nextBtn +
+        '</div>' +
         '<button class="icon-btn" onclick="deleteTodo(' + t.id + ')" style="flex-shrink:0;font-size:14px">&times;</button></div>' +
-        (t.priority > 0 ? '<span style="font-size:10px;color:' + (t.priority >= 3 ? '#f56c6c' : '#e6a23c') + ';margin-top:4px;display:inline-block">P' + t.priority + '</span>' : '') +
-        (t.tags ? '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">' + t.tags.map(tag => '<span style="font-size:10px;background:#ecf5ff;color:#409EFF;padding:1px 6px;border-radius:4px">' + tag + '</span>').join('') + '</div>' : '') +
         '</div>'
     }
 
-    async function toggleTodo(id, newStatus) {
+    async function moveTodo(id, newStatus) {
+      if (!newStatus) return
       try {
-        await fetch(config.serverUrl + '/api/plugins/todo/items/' + id, {
+        const res = await fetch(config.serverUrl + '/api/plugins/todo/items/' + id, {
           method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
           body: JSON.stringify({ status: newStatus })
         })
-        loadTodos()
+        if (res.ok) loadTodos()
       } catch(e) {}
     }
 
