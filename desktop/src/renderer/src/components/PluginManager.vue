@@ -3,7 +3,8 @@
     <div class="card">
       <div class="card-hd">
         <div class="tabs">
-          <button :class="{ active: tab === 'plugins' }" @click="tab = 'plugins'">插件</button>
+          <button :class="{ active: tab === 'plugins' }" @click="tab = 'plugins'">已安装</button>
+          <button :class="{ active: tab === 'marketplace' }" @click="tab = 'marketplace'; loadMarketplace()">插件市场</button>
           <button :class="{ active: tab === 'shortcuts' }" @click="tab = 'shortcuts'">快捷键</button>
         </div>
         <button class="close-btn" @click="close">✕</button>
@@ -24,6 +25,27 @@
           </div>
         </div>
         <button class="import-btn" @click="importPlugin">+ 导入插件</button>
+      </div>
+
+      <div v-if="tab === 'marketplace'" class="card-body">
+        <div v-if="marketplaceLoading" style="text-align:center;padding:40px;color:#999">加载中...</div>
+        <div v-else-if="marketplacePlugins.length === 0" style="text-align:center;padding:40px;color:#999">
+          暂无可用插件<br>
+          <span style="font-size:12px">请先在后端构建并上传插件</span>
+        </div>
+        <div v-for="p in marketplacePlugins" :key="p.id" class="plugin-item">
+          <div class="plugin-icon" :style="{ background: getColor(p.id) + '20' }">
+            <div class="plugin-dot" :style="{ background: isInstalled(p.id) ? '#28A745' : '#ccc' }"></div>
+          </div>
+          <div class="plugin-info">
+            <span class="plugin-name">{{ p.displayName }}</span>
+            <span class="plugin-desc">{{ p.description }} · v{{ p.version }}</span>
+          </div>
+          <div class="plugin-actions">
+            <button v-if="isInstalled(p.id)" class="key-badge" disabled style="color:#28A745;border-color:#28A745">已安装</button>
+            <button v-else class="key-badge install-btn" @click="installFromMarket(p)">安装</button>
+          </div>
+        </div>
       </div>
 
       <div v-if="tab === 'shortcuts'" class="card-body">
@@ -68,8 +90,9 @@ import PluginConfig from './PluginConfig.vue'
 
 const tab = ref('plugins')
 const plugins = ref<any[]>([])
+const marketplacePlugins = ref<any[]>([])
+const marketplaceLoading = ref(false)
 const builtinShortcuts = ref<any[]>([])
-const customShortcuts = ref<any[]>([])
 const showAddForm = ref(false)
 const recording = ref(false)
 const recordTarget = ref('')
@@ -81,7 +104,7 @@ const pluginColors: Record<string, string> = { screenshot: '#28A745', 'quick-not
 function getColor(id: string) { return pluginColors[id] || '#666' }
 
 async function load() {
-  plugins.value = await window.mqbox.plugin.list()
+  plugins.value = await window.mqbox.plugin.listAll()
   builtinShortcuts.value = await window.mqbox.shortcut.getBuiltin()
   customShortcuts.value = await window.mqbox.shortcut.list()
 }
@@ -103,9 +126,30 @@ async function importPlugin() {
   }
 }
 
+async function loadMarketplace() {
+  marketplaceLoading.value = true
+  try {
+    marketplacePlugins.value = await window.mqbox.plugin.listMarketplace()
+  } catch { marketplacePlugins.value = [] }
+  marketplaceLoading.value = false
+}
+
+function isInstalled(id: string) {
+  return plugins.value.some(p => p.id === id)
+}
+
+async function installFromMarket(p: any) {
+  const result = await window.mqbox.plugin.installFromMarket(p.id)
+  if (result?.success) {
+    await load()
+  }
+}
+
 function openConfig(p: any) {
   configPluginId.value = p.id
 }
+
+window.mqbox?.plugin?.onUpdated(() => load())
 
 async function removeShortcut(accelerator: string) {
   await window.mqbox.shortcut.remove(accelerator)

@@ -104,3 +104,30 @@ async def uninstall_plugin(db: AsyncSession, app: FastAPI, name: str):
     plugin_dir = PLUGINS_DIR / name
     if plugin_dir.exists():
         shutil.rmtree(plugin_dir)
+
+
+def install_plugin_from_zip(zip_path: Path, plugin_name: str | None = None) -> dict:
+    """Extract a plugin zip into the plugins directory and return its manifest."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(tmp)
+
+        files = list(Path(tmp).rglob("manifest.json"))
+        if not files:
+            raise ValueError("No manifest.json found in plugin archive")
+
+        manifest_path = files[0]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        name = plugin_name or manifest.get("name", manifest_path.parent.name)
+
+        target = PLUGINS_DIR / name
+        if target.exists():
+            shutil.rmtree(target)
+
+        # Copy everything into target
+        source = manifest_path.parent
+        shutil.copytree(str(source), str(target), dirs_exist_ok=True)
+
+    return manifest

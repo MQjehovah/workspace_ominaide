@@ -4,6 +4,9 @@
   "displayName": "笔记",
   "description": "Markdown 笔记",
   "main": "dist/index.js",
+  "scripts": {
+    "build": "vite build"
+  },
   "omniaide": {
     "id": "notes",
     "displayName": "笔记",

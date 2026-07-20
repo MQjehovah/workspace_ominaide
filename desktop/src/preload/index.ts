@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 const clipboardListeners: (() => void)[] = []
 const playerListeners: (() => void)[] = []
 const todoListeners: (() => void)[] = []
+const pluginListeners: (() => void)[] = []
 
 ipcRenderer.on('clipboard:updated', () => {
   clipboardListeners.forEach(fn => fn())
@@ -16,9 +17,14 @@ ipcRenderer.on('todo:updated', () => {
   todoListeners.forEach(fn => fn())
 })
 
+ipcRenderer.on('plugins:updated', () => {
+  pluginListeners.forEach(fn => fn())
+})
+
 contextBridge.exposeInMainWorld('mqbox', {
   plugin: {
     list: () => ipcRenderer.invoke('plugin:list'),
+    listAll: () => ipcRenderer.invoke('plugin:list-all'),
     getPanels: () => ipcRenderer.invoke('plugin:get-panels'),
     getPage: (pluginId: string) => ipcRenderer.invoke('plugin:get-page', pluginId),
     execute: (pluginId: string, command: string, args?: unknown) =>
@@ -27,6 +33,13 @@ contextBridge.exposeInMainWorld('mqbox', {
       ipcRenderer.invoke('plugin:set-enabled', pluginId, enabled),
     importPlugin: () =>
       ipcRenderer.invoke('plugin:import'),
+    listMarketplace: () =>
+      ipcRenderer.invoke('plugin:list-marketplace'),
+    installFromMarket: (pluginId: string) =>
+      ipcRenderer.invoke('plugin:install-from-market', pluginId),
+    onUpdated: (callback: () => void) => {
+      pluginListeners.push(callback)
+    },
   },
   search: {
     plugin: (keyword: string, query: string) => ipcRenderer.invoke('search:plugin', keyword, query),

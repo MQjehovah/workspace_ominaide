@@ -4,8 +4,8 @@
   "description": "OmniAide Desktop - Plugin-based AI Workbench",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc && vite build && electron-builder",
+    "dev": "node scripts/build-plugins.mjs && vite",
+    "build": "node scripts/build-plugins.mjs && vue-tsc && vite build && electron-builder",
     "preview": "vite preview"
   },
   "dependencies": {

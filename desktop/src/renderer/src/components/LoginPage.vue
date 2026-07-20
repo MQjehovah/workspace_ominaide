@@ -25,15 +25,15 @@
         <p v-if="error" class="error-msg">{{ error }}</p>
       </div>
       <div :style="{ display: currentView === 'settings' ? '' : 'none' }">
-        <el-input v-model="serverUrl" placeholder="服务器地址" style="margin-bottom:12px" />
-        <p style="font-size:11px;color:#999;margin:0;">重启后生效</p>
+        <el-input v-model="serverUrl" placeholder="服务器地址" style="margin-bottom:12px" @blur="saveServerUrl" />
+        <el-button size="small" style="width:100%" @click="saveServerUrl">保存</el-button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 
 const serverUrl = ref('http://localhost:8000')
 const username = ref('')
@@ -42,11 +42,18 @@ const loading = ref(false)
 const error = ref('')
 const currentView = ref<'login' | 'settings'>('login')
 
+async function loadSavedConfig() {
+  const saved = await window.mqbox.config.get('serverUrl')
+  if (saved) serverUrl.value = saved
+}
+
 function goBack() {
   currentView.value = 'login'
   error.value = ''
 }
-function goSettings() {
+async function goSettings() {
+  const saved = await window.mqbox.config.get('serverUrl')
+  if (saved) serverUrl.value = saved
   currentView.value = 'settings'
 }
 
@@ -66,6 +73,12 @@ async function login() {
   } catch (e: any) { error.value = e.message }
   finally { loading.value = false }
 }
+
+async function saveServerUrl() {
+  await window.mqbox.config.set('serverUrl', serverUrl.value)
+}
+
+onMounted(loadSavedConfig)
 
 function handleClose() {
   window.mqbox?.window.quit()

@@ -4,6 +4,9 @@
   "displayName": "文件搜索",
   "description": "搜索服务端文件",
   "main": "dist/index.js",
+  "scripts": {
+    "build": "vite build"
+  },
   "omniaide": {
     "id": "everything",
     "displayName": "文件搜索",

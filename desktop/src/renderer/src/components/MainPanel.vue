@@ -43,7 +43,7 @@ function getComponent(pluginId: string) { return pluginComponents[pluginId] || n
 function openPluginPage(pluginId: string) { window.mqbox?.window.openPage(pluginId) }
 function openSearch() { window.mqbox?.window.openSearch() }
 function openManager() { showUserMenu.value = false; window.mqbox?.window.openPluginManager() }
-function handleClose() { window.mqbox?.window.hide() }
+function handleClose() { window.mqbox?.window.close() }
 
 async function executeCommand(pluginId: string, command: string, args?: unknown) {
   await window.mqbox?.plugin.execute(pluginId, command, args || {})
@@ -59,6 +59,7 @@ onMounted(() => {
   window.mqbox?.clipboard?.onUpdated(() => refreshPanel('clipboard-history'))
   window.mqbox?.player?.onUpdated(() => refreshPanel('player'))
   window.mqbox?.todo?.onUpdated(() => refreshPanel('todo'))
+  window.mqbox?.plugin?.onUpdated(() => loadPlugins())
 })
 </script>
 

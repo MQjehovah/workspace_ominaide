@@ -4,6 +4,9 @@
   "displayName": "文件",
   "description": "文件管理与网盘",
   "main": "dist/index.js",
+  "scripts": {
+    "build": "vite build"
+  },
   "omniaide": {
     "id": "files",
     "displayName": "文件",
