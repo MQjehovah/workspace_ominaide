@@ -8,6 +8,8 @@ const pluginComponents: Record<string, any> = {
   'player': defineAsyncComponent(() => import('@plugins/player/src/Panel.vue')),
   'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Panel.vue')),
   'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Panel.vue')),
+  'files': defineAsyncComponent(() => import('@plugins/files/src/Panel.vue')),
+  'notes': defineAsyncComponent(() => import('@plugins/notes/src/Panel.vue')),
 }
 
 const pluginList = ref<any[]>([])
@@ -18,7 +20,7 @@ const showUserMenu = ref(false)
 
 const pluginColors: Record<string, string> = {
   screenshot: '#28A745', 'quick-notes': '#DC3545', 'clipboard-history': '#0078D4',
-  todo: '#FF9800', player: '#E91E63', calculator: '#666',
+  todo: '#FF9800', player: '#E91E63', calculator: '#666', files: '#2196F3', notes: '#FF9800',
 }
 
 async function loadPlugins() {

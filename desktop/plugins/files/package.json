@@ -1,0 +1,20 @@
+{
+  "name": "omniaide-files",
+  "version": "1.0.0",
+  "displayName": "文件",
+  "description": "文件管理与网盘",
+  "main": "dist/index.js",
+  "omniaide": {
+    "id": "files",
+    "displayName": "文件",
+    "icon": "Folder",
+    "keywords": ["file"],
+    "permissions": [],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40"
+  }
+}

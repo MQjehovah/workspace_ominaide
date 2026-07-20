@@ -1,0 +1,20 @@
+{
+  "name": "omniaide-notes",
+  "version": "1.0.0",
+  "displayName": "笔记",
+  "description": "Markdown 笔记",
+  "main": "dist/index.js",
+  "omniaide": {
+    "id": "notes",
+    "displayName": "笔记",
+    "icon": "Book",
+    "keywords": ["note"],
+    "permissions": [],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40"
+  }
+}
