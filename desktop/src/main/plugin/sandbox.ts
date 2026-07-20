@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { join } from 'path'
 import { app, Notification, clipboard, shell } from 'electron'
 import { Low } from 'lowdb'
@@ -27,28 +28,24 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
 
   const api = {
     get: async (path: string) => {
-      const axios = (await import('axios')).default
       const res = await axios.get(`${store.serverUrl}/api${path}`, {
         headers: { Authorization: 'Bearer ' + store.token }
       })
       return res.data
     },
     post: async (path: string, body?: any) => {
-      const axios = (await import('axios')).default
       const res = await axios.post(`${store.serverUrl}/api${path}`, body, {
         headers: { Authorization: 'Bearer ' + store.token }
       })
       return res.data
     },
     put: async (path: string, body?: any) => {
-      const axios = (await import('axios')).default
       const res = await axios.put(`${store.serverUrl}/api${path}`, body, {
         headers: { Authorization: 'Bearer ' + store.token }
       })
       return res.data
     },
     delete: async (path: string) => {
-      const axios = (await import('axios')).default
       const res = await axios.delete(`${store.serverUrl}/api${path}`, {
         headers: { Authorization: 'Bearer ' + store.token }
       })

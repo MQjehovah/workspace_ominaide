@@ -86,6 +86,17 @@ export function registerIpcHandlers() {
   })
 
   // Window
+  ipcMain.handle('window:open-search', () => {
+    const searchWin = new BrowserWindow({
+      width: 640, height: 400, resizable: false, frame: false, transparent: true,
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        contextIsolation: true,
+      },
+    })
+    searchWin.loadURL('file://' + join(__dirname, '../../dist/index.html').replace(/\\/g, '/') + '?view=search')
+    searchWin.on('blur', () => searchWin.close())
+  })
   ipcMain.handle('window:hide', () => {
     const win = BrowserWindow.getFocusedWindow()
     win?.hide()

@@ -46,7 +46,7 @@ onMounted(async () => {
   } catch (e: any) {
     error.value = String(e)
   }
-})
+});
 
 // Expose for LoginPage to call after login
 (window as any).setLoggedIn = () => { loggedIn.value = true }
