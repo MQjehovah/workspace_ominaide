@@ -1,7 +1,7 @@
 <template>
   <div class="login-page" @keydown.enter="login">
     <div class="login-card">
-      <h2>OmniAide</h2>
+      <h2 style="-webkit-app-region:drag">OmniAide</h2>
       <el-input v-model="serverUrl" placeholder="服务器地址" style="margin-bottom:12px" />
       <el-input v-model="username" placeholder="用户名" style="margin-bottom:12px" />
       <el-input v-model="password" type="password" placeholder="密码" style="margin-bottom:20px" show-password />

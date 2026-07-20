@@ -1,8 +1,27 @@
 import { ipcMain, BrowserWindow } from 'electron'
+import { join } from 'path'
+import { app } from 'electron'
+import { Low } from 'lowdb'
+import { JSONFile } from 'lowdb/node'
 import { getPlugins, getPanels, getSearchProviders, executeCommand, getPluginPage } from '../plugin/host'
 import { setAuth } from '../plugin/sandbox'
 
+const configFile = join(app.getPath('userData'), 'config.json')
+const adapter = new JSONFile<Record<string, any>>(configFile)
+const configDb = new Low(adapter, {})
+
 export function registerIpcHandlers() {
+  // Config
+  ipcMain.handle('config:get', async (_, key: string) => {
+    await configDb.read()
+    return configDb.data?.[key]
+  })
+  ipcMain.handle('config:set', async (_, key: string, value: any) => {
+    await configDb.read()
+    configDb.data![key] = value
+    await configDb.write()
+  })
+
   // Auth
   ipcMain.handle('auth:set', (_, serverUrl: string, token: string) => {
     setAuth(serverUrl, token)
