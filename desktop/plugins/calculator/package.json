@@ -1,0 +1,25 @@
+{
+  "name": "omniaide-calculator",
+  "version": "1.0.0",
+  "displayName": "计算器",
+  "description": "简单计算器",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "omniaide": {
+    "id": "calculator",
+    "displayName": "计算器",
+    "icon": "Calculator",
+    "keywords": ["calc"],
+    "permissions": [],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40",
+    "typescript": "~5.6.0"
+  }
+}

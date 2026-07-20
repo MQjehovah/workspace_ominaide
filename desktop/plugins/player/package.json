@@ -1,0 +1,25 @@
+{
+  "name": "omniaide-player",
+  "version": "1.0.0",
+  "displayName": "播放器",
+  "description": "播放本地音频和视频文件",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "omniaide": {
+    "id": "player",
+    "displayName": "播放器",
+    "icon": "Headset",
+    "keywords": ["player", "play"],
+    "permissions": ["storage", "files:read", "notification", "shell"],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40",
+    "typescript": "~5.6.0"
+  }
+}

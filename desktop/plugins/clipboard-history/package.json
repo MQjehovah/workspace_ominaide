@@ -1,0 +1,25 @@
+{
+  "name": "omniaide-clipboard-history",
+  "version": "1.0.0",
+  "displayName": "剪贴板历史",
+  "description": "记录和管理剪贴板历史",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "omniaide": {
+    "id": "clipboard-history",
+    "displayName": "剪贴板历史",
+    "icon": "Clipboard",
+    "keywords": ["cb"],
+    "permissions": ["clipboard", "notification", "storage"],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40",
+    "typescript": "~5.6.0"
+  }
+}

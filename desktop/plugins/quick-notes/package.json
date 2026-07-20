@@ -1,0 +1,32 @@
+{
+  "name": "omniaide-quick-notes",
+  "version": "1.1.0",
+  "displayName": "快速笔记",
+  "description": "快速记录和管理笔记",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "omniaide": {
+    "id": "quick-notes",
+    "displayName": "快速笔记",
+    "icon": "Edit",
+    "keywords": ["note"],
+    "permissions": ["storage", "notification"],
+    "builtin": true
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "@vitest/coverage-v8": "^4.1.10",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.10.6",
+    "typescript": "~5.6.0",
+    "vite": "^5.2.0",
+    "vitest": "^4.1.10",
+    "vue": "^3.5.40"
+  }
+}
