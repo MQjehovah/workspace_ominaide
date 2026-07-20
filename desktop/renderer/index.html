@@ -719,7 +719,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 
     function renderTodoCard(t) {
       const pColors = { 1: '', 2: 'warning', 3: 'danger' }
-      return '<div draggable="true" ondragstart="dragTodo=' + t.id + '" style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid var(--border);cursor:grab;font-size:12px">' +
+      return '<div draggable="true" ondragstart="dragTodoId=' + t.id + '" style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid var(--border);cursor:grab;font-size:12px">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
         '<span style="flex:1;' + (t.status === 'done' ? 'text-decoration:line-through;color:var(--muted)' : '') + '">' + (t.title || '') + '</span>' +
         '<button class="icon-btn" onclick="deleteTodo(' + t.id + ')" style="flex-shrink:0;font-size:14px">&times;</button></div>' +
@@ -729,23 +729,25 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
     }
 
     // Drag & drop between columns
-    let dragTodo = null
+    let dragTodoId = null
     document.addEventListener('dragover', e => e.preventDefault())
     document.addEventListener('drop', async e => {
       const col = e.target.closest('.todo-col')
-      if (!col || !dragTodo) return
-      const statusMap = { 0: 'pending', 1: 'in_progress', 2: 'done' }
-      const idx = Array.from(document.querySelectorAll('.todo-col')).indexOf(col)
-      const newStatus = statusMap[idx]
+      if (!col || !dragTodoId) return
+      const cols = document.querySelectorAll('.todo-col')
+      let idx = -1
+      for (let i = 0; i < cols.length; i++) { if (cols[i] === col) { idx = i; break } }
+      const statusList = ['pending', 'in_progress', 'done']
+      const newStatus = statusList[idx]
       if (!newStatus) return
       try {
-        await fetch(config.serverUrl + '/api/plugins/todo/items/' + dragTodo, {
+        await fetch(config.serverUrl + '/api/plugins/todo/items/' + dragTodoId, {
           method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentToken },
           body: JSON.stringify({ status: newStatus })
         })
         loadTodos()
       } catch(e) {}
-      dragTodo = null
+      dragTodoId = null
     })
 
     async function createTodo() {
