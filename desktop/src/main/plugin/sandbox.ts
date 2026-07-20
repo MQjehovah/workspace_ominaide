@@ -3,6 +3,7 @@ import { join } from 'path'
 import { app, Notification, clipboard, shell, BrowserWindow } from 'electron'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
+import { getConfig } from '../config'
 import type { PluginInfo, PluginContext } from '../../shared/types'
 
 export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Function>, searchProviders: any[]) {
@@ -28,26 +29,30 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
 
   const api = {
     get: async (path: string) => {
-      const res = await axios.get(`${store.serverUrl}/api${path}`, {
-        headers: { Authorization: 'Bearer ' + store.token }
+      const c = await getConfig()
+      const res = await axios.get(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, {
+        headers: { Authorization: 'Bearer ' + (c.token || '') }
       })
       return res.data
     },
     post: async (path: string, body?: any) => {
-      const res = await axios.post(`${store.serverUrl}/api${path}`, body, {
-        headers: { Authorization: 'Bearer ' + store.token }
+      const c = await getConfig()
+      const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
+        headers: { Authorization: 'Bearer ' + (c.token || '') }
       })
       return res.data
     },
     put: async (path: string, body?: any) => {
-      const res = await axios.put(`${store.serverUrl}/api${path}`, body, {
-        headers: { Authorization: 'Bearer ' + store.token }
+      const c = await getConfig()
+      const res = await axios.put(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
+        headers: { Authorization: 'Bearer ' + (c.token || '') }
       })
       return res.data
     },
     delete: async (path: string) => {
-      const res = await axios.delete(`${store.serverUrl}/api${path}`, {
-        headers: { Authorization: 'Bearer ' + store.token }
+      const c = await getConfig()
+      const res = await axios.delete(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, {
+        headers: { Authorization: 'Bearer ' + (c.token || '') }
       })
       return res.data
     },

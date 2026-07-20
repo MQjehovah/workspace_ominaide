@@ -20,11 +20,10 @@ export interface BuiltinShortcut {
 
 let builtinCallbacks: Record<string, () => void> = {}
 
-export function setupShortcut(callbacks: Record<string, () => void>) {
+export async function setupShortcut(callbacks: Record<string, () => void>) {
   builtinCallbacks = callbacks
-  const config = getConfig()
+  const config = await getConfig()
 
-  // Register built-in shortcuts
   const builtins = config.shortcut || { toggle: 'Ctrl+Space', search: 'Ctrl+Shift+Space' }
   for (const [key, acc] of Object.entries(builtins)) {
     const cb = builtinCallbacks[key]
@@ -33,7 +32,6 @@ export function setupShortcut(callbacks: Record<string, () => void>) {
     }
   }
 
-  // Register custom plugin shortcuts
   const custom: ShortcutBinding[] = config.customShortcuts || []
   for (const s of custom) {
     try {
@@ -44,15 +42,15 @@ export function setupShortcut(callbacks: Record<string, () => void>) {
   }
 }
 
-export function getCustomShortcuts(): ShortcutBinding[] {
-  return getConfig().customShortcuts || []
+export async function getCustomShortcuts(): Promise<ShortcutBinding[]> {
+  const config = await getConfig()
+  return config.customShortcuts || []
 }
 
-export function addCustomShortcut(binding: ShortcutBinding): boolean {
-  const config = getConfig()
+export async function addCustomShortcut(binding: ShortcutBinding): Promise<boolean> {
+  const config = await getConfig()
   const custom: ShortcutBinding[] = config.customShortcuts || []
 
-  // Remove old binding with same accelerator
   const idx = custom.findIndex(s => s.accelerator === binding.accelerator)
   if (idx >= 0) {
     try { globalShortcut.unregister(binding.accelerator) } catch {}
@@ -60,7 +58,7 @@ export function addCustomShortcut(binding: ShortcutBinding): boolean {
   }
 
   custom.push(binding)
-  setConfig('customShortcuts', custom)
+  await setConfig('customShortcuts', custom)
 
   try {
     globalShortcut.register(binding.accelerator, () => {
@@ -70,16 +68,16 @@ export function addCustomShortcut(binding: ShortcutBinding): boolean {
   return true
 }
 
-export function removeCustomShortcut(accelerator: string): boolean {
-  const config = getConfig()
+export async function removeCustomShortcut(accelerator: string): Promise<boolean> {
+  const config = await getConfig()
   const custom: ShortcutBinding[] = (config.customShortcuts || []).filter(s => s.accelerator !== accelerator)
-  setConfig('customShortcuts', custom)
+  await setConfig('customShortcuts', custom)
   try { globalShortcut.unregister(accelerator) } catch {}
   return true
 }
 
-export function getBuiltinShortcuts(): BuiltinShortcut[] {
-  const config = getConfig()
+export async function getBuiltinShortcuts(): Promise<BuiltinShortcut[]> {
+  const config = await getConfig()
   const s = config.shortcut || {}
   return [
     { key: 'toggle', label: '打开/隐藏面板', accelerator: s.toggle || 'Ctrl+Space', editable: true },
@@ -87,17 +85,15 @@ export function getBuiltinShortcuts(): BuiltinShortcut[] {
   ]
 }
 
-export function updateBuiltinShortcut(key: string, accelerator: string): boolean {
-  const config = getConfig()
+export async function updateBuiltinShortcut(key: string, accelerator: string): Promise<boolean> {
+  const config = await getConfig()
   const shortcuts = config.shortcut || {}
   const oldAcc = shortcuts[key]
 
-  // Unregister old
   if (oldAcc) { try { globalShortcut.unregister(oldAcc) } catch {} }
 
-  // Register new
   shortcuts[key] = accelerator
-  setConfig('shortcut', shortcuts)
+  await setConfig('shortcut', shortcuts)
 
   const cb = builtinCallbacks[key]
   if (cb) {

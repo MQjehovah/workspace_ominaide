@@ -8,7 +8,7 @@ import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltin
 
 export function registerIpcHandlers() {
   // Config
-  ipcMain.handle('config:get', async (_, key: string) => getConfig()?.[key])
+  ipcMain.handle('config:get', async (_, key: string) => (await getConfig())?.[key])
   ipcMain.handle('config:set', async (_, key: string, value: any) => setConfig(key, value))
 
   // Auth
@@ -24,11 +24,11 @@ export function registerIpcHandlers() {
   })
 
   // Shortcuts
-  ipcMain.handle('shortcut:list', () => getCustomShortcuts())
-  ipcMain.handle('shortcut:add', (_, binding: any) => addCustomShortcut(binding))
-  ipcMain.handle('shortcut:remove', (_, accelerator: string) => removeCustomShortcut(accelerator))
-  ipcMain.handle('shortcut:get-builtin', () => getBuiltinShortcuts())
-  ipcMain.handle('shortcut:update-builtin', (_, key: string, accelerator: string) => updateBuiltinShortcut(key, accelerator))
+  ipcMain.handle('shortcut:list', async () => getCustomShortcuts())
+  ipcMain.handle('shortcut:add', async (_, binding: any) => addCustomShortcut(binding))
+  ipcMain.handle('shortcut:remove', async (_, accelerator: string) => removeCustomShortcut(accelerator))
+  ipcMain.handle('shortcut:get-builtin', async () => getBuiltinShortcuts())
+  ipcMain.handle('shortcut:update-builtin', async (_, key: string, accelerator: string) => updateBuiltinShortcut(key, accelerator))
 
   // Search
   ipcMain.handle('search:plugin', async (_, keyword: string, query: string) => {
@@ -52,22 +52,22 @@ export function registerIpcHandlers() {
 
   // API proxy
   ipcMain.handle('api:get', async (_, path: string) => {
-    const c = getConfig()
+    const c = await getConfig()
     const res = await axios.get(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
     return res.data
   })
   ipcMain.handle('api:post', async (_, path: string, body?: any) => {
-    const c = getConfig()
+    const c = await getConfig()
     const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
     return res.data
   })
   ipcMain.handle('api:put', async (_, path: string, body?: any) => {
-    const c = getConfig()
+    const c = await getConfig()
     const res = await axios.put(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
     return res.data
   })
   ipcMain.handle('api:delete', async (_, path: string) => {
-    const c = getConfig()
+    const c = await getConfig()
     const res = await axios.delete(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
     return res.data
   })

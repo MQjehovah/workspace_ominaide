@@ -69,7 +69,7 @@ app.whenReady().then(async () => {
   await initPlugins()
   createTray()
   showLogin()
-  setupShortcut({ search: showSearchWindow, toggle: showMainPanel })
+  await setupShortcut({ search: showSearchWindow, toggle: showMainPanel })
 })
 
 ipcMain.handle('window:quit', () => { isQuitting = true; app.quit() })

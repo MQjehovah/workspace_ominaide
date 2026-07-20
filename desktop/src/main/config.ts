@@ -17,8 +17,8 @@ async function ensure() {
   if (!loaded) { await db.read(); loaded = true }
 }
 
-export function getConfig(): Record<string, any> {
-  ensure()
+export async function getConfig(): Promise<Record<string, any>> {
+  await ensure()
   return db.data as Record<string, any>
 }
 

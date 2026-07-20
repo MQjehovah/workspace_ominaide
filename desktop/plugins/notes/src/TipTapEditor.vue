@@ -20,26 +20,39 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, watch } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
+import { renderToMarkdown } from '@tiptap/static-renderer/pm/markdown'
+import { renderToHTMLString } from '@tiptap/static-renderer/pm/html-string'
+import { defaultMarkdownParser } from 'prosemirror-markdown'
 
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
+const editorExtensions = [
+  StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+  Underline,
+  Link.configure({ openOnClick: false }),
+  Image.configure({ inline: true }),
+  Placeholder.configure({ placeholder: '开始写点什么...' }),
+]
+
+function mdToHTML(md: string): string {
+  try {
+    const doc = defaultMarkdownParser.parse(md)
+    if (!doc) return ''
+    return renderToHTMLString({ content: doc.toJSON(), extensions: editorExtensions })
+  } catch { return '' }
+}
+
 const editor = useEditor({
-  content: props.modelValue || '',
-  extensions: [
-    StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
-    Underline,
-    Link.configure({ openOnClick: false }),
-    Image.configure({ inline: true }),
-    Placeholder.configure({ placeholder: '开始写点什么...' }),
-  ],
+  content: '',
+  extensions: editorExtensions,
   editorProps: {
     handlePaste: async (view, event) => {
       const items = event.clipboardData?.items
@@ -59,7 +72,18 @@ const editor = useEditor({
       return false
     },
   },
-  onUpdate: ({ editor }) => emit('update:modelValue', editor.getHTML()),
+  onUpdate: ({ editor }) => {
+    const md = renderToMarkdown({ content: editor.getJSON(), extensions: editorExtensions })
+    emit('update:modelValue', md)
+  },
+})
+
+watch(() => props.modelValue, (val) => {
+  if (!editor.value || !val) return
+  const currentMd = renderToMarkdown({ content: editor.value.getJSON(), extensions: editorExtensions })
+  if (currentMd === val) return
+  const html = mdToHTML(val)
+  if (html) editor.value.commands.setContent(html)
 })
 
 async function uploadImage(file: File) {
