@@ -4,18 +4,19 @@ import electron from 'vite-plugin-electron'
 import { resolve } from 'path'
 
 export default defineConfig({
+  root: resolve(__dirname, 'src/renderer'),
   plugins: [
     vue(),
     electron([
       {
-        entry: 'src/main/index.ts',
+        entry: resolve(__dirname, 'src/main/index.ts'),
         onstart(args) { args.startup() },
-        vite: { build: { outDir: 'dist-electron/main' } },
+        vite: { build: { outDir: resolve(__dirname, 'dist-electron/main') } },
       },
       {
-        entry: 'src/preload/index.ts',
+        entry: resolve(__dirname, 'src/preload/index.ts'),
         onstart(args) { args.reload() },
-        vite: { build: { outDir: 'dist-electron/preload' } },
+        vite: { build: { outDir: resolve(__dirname, 'dist-electron/preload') } },
       },
     ]),
   ],
@@ -26,7 +27,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
   },
 })
