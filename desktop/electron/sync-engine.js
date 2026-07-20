@@ -25,6 +25,10 @@ class SyncEngine {
     this._startPolling()
   }
 
+  setConnected() {
+    if (this.status !== 'connected') this.setStatus('connected')
+  }
+
   stop() {
     this._stopWatching()
     this._stopPolling()
@@ -148,6 +152,8 @@ class SyncEngine {
       this._prevLocalPaths = new Set(currentLocalPaths)
       for (const rel of currentServerPaths) this._syncedPaths.add(rel)
       for (const rel of currentLocalPaths) this._syncedPaths.add(rel)
+
+      this.setConnected()
 
     } catch (err) {
       if (err.response?.status === 401 && this.onUnauthorized) this.onUnauthorized()
