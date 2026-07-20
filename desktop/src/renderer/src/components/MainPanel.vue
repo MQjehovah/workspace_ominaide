@@ -57,6 +57,8 @@ async function refreshPanel(pluginId: string) {
 onMounted(() => {
   loadPlugins()
   window.mqbox?.clipboard?.onUpdated(() => refreshPanel('clipboard-history'))
+  window.mqbox?.player?.onUpdated(() => refreshPanel('player'))
+  window.mqbox?.todo?.onUpdated(() => refreshPanel('todo'))
 })
 </script>
 

@@ -1,8 +1,12 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, protocol, net } from 'electron'
 import { join } from 'path'
 import { initPlugins } from './plugin/host'
 import { registerIpcHandlers } from './ipc'
 import { setupShortcut } from './shortcut'
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
+])
 
 let mainPanel: BrowserWindow | null = null
 let loginWindow: BrowserWindow | null = null
@@ -65,6 +69,10 @@ function createTray() {
 }
 
 app.whenReady().then(async () => {
+  protocol.handle('local-file', (request) => {
+    const filePath = decodeURIComponent(request.url.replace('local-file://', ''))
+    return net.fetch(`file://${filePath}`)
+  })
   registerIpcHandlers()
   await initPlugins()
   createTray()

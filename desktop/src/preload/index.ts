@@ -1,9 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 const clipboardListeners: (() => void)[] = []
+const playerListeners: (() => void)[] = []
+const todoListeners: (() => void)[] = []
 
 ipcRenderer.on('clipboard:updated', () => {
   clipboardListeners.forEach(fn => fn())
+})
+
+ipcRenderer.on('player:updated', () => {
+  playerListeners.forEach(fn => fn())
+})
+
+ipcRenderer.on('todo:updated', () => {
+  todoListeners.forEach(fn => fn())
 })
 
 contextBridge.exposeInMainWorld('mqbox', {
@@ -40,6 +50,16 @@ contextBridge.exposeInMainWorld('mqbox', {
   clipboard: {
     onUpdated: (callback: () => void) => {
       clipboardListeners.push(callback)
+    },
+  },
+  player: {
+    onUpdated: (callback: () => void) => {
+      playerListeners.push(callback)
+    },
+  },
+  todo: {
+    onUpdated: (callback: () => void) => {
+      todoListeners.push(callback)
     },
   },
   shell: {

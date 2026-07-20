@@ -1,12 +1,18 @@
 <script setup lang="ts">
+interface Todo {
+  id: string; text: string; status: string; priority: number; due_date: string | null
+}
 interface Props {
-  data: { pendingCount: number; items: { id: string; text: string; priority: string }[] }
+  data: { pendingCount: number; items: Todo[] }
   execute: (action: string, args?: unknown) => Promise<unknown>
-  openPage: () => void
-  refresh: () => Promise<void>
+  openPage: () => void; refresh: () => Promise<void>
 }
 defineProps<Props>()
-function getPriorityColor(p: string) { return p === 'high' ? '#E53935' : p === 'low' ? '#4CAF50' : '#FF9800' }
+function getPriorityColor(p: number) {
+  if (p >= 3) return '#c62828'
+  if (p >= 2) return '#e65100'
+  return '#2e7d32'
+}
 </script>
 
 <template>
@@ -17,7 +23,7 @@ function getPriorityColor(p: string) { return p === 'high' ? '#E53935' : p === '
       </div>
       <div class="panel-info">
         <span class="panel-title">待办事项</span>
-        <span class="panel-meta">{{ data.pendingCount }} 个待完成</span>
+        <span class="panel-meta">{{ data.pendingCount }} 个待处理</span>
       </div>
       <button class="panel-arrow" @click="openPage">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
@@ -25,7 +31,7 @@ function getPriorityColor(p: string) { return p === 'high' ? '#E53935' : p === '
     </div>
     <div class="panel-body">
       <div v-if="data.items.length" class="item-list">
-        <div v-for="item in data.items.slice(0,4)" :key="item.id" class="item-row" @click="execute('done', { id: item.id })">
+        <div v-for="item in data.items.slice(0,4)" :key="item.id" class="item-row" @click="execute('update', { id: item.id, status: 'done' })">
           <div class="item-dot" :style="{ background: getPriorityColor(item.priority) }"></div>
           <span class="item-text">{{ item.text }}</span>
         </div>
@@ -40,10 +46,10 @@ function getPriorityColor(p: string) { return p === 'high' ? '#E53935' : p === '
 .panel-header { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
 .panel-icon { width:32px; height:32px; border-radius:8px; background:#fff3e0; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .panel-icon svg { width:16px; height:16px; color:#FF9800; }
-.panel-info { flex:1; }
+.panel-info { flex:1; min-width:0; }
 .panel-title { font-size:13px; font-weight:600; color:#1e1e1e; display:block; }
-.panel-meta { font-size:11px; color:#999; }
-.panel-arrow { border:none; background:transparent; cursor:pointer; color:#ccc; padding:4px; border-radius:4px; }
+.panel-meta { font-size:11px; color:#999; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.panel-arrow { border:none; background:transparent; cursor:pointer; color:#ccc; padding:4px; border-radius:4px; display:flex; }
 .panel-arrow:hover { background:#f5f5f5; color:#666; }
 .panel-body { }
 .item-list { display:flex; flex-direction:column; gap:4px; }

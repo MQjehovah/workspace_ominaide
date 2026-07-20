@@ -47,6 +47,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page { height:100vh; display:flex; flex-direction:column; }
+.page { height:100vh; }
 .empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; color:#909399; }
 </style>

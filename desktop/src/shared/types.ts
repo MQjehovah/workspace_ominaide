@@ -94,7 +94,8 @@ declare global {
       }
       window: {
         openMain: () => void
-        openPage: (pluginId: string) => void
+  files: { openDirectory: () => Promise<string | undefined>; listAudio: (dirPath: string) => Promise<{ name: string; path: string }[]> } | null
+  openPage: (pluginId: string) => void
         openSearch: () => void
         hide: () => void
       }

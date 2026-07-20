@@ -36,6 +36,7 @@ let currentTime = 0
 let duration = 0
 let volume = 80
 let playMode: 'sequence' | 'loop' | 'shuffle' = 'sequence'
+let pluginCtx: any = null
 
 function getState() {
   const currentTrack = currentTrackId ? tracks[currentTrackId] || null : null
@@ -64,6 +65,7 @@ export default {
   page: Page,
 
   async activate(context: any) {
+    pluginCtx = context
     const saved = await context.storage?.get<PlayerStorage>('playerData')
     if (saved) {
       playlists = saved.playlists || []
@@ -132,6 +134,7 @@ export default {
 
     context.registerCommand('selectPlaylist', async (args: any) => {
       currentPlaylistId = args?.playlistId || null
+      await saveState()
       return getState()
     })
 
@@ -429,5 +432,9 @@ export default {
     })
   },
 
-  deactivate() {}
+  deactivate() {
+    if (pluginCtx?.storage) {
+      pluginCtx.storage.set('playerData', { playlists, tracks, currentPlaylistId, volume, playMode })
+    }
+  }
 }

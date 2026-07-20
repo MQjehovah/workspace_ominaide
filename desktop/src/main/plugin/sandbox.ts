@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { join } from 'path'
-import { app, Notification, clipboard, shell, BrowserWindow } from 'electron'
+import { app, Notification, clipboard, shell, BrowserWindow, dialog } from 'electron'
+import { readdirSync, statSync } from 'fs'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { getConfig } from '../config'
@@ -77,6 +78,24 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
       },
     },
     notification: notification || { show: () => {} },
+    files: perms.includes('files:read') ? {
+      openDirectory: async () => {
+        const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+        return result.canceled ? undefined : result.filePaths[0]
+      },
+      listAudio: async (dirPath: string) => {
+        try {
+          const entries = readdirSync(dirPath)
+          const audioExts = ['.mp3', '.wav', '.flac', '.ogg', '.m4a', '.wma', '.aac']
+          return entries
+            .filter(f => {
+              const ext = f.toLowerCase().slice(f.lastIndexOf('.'))
+              return audioExts.includes(ext)
+            })
+            .map(f => ({ name: f, path: join(dirPath, f) }))
+        } catch { return [] }
+      },
+    } : null,
     openPage: (pluginId: string) => {
       const preloadPath = join(__dirname, '../../preload/index.js')
       const win = new BrowserWindow({
