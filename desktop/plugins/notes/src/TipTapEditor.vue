@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, onMounted } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -40,8 +40,34 @@ const editor = useEditor({
     Image.configure({ inline: true }),
     Placeholder.configure({ placeholder: '开始写点什么...' }),
   ],
+  editorProps: {
+    handlePaste: (view, event) => {
+      const items = event.clipboardData?.items
+      if (!items) return false
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          event.preventDefault()
+          const file = item.getAsFile()
+          if (file) uploadImage(file)
+          return true
+        }
+      }
+      return false
+    },
+  },
   onUpdate: ({ editor }) => emit('update:modelValue', editor.getHTML()),
 })
+
+async function uploadImage(file: File) {
+  try {
+    const res = await window.mqbox?.api.post('/files/upload/note', {})
+    if (!res?.upload_url || !res?.object_key) return
+    await fetch(res.upload_url, { method: 'PUT', body: file })
+    const serverUrl = await window.mqbox?.config.get('serverUrl') || 'http://localhost:8000'
+    const imgUrl = `${serverUrl}/api/files/note/${res.object_key}`
+    editor.value?.chain().focus().setImage({ src: imgUrl }).run()
+  } catch {}
+}
 
 function setLink() {
   if (!editor.value) return
