@@ -1,26 +1,52 @@
 <template>
-  <div class="plugin-page">
-    <div class="header">
-      <el-button text @click="close">{{ pluginId }}</el-button>
-      <el-button text @click="close">✕</el-button>
-    </div>
-    <div class="content">
-      <p style="color:#909399;text-align:center;padding:40px">插件页面: {{ pluginId }}</p>
-    </div>
+  <div class="page" v-if="component">
+    <component :is="component" :data="pageData" :execute="execute" :close="close" :refresh="refresh" />
+  </div>
+  <div v-else class="empty">
+    <h2>{{ pluginId }}</h2>
+    <p>插件页面加载中...</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, defineAsyncComponent } from 'vue'
 
 const params = new URLSearchParams(window.location.search)
 const pluginId = ref(params.get('pluginId') || '')
+const pageData = ref<any>({})
+const component = ref<any>(null)
 
+const pageComponents: Record<string, any> = {
+  'todo': defineAsyncComponent(() => import('@plugins/todo/src/Page.vue')),
+  'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Page.vue')),
+  'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Page.vue')),
+  'player': defineAsyncComponent(() => import('@plugins/player/src/Page.vue')),
+  'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Page.vue')),
+  'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Page.vue')),
+  'files': defineAsyncComponent(() => import('@plugins/files/src/Page.vue')),
+  'notes': defineAsyncComponent(() => import('@plugins/notes/src/Page.vue')),
+}
+
+async function load() {
+  component.value = pageComponents[pluginId.value] || null
+  if (!component.value) return
+  try {
+    const data = await window.mqbox?.plugin.execute(pluginId.value, 'getPageData') || {}
+    pageData.value = data
+  } catch {}
+}
+
+function execute(command: string, args?: unknown) {
+  return window.mqbox?.plugin.execute(pluginId.value, command, args || {})
+}
+
+function refresh() { load() }
 function close() { window.close() }
+
+onMounted(load)
 </script>
 
 <style scoped>
-.plugin-page { height:100vh; display:flex; flex-direction:column; }
-.header { display:flex; justify-content:space-between; padding:10px 16px; border-bottom:1px solid #e4e7ed; -webkit-app-region:drag; }
-.content { flex:1; overflow-y:auto; }
+.page { height:100vh; display:flex; flex-direction:column; }
+.empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; color:#909399; }
 </style>
