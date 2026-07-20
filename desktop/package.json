@@ -1,28 +1,32 @@
 {
   "name": "omniaide-desktop",
-  "version": "0.1.0",
-  "description": "OmniAide Desktop Sync Client",
-  "main": "electron/main.js",
+  "version": "1.0.0",
+  "description": "OmniAide Desktop - Plugin-based AI Workbench",
+  "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "electron .",
-    "start": "electron ."
+    "dev": "vite",
+    "build": "vue-tsc && vite build && electron-builder",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@tiptap/core": "^3.28.0",
-    "@tiptap/extension-image": "^3.28.0",
-    "@tiptap/extension-link": "^3.28.0",
-    "@tiptap/extension-placeholder": "^3.28.0",
-    "@tiptap/extension-underline": "^3.28.0",
-    "@tiptap/starter-kit": "^3.28.0",
-    "axios": "^1.7.0",
+    "vue": "^3.4.0",
+    "pinia": "^2.1.0",
+    "element-plus": "^2.5.0",
+    "@element-plus/icons-vue": "^2.3.0",
     "chokidar": "^3.6.0",
-    "electron-store": "^8.2.0",
-    "marked": "^18.0.6",
-    "turndown": "^7.2.4",
-    "vite": "^8.1.5",
-    "ws": "^8.16.0"
+    "axios": "^1.7.0",
+    "lowdb": "^7.0.0"
   },
   "devDependencies": {
-    "electron": "^30.0.0"
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0",
+    "vite": "^5.2.0",
+    "vite-plugin-electron": "^0.28.0",
+    "vite-plugin-electron-renderer": "^0.14.0",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "~5.6.0",
+    "vue-tsc": "^2.0.0",
+    "unocss": "^0.58.0",
+    "@types/node": "^20.0.0"
   }
 }

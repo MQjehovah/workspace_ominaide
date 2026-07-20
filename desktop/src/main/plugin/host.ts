@@ -1,0 +1,68 @@
+import { join } from 'path'
+import type { PluginInfo, PluginPanel, PluginModule, SearchProvider } from '../../shared/types'
+import { loadPlugins } from './loader'
+import { createSandbox } from './sandbox'
+
+const plugins = new Map<string, PluginInfo>()
+const modules = new Map<string, PluginModule>()
+const commands = new Map<string, Map<string, Function>>()
+const searchProviders: SearchProvider[] = []
+const panels: PluginPanel[] = []
+
+function getPluginDir(plugin: PluginInfo): string {
+  return plugin.path
+}
+
+export async function initPlugins() {
+  const loaded = loadPlugins()
+  
+  for (const [id, info] of loaded) {
+    try {
+      const modulePath = join(getPluginDir(info), info.manifest.main || 'dist/index.js')
+      const mod: PluginModule = await import(/* @vite-ignore */ modulePath.replace(/\\/g, '/'))
+      
+      if (mod.default?.activate) {
+        const cmdMap = new Map<string, Function>()
+        commands.set(id, cmdMap)
+        
+        const ctx = createSandbox(info, cmdMap, searchProviders)
+        await mod.default.activate(ctx)
+        
+        modules.set(id, mod.default)
+        plugins.set(id, info)
+        
+        if (mod.default.panel) {
+          panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
+        }
+        console.log(`Plugin activated: ${info.manifest.displayName}`)
+      }
+    } catch (e) {
+      console.error(`Failed to activate plugin ${id}:`, e)
+    }
+  }
+}
+
+export function getPlugins(): PluginInfo[] {
+  return Array.from(plugins.values())
+}
+
+export function getPanels(): PluginPanel[] {
+  return panels
+}
+
+export function getSearchProviders(): SearchProvider[] {
+  return searchProviders
+}
+
+export async function executeCommand(pluginId: string, command: string, args?: unknown): Promise<unknown> {
+  const cmdMap = commands.get(pluginId)
+  if (!cmdMap) throw new Error(`Plugin ${pluginId} not found`)
+  const handler = cmdMap.get(command)
+  if (!handler) throw new Error(`Command ${command} not found in plugin ${pluginId}`)
+  return handler(args)
+}
+
+export function getPluginPage(pluginId: string): any {
+  const mod = modules.get(pluginId)
+  return mod?.page || null
+}
