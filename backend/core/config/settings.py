@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "omniaide_minio"
     minio_secret_key: str = "omniaide_minio_secret"
+    minio_public: bool = False
     qdrant_url: str = "http://qdrant:6333"
     redis_url: str = "redis://redis:6379/0"
     llm_provider: str = "openai"

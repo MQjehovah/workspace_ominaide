@@ -1,9 +1,11 @@
 import io
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
+from core.config.settings import settings
 from core.events.recorder import record_event
 from plugins.files.backend.schemas import (
     UploadUrlRequest, UploadUrlResponse, ConfirmUploadRequest,
@@ -25,8 +27,9 @@ async def serve_note_file(object_key: str):
         raise HTTPException(status_code=503, detail="MinIO unavailable")
     try:
         obj = minio_client.get_object("user-files", object_key)
+        data = obj.read()
         mime_type = mimetypes.guess_type(object_key)[0] or "application/octet-stream"
-        return StreamingResponse(obj.stream(32*1024), media_type=mime_type)
+        return StreamingResponse(io.BytesIO(data), media_type=mime_type)
     except Exception:
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -109,6 +112,8 @@ async def get_upload_url(
     upload_url, file_id, object_key = await file_service.generate_upload_url(
         db, user["id"], req
     )
+    if not settings.minio_public:
+        upload_url = ""
     return UploadUrlResponse(upload_url=upload_url, file_id=file_id, object_key=object_key)
 
 
@@ -207,8 +212,47 @@ async def get_download_url(
     file_record = await file_service.get_file(db, user["id"], file_id)
     if not file_record:
         raise HTTPException(status_code=404, detail="File not found")
-    url = await file_service.get_download_url(file_record)
-    return {"download_url": url, "filename": file_record.original_name}
+    if settings.minio_public:
+        url = await file_service.get_download_url(file_record)
+    else:
+        url = None
+    return {"download_url": url, "filename": file_record.original_name, "file_id": file_id}
+
+
+@router.get("/{file_id}/download")
+async def download_file(
+    file_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Proxy download: stream file bytes through backend (MinIO not exposed)."""
+    import mimetypes
+    from core.minio.client import minio_client
+    if not minio_client:
+        raise HTTPException(status_code=503, detail="MinIO unavailable")
+    file_record = await file_service.get_file(db, user["id"], file_id)
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        obj = minio_client.get_object(file_record.bucket, file_record.object_key)
+        mime_type = mimetypes.guess_type(file_record.original_name)[0] or "application/octet-stream"
+
+        def gen():
+            while True:
+                chunk = obj.read(32 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
+        from urllib.parse import quote
+        filename_safe = quote(file_record.original_name)
+        return StreamingResponse(gen(), media_type=mime_type,
+                                 headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename_safe}"})
+    except Exception as e:
+        import traceback
+        print(f"[download ERROR] file_id={file_id}: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=404, detail="File not found in storage")
 
 
 @router.put("/{file_id}/tags", response_model=FileResponse)
