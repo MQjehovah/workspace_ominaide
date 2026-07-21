@@ -77,11 +77,9 @@ async def rename_playlist(db: AsyncSession, user_id: int, playlist_id: int, name
 
 
 async def reorder_playlist_song(db: AsyncSession, user_id: int, playlist_id: int, item_id: int, direction: str) -> list[tuple[PlaylistItem, File]]:
-    # 校验歌单归属
     pl_result = await db.execute(select(Playlist).where(Playlist.id == playlist_id, Playlist.user_id == user_id))
     if not pl_result.scalar_one_or_none():
         return []
-    # 取出该歌单所有 item 按 position 排序
     items_result = await db.execute(
         select(PlaylistItem).where(PlaylistItem.playlist_id == playlist_id).order_by(PlaylistItem.position)
     )
@@ -94,5 +92,4 @@ async def reorder_playlist_song(db: AsyncSession, user_id: int, playlist_id: int
         return []
     items[idx].position, items[swap].position = items[swap].position, items[idx].position
     await db.flush()
-    # 返回新顺序
     return await list_playlist_songs(db, user_id, playlist_id)

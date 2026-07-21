@@ -12,6 +12,11 @@ from plugins.music.backend import service as music_service
 router = APIRouter(prefix="/api/music", tags=["music"])
 
 
+def _serialize_songs(rows):
+    return {"songs": [{"item_id": item.id, "file_id": f.id, "name": f.original_name, "size": f.size, "mime": f.mime_type}
+                      for item, f in rows]}
+
+
 @router.get("/playlists")
 async def list_playlists(
     user: dict = Depends(get_current_user),
@@ -54,8 +59,7 @@ async def list_playlist_songs(
     db: AsyncSession = Depends(get_db),
 ):
     rows = await music_service.list_playlist_songs(db, user["id"], playlist_id)
-    return {"songs": [{"item_id": item.id, "file_id": f.id, "name": f.original_name, "size": f.size, "mime": f.mime_type}
-                      for item, f in rows]}
+    return _serialize_songs(rows)
 
 
 @router.post("/playlists/{playlist_id}/songs", status_code=201)
@@ -107,5 +111,4 @@ async def reorder_playlist_song(
     rows = await music_service.reorder_playlist_song(db, user["id"], playlist_id, req.item_id, req.direction)
     if rows == []:
         raise HTTPException(status_code=404, detail="Playlist or item not found")
-    return {"songs": [{"item_id": item.id, "file_id": f.id, "name": f.original_name, "size": f.size, "mime": f.mime_type}
-                      for item, f in rows]}
+    return _serialize_songs(rows)

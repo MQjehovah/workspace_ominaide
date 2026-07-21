@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from typing import Literal
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 
@@ -24,9 +25,9 @@ class PlaylistAddSongRequest(BaseModel):
 
 
 class PlaylistRenameRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=100)
 
 
 class PlaylistReorderRequest(BaseModel):
     item_id: int
-    direction: str  # 'up' | 'down'
+    direction: Literal["up", "down"]
