@@ -4,14 +4,20 @@ import Page from './Page.vue'
 interface Track {
   id: string
   name: string
-  source: 'local' | 'url'
+  source: 'local' | 'url' | 'cloud'
   path: string
+  fileId?: number
+  itemId?: number
   artist?: string
+  size?: number
+  mime?: string
 }
 
 interface PlaylistInfo {
   id: string
   name: string
+  source: 'local' | 'cloud'
+  serverId?: number
   trackIds: string[]
 }
 
@@ -37,6 +43,25 @@ let duration = 0
 let volume = 80
 let playMode: 'sequence' | 'loop' | 'shuffle' = 'sequence'
 let pluginCtx: any = null
+
+function getServerConfig(): { serverUrl: string; token: string } {
+  try {
+    const { join } = require('path')
+    const { readFileSync, existsSync } = require('fs')
+    const { app } = require('electron')
+    const configPath = join(app.getPath('userData'), 'omniaide-config', 'config.json')
+    let serverUrl = 'http://localhost:8000'
+    let token = ''
+    if (existsSync(configPath)) {
+      const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
+      serverUrl = cfg.serverUrl || serverUrl
+      token = cfg.token || ''
+    }
+    return { serverUrl, token }
+  } catch {
+    return { serverUrl: 'http://localhost:8000', token: '' }
+  }
+}
 
 function getState() {
   const currentTrack = currentTrackId ? tracks[currentTrackId] || null : null
@@ -68,8 +93,11 @@ export default {
     pluginCtx = context
     const saved = await context.storage?.get<PlayerStorage>('playerData')
     if (saved) {
-      playlists = saved.playlists || []
-      tracks = saved.tracks || {}
+      playlists = (saved.playlists || []).filter(p => p.source !== 'cloud' && p.name !== '__cloud__')
+      tracks = {}
+      for (const [id, t] of Object.entries(saved.tracks || {})) {
+        if (t.source !== 'cloud') tracks[id] = t
+      }
       currentPlaylistId = saved.currentPlaylistId || null
       volume = saved.volume ?? 80
       playMode = saved.playMode || 'sequence'
@@ -79,54 +107,105 @@ export default {
       currentPlaylistId = playlists.length > 0 ? playlists[0].id : null
     }
 
+    const api = context.api
+
     async function saveState() {
+      const localPlaylists = playlists.filter(p => p.source === 'local')
+      const localTrackIds = new Set(localPlaylists.flatMap(p => p.trackIds))
+      const localTracks: Record<string, Track> = {}
+      for (const id of localTrackIds) {
+        if (tracks[id]) localTracks[id] = tracks[id]
+      }
       await context.storage?.set('playerData', {
-        playlists,
-        tracks,
+        playlists: localPlaylists,
+        tracks: localTracks,
         currentPlaylistId,
         volume,
-        playMode
+        playMode,
       })
     }
+
+    async function loadCloudPlaylists() {
+      try {
+        const res = await api.get('/music/playlists')
+        const cloudList = res?.playlists || []
+        playlists = playlists.filter(p => p.source !== 'cloud')
+        for (const cpl of cloudList) {
+          playlists.push({
+            id: `cloud_${cpl.id}`,
+            name: cpl.name,
+            source: 'cloud',
+            serverId: cpl.id,
+            trackIds: [],
+          })
+        }
+      } catch (e) {
+        console.error('[player] loadCloudPlaylists error:', e)
+      }
+    }
+
+    async function loadCloudSongs(playlistId: string) {
+      const pl = playlists.find(p => p.id === playlistId && p.source === 'cloud')
+      if (!pl || !pl.serverId) return
+      try {
+        const res = await api.get(`/music/playlists/${pl.serverId}/songs`)
+        const songs = res?.songs || []
+        pl.trackIds = []
+        for (const s of songs) {
+          const tid = `cloud_file_${s.file_id}`
+          tracks[tid] = {
+            id: tid, name: s.name, source: 'cloud', path: '',
+            fileId: s.file_id, itemId: s.item_id, size: s.size, mime: s.mime,
+          }
+          pl.trackIds.push(tid)
+        }
+      } catch (e) {
+        console.error('[player] loadCloudSongs error:', e)
+      }
+    }
+
+    await loadCloudPlaylists()
 
     context.registerCommand('getPanelData', async () => getState())
     context.registerCommand('getPageData', async () => getState())
 
-    context.registerCommand('open', async () => {
-      context.openPage('player')
-    })
-
-    context.registerCommand('search', async (args: any) => {
-      context.openPage('player')
-    })
+    context.registerCommand('open', async () => { context.openPage('player') })
+    context.registerCommand('search', async (args: any) => { context.openPage('player') })
 
     context.registerCommand('createPlaylist', async (args: any) => {
       const name = args?.name || '新建歌单'
-      const playlist: PlaylistInfo = {
-        id: generateId(),
-        name,
-        trackIds: []
+      const source: 'local' | 'cloud' = args?.source === 'cloud' ? 'cloud' : 'local'
+      if (source === 'cloud') {
+        try {
+          const res = await api.post('/music/playlists', { name })
+          playlists.push({ id: `cloud_${res.id}`, name: res.name, source: 'cloud', serverId: res.id, trackIds: [] })
+        } catch (e) { console.error('[player] createPlaylist cloud error:', e) }
+      } else {
+        playlists.push({ id: generateId(), name, source: 'local', trackIds: [] })
+        await saveState()
       }
-      playlists.push(playlist)
-      await saveState()
       return getState()
     })
 
     context.registerCommand('deletePlaylist', async (args: any) => {
-      const { playlistId } = args
-      playlists = playlists.filter(p => p.id !== playlistId)
-      if (currentPlaylistId === playlistId) {
-        currentPlaylistId = playlists.length > 0 ? playlists[0].id : null
+      const pl = playlists.find(p => p.id === args?.playlistId)
+      if (!pl) return getState()
+      if (pl.source === 'cloud' && pl.serverId) {
+        try { await api.delete(`/music/playlists/${pl.serverId}`) } catch (e) { console.error(e) }
       }
-      await saveState()
+      playlists = playlists.filter(p => p.id !== pl.id)
+      if (currentPlaylistId === pl.id) currentPlaylistId = playlists.length > 0 ? playlists[0].id : null
+      if (pl.source === 'local') await saveState()
       return getState()
     })
 
     context.registerCommand('renamePlaylist', async (args: any) => {
-      const { playlistId, name } = args
-      const playlist = playlists.find(p => p.id === playlistId)
-      if (playlist) {
-        playlist.name = name
+      const pl = playlists.find(p => p.id === args?.playlistId)
+      if (!pl) return getState()
+      if (pl.source === 'cloud' && pl.serverId) {
+        try { await api.put(`/music/playlists/${pl.serverId}`, { name: args.name }) } catch (e) { console.error(e) }
+      } else {
+        pl.name = args.name
         await saveState()
       }
       return getState()
@@ -134,33 +213,31 @@ export default {
 
     context.registerCommand('selectPlaylist', async (args: any) => {
       currentPlaylistId = args?.playlistId || null
-      await saveState()
+      const pl = playlists.find(p => p.id === currentPlaylistId)
+      if (pl?.source === 'cloud' && pl.trackIds.length === 0) {
+        await loadCloudSongs(pl.id)
+      }
+      if (pl?.source === 'local') await saveState()
       return getState()
     })
 
     context.registerCommand('addTrack', async (args: any) => {
-      const { playlistId, name, path, source = 'local', artist } = args
-      const track: Track = {
-        id: generateId(),
-        name: name || path.split(/[/\\]/).pop() || '未知',
-        source,
-        path,
-        artist
-      }
-      tracks[track.id] = track
-      const playlist = playlists.find(p => p.id === playlistId)
-      if (playlist) {
-        playlist.trackIds.push(track.id)
-      }
-      await saveState()
-      return getState()
-    })
-
-    context.registerCommand('addTrackById', async (args: any) => {
-      const { playlistId, trackId } = args
-      const playlist = playlists.find(p => p.id === playlistId)
-      if (playlist && tracks[trackId] && !playlist.trackIds.includes(trackId)) {
-        playlist.trackIds.push(trackId)
+      const { playlistId, name, path, source = 'local', artist, fileId } = args
+      const pl = playlists.find(p => p.id === playlistId)
+      if (!pl) return getState()
+      if (pl.source === 'cloud' && pl.serverId) {
+        try {
+          await api.post(`/music/playlists/${pl.serverId}/songs`, { file_id: fileId })
+          await loadCloudSongs(pl.id)
+        } catch (e) { console.error(e) }
+      } else {
+        const track: Track = {
+          id: generateId(),
+          name: name || path.split(/[/\\]/).pop() || '未知',
+          source, path, artist,
+        }
+        tracks[track.id] = track
+        pl.trackIds.push(track.id)
         await saveState()
       }
       return getState()
@@ -168,29 +245,73 @@ export default {
 
     context.registerCommand('removeTrack', async (args: any) => {
       const { playlistId, trackId } = args
-      const playlist = playlists.find(p => p.id === playlistId)
-      if (playlist) {
-        playlist.trackIds = playlist.trackIds.filter(id => id !== trackId)
+      const pl = playlists.find(p => p.id === playlistId)
+      const track = tracks[trackId]
+      if (pl?.source === 'cloud' && pl.serverId && track?.itemId) {
+        try { await api.delete(`/music/playlists/${pl.serverId}/songs/${track.itemId}`) } catch (e) { console.error(e) }
+        pl.trackIds = pl.trackIds.filter(id => id !== trackId)
+      } else if (pl) {
+        pl.trackIds = pl.trackIds.filter(id => id !== trackId)
+        await saveState()
       }
       if (currentTrackId === trackId) {
-        isPlaying = false
-        currentTrackId = null
-        currentTime = 0
-        duration = 0
+        isPlaying = false; currentTrackId = null; currentTime = 0; duration = 0
       }
-      await saveState()
       return getState()
     })
 
     context.registerCommand('moveTrack', async (args: any) => {
       const { playlistId, trackId, direction } = args
-      const playlist = playlists.find(p => p.id === playlistId)
-      if (!playlist) return getState()
-      const index = playlist.trackIds.indexOf(trackId)
-      if (index === -1) return getState()
-      const newIndex = direction === 'up' ? index - 1 : index + 1
-      if (newIndex < 0 || newIndex >= playlist.trackIds.length) return getState()
-      ;[playlist.trackIds[index], playlist.trackIds[newIndex]] = [playlist.trackIds[newIndex], playlist.trackIds[index]]
+      const pl = playlists.find(p => p.id === playlistId)
+      if (!pl) return getState()
+      const track = tracks[trackId]
+      if (pl.source === 'cloud' && pl.serverId && track?.itemId) {
+        try { await api.put(`/music/playlists/${pl.serverId}/reorder`, { item_id: track.itemId, direction }) } catch (e) { console.error(e) }
+        await loadCloudSongs(pl.id)
+      } else {
+        const index = pl.trackIds.indexOf(trackId)
+        const newIndex = direction === 'up' ? index - 1 : index + 1
+        if (index > -1 && newIndex >= 0 && newIndex < pl.trackIds.length) {
+          ;[pl.trackIds[index], pl.trackIds[newIndex]] = [pl.trackIds[newIndex], pl.trackIds[index]]
+        }
+        await saveState()
+      }
+      return getState()
+    })
+
+    context.registerCommand('clearPlaylist', async (args: any) => {
+      const pl = playlists.find(p => p.id === args?.playlistId)
+      if (!pl) return getState()
+      if (pl.source === 'cloud' && pl.serverId) {
+        for (const tid of [...pl.trackIds]) {
+          const t = tracks[tid]
+          if (t?.itemId) {
+            try { await api.delete(`/music/playlists/${pl.serverId}/songs/${t.itemId}`) } catch (e) { console.error(e) }
+          }
+        }
+        pl.trackIds = []
+      } else {
+        pl.trackIds = []
+        await saveState()
+      }
+      if (currentPlaylistId === pl.id) {
+        currentTrackId = null; isPlaying = false; currentTime = 0; duration = 0
+      }
+      return getState()
+    })
+
+    context.registerCommand('importDirectory', async (args: any) => {
+      const playlistId = args?.playlistId || currentPlaylistId
+      const pl = playlists.find(p => p.id === playlistId && p.source === 'local')
+      if (!pl) return getState()
+      const dirPath = await context.files?.openDirectory?.()
+      if (!dirPath) return getState()
+      const audioFiles: { name: string; path: string }[] = await context.files?.listAudio?.(dirPath) || []
+      for (const file of audioFiles) {
+        const track: Track = { id: generateId(), name: file.name, source: 'local', path: file.path }
+        tracks[track.id] = track
+        pl.trackIds.push(track.id)
+      }
       await saveState()
       return getState()
     })
@@ -198,299 +319,102 @@ export default {
     context.registerCommand('play', async (args: any) => {
       if (args?.trackId) {
         currentTrackId = args.trackId
-        isPlaying = true
-        currentTime = 0
-        const track = tracks[currentTrackId]
-        if (track && !currentPlaylistId) {
+        isPlaying = true; currentTime = 0
+        if (!currentPlaylistId) {
           const pl = playlists.find(p => p.trackIds.includes(currentTrackId!))
           if (pl) currentPlaylistId = pl.id
         }
       } else if (args?.playlistId) {
         currentPlaylistId = args.playlistId
-        const playlist = playlists.find(p => p.id === currentPlaylistId)
-        if (playlist && playlist.trackIds.length > 0) {
-          currentTrackId = playlist.trackIds[0]
-          isPlaying = true
-          currentTime = 0
-        }
+        const pl = playlists.find(p => p.id === currentPlaylistId)
+        if (pl && pl.trackIds.length > 0) { currentTrackId = pl.trackIds[0]; isPlaying = true; currentTime = 0 }
       } else if (currentTrackId) {
         isPlaying = true
       } else if (currentPlaylistId) {
-        const playlist = playlists.find(p => p.id === currentPlaylistId)
-        if (playlist && playlist.trackIds.length > 0) {
-          currentTrackId = playlist.trackIds[0]
-          isPlaying = true
-          currentTime = 0
-        }
+        const pl = playlists.find(p => p.id === currentPlaylistId)
+        if (pl && pl.trackIds.length > 0) { currentTrackId = pl.trackIds[0]; isPlaying = true; currentTime = 0 }
       }
       return getState()
     })
 
-    // Play a track directly without requiring a playlist (for cloud songs)
-    context.registerCommand('playTrack', async (args: any) => {
-      const t: Track = {
-        id: args?.id || generateId(),
-        name: args?.name || '未知',
-        source: args?.source || 'url',
-        path: args?.path || '',
-        artist: args?.artist,
-      }
-      tracks[t.id] = t
-      currentTrackId = t.id
-      currentPlaylistId = null
-      isPlaying = true
-      currentTime = 0
-      return getState()
-    })
-
-    context.registerCommand('pause', async () => {
-      isPlaying = false
-      return getState()
-    })
-
+    context.registerCommand('pause', async () => { isPlaying = false; return getState() })
     context.registerCommand('stop', async () => {
-      isPlaying = false
-      currentTrackId = null
-      currentTime = 0
-      duration = 0
+      isPlaying = false; currentTrackId = null; currentTime = 0; duration = 0
       return getState()
     })
 
     context.registerCommand('next', async () => {
-      const playlist = playlists.find(p => p.id === currentPlaylistId)
-      if (!playlist || playlist.trackIds.length === 0) return getState()
-
-      const currentIndex = playlist.trackIds.indexOf(currentTrackId || '')
-      let nextIndex: number
-
-      if (playMode === 'shuffle') {
-        nextIndex = Math.floor(Math.random() * playlist.trackIds.length)
-      } else if (playMode === 'loop') {
-        nextIndex = currentIndex
-      } else {
-        nextIndex = (currentIndex + 1) % playlist.trackIds.length
-      }
-
-      currentTrackId = playlist.trackIds[nextIndex]
-      currentTime = 0
-      isPlaying = true
-
+      const pl = playlists.find(p => p.id === currentPlaylistId)
+      if (!pl || pl.trackIds.length === 0) return getState()
+      const idx = pl.trackIds.indexOf(currentTrackId || '')
+      let n: number
+      if (playMode === 'shuffle') n = Math.floor(Math.random() * pl.trackIds.length)
+      else if (playMode === 'loop') n = idx
+      else n = (idx + 1) % pl.trackIds.length
+      currentTrackId = pl.trackIds[n]; currentTime = 0; isPlaying = true
       return getState()
     })
 
     context.registerCommand('prev', async () => {
-      const playlist = playlists.find(p => p.id === currentPlaylistId)
-      if (!playlist || playlist.trackIds.length === 0) return getState()
-
-      const currentIndex = playlist.trackIds.indexOf(currentTrackId || '')
-      let prevIndex: number
-
-      if (playMode === 'shuffle') {
-        prevIndex = Math.floor(Math.random() * playlist.trackIds.length)
-      } else if (playMode === 'loop') {
-        prevIndex = currentIndex
-      } else {
-        prevIndex = currentIndex <= 0 ? playlist.trackIds.length - 1 : currentIndex - 1
-      }
-
-      currentTrackId = playlist.trackIds[prevIndex]
-      currentTime = 0
-      isPlaying = true
-
+      const pl = playlists.find(p => p.id === currentPlaylistId)
+      if (!pl || pl.trackIds.length === 0) return getState()
+      const idx = pl.trackIds.indexOf(currentTrackId || '')
+      let n: number
+      if (playMode === 'shuffle') n = Math.floor(Math.random() * pl.trackIds.length)
+      else if (playMode === 'loop') n = idx
+      else n = idx <= 0 ? pl.trackIds.length - 1 : idx - 1
+      currentTrackId = pl.trackIds[n]; currentTime = 0; isPlaying = true
       return getState()
     })
 
     context.registerCommand('seek', async (args: any) => {
-      if (args) {
-        if (args.time !== undefined) {
-          currentTime = Math.max(0, Math.min(duration, args.time))
-        } else if (args.percent !== undefined) {
-          currentTime = Math.max(0, Math.min(duration, duration * args.percent))
-        }
-      }
+      if (args?.time !== undefined) currentTime = Math.max(0, Math.min(duration, args.time))
+      else if (args?.percent !== undefined) currentTime = Math.max(0, Math.min(duration, duration * args.percent))
       return getState()
     })
-
     context.registerCommand('setVolume', async (args: any) => {
-      if (args?.volume !== undefined) {
-        volume = Math.max(0, Math.min(100, args.volume))
-        await saveState()
-      }
+      if (args?.volume !== undefined) { volume = Math.max(0, Math.min(100, args.volume)); await saveState() }
       return getState()
     })
-
     context.registerCommand('toggleMode', async () => {
       const modes: ('sequence' | 'loop' | 'shuffle')[] = ['sequence', 'loop', 'shuffle']
-      const currentIndex = modes.indexOf(playMode)
-      playMode = modes[(currentIndex + 1) % modes.length]
+      playMode = modes[(modes.indexOf(playMode) + 1) % modes.length]
       await saveState()
       return getState()
     })
-
     context.registerCommand('onTrackEnded', async () => {
-      const playlist = playlists.find(p => p.id === currentPlaylistId)
-      if (!playlist || playlist.trackIds.length === 0) {
-        isPlaying = false
-        return getState()
+      const pl = playlists.find(p => p.id === currentPlaylistId)
+      if (!pl || pl.trackIds.length === 0) { isPlaying = false; return getState() }
+      const idx = pl.trackIds.indexOf(currentTrackId || '')
+      let n: number
+      if (playMode === 'shuffle') n = Math.floor(Math.random() * pl.trackIds.length)
+      else if (playMode === 'loop') n = idx
+      else {
+        n = idx + 1
+        if (n >= pl.trackIds.length) { isPlaying = false; currentTrackId = null; return getState() }
       }
-
-      const currentIndex = playlist.trackIds.indexOf(currentTrackId || '')
-      let nextIndex: number
-
-      if (playMode === 'shuffle') {
-        nextIndex = Math.floor(Math.random() * playlist.trackIds.length)
-      } else if (playMode === 'loop') {
-        nextIndex = currentIndex
-      } else {
-        nextIndex = currentIndex + 1
-        if (nextIndex >= playlist.trackIds.length) {
-          isPlaying = false
-          currentTrackId = null
-          return getState()
-        }
-      }
-
-      currentTrackId = playlist.trackIds[nextIndex]
-      currentTime = 0
-      isPlaying = true
-
+      currentTrackId = pl.trackIds[n]; currentTime = 0; isPlaying = true
       return getState()
     })
-
     context.registerCommand('updateProgress', async (args: any) => {
-      if (args) {
-        if (args.currentTime !== undefined) currentTime = args.currentTime
-        if (args.duration !== undefined) duration = args.duration
-      }
+      if (args?.currentTime !== undefined) currentTime = args.currentTime
+      if (args?.duration !== undefined) duration = args.duration
       return getState()
-    })
-
-    context.registerCommand('clearPlaylist', async (args: any) => {
-      const playlist = playlists.find(p => p.id === args?.playlistId)
-      if (playlist) {
-        playlist.trackIds = []
-        if (currentPlaylistId === playlist.id) {
-          currentTrackId = null
-          isPlaying = false
-          currentTime = 0
-          duration = 0
-        }
-      }
-      await saveState()
-      return getState()
-    })
-
-    context.registerCommand('importDirectory', async (args: any) => {
-      console.log('[player] importDirectory called, files API:', !!context.files, !!context.files?.openDirectory)
-      const playlistId = args?.playlistId || currentPlaylistId
-      if (!playlistId) return getState()
-      const playlist = playlists.find(p => p.id === playlistId)
-      if (!playlist) return getState()
-
-      const dirPath = await context.files?.openDirectory?.()
-      console.log('[player] openDirectory result:', dirPath)
-      if (!dirPath) return getState()
-
-      const audioFiles: { name: string; path: string }[] = await context.files?.listAudio?.(dirPath) || []
-      for (const file of audioFiles) {
-        const track: Track = {
-          id: generateId(),
-          name: file.name,
-          source: 'local',
-          path: file.path
-        }
-        tracks[track.id] = track
-        playlist.trackIds.push(track.id)
-      }
-
-      await saveState()
-      return getState()
-    })
-
-    // ---- Cloud Playlists ----
-    const api = context.api
-
-    context.registerCommand('cloudListPlaylists', async () => {
-      try {
-        const res = await api.get('/music/playlists')
-        return res?.playlists || []
-      } catch { return [] }
-    })
-
-    context.registerCommand('cloudCreatePlaylist', async (args: any) => {
-      try {
-        const res = await api.post('/music/playlists', { name: args?.name || '新建云端歌单' })
-        return res
-      } catch { return null }
-    })
-
-    context.registerCommand('cloudDeletePlaylist', async (args: any) => {
-      try {
-        await api.delete(`/music/playlists/${args?.cloudId}`)
-        return true
-      } catch { return false }
-    })
-
-    context.registerCommand('cloudListSongs', async (args: any) => {
-      try {
-        const res = await api.get(`/music/playlists/${args?.cloudId}/songs`)
-        return res?.songs || []
-      } catch { return [] }
-    })
-
-    context.registerCommand('cloudAddSong', async (args: any) => {
-      try {
-        const res = await api.post(`/music/playlists/${args?.cloudId}/songs`, { file_id: args?.fileId })
-        return true
-      } catch { return false }
-    })
-
-    context.registerCommand('cloudRemoveSong', async (args: any) => {
-      try {
-        await api.delete(`/music/playlists/${args?.cloudId}/songs/${args?.itemId}`)
-        return true
-      } catch { return false }
-    })
-
-    context.registerCommand('cloudGetStreamUrl', async (args: any) => {
-      try {
-        // Get server URL and token from api object's internal config
-        const { join } = require('path')
-        const { readFileSync, existsSync } = require('fs')
-        const { app } = require('electron')
-        const configPath = join(app.getPath('userData'), 'omniaide-config', 'config.json')
-        let serverUrl = 'http://localhost:8000'
-        let token = ''
-        if (existsSync(configPath)) {
-          try {
-            const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
-            serverUrl = cfg.serverUrl || serverUrl
-            token = cfg.token || ''
-          } catch {}
-        }
-        return { url: `${serverUrl}/api/files/${args?.fileId}/stream?token=${token}`, token }
-      } catch {
-        return null
-      }
     })
 
     context.registerCommand('cloudListAudioFiles', async () => {
       try {
         const res = await api.get('/files?page_size=200')
-        console.log('[player] cloudListAudioFiles raw:', res?.files?.length, 'files')
         const files = res?.files || []
         const audioExts = ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'wma']
-        const audio = files.filter((f: any) => !f.is_folder && (
+        return files.filter((f: any) => !f.is_folder && (
           f.mime_type?.startsWith('audio/') ||
           audioExts.includes(f.original_name?.split('.').pop()?.toLowerCase())
         )).map((f: any) => ({ file_id: f.id, name: f.original_name, size: f.size }))
-        console.log('[player] cloudListAudioFiles filtered:', audio.length)
-        return audio
-      } catch (e: any) {
-        console.error('[player] cloudListAudioFiles error:', e.message)
-        return []
-      }
+      } catch { return [] }
     })
+    context.registerCommand('refreshCloudPlaylists', async () => { await loadCloudPlaylists(); return getState() })
+    context.registerCommand('getCloudStreamBaseUrl', async () => getServerConfig())
 
     context.registerSearchProvider({
       keyword: 'play',
@@ -520,7 +444,7 @@ export default {
             if (t && t.name.toLowerCase().includes(query.toLowerCase())) {
               results.push({
                 title: t.name,
-                subtitle: `${pl.name} - ${t.source === 'url' ? '在线' : '本地'}`,
+                subtitle: `${pl.name} - ${t.source === 'cloud' ? '云端' : (t.source === 'url' ? '在线' : '本地')}`,
                 icon: 'player',
                 action: 'player:play',
                 actionArgs: { trackId: t.id },
@@ -536,7 +460,11 @@ export default {
 
   deactivate() {
     if (pluginCtx?.storage) {
-      pluginCtx.storage.set('playerData', { playlists, tracks, currentPlaylistId, volume, playMode })
+      const localPlaylists = playlists.filter(p => p.source === 'local')
+      const localTrackIds = new Set(localPlaylists.flatMap(p => p.trackIds))
+      const localTracks: Record<string, Track> = {}
+      for (const id of localTrackIds) { if (tracks[id]) localTracks[id] = tracks[id] }
+      pluginCtx.storage.set('playerData', { playlists: localPlaylists, tracks: localTracks, currentPlaylistId, volume, playMode })
     }
   }
 }
