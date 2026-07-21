@@ -190,7 +190,7 @@ async function handleAudioEnded() {
             </button>
             <div v-if="showPlaylist" class="playlist-dropdown">
               <div v-if="data.playlists.length > 1" class="pl-tabs">
-                <button v-for="pl in data.playlists" :key="pl.id" class="pl-tab" :class="{ active: data.currentPlaylistId === pl.id }" @click="execute('selectPlaylist', { playlistId: pl.id })">{{ pl.name }}</button>
+                <button v-for="pl in data.playlists.filter((p: any) => !p.name.startsWith('__'))" :key="pl.id" class="pl-tab" :class="{ active: data.currentPlaylistId === pl.id }" @click="execute('selectPlaylist', { playlistId: pl.id })">{{ pl.name }}</button>
               </div>
               <div class="pl-list">
                 <div v-if="!data.currentPlaylistTracks.length" class="pl-empty">歌单为空</div>

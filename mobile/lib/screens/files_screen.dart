@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
@@ -79,22 +80,72 @@ class _FilesScreenState extends State<FilesScreen> {
     final file = result.files.first;
     if (file.path == null) return;
     try {
+      // Try presigned URL first
       final uploadData = await ApiService().getUploadUrl(file.name, _currentPath);
-      final uploadUrl = uploadData['upload_url'] as String;
-      final fileId = uploadData['file_id'] as int;
-      final localFile = File(file.path!);
-      final http = await HttpClient().putUrl(Uri.parse(uploadUrl));
-      http.headers.contentType = ContentType('application', 'octet-stream');
-      http.contentLength = await localFile.length();
-      await localFile.openRead().pipe(http);
-      final response = await http.close();
-      if (response.statusCode == 200) {
-        await ApiService().confirmUpload(fileId);
-        _loadFiles();
+      final uploadUrl = uploadData['upload_url'] as String?;
+      final fileId = uploadData['file_id'] as int?;
+
+      if (uploadUrl != null && uploadUrl.isNotEmpty) {
+        final localFile = File(file.path!);
+        final httpClient = HttpClient();
+        final request = await httpClient.putUrl(Uri.parse(uploadUrl));
+        request.headers.contentType = ContentType('application', 'octet-stream');
+        request.contentLength = await localFile.length();
+        await localFile.openRead().pipe(request);
+        final response = await request.close();
+        if (response.statusCode == 200 && fileId != null) {
+          await ApiService().confirmUpload(fileId);
+        }
+      } else {
+        // Proxy upload
+        await ApiService().uploadFileDirect(file.path!, file.name, _currentPath);
       }
+      _loadFiles();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败: $e')));
+    }
+  }
+
+  // Download and save file
+  Future<void> _downloadFile(FileItem f) async {
+    try {
+      // Show file preview for images, download for others
+      final ext = f.originalName.split('.').last.toLowerCase();
+      final isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext);
+
+      if (isImg) {
+        // Download and show preview
+        final bytes = await ApiService().downloadFile(f.id);
+        if (!mounted) return;
+        if (mounted) {
+          await showDialog(
+            context: context,
+            builder: (_) => Dialog(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppBar(title: Text(f.originalName, style: const TextStyle(fontSize: 14)), automaticallyImplyLeading: false),
+                  Expanded(child: InteractiveViewer(child: Image.memory(Uint8List.fromList(bytes), fit: BoxFit.contain))),
+                ],
+              ),
+            ),
+          );
+        }
+      } else {
+        // Download and save
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('正在下载...')));
+        final path = await ApiService().saveFileLocally(f.id, f.originalName);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已下载到: $path')));
+        // Try to open file
+        if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].contains(ext)) {
+          await Process.run('cmd', ['/c', 'start', '', path], runInShell: true);
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('下载失败: $e')));
     }
   }
 
@@ -134,7 +185,7 @@ class _FilesScreenState extends State<FilesScreen> {
             ]),
           ),
           const Divider(height: 1),
-          // Files
+          // Files list
           Expanded(
             child: _loading
               ? const Center(child: CircularProgressIndicator())
@@ -159,7 +210,8 @@ class _FilesScreenState extends State<FilesScreen> {
                           title: Text(f.originalName, style: const TextStyle(fontSize: 14)),
                           subtitle: Text(f.isFolder ? '文件夹' : '${f.sizeFormatted}  ${f.createdAt.isNotEmpty ? f.createdAt.substring(0, 10) : ''}',
                             style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-                          onTap: f.isFolder ? () => _openFolder(f) : null,
+                          onTap: f.isFolder ? () => _openFolder(f) : () => _downloadFile(f),
+                          trailing: f.isFolder ? null : const Icon(Icons.download, size: 18),
                         );
                       },
                     ),

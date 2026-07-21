@@ -1,10 +1,11 @@
-import io
+﻿import io
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
+from core.auth.jwt import decode_access_token
 from core.config.settings import settings
 from core.events.recorder import record_event
 from plugins.files.backend.schemas import (
@@ -126,7 +127,7 @@ async def confirm_upload(
 ):
     try:
         file_record = await file_service.confirm_upload(db, user["id"], req.file_id)
-        await record_event(db, user["id"], "file.uploaded", "file", file_record.id, f"上传文件: {file_record.original_name}", {"size": file_record.size, "mime": file_record.mime_type})
+        await record_event(db, user["id"], "file.uploaded", "file", file_record.id, f"涓婁紶鏂囦欢: {file_record.original_name}", {"size": file_record.size, "mime": file_record.mime_type})
         background_tasks.add_task(index_file_for_search, file_record, user["id"])
         return FileResponse.model_validate(file_record)
     except ValueError as e:
@@ -255,6 +256,43 @@ async def download_file(
         raise HTTPException(status_code=404, detail="File not found in storage")
 
 
+@router.get("/{file_id}/stream")
+async def stream_file(
+    file_id: int,
+    token: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream audio file directly (no auth header needed, uses token in query)."""
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = int(payload["sub"])
+
+    import mimetypes
+    from core.minio.client import minio_client
+    if not minio_client:
+        raise HTTPException(status_code=503, detail="MinIO unavailable")
+
+    file_record = await file_service.get_file(db, user_id, file_id)
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        obj = minio_client.get_object(file_record.bucket, file_record.object_key)
+        mime_type = mimetypes.guess_type(file_record.original_name)[0] or "application/octet-stream"
+
+        def gen():
+            while True:
+                chunk = obj.read(32 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
+        return StreamingResponse(gen(), media_type=mime_type)
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found in storage")
+
+
 @router.put("/{file_id}/tags", response_model=FileResponse)
 async def update_tags(
     file_id: int,
@@ -291,7 +329,7 @@ async def trash_file(
     try:
         f = await file_service.get_file(db, user["id"], file_id)
         await file_service.trash_file(db, user["id"], file_id)
-        if f: await record_event(db, user["id"], "file.trashed", "file", file_id, f"删除文件: {f.original_name}")
+        if f: await record_event(db, user["id"], "file.trashed", "file", file_id, f"鍒犻櫎鏂囦欢: {f.original_name}")
         return {"message": "File moved to trash"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -332,7 +370,7 @@ async def rename_file(
 ):
     try:
         file_record = await file_service.rename_file(db, user["id"], file_id, req.new_name)
-        await record_event(db, user["id"], "file.renamed", "file", file_id, f"重命名文件: {file_record.original_name}", {"old_name": file_record.original_name})
+        await record_event(db, user["id"], "file.renamed", "file", file_id, f"閲嶅懡鍚嶆枃浠? {file_record.original_name}", {"old_name": file_record.original_name})
         return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -347,7 +385,7 @@ async def move_file(
 ):
     try:
         file_record = await file_service.move_file(db, user["id"], file_id, req.new_folder_path)
-        await record_event(db, user["id"], "file.moved", "file", file_id, f"移动文件: {file_record.original_name}", {"new_path": req.new_folder_path})
+        await record_event(db, user["id"], "file.moved", "file", file_id, f"绉诲姩鏂囦欢: {file_record.original_name}", {"new_path": req.new_folder_path})
         return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

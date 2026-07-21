@@ -153,7 +153,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   void initState() {
     super.initState();
     _titleCtrl = TextEditingController(text: widget.note['title'] ?? '');
-    _contentCtrl = TextEditingController(text: widget.note['content'] ?? '');
+    _contentCtrl = TextEditingController();
     _loadContent();
   }
 
@@ -165,7 +165,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         _titleCtrl.text = data['title'] ?? '';
-        _contentCtrl.text = data['content'] ?? '';
+        final raw = data['content'] ?? '';
+        _contentCtrl.text = ApiService().parseNoteContent(raw);
         if (mounted) setState(() {});
       }
     } catch (_) {}

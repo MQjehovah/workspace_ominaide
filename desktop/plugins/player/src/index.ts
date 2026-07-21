@@ -226,6 +226,23 @@ export default {
       return getState()
     })
 
+    // Play a track directly without requiring a playlist (for cloud songs)
+    context.registerCommand('playTrack', async (args: any) => {
+      const t: Track = {
+        id: args?.id || generateId(),
+        name: args?.name || '未知',
+        source: args?.source || 'url',
+        path: args?.path || '',
+        artist: args?.artist,
+      }
+      tracks[t.id] = t
+      currentTrackId = t.id
+      currentPlaylistId = null
+      isPlaying = true
+      currentTime = 0
+      return getState()
+    })
+
     context.registerCommand('pause', async () => {
       isPlaying = false
       return getState()
@@ -388,6 +405,91 @@ export default {
 
       await saveState()
       return getState()
+    })
+
+    // ---- Cloud Playlists ----
+    const api = context.api
+
+    context.registerCommand('cloudListPlaylists', async () => {
+      try {
+        const res = await api.get('/music/playlists')
+        return res?.playlists || []
+      } catch { return [] }
+    })
+
+    context.registerCommand('cloudCreatePlaylist', async (args: any) => {
+      try {
+        const res = await api.post('/music/playlists', { name: args?.name || '新建云端歌单' })
+        return res
+      } catch { return null }
+    })
+
+    context.registerCommand('cloudDeletePlaylist', async (args: any) => {
+      try {
+        await api.delete(`/music/playlists/${args?.cloudId}`)
+        return true
+      } catch { return false }
+    })
+
+    context.registerCommand('cloudListSongs', async (args: any) => {
+      try {
+        const res = await api.get(`/music/playlists/${args?.cloudId}/songs`)
+        return res?.songs || []
+      } catch { return [] }
+    })
+
+    context.registerCommand('cloudAddSong', async (args: any) => {
+      try {
+        const res = await api.post(`/music/playlists/${args?.cloudId}/songs`, { file_id: args?.fileId })
+        return true
+      } catch { return false }
+    })
+
+    context.registerCommand('cloudRemoveSong', async (args: any) => {
+      try {
+        await api.delete(`/music/playlists/${args?.cloudId}/songs/${args?.itemId}`)
+        return true
+      } catch { return false }
+    })
+
+    context.registerCommand('cloudGetStreamUrl', async (args: any) => {
+      try {
+        // Get server URL and token from api object's internal config
+        const { join } = require('path')
+        const { readFileSync, existsSync } = require('fs')
+        const { app } = require('electron')
+        const configPath = join(app.getPath('userData'), 'omniaide-config', 'config.json')
+        let serverUrl = 'http://localhost:8000'
+        let token = ''
+        if (existsSync(configPath)) {
+          try {
+            const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
+            serverUrl = cfg.serverUrl || serverUrl
+            token = cfg.token || ''
+          } catch {}
+        }
+        return { url: `${serverUrl}/api/files/${args?.fileId}/stream?token=${token}`, token }
+      } catch {
+        return null
+      }
+    })
+
+    context.registerCommand('cloudListAudioFiles', async () => {
+      try {
+        const res = await api.get('/files?page_size=200')
+        console.log('[player] cloudListAudioFiles raw:', res?.files?.length, 'files')
+        const files = res?.files || []
+        const audioExts = ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'wma']
+        const audio = files.filter((f: any) => !f.is_folder && (
+          f.mime_type?.startsWith('audio/') ||
+          audioExts.includes(f.original_name?.split('.').pop()?.toLowerCase())
+        )).map((f: any) => ({ file_id: f.id, name: f.original_name, size: f.size }))
+        console.log('[player] cloudListAudioFiles filtered:', audio.length)
+        return audio
+      } catch (e: any) {
+        console.error('[player] cloudListAudioFiles error:', e.message)
+        return []
+      }
     })
 
     context.registerSearchProvider({

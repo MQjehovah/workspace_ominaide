@@ -81,7 +81,7 @@ export async function executeCommand(pluginId: string, command: string, args?: u
   if (pluginId === 'clipboard-history' && command === 'copy') {
     BrowserWindow.getAllWindows().forEach(win => win.webContents.send('clipboard:updated'))
   }
-  if (pluginId === 'player' && !['getPanelData', 'getPageData'].includes(command)) {
+  if (pluginId === 'player' && !['getPanelData', 'getPageData', 'cloudGetStreamUrl', 'cloudListPlaylists', 'cloudListSongs', 'cloudListAudioFiles'].includes(command)) {
     BrowserWindow.getAllWindows().forEach(win => win.webContents.send('player:updated'))
   }
   if (pluginId === 'todo' && !['getPanelData', 'getPageData'].includes(command)) {

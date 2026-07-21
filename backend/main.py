@@ -48,6 +48,9 @@ app.include_router(mcp_router)
 from core.events.router import router as events_router
 app.include_router(events_router)
 
+from plugins.music.backend.router import router as music_router
+app.include_router(music_router)
+
 from core.plugin.marketplace import router as marketplace_router
 app.include_router(marketplace_router)
 

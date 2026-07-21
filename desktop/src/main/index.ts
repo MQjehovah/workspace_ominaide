@@ -62,9 +62,10 @@ function showSearchWindow() {
     if (!cfg.token) { showLogin(); return }
     if (searchWindow) { searchWindow.close(); searchWindow = null; return }
     searchWindow = createRenderer('search', { width: 640, height: 400, transparent: true })
-    searchWindow.on('blur', () => { searchWindow?.close(); searchWindow = null })
-    searchWindow.on('closed', () => { searchWindow = null })
-    searchWindow.setAlwaysOnTop(true, 'floating')
+  searchWindow.on('blur', () => { searchWindow?.close(); searchWindow = null })
+  searchWindow.on('closed', () => { searchWindow = null })
+  searchWindow.setAlwaysOnTop(true, 'floating')
+  searchWindow.setSkipTaskbar(true)
   })
 }
 
