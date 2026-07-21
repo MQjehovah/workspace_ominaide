@@ -14,6 +14,15 @@
       <button @click="editor.chain().focus().toggleBlockquote().run()" :class="{ active: editor.isActive('blockquote') }">"</button>
       <span class="sep">|</span>
       <button @click="setLink" :class="{ active: editor.isActive('link') }">🔗</button>
+      <span class="sep">|</span>
+      <button @click="insertTable" title="插入表格">⊞</button>
+      <template v-if="editor.isActive('table')">
+        <button @click="editor.chain().focus().addColumnAfter().run()" title="插入列">＋列</button>
+        <button @click="editor.chain().focus().addRowAfter().run()" title="插入行">＋行</button>
+        <button @click="editor.chain().focus().deleteColumn().run()" title="删除列">－列</button>
+        <button @click="editor.chain().focus().deleteRow().run()" title="删除行">－行</button>
+        <button @click="editor.chain().focus().deleteTable().run()" title="删除表格">✕</button>
+      </template>
     </div>
     <editor-content :editor="editor" class="editor-content" style="min-height:300px" />
   </div>
@@ -27,7 +36,7 @@ import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
-import { renderToMarkdown } from '@tiptap/static-renderer/pm/markdown'
+import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import { renderToHTMLString } from '@tiptap/static-renderer/pm/html-string'
 import { defaultMarkdownParser } from 'prosemirror-markdown'
 
@@ -40,6 +49,10 @@ const editorExtensions = [
   Link.configure({ openOnClick: false }),
   Image.configure({ inline: true }),
   Placeholder.configure({ placeholder: '开始写点什么...' }),
+  Table.configure({ resizable: true }),
+  TableRow,
+  TableCell,
+  TableHeader,
 ]
 
 function mdToHTML(md: string): string {
@@ -54,9 +67,9 @@ const editor = useEditor({
   content: '',
   extensions: editorExtensions,
   editorProps: {
-    handlePaste: async (view, event) => {
+    handlePaste: (view, event) => {
       const items = event.clipboardData?.items
-      if (!items) return false
+      if (!items) return
       for (const item of Array.from(items)) {
         if (item.kind !== 'file') continue
         event.preventDefault()
@@ -69,11 +82,10 @@ const editor = useEditor({
         }
         return true
       }
-      return false
     },
-    handleDrop: async (view, event) => {
+    handleDrop: (view, event) => {
       const files = event.dataTransfer?.files
-      if (!files || files.length === 0) return false
+      if (!files || files.length === 0) return
       event.preventDefault()
       for (const file of Array.from(files)) {
         if (file.type.startsWith('image/')) {
@@ -86,17 +98,20 @@ const editor = useEditor({
     },
   },
   onUpdate: ({ editor }) => {
-    const md = renderToMarkdown({ content: editor.getJSON(), extensions: editorExtensions })
-    emit('update:modelValue', md)
+    emit('update:modelValue', JSON.stringify(editor.getJSON()))
   },
 })
 
 watch(() => props.modelValue, (val) => {
   if (!editor.value || !val) return
-  const currentMd = renderToMarkdown({ content: editor.value.getJSON(), extensions: editorExtensions })
-  if (currentMd === val) return
-  const html = mdToHTML(val)
-  if (html) editor.value.commands.setContent(html)
+  const currentJson = JSON.stringify(editor.value.getJSON())
+  if (currentJson === val) return
+  try {
+    editor.value.commands.setContent(JSON.parse(val))
+  } catch {
+    const html = mdToHTML(val)
+    if (html) editor.value.commands.setContent(html)
+  }
 })
 
 async function uploadFileViaApi(file: File, isImage: boolean): Promise<string | null> {
@@ -138,6 +153,10 @@ function setLink() {
   editor.value.chain().focus().setLink({ href: url }).run()
 }
 
+function insertTable() {
+  editor.value?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+}
+
 function focus() { editor.value?.chain().focus().run() }
 
 onBeforeUnmount(() => editor.value?.destroy())
@@ -160,4 +179,10 @@ onBeforeUnmount(() => editor.value?.destroy())
 .editor-content :deep(blockquote) { border-left:3px solid #409EFF; margin:0.5em 0; padding:0.3em 1em; color:#909399; }
 .editor-content :deep(a) { color:#409EFF; text-decoration:underline; }
 .editor-content :deep(img) { max-width:100%; border-radius:6px; margin:0.5em 0; }
+
+.editor-content :deep(table) { border-collapse:collapse; width:100%; margin:0.5em 0; font-size:13px; }
+.editor-content :deep(th), .editor-content :deep(td) { border:1px solid #d0d0d0; padding:6px 10px; text-align:left; min-width:60px; }
+.editor-content :deep(th) { background:#f5f5f5; font-weight:600; }
+.editor-content :deep(td p) { margin:0; }
+.editor-content :deep(.selectedCell) { background:#ecf5ff; }
 </style>
