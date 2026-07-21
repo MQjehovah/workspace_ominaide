@@ -9,6 +9,7 @@ import plugins.workspaces.backend.models  # noqa
 import plugins.sync.backend.models  # noqa
 import plugins.todo.backend.models  # noqa
 import plugins.notes.backend.models  # noqa
+import plugins.music.backend.models  # noqa
 import core.database.redis  # noqa
 import core.events.models  # noqa
 

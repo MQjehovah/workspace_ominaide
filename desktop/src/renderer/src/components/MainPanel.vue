@@ -47,6 +47,7 @@ function handleClose() { window.mqbox?.window.hide() }
 
 async function logout() {
   await window.mqbox?.config.set('token', '')
+  await window.mqbox?.config.set('refresh_token', '')
   window.mqbox?.window.openMain()
 }
 

@@ -1,10 +1,10 @@
 import axios from 'axios'
 import { join } from 'path'
-import { app, Notification, clipboard, shell, BrowserWindow, dialog } from 'electron'
+import { app, Notification, clipboard, shell, BrowserWindow, dialog, ipcMain } from 'electron'
 import { readdirSync, statSync } from 'fs'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
-import { getConfig } from '../config'
+import { getConfig, setConfig } from '../config'
 import * as screenshot from '../screenshot'
 import { showEditor } from '../pinWindow'
 import type { PluginInfo, PluginContext, ScreenshotCapability } from '../../shared/types'
@@ -30,35 +30,54 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     ? { openPath: (path: string) => shell.openPath(path), openExternal: (url: string) => shell.openExternal(url) }
     : null
 
+  async function tryRefresh(): Promise<boolean> {
+    try {
+      const c = await getConfig()
+      if (!c.refresh_token) return false
+      const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api/auth/refresh`, 
+        { refresh_token: c.refresh_token },
+        { headers: { Authorization: 'Bearer ' + (c.token || '') } }
+      )
+      if (res.data?.access_token && res.data?.refresh_token) {
+        await setConfig('token', res.data.access_token)
+        await setConfig('refresh_token', res.data.refresh_token)
+        return true
+      }
+    } catch {}
+    return false
+  }
+
+  async function apiFetch(method: 'get' | 'post' | 'put' | 'delete', path: string, body?: any) {
+    const c = await getConfig()
+    const baseUrl = c.serverUrl || 'http://localhost:8000'
+    const headers: any = { Authorization: 'Bearer ' + (c.token || '') }
+    if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json'
+    try {
+      const cfg: any = { method, url: `${baseUrl}/api${path}`, headers, data: body }
+      const res = await axios(cfg)
+      return res.data
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        const refreshed = await tryRefresh()
+        if (refreshed) {
+          const c2 = await getConfig()
+          headers.Authorization = 'Bearer ' + (c2.token || '')
+          const cfg: any = { method, url: `${baseUrl}/api${path}`, headers, data: body }
+          const retry = await axios(cfg)
+          return retry.data
+        }
+        await setConfig('token', '')
+        BrowserWindow.getAllWindows().forEach(w => w.close())
+      }
+      throw err
+    }
+  }
+
   const api = {
-    get: async (path: string) => {
-      const c = await getConfig()
-      const res = await axios.get(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, {
-        headers: { Authorization: 'Bearer ' + (c.token || '') }
-      })
-      return res.data
-    },
-    post: async (path: string, body?: any) => {
-      const c = await getConfig()
-      const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
-        headers: { Authorization: 'Bearer ' + (c.token || '') }
-      })
-      return res.data
-    },
-    put: async (path: string, body?: any) => {
-      const c = await getConfig()
-      const res = await axios.put(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
-        headers: { Authorization: 'Bearer ' + (c.token || '') }
-      })
-      return res.data
-    },
-    delete: async (path: string) => {
-      const c = await getConfig()
-      const res = await axios.delete(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, {
-        headers: { Authorization: 'Bearer ' + (c.token || '') }
-      })
-      return res.data
-    },
+    get: (path: string) => apiFetch('get', path),
+    post: (path: string, body?: any) => apiFetch('post', path, body),
+    put: (path: string, body?: any) => apiFetch('put', path, body),
+    delete: (path: string) => apiFetch('delete', path),
   }
 
   // Screenshot API

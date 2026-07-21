@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, UserResponse
-from core.auth.domain.service import register, login
+from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse
+from core.auth.domain.service import register, login, refresh_access_token
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
 
@@ -20,8 +20,17 @@ async def register_endpoint(req: RegisterRequest, db: AsyncSession = Depends(get
 @router.post("/login", response_model=TokenResponse)
 async def login_endpoint(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     try:
-        token = await login(db, req.username, req.password)
-        return TokenResponse(access_token=token)
+        access_token, refresh_token = await login(db, req.username, req.password)
+        return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_endpoint(req: RefreshRequest):
+    try:
+        access_token, refresh_token = await refresh_access_token(req.refresh_token)
+        return TokenResponse(access_token=access_token, refresh_token=refresh_token)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 

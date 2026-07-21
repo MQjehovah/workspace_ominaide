@@ -69,6 +69,7 @@ async function login() {
     const data = await res.json()
     await window.mqbox.config.set('serverUrl', serverUrl.value)
     await window.mqbox.config.set('token', data.access_token)
+    if (data.refresh_token) await window.mqbox.config.set('refresh_token', data.refresh_token)
     window.mqbox.window.openMain()
   } catch (e: any) { error.value = e.message }
   finally { loading.value = false }

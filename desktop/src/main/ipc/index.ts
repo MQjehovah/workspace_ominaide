@@ -144,26 +144,51 @@ export function registerIpcHandlers() {
   ipcMain.handle('search:get-providers', () => getSearchProviders().map(p => ({ keyword: p.keyword, name: p.name, priority: p.priority })))
 
   // API proxy
-  ipcMain.handle('api:get', async (_, path: string) => {
+  async function tryRefresh(): Promise<boolean> {
+    try {
+      const c = await getConfig()
+      if (!c.refresh_token) return false
+      const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api/auth/refresh`,
+        { refresh_token: c.refresh_token },
+        { headers: { Authorization: 'Bearer ' + (c.token || '') } }
+      )
+      if (res.data?.access_token && res.data?.refresh_token) {
+        await setConfig('token', res.data.access_token)
+        await setConfig('refresh_token', res.data.refresh_token)
+        return true
+      }
+    } catch {}
+    return false
+  }
+
+  async function apiRequest(method: string, path: string, body?: any) {
     const c = await getConfig()
-    const res = await axios.get(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
-    return res.data
-  })
-  ipcMain.handle('api:post', async (_, path: string, body?: any) => {
-    const c = await getConfig()
-    const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
-    return res.data
-  })
-  ipcMain.handle('api:put', async (_, path: string, body?: any) => {
-    const c = await getConfig()
-    const res = await axios.put(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, body, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
-    return res.data
-  })
-  ipcMain.handle('api:delete', async (_, path: string) => {
-    const c = await getConfig()
-    const res = await axios.delete(`${c.serverUrl || 'http://localhost:8000'}/api${path}`, { headers: { Authorization: 'Bearer ' + (c.token || '') } })
-    return res.data
-  })
+    const baseUrl = c.serverUrl || 'http://localhost:8000'
+    const headers: any = { Authorization: 'Bearer ' + (c.token || '') }
+    if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json'
+    try {
+      const res = await axios({ method, url: `${baseUrl}/api${path}`, headers, data: body })
+      return res.data
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        const refreshed = await tryRefresh()
+        if (refreshed) {
+          const c2 = await getConfig()
+          headers.Authorization = 'Bearer ' + (c2.token || '')
+          const retry = await axios({ method, url: `${baseUrl}/api${path}`, headers, data: body })
+          return retry.data
+        }
+        await setConfig('token', '')
+        BrowserWindow.getAllWindows().forEach(w => w.close())
+      }
+      throw err
+    }
+  }
+
+  ipcMain.handle('api:get', async (_, path: string) => apiRequest('get', path))
+  ipcMain.handle('api:post', async (_, path: string, body?: any) => apiRequest('post', path, body))
+  ipcMain.handle('api:put', async (_, path: string, body?: any) => apiRequest('put', path, body))
+  ipcMain.handle('api:delete', async (_, path: string) => apiRequest('delete', path))
 
   // Window
   ipcMain.handle('window:open-search', async () => {

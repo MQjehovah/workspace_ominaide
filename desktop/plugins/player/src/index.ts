@@ -406,6 +406,10 @@ export default {
       return getState()
     })
 
+    context.registerCommand('reloadCloudPlaylists', async () => {
+      await loadCloudPlaylists()
+      return getState()
+    })
     context.registerCommand('cloudListAudioFiles', async () => {
       try {
         const res = await api.get('/files?page_size=200')

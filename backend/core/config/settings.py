@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     jwt_secret: str = "dev-secret-key"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 1440
+    jwt_expire_minutes: int = 30
+    jwt_refresh_secret: str = "dev-refresh-secret-key"
+    jwt_refresh_expire_days: int = 7
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 

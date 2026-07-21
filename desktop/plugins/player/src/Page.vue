@@ -160,6 +160,7 @@ watch(() => props.data.volume, (vol) => {
 })
 
 onMounted(async () => {
+  await props.execute('reloadCloudPlaylists')
   const cfg = await props.execute('getCloudStreamBaseUrl')
   if (cfg) serverConfig.value = cfg as any
   if (audioRef.value) { audioRef.value.volume = props.data.volume / 100 }
