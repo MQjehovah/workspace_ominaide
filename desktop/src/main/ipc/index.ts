@@ -6,6 +6,9 @@ import { getPlugins, getPanels, getSearchProviders, executeCommand, getPluginPag
 import { setAuth } from '../plugin/sandbox'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
+import * as screenshot from '../screenshot'
+import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins } from '../pinWindow'
+import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
 
 export function registerIpcHandlers() {
   // Config
@@ -211,5 +214,65 @@ export function registerIpcHandlers() {
   ipcMain.handle('dialog:select-folder', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return result.canceled ? null : result.filePaths[0]
+  })
+
+  // Screenshot
+  ipcMain.handle('screenshot:get-all-screens', async () => {
+    try {
+      const cached = screenshot.getCachedScreenshot()
+      if (cached) return cached
+      return await screenshot.captureAllScreens()
+    } catch (e) {
+      console.error('screenshot:get-all-screens error:', e)
+      return { displays: [], images: [] }
+    }
+  })
+
+  ipcMain.handle('screenshot:capture', async (_, x: number, y: number, width: number, height: number) => {
+    try {
+      const dataUrl = await screenshot.captureRegion(x, y, width, height)
+      if (dataUrl) {
+        screenshot.addToHistory(dataUrl, 'region', width, height)
+        screenshot.cancelScreenshot()
+        showEditor(dataUrl)
+      }
+      return dataUrl
+    } catch (e) {
+      console.error('screenshot:capture error:', e)
+      return null
+    }
+  })
+
+  ipcMain.handle('screenshot:capture-fullscreen', async () => {
+    try {
+      return await screenshot.captureFullscreen()
+    } catch (e) {
+      console.error('screenshot:capture-fullscreen error:', e)
+      return null
+    }
+  })
+
+  ipcMain.handle('screenshot:get-history', async () => screenshot.getHistory())
+  ipcMain.handle('screenshot:delete-history', async (_, id: string) => screenshot.deleteFromHistory(id))
+  ipcMain.handle('screenshot:clear-history', async () => screenshot.clearHistory())
+
+  ipcMain.on('screenshot:start', async () => {
+    try { await screenshot.startScreenshot() } catch (e) { console.error('screenshot:start error:', e) }
+  })
+  ipcMain.on('screenshot:cancel', () => screenshot.cancelScreenshot())
+  ipcMain.on('screenshot:show-editor', (_, dataUrl: string) => showEditor(dataUrl))
+  ipcMain.on('screenshot:pin', (_, dataUrl: string) => pinImage(dataUrl))
+  ipcMain.on('screenshot:pin-close', (event) => {
+    const win = BW.fromWebContents(event.sender)
+    if (win && !win.isDestroyed()) win.close()
+  })
+  ipcMain.on('screenshot:save', async (_, dataUrl: string) => {
+    try { await saveImage(dataUrl) } catch (e) { console.error('screenshot:save error:', e) }
+  })
+  ipcMain.on('screenshot:close-editor', () => closeEditor())
+  ipcMain.on('screenshot:close-all-pins', () => closeAllPins())
+
+  ipcMain.handle('clipboard:write-image', async (_, dataUrl: string) => {
+    try { await copyImage(dataUrl); return true } catch { return false }
   })
 }

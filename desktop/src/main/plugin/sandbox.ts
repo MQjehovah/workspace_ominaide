@@ -5,7 +5,9 @@ import { readdirSync, statSync } from 'fs'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { getConfig } from '../config'
-import type { PluginInfo, PluginContext } from '../../shared/types'
+import * as screenshot from '../screenshot'
+import { showEditor } from '../pinWindow'
+import type { PluginInfo, PluginContext, ScreenshotCapability } from '../../shared/types'
 
 export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Function>, searchProviders: any[]) {
   const perms = pluginInfo.manifest.permissions || []
@@ -59,6 +61,18 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     },
   }
 
+  // Screenshot API
+  const screenshotApi: ScreenshotCapability = perms.includes('screenshot')
+    ? {
+        start: () => screenshot.startScreenshot(),
+        captureFullscreen: () => screenshot.captureFullscreen(),
+        showEditor: (dataUrl: string) => showEditor(dataUrl),
+        getHistory: () => screenshot.getHistory(),
+        clearHistory: () => screenshot.clearHistory(),
+        deleteHistory: (id: string) => screenshot.deleteFromHistory(id),
+      }
+    : null
+
   const context: PluginContext = {
     plugin: pluginInfo,
     api,
@@ -78,6 +92,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
       },
     },
     notification: notification || { show: () => {} },
+    screenshot: screenshotApi,
     files: perms.includes('files:read') ? {
       openDirectory: async () => {
         const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })

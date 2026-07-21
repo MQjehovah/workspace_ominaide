@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('mqbox', {
     onUpdated: (callback: () => void) => {
       clipboardListeners.push(callback)
     },
+    writeImage: (dataUrl: string) => ipcRenderer.invoke('clipboard:write-image', dataUrl),
   },
   player: {
     onUpdated: (callback: () => void) => {
@@ -88,6 +89,26 @@ contextBridge.exposeInMainWorld('mqbox', {
   },
   sync: {
     restart: () => ipcRenderer.invoke('sync:restart'),
+  },
+  screenshot: {
+    onImage: (callback: (dataUrl: string) => void) => {
+      ipcRenderer.on('screenshot-editor:set-image', (_, dataUrl: string) => callback(dataUrl))
+    },
+    getAllScreens: () => ipcRenderer.invoke('screenshot:get-all-screens'),
+    capture: (x: number, y: number, width: number, height: number) =>
+      ipcRenderer.invoke('screenshot:capture', x, y, width, height),
+    captureFullscreen: () => ipcRenderer.invoke('screenshot:capture-fullscreen'),
+    start: () => ipcRenderer.send('screenshot:start'),
+    cancel: () => ipcRenderer.send('screenshot:cancel'),
+    showEditor: (dataUrl: string) => ipcRenderer.send('screenshot:show-editor', dataUrl),
+    pin: (dataUrl: string) => ipcRenderer.send('screenshot:pin', dataUrl),
+    pinClose: () => ipcRenderer.send('screenshot:pin-close'),
+    save: (dataUrl: string) => ipcRenderer.send('screenshot:save', dataUrl),
+    closeEditor: () => ipcRenderer.send('screenshot:close-editor'),
+    closeAllPins: () => ipcRenderer.send('screenshot:close-all-pins'),
+    getHistory: () => ipcRenderer.invoke('screenshot:get-history'),
+    deleteHistory: (id: string) => ipcRenderer.invoke('screenshot:delete-history', id),
+    clearHistory: () => ipcRenderer.invoke('screenshot:clear-history'),
   },
   api: {
     get: (path: string) => ipcRenderer.invoke('api:get', path),

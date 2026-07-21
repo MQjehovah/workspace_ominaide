@@ -46,6 +46,24 @@ export interface PluginPanel {
   height?: number
 }
 
+export interface ScreenshotRecord {
+  id: string
+  dataUrl: string
+  time: number
+  type: string
+  width: number
+  height: number
+}
+
+export interface ScreenshotCapability {
+  start: () => Promise<void>
+  captureFullscreen: () => Promise<string | null>
+  showEditor: (dataUrl: string) => Promise<void>
+  getHistory: () => ScreenshotRecord[]
+  clearHistory: () => void
+  deleteHistory: (id: string) => void
+}
+
 export interface PluginContext {
   plugin: PluginInfo
   api: {
@@ -63,6 +81,7 @@ export interface PluginContext {
   notification: {
     show: (title: string, body?: string) => void
   }
+  screenshot: ScreenshotCapability | null
   openPage: (pluginId: string) => void
   registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => void
   registerSearchProvider: (provider: SearchProvider) => void
@@ -98,6 +117,27 @@ declare global {
   openPage: (pluginId: string) => void
         openSearch: () => void
         hide: () => void
+      }
+      screenshot: {
+        onImage: (callback: (dataUrl: string) => void) => void
+        getAllScreens: () => Promise<{ displays: any[]; images: string[] }>
+        capture: (x: number, y: number, width: number, height: number) => Promise<string | null>
+        captureFullscreen: () => Promise<string | null>
+        start: () => void
+        cancel: () => void
+        showEditor: (dataUrl: string) => void
+        pin: (dataUrl: string) => void
+        pinClose: () => void
+        save: (dataUrl: string) => void
+        closeEditor: () => void
+        closeAllPins: () => void
+        getHistory: () => Promise<ScreenshotRecord[]>
+        deleteHistory: (id: string) => Promise<void>
+        clearHistory: () => Promise<void>
+      }
+      clipboard: {
+        onUpdated: (callback: () => void) => void
+        writeImage: (dataUrl: string) => void
       }
       api: {
         get: (path: string) => Promise<any>
