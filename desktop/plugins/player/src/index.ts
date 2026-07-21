@@ -417,7 +417,6 @@ export default {
         )).map((f: any) => ({ file_id: f.id, name: f.original_name, size: f.size }))
       } catch { return [] }
     })
-    context.registerCommand('refreshCloudPlaylists', async () => { await loadCloudPlaylists(); return getState() })
     context.registerCommand('getCloudStreamBaseUrl', async () => getServerConfig())
 
     context.registerSearchProvider({

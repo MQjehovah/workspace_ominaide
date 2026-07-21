@@ -4,14 +4,20 @@ import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 interface Track {
   id: string
   name: string
-  source: 'local' | 'url'
+  source: 'local' | 'url' | 'cloud'
   path: string
+  fileId?: number
+  itemId?: number
   artist?: string
+  size?: number
+  mime?: string
 }
 
 interface PlaylistInfo {
   id: string
   name: string
+  source: 'local' | 'cloud'
+  serverId?: number
   trackIds: string[]
 }
 
@@ -40,6 +46,7 @@ const showPlaylist = ref(false)
 const audioRef = ref<HTMLAudioElement | null>(null)
 const localCurrentTime = ref(0)
 const localDuration = ref(0)
+const serverConfig = ref<{ serverUrl: string; token: string }>({ serverUrl: '', token: '' })
 
 const progress = computed(() => {
   const dur = localDuration.value || props.data.duration
@@ -54,6 +61,10 @@ function fmt(s: number) {
 
 function getAudioUrl(track: Track | null): string {
   if (!track) return ''
+  if (track.source === 'cloud' && track.fileId) {
+    const { serverUrl, token } = serverConfig.value
+    return `${serverUrl}/api/files/${track.fileId}/stream?token=${token}`
+  }
   if (track.source === 'url') return track.path
   return `local-file:///${track.path.replace(/\\/g, '/')}`
 }
@@ -102,7 +113,9 @@ watch(() => props.data.volume, (vol) => {
   if (audioRef.value) audioRef.value.volume = vol / 100
 })
 
-onMounted(() => {
+onMounted(async () => {
+  const cfg = await props.execute('getCloudStreamBaseUrl')
+  if (cfg) serverConfig.value = cfg as { serverUrl: string; token: string }
   if (audioRef.value) {
     audioRef.value.volume = props.data.volume / 100
     if (props.data.currentTrack) {
@@ -190,7 +203,7 @@ async function handleAudioEnded() {
             </button>
             <div v-if="showPlaylist" class="playlist-dropdown">
               <div v-if="data.playlists.length > 1" class="pl-tabs">
-                <button v-for="pl in data.playlists.filter((p: any) => !p.name.startsWith('__'))" :key="pl.id" class="pl-tab" :class="{ active: data.currentPlaylistId === pl.id }" @click="execute('selectPlaylist', { playlistId: pl.id })">{{ pl.name }}</button>
+                <button v-for="pl in data.playlists" :key="pl.id" class="pl-tab" :class="{ active: data.currentPlaylistId === pl.id }" @click="execute('selectPlaylist', { playlistId: pl.id })">{{ pl.name }}</button>
               </div>
               <div class="pl-list">
                 <div v-if="!data.currentPlaylistTracks.length" class="pl-empty">歌单为空</div>
