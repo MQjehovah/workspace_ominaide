@@ -51,8 +51,9 @@ async function logout() {
 }
 
 async function executeCommand(pluginId: string, command: string, args?: unknown) {
-  await window.mqbox?.plugin.execute(pluginId, command, args || {})
+  const result = await window.mqbox?.plugin.execute(pluginId, command, args || {})
   panelData.value[pluginId] = await window.mqbox?.plugin.execute(pluginId, 'getPanelData', {})
+  return result
 }
 
 async function refreshPanel(pluginId: string) {
