@@ -64,3 +64,35 @@ async def remove_song_from_playlist(db: AsyncSession, user_id: int, item_id: int
     await db.delete(item)
     await db.flush()
     return True
+
+
+async def rename_playlist(db: AsyncSession, user_id: int, playlist_id: int, name: str) -> bool:
+    result = await db.execute(select(Playlist).where(Playlist.id == playlist_id, Playlist.user_id == user_id))
+    pl = result.scalar_one_or_none()
+    if not pl:
+        return False
+    pl.name = name
+    await db.flush()
+    return True
+
+
+async def reorder_playlist_song(db: AsyncSession, user_id: int, playlist_id: int, item_id: int, direction: str) -> list[tuple[PlaylistItem, File]]:
+    # 校验歌单归属
+    pl_result = await db.execute(select(Playlist).where(Playlist.id == playlist_id, Playlist.user_id == user_id))
+    if not pl_result.scalar_one_or_none():
+        return []
+    # 取出该歌单所有 item 按 position 排序
+    items_result = await db.execute(
+        select(PlaylistItem).where(PlaylistItem.playlist_id == playlist_id).order_by(PlaylistItem.position)
+    )
+    items = list(items_result.scalars().all())
+    idx = next((i for i, it in enumerate(items) if it.id == item_id), -1)
+    if idx < 0:
+        return []
+    swap = idx - 1 if direction == 'up' else idx + 1
+    if swap < 0 or swap >= len(items):
+        return []
+    items[idx].position, items[swap].position = items[swap].position, items[idx].position
+    await db.flush()
+    # 返回新顺序
+    return await list_playlist_songs(db, user_id, playlist_id)

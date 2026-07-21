@@ -5,6 +5,7 @@ from core.auth.dependencies import get_current_user
 from plugins.music.backend.schemas import (
     PlaylistCreateRequest, PlaylistAddSongRequest,
     PlaylistResponse, PlaylistListResponse,
+    PlaylistRenameRequest, PlaylistReorderRequest,
 )
 from plugins.music.backend import service as music_service
 
@@ -81,3 +82,30 @@ async def remove_song_from_playlist(
     if not ok:
         raise HTTPException(status_code=404, detail="Song not found in playlist")
     return {"message": "Song removed"}
+
+
+@router.put("/playlists/{playlist_id}")
+async def rename_playlist(
+    playlist_id: int,
+    req: PlaylistRenameRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ok = await music_service.rename_playlist(db, user["id"], playlist_id, req.name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return {"message": "Renamed"}
+
+
+@router.put("/playlists/{playlist_id}/reorder")
+async def reorder_playlist_song(
+    playlist_id: int,
+    req: PlaylistReorderRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await music_service.reorder_playlist_song(db, user["id"], playlist_id, req.item_id, req.direction)
+    if rows == []:
+        raise HTTPException(status_code=404, detail="Playlist or item not found")
+    return {"songs": [{"item_id": item.id, "file_id": f.id, "name": f.original_name, "size": f.size, "mime": f.mime_type}
+                      for item, f in rows]}

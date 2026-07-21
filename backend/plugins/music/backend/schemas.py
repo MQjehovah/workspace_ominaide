@@ -21,3 +21,12 @@ class PlaylistListResponse(BaseModel):
 
 class PlaylistAddSongRequest(BaseModel):
     file_id: int
+
+
+class PlaylistRenameRequest(BaseModel):
+    name: str
+
+
+class PlaylistReorderRequest(BaseModel):
+    item_id: int
+    direction: str  # 'up' | 'down'
