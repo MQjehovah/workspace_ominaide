@@ -210,16 +210,16 @@ async function handleSeek(e: Event) {
   await props.execute('seek', { time })
 }
 
-function selectPlaylist(id: string) {
+async function selectPlaylist(id: string) {
   selectedPlaylistId.value = id
-  props.execute('selectPlaylist', { playlistId: id })
+  await props.execute('selectPlaylist', { playlistId: id })
+  refreshUI()
 }
 
 async function confirmNewPlaylist() {
   const name = newPlaylistName.value.trim()
   if (!name) { showNewPlaylist.value = false; return }
   await props.execute('createPlaylist', { name, source: newPlaylistSource.value })
-  if (newPlaylistSource.value === 'cloud') await props.execute('refreshCloudPlaylists')
   newPlaylistName.value = ''; showNewPlaylist.value = false
   refreshUI()
 }
@@ -234,9 +234,6 @@ function startRename(pl: any) { renamingPlaylistId.value = pl.id; renameName.val
 async function confirmRename() {
   if (renamingPlaylistId.value && renameName.value.trim()) {
     await props.execute('renamePlaylist', { playlistId: renamingPlaylistId.value, name: renameName.value.trim() })
-    if (props.data.playlists.find(p => p.id === renamingPlaylistId.value)?.source === 'cloud') {
-      await props.execute('refreshCloudPlaylists')
-    }
   }
   renamingPlaylistId.value = null; refreshUI()
 }
@@ -251,6 +248,7 @@ async function addTrack() {
       catch (e) { console.error(e) }
     }
     cloudSelectedIds.value = new Set()
+    await props.execute('selectPlaylist', { playlistId: pl.id })
   } else {
     if (!addTrackPath.value.trim()) return
     const name = addTrackName.value.trim() || addTrackPath.value.split(/[/\\]/).pop() || '未知'

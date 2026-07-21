@@ -216,7 +216,7 @@ export default {
     context.registerCommand('selectPlaylist', async (args: any) => {
       currentPlaylistId = args?.playlistId || null
       const pl = playlists.find(p => p.id === currentPlaylistId)
-      if (pl?.source === 'cloud' && pl.trackIds.length === 0) {
+      if (pl?.source === 'cloud') {
         await loadCloudSongs(pl.id)
       }
       if (pl?.source === 'local') await saveState()
@@ -228,10 +228,8 @@ export default {
       const pl = playlists.find(p => p.id === playlistId)
       if (!pl) return getState()
       if (pl.source === 'cloud' && pl.serverId) {
-        try {
-          await api.post(`/music/playlists/${pl.serverId}/songs`, { file_id: fileId })
-          await loadCloudSongs(pl.id)
-        } catch (e) { console.error(e) }
+        try { await api.post(`/music/playlists/${pl.serverId}/songs`, { file_id: fileId }) }
+        catch (e) { console.error(e); return getState() }
       } else {
         const track: Track = {
           id: generateId(),
