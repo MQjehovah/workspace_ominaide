@@ -191,7 +191,8 @@ export default {
       const pl = playlists.find(p => p.id === args?.playlistId)
       if (!pl) return getState()
       if (pl.source === 'cloud' && pl.serverId) {
-        try { await api.delete(`/music/playlists/${pl.serverId}`) } catch (e) { console.error(e) }
+        try { await api.delete(`/music/playlists/${pl.serverId}`) }
+        catch (e) { console.error(e); return getState() }
       }
       playlists = playlists.filter(p => p.id !== pl.id)
       if (currentPlaylistId === pl.id) currentPlaylistId = playlists.length > 0 ? playlists[0].id : null
@@ -203,9 +204,10 @@ export default {
       const pl = playlists.find(p => p.id === args?.playlistId)
       if (!pl) return getState()
       if (pl.source === 'cloud' && pl.serverId) {
-        try { await api.put(`/music/playlists/${pl.serverId}`, { name: args.name }) } catch (e) { console.error(e) }
+        try { await api.put(`/music/playlists/${pl.serverId}`, { name: args?.name || '' }); pl.name = args?.name || '' }
+        catch (e) { console.error(e); return getState() }
       } else {
-        pl.name = args.name
+        pl.name = args?.name || ''
         await saveState()
       }
       return getState()
@@ -248,7 +250,8 @@ export default {
       const pl = playlists.find(p => p.id === playlistId)
       const track = tracks[trackId]
       if (pl?.source === 'cloud' && pl.serverId && track?.itemId) {
-        try { await api.delete(`/music/playlists/${pl.serverId}/songs/${track.itemId}`) } catch (e) { console.error(e) }
+        try { await api.delete(`/music/playlists/${pl.serverId}/songs/${track.itemId}`) }
+        catch (e) { console.error(e); return getState() }
         pl.trackIds = pl.trackIds.filter(id => id !== trackId)
       } else if (pl) {
         pl.trackIds = pl.trackIds.filter(id => id !== trackId)
@@ -283,13 +286,16 @@ export default {
       const pl = playlists.find(p => p.id === args?.playlistId)
       if (!pl) return getState()
       if (pl.source === 'cloud' && pl.serverId) {
+        let allOk = true
         for (const tid of [...pl.trackIds]) {
           const t = tracks[tid]
           if (t?.itemId) {
-            try { await api.delete(`/music/playlists/${pl.serverId}/songs/${t.itemId}`) } catch (e) { console.error(e) }
+            try { await api.delete(`/music/playlists/${pl.serverId}/songs/${t.itemId}`) }
+            catch (e) { console.error(e); allOk = false }
           }
         }
-        pl.trackIds = []
+        if (allOk) pl.trackIds = []
+        else await loadCloudSongs(pl.id)
       } else {
         pl.trackIds = []
         await saveState()
