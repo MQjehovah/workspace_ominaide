@@ -10,14 +10,20 @@ const playModeLabels: Record<string, string> = {
 interface Track {
   id: string
   name: string
-  source: 'local' | 'url'
+  source: 'local' | 'url' | 'cloud'
   path: string
+  fileId?: number
+  itemId?: number
   artist?: string
+  size?: number
+  mime?: string
 }
 
 interface PlaylistInfo {
   id: string
   name: string
+  source: 'local' | 'cloud'
+  serverId?: number
   trackIds: string[]
 }
 
@@ -48,8 +54,6 @@ const localCurrentTime = ref(0)
 const localDuration = ref(0)
 const localIsPlaying = ref(false)
 const selectedPlaylistId = ref<string | null>(null)
-const newPlaylistName = ref('')
-const newPlaylistInline = ref(false)
 
 const addTrackSource = ref<'local' | 'url'>('local')
 const addTrackPath = ref('')
@@ -58,16 +62,15 @@ const addTrackArtist = ref('')
 const showAddTrackModal = ref(false)
 const renamingPlaylistId = ref<string | null>(null)
 const renameName = ref('')
-const showCloudNew = ref(false)
-const cloudNewName = ref('')
-const showCloudAddSong = ref(false)
 const cloudAudioList = ref<any[]>([])
 const cloudAddLoading = ref(false)
 const cloudSelectedIds = ref<Set<number>>(new Set())
 
-// （云端播放状态不再需要独立 refs，通过 __cloud__  playlist 走 player state）
+const showNewPlaylist = ref(false)
+const newPlaylistSource = ref<'local' | 'cloud'>('local')
+const newPlaylistName = ref('')
+const serverConfig = ref<{ serverUrl: string; token: string }>({ serverUrl: '', token: '' })
 
-// Computed: active track (local or cloud via __cloud__ playlist)
 const activeTrack = computed(() => props.data.currentTrack)
 const activeIsPlaying = computed(() => props.data.isPlaying)
 const activePosition = computed(() => localCurrentTime.value || props.data.currentTime)
@@ -79,27 +82,21 @@ const progressPercent = computed(() => {
   return dur ? (cur / dur) * 100 : 0
 })
 
-async function openCloudAddSong() {
-  console.log('[player] openCloudAddSong')
-  cloudSelectedIds.value = new Set()
-  cloudAudioList.value = []
-  showCloudAddSong.value = true
-  cloudAddLoading.value = true
-  const list = await props.execute('cloudListAudioFiles')
-  if (Array.isArray(list)) cloudAudioList.value = list
-  cloudAddLoading.value = false
-}
+const activePlaylist = computed(() => {
+  return props.data.playlists.find(p => p.id === selectedPlaylistId.value) || null
+})
 
-function toggleCloudFile(fileId: number) {
-  console.log('[player] toggleCloudFile:', fileId)
-  const s = new Set(cloudSelectedIds.value)
-  if (s.has(fileId)) s.delete(fileId)
-  else s.add(fileId)
-  cloudSelectedIds.value = s
-}
+const activeTracks = computed(() => {
+  if (!activePlaylist.value) return []
+  return activePlaylist.value.trackIds.map(id => props.data.tracks[id]).filter(Boolean)
+})
 
 function getAudioUrl(track: Track | null): string {
   if (!track) return ''
+  if (track.source === 'cloud' && track.fileId) {
+    const { serverUrl, token } = serverConfig.value
+    return `${serverUrl}/api/files/${track.fileId}/stream?token=${token}`
+  }
   if (track.source === 'url') return track.path
   return `local-file:///${track.path.replace(/\\/g, '/')}`
 }
@@ -125,13 +122,10 @@ function onDurationChange() {
   localDuration.value = audioRef.value.duration || 0
 }
 
-// Watch track changes
 watch(() => props.data.currentTrack, async (newTrack, oldTrack) => {
-  console.log('[player] watch track:', newTrack?.name, oldTrack?.name)
   if (!audioRef.value) return
   const newUrl = getAudioUrl(newTrack)
   if (!newTrack || !newUrl) {
-    console.log('[player] no track, pausing')
     audioRef.value.pause()
     audioRef.value.removeAttribute('src')
     localIsPlaying.value = false
@@ -141,13 +135,12 @@ watch(() => props.data.currentTrack, async (newTrack, oldTrack) => {
   }
   const oldUrl = getAudioUrl(oldTrack)
   if (oldUrl !== newUrl) {
-    console.log('[player] setting src:', newUrl?.substring(0, 60))
     audioRef.value.src = newUrl
     localCurrentTime.value = 0
     localDuration.value = 0
     if (props.data.isPlaying) {
-      try { await audioRef.value.play(); localIsPlaying.value = true; console.log('[player] play OK') }
-      catch (e) { console.error('[player] Audio play error:', e) }
+      try { await audioRef.value.play(); localIsPlaying.value = true }
+      catch (e) { console.error('Audio play error:', e) }
     }
   }
 }, { deep: true })
@@ -166,7 +159,9 @@ watch(() => props.data.volume, (vol) => {
   if (audioRef.value) { audioRef.value.volume = vol / 100 }
 })
 
-onMounted(() => {
+onMounted(async () => {
+  const cfg = await props.execute('getCloudStreamBaseUrl')
+  if (cfg) serverConfig.value = cfg as any
   if (audioRef.value) { audioRef.value.volume = props.data.volume / 100 }
   if (!selectedPlaylistId.value && props.data.currentPlaylistId) {
     selectedPlaylistId.value = props.data.currentPlaylistId
@@ -206,6 +201,7 @@ async function handleNext() {
 async function handlePrev() {
   await props.execute('prev')
 }
+
 async function handleSeek(e: Event) {
   const target = e.target as HTMLInputElement
   const time = parseFloat(target.value)
@@ -214,67 +210,100 @@ async function handleSeek(e: Event) {
   await props.execute('seek', { time })
 }
 
-function getPlaylistName(id: string) {
-  return props.data.playlists.find(p => p.id === id)?.name || ''
-}
-
-const activePlaylist = computed(() => {
-  const id = selectedPlaylistId.value || props.data.currentPlaylistId
-  return props.data.playlists.find(p => p.id === id) || null
-})
-
-const activeTracks = computed(() => {
-  if (!activePlaylist.value) return []
-  return activePlaylist.value.trackIds.map(id => props.data.tracks[id]).filter(Boolean)
-})
-
-// ---- Local playlist ----
 function selectPlaylist(id: string) {
   selectedPlaylistId.value = id
   props.execute('selectPlaylist', { playlistId: id })
 }
 
-function startNewPlaylist() { newPlaylistName.value = ''; newPlaylistInline.value = true }
 async function confirmNewPlaylist() {
   const name = newPlaylistName.value.trim()
-  if (!name) { newPlaylistInline.value = false; return }
-  await props.execute('createPlaylist', { name })
-  newPlaylistName.value = ''; newPlaylistInline.value = false
+  if (!name) { showNewPlaylist.value = false; return }
+  await props.execute('createPlaylist', { name, source: newPlaylistSource.value })
+  if (newPlaylistSource.value === 'cloud') await props.execute('refreshCloudPlaylists')
+  newPlaylistName.value = ''; showNewPlaylist.value = false
   refreshUI()
 }
+
 async function deletePlaylist(id: string) {
   await props.execute('deletePlaylist', { playlistId: id })
   if (selectedPlaylistId.value === id) selectedPlaylistId.value = null
   refreshUI()
 }
+
 function startRename(pl: any) { renamingPlaylistId.value = pl.id; renameName.value = pl.name }
 async function confirmRename() {
   if (renamingPlaylistId.value && renameName.value.trim()) {
     await props.execute('renamePlaylist', { playlistId: renamingPlaylistId.value, name: renameName.value.trim() })
+    if (props.data.playlists.find(p => p.id === renamingPlaylistId.value)?.source === 'cloud') {
+      await props.execute('refreshCloudPlaylists')
+    }
   }
   renamingPlaylistId.value = null; refreshUI()
 }
+
 async function addTrack() {
-  if (!addTrackPath.value.trim() || !activePlaylist.value) return
-  const name = addTrackName.value.trim() || addTrackPath.value.split(/[/\\]/).pop() || '未知'
-  await props.execute('addTrack', {
-    playlistId: activePlaylist.value.id, name, path: addTrackPath.value.trim(),
-    source: addTrackSource.value, artist: addTrackArtist.value.trim() || undefined,
-  })
-  addTrackPath.value = ''; addTrackName.value = ''; addTrackArtist.value = ''; showAddTrackModal.value = false
+  if (!activePlaylist.value) return
+  const pl = activePlaylist.value
+  if (pl.source === 'cloud') {
+    if (cloudSelectedIds.value.size === 0) return
+    for (const fileId of cloudSelectedIds.value) {
+      try { await props.execute('addTrack', { playlistId: pl.id, fileId, source: 'cloud' }) }
+      catch (e) { console.error(e) }
+    }
+    cloudSelectedIds.value = new Set()
+  } else {
+    if (!addTrackPath.value.trim()) return
+    const name = addTrackName.value.trim() || addTrackPath.value.split(/[/\\]/).pop() || '未知'
+    await props.execute('addTrack', {
+      playlistId: pl.id, name, path: addTrackPath.value.trim(),
+      source: addTrackSource.value, artist: addTrackArtist.value.trim() || undefined,
+    })
+    addTrackPath.value = ''; addTrackName.value = ''; addTrackArtist.value = ''
+  }
+  showAddTrackModal.value = false
   refreshUI()
 }
-async function removeTrack(playlistId: string, trackId: string) {
-  await props.execute('removeTrack', { playlistId, trackId }); refreshUI()
+
+async function openAddTrackModal() {
+  if (!activePlaylist.value) return
+  if (activePlaylist.value.source === 'cloud') {
+    cloudSelectedIds.value = new Set()
+    cloudAudioList.value = []
+    showAddTrackModal.value = true
+    cloudAddLoading.value = true
+    const list = await props.execute('cloudListAudioFiles')
+    if (Array.isArray(list)) cloudAudioList.value = list
+    cloudAddLoading.value = false
+  } else {
+    showAddTrackModal.value = true
+  }
 }
-async function moveTrackUp(playlistId: string, trackId: string) {
-  await props.execute('moveTrack', { playlistId, trackId, direction: 'up' }); refreshUI()
+
+function toggleCloudFile(fileId: number) {
+  const s = new Set(cloudSelectedIds.value)
+  if (s.has(fileId)) s.delete(fileId); else s.add(fileId)
+  cloudSelectedIds.value = s
 }
-async function moveTrackDown(playlistId: string, trackId: string) {
-  await props.execute('moveTrack', { playlistId, trackId, direction: 'down' }); refreshUI()
+
+async function removeTrack(trackId: string) {
+  if (!activePlaylist.value) return
+  await props.execute('removeTrack', { playlistId: activePlaylist.value.id, trackId })
+  refreshUI()
 }
-async function clearPlaylist(playlistId: string) {
-  await props.execute('clearPlaylist', { playlistId }); refreshUI()
+async function moveTrackUp(trackId: string) {
+  if (!activePlaylist.value) return
+  await props.execute('moveTrack', { playlistId: activePlaylist.value.id, trackId, direction: 'up' })
+  refreshUI()
+}
+async function moveTrackDown(trackId: string) {
+  if (!activePlaylist.value) return
+  await props.execute('moveTrack', { playlistId: activePlaylist.value.id, trackId, direction: 'down' })
+  refreshUI()
+}
+async function clearActivePlaylist() {
+  if (!activePlaylist.value) return
+  await props.execute('clearPlaylist', { playlistId: activePlaylist.value.id })
+  refreshUI()
 }
 async function importDirectory() {
   if (!activePlaylist.value) return
@@ -282,103 +311,6 @@ async function importDirectory() {
   refreshUI()
 }
 function refreshUI() { setTimeout(() => props.refresh?.(), 50) }
-
-// ---- Cloud playlists ----
-const cloudPlaylists = ref<any[]>([])
-const selectedCloudId = ref<number | null>(null)
-const cloudSongs = ref<any[]>([])
-
-const selectedCloudName = computed(() => {
-  const pl = cloudPlaylists.value.find(p => p.id === selectedCloudId.value)
-  return pl?.name || '云端歌单'
-})
-
-async function loadCloudPlaylists() {
-  const pls = await props.execute('cloudListPlaylists')
-  if (Array.isArray(pls)) cloudPlaylists.value = pls
-}
-
-async function createCloudPlaylist() {
-  cloudNewName.value = ''
-  showCloudNew.value = true
-}
-
-async function confirmCloudNew() {
-  const name = cloudNewName.value.trim()
-  if (!name) { showCloudNew.value = false; return }
-  await props.execute('cloudCreatePlaylist', { name })
-  cloudNewName.value = ''
-  showCloudNew.value = false
-  await loadCloudPlaylists()
-}
-
-async function deleteCloudPlaylist(cloudId: number) {
-  if (!confirm('确定删除？')) return
-  await props.execute('cloudDeletePlaylist', { cloudId })
-  if (selectedCloudId.value === cloudId) { selectedCloudId.value = null; cloudSongs.value = [] }
-  await loadCloudPlaylists()
-}
-
-async function selectCloudPlaylist(cloudId: number) {
-  console.log('[player] selectCloudPlaylist:', cloudId)
-  selectedCloudId.value = cloudId
-  const songs = await props.execute('cloudListSongs', { cloudId })
-  if (Array.isArray(songs)) cloudSongs.value = songs
-}
-
-onMounted(loadCloudPlaylists)
-
-async function playCloudSong(song: any) {
-  try {
-    if (!selectedCloudId.value) return
-    const info = await props.execute('cloudGetStreamUrl', { fileId: song.file_id })
-    if (!info?.url) return
-
-    // Use hidden playlist for cloud songs so next/prev works everywhere
-    const HIDDEN = '__cloud__'
-    let pl = props.data.playlists.find(p => p.name === HIDDEN)
-    if (!pl) {
-      await props.execute('createPlaylist', { name: HIDDEN })
-      await props.refresh?.()
-      pl = props.data.playlists.find(p => p.name === HIDDEN)
-    }
-    if (!pl) return
-
-    await props.execute('clearPlaylist', { playlistId: pl.id })
-    for (const s of cloudSongs.value) {
-      const url = s.file_id === song.file_id
-        ? info.url
-        : await props.execute('cloudGetStreamUrl', { fileId: s.file_id }).then((r: any) => r?.url || '')
-      if (url) {
-        await props.execute('addTrack', {
-          playlistId: pl.id, name: s.name, path: url, source: 'url', artist: '',
-        })
-      }
-    }
-    await props.execute('play', { playlistId: pl.id })
-    refreshUI()
-  } catch (e) {
-    console.error('[player] playCloudSong error:', e)
-  }
-}
-
-async function removeCloudSong(itemId: number) {
-  if (!selectedCloudId.value) return
-  await props.execute('cloudRemoveSong', { cloudId: selectedCloudId.value, itemId })
-  await selectCloudPlaylist(selectedCloudId.value)
-}
-
-async function confirmCloudAdd() {
-  console.log('[player] confirmCloudAdd', selectedCloudId.value, cloudSelectedIds.value.size)
-  if (!selectedCloudId.value || cloudSelectedIds.value.size === 0) return
-  for (const fileId of cloudSelectedIds.value) {
-    try { await props.execute('cloudAddSong', { cloudId: selectedCloudId.value, fileId }) }
-    catch (e) { console.error('[player] add error:', e) }
-  }
-  cloudSelectedIds.value = new Set()
-  showCloudAddSong.value = false
-  await selectCloudPlaylist(selectedCloudId.value)
-}
 </script>
 
 <template>
@@ -391,14 +323,16 @@ async function confirmCloudAdd() {
         <div class="sidebar-header">
           <div class="sidebar-title-row">
             <span class="sidebar-title">歌单</span>
-            <button class="btn-icon btn-pink" @click="startNewPlaylist" title="新建歌单">
+            <button class="btn-icon btn-pink" @click="showNewPlaylist = true; newPlaylistSource = 'local'; newPlaylistName = ''" title="新建歌单">
               <svg class="icon-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
             </button>
           </div>
         </div>
+
         <div class="sidebar-list">
-          <div v-if="data.playlists.length === 0" class="empty-hint">暂无歌单，点击 + 创建</div>
-          <div v-for="pl in data.playlists.filter(p => !p.name.startsWith('__'))" :key="pl.id" class="playlist-item" :class="{ active: selectedPlaylistId === pl.id }" @click="selectPlaylist(pl.id)">
+          <div class="group-label">本地歌单</div>
+          <div v-if="data.playlists.filter(p => p.source === 'local').length === 0" class="empty-hint">暂无本地歌单</div>
+          <div v-for="pl in data.playlists.filter(p => p.source === 'local')" :key="pl.id" class="playlist-item" :class="{ active: selectedPlaylistId === pl.id }" @click="selectPlaylist(pl.id)">
             <svg class="icon-sm shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm14 0v6l5-3z"/></svg>
             <div class="flex-1 min-w-0">
               <div v-if="renamingPlaylistId === pl.id">
@@ -410,140 +344,77 @@ async function confirmCloudAdd() {
               </div>
             </div>
             <div class="playlist-actions">
-              <button class="btn-icon-xs" title="重命名" @click.stop="startRename(pl)">
-                <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>
-              <button class="btn-icon-xs btn-icon-danger" title="删除" @click.stop="deletePlaylist(pl.id)">
-                <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              </button>
+              <button class="btn-icon-xs" title="重命名" @click.stop="startRename(pl)"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              <button class="btn-icon-xs btn-icon-danger" title="删除" @click.stop="deletePlaylist(pl.id)"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
           </div>
-          <div v-if="newPlaylistInline" class="playlist-item" style="background:#252525;">
-            <svg class="icon-sm shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm14 0v6l5-3z"/></svg>
-            <input v-model="newPlaylistName" class="input-xs" style="flex:1;min-width:0;" placeholder="输入歌单名称" @keyup.enter="confirmNewPlaylist" @keyup.escape="newPlaylistInline = false" @blur="confirmNewPlaylist" autofocus />
-          </div>
-        </div>
 
-        <!-- Cloud Playlists -->
-        <div class="sidebar-header" style="border-top:1px solid #e9ecef;margin-top:4px;">
-          <div class="sidebar-title-row" style="display:flex;align-items:center;justify-content:space-between;">
-            <span class="sidebar-title">云端歌单</span>
-            <button class="btn-icon btn-pink" @click="createCloudPlaylist" title="新建云端歌单">
-              <svg class="icon-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-            </button>
-          </div>
-        </div>
-        <div class="sidebar-list" style="overflow-y:auto;padding:8px;">
-          <div v-if="cloudPlaylists.length === 0 && !showCloudNew" class="empty-hint" style="padding:8px 10px;">暂无云端歌单</div>
-          <div v-for="pl in cloudPlaylists" :key="'cloud-' + pl.id" class="playlist-item" :class="{ active: selectedCloudId === pl.id }" @click="selectCloudPlaylist(pl.id)" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;margin-bottom:2px;color:#868e96;">
+          <div class="group-label" style="margin-top:12px;">云端歌单</div>
+          <div v-if="data.playlists.filter(p => p.source === 'cloud').length === 0" class="empty-hint">暂无云端歌单</div>
+          <div v-for="pl in data.playlists.filter(p => p.source === 'cloud')" :key="pl.id" class="playlist-item" :class="{ active: selectedPlaylistId === pl.id }" @click="selectPlaylist(pl.id)">
             <svg class="icon-sm shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
             <div class="flex-1 min-w-0">
-              <div class="playlist-name">{{ pl.name }}</div>
-              <div class="playlist-count">{{ pl.song_count || 0 }} 首</div>
+              <div v-if="renamingPlaylistId === pl.id">
+                <input v-model="renameName" class="input-xs w-full" @keyup.enter="confirmRename" @keyup.escape="renamingPlaylistId = null" @blur="confirmRename" />
+              </div>
+              <div v-else>
+                <div class="playlist-name">{{ pl.name }}</div>
+                <div class="playlist-count">{{ pl.trackIds.length }} 首</div>
+              </div>
             </div>
             <div class="playlist-actions">
-              <button class="btn-icon-xs btn-icon-danger" title="删除" @click.stop="deleteCloudPlaylist(pl.id)">
-                <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              </button>
+              <button class="btn-icon-xs" title="重命名" @click.stop="startRename(pl)"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              <button class="btn-icon-xs btn-icon-danger" title="删除" @click.stop="deletePlaylist(pl.id)"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
-          </div>
-          <div v-if="showCloudNew" class="playlist-item" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin-bottom:2px;background:#fff;border:1px solid #e0e0e0;">
-            <svg class="icon-sm shrink-0" viewBox="0 0 24 24" fill="#868e96"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
-            <input v-model="cloudNewName" class="input-xs" style="flex:1;min-width:0;border:none;outline:none;font-size:13px;" placeholder="输入歌单名称" @keyup.enter="confirmCloudNew" @keyup.escape="showCloudNew = false" @blur="confirmCloudNew" autofocus />
           </div>
         </div>
       </div>
 
       <!-- Track list -->
       <div class="track-area">
-        <div v-if="!selectedCloudId">
-          <div class="track-header">
-            <div>
-              <h2 class="track-title">{{ activePlaylist?.name || '选择歌单' }}</h2>
-              <span class="track-subtitle">{{ activeTracks.length }} 首歌曲</span>
-            </div>
-            <div class="track-actions" v-if="activePlaylist">
-              <button class="btn btn-pink" @click="showAddTrackModal = true">
-                <svg class="icon-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-                添加
-              </button>
-              <button class="btn btn-purple" @click="importDirectory">
-                <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z"/></svg>
-                导入文件夹
-              </button>
-              <button class="btn btn-ghost" @click="clearPlaylist(activePlaylist!.id)">清空</button>
-            </div>
+        <div class="track-header">
+          <div>
+            <h2 class="track-title">{{ activePlaylist?.name || '选择歌单' }}</h2>
+            <span class="track-subtitle">{{ activeTracks.length }} 首歌曲<template v-if="activePlaylist"> · {{ activePlaylist.source === 'cloud' ? '云端' : '本地' }}</template></span>
           </div>
-          <div class="track-list">
-            <div v-if="!activePlaylist" class="empty-state">
-              <svg class="empty-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-              <span>选择或创建一个歌单</span>
-            </div>
-            <div v-else-if="activeTracks.length === 0" class="empty-state">
-              <svg class="empty-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-              <span>歌单是空的</span>
-            </div>
-            <div v-else>
-              <div v-for="(track, index) in activeTracks" :key="track.id" class="track-row" :class="{ active: data.currentTrackId === track.id }" @click="handlePlay(track.id)">
-                <div class="track-index">
-                  <span v-if="data.currentTrackId === track.id && data.isPlaying" class="playing-indicator">♫</span>
-                  <span v-else class="index-num">{{ index + 1 }}</span>
-                </div>
-                <div class="track-info">
-                  <div class="track-name">{{ track.name }}</div>
-                  <div class="track-meta">
-                    <span v-if="track.artist">{{ track.artist }} · </span>
-                    <span>{{ track.source === 'url' ? '在线' : '本地' }}</span>
-                  </div>
-                </div>
-                <div class="track-row-actions">
-                  <button class="btn-icon-xs" title="上移" @click.stop="moveTrackUp(activePlaylist!.id, track.id)">
-                    <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>
-                  </button>
-                  <button class="btn-icon-xs" title="下移" @click.stop="moveTrackDown(activePlaylist!.id, track.id)">
-                    <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                  </button>
-                  <button class="btn-icon-xs btn-icon-danger" title="移除" @click.stop="removeTrack(activePlaylist!.id, track.id)">
-                    <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
+          <div class="track-actions" v-if="activePlaylist">
+            <button class="btn btn-pink" @click="openAddTrackModal">
+              <svg class="icon-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+              添加
+            </button>
+            <button v-if="activePlaylist.source === 'local'" class="btn btn-purple" @click="importDirectory">
+              <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z"/></svg>
+              导入文件夹
+            </button>
+            <button class="btn btn-ghost" @click="clearActivePlaylist">清空</button>
           </div>
         </div>
-
-        <!-- Cloud playlist songs -->
-        <div v-else>
-          <div class="track-header">
-            <div>
-              <h2 class="track-title">{{ selectedCloudName }}</h2>
-              <span class="track-subtitle">{{ cloudSongs.length }} 首歌曲</span>
-            </div>
-            <div class="track-actions">
-              <button class="btn btn-pink" @click="openCloudAddSong">
-                <svg class="icon-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-                添加
-              </button>
-              <button class="btn btn-ghost" @click="selectedCloudId = null">关闭</button>
-            </div>
+        <div class="track-list">
+          <div v-if="!activePlaylist" class="empty-state">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            <span>选择或创建一个歌单</span>
           </div>
-          <div class="track-list">
-            <div v-if="cloudSongs.length === 0" class="empty-state">
-              <svg class="empty-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-              <span>云端歌单是空的</span>
-            </div>
-            <div v-else>
-              <div v-for="(s, index) in cloudSongs" :key="s.item_id" class="track-row" :class="{ active: data.currentTrackId && data.currentTrack?.name === s.name }" @click="playCloudSong(s)">
-                <div class="track-index"><span class="index-num">{{ index + 1 }}</span></div>
-                <div class="track-info">
-                  <div class="track-name">{{ s.name }}</div>
-                  <div class="track-meta"><span>{{ s.mime?.startsWith('audio') ? '音频' : '文件' }}</span></div>
+          <div v-else-if="activeTracks.length === 0" class="empty-state">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            <span>歌单是空的</span>
+          </div>
+          <div v-else>
+            <div v-for="(track, index) in activeTracks" :key="track.id" class="track-row" :class="{ active: data.currentTrackId === track.id }" @click="handlePlay(track.id)">
+              <div class="track-index">
+                <span v-if="data.currentTrackId === track.id && data.isPlaying" class="playing-indicator">♫</span>
+                <span v-else class="index-num">{{ index + 1 }}</span>
+              </div>
+              <div class="track-info">
+                <div class="track-name">{{ track.name }}</div>
+                <div class="track-meta">
+                  <span v-if="track.artist">{{ track.artist }} · </span>
+                  <span>{{ track.source === 'cloud' ? '云端' : (track.source === 'url' ? '在线' : '本地') }}</span>
                 </div>
-                <div class="track-row-actions">
-                  <button class="btn-icon-xs btn-icon-danger" title="移除" @click.stop="removeCloudSong(s.item_id)">
-                    <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  </button>
-                </div>
+              </div>
+              <div class="track-row-actions">
+                <button class="btn-icon-xs" title="上移" @click.stop="moveTrackUp(track.id)"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg></button>
+                <button class="btn-icon-xs" title="下移" @click.stop="moveTrackDown(track.id)"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="btn-icon-xs btn-icon-danger" title="移除" @click.stop="removeTrack(track.id)"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
               </div>
             </div>
           </div>
@@ -551,7 +422,7 @@ async function confirmCloudAdd() {
       </div>
     </div>
 
-    <!-- Bottom player bar (unified: local + cloud) -->
+    <!-- Bottom player bar -->
     <div class="player-bar">
       <template v-if="activeTrack">
         <div class="bar-track-info">
@@ -560,7 +431,7 @@ async function confirmCloudAdd() {
           </div>
           <div class="bar-track-text">
             <div class="bar-track-name">{{ activeTrack.name }}</div>
-            <div class="bar-track-artist">{{ activeTrack.artist || (activeTrack.source === 'url' ? '在线音频' : '本地文件') }}</div>
+            <div class="bar-track-artist">{{ activeTrack.artist || (activeTrack.source === 'cloud' ? '云端音频' : (activeTrack.source === 'url' ? '在线音频' : '本地文件')) }}</div>
           </div>
         </div>
 
@@ -598,9 +469,25 @@ async function confirmCloudAdd() {
       <div v-else class="bar-empty">选择歌曲开始播放</div>
     </div>
 
+    <!-- New Playlist Modal -->
+    <div v-if="showNewPlaylist" class="modal-overlay" @click.self="showNewPlaylist = false">
+      <div class="modal-content" style="max-width:360px;">
+        <h3 class="modal-title">新建歌单</h3>
+        <div class="modal-tabs">
+          <button class="modal-tab" :class="{ active: newPlaylistSource === 'local' }" @click="newPlaylistSource = 'local'">本地</button>
+          <button class="modal-tab" :class="{ active: newPlaylistSource === 'cloud' }" @click="newPlaylistSource = 'cloud'">云端</button>
+        </div>
+        <input v-model="newPlaylistName" class="input" placeholder="歌单名称" @keyup.enter="confirmNewPlaylist" />
+        <div class="modal-actions">
+          <button class="btn btn-ghost" @click="showNewPlaylist = false">取消</button>
+          <button class="btn btn-pink" :disabled="!newPlaylistName.trim()" @click="confirmNewPlaylist">创建</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Add Track Modal -->
     <div v-if="showAddTrackModal" class="modal-overlay" @click.self="showAddTrackModal = false">
-      <div class="modal-content">
+      <div v-if="activePlaylist?.source !== 'cloud'" class="modal-content">
         <h3 class="modal-title">添加歌曲</h3>
         <div class="modal-tabs">
           <button class="modal-tab" :class="{ active: addTrackSource === 'local' }" @click="addTrackSource = 'local'">本地文件</button>
@@ -616,11 +503,7 @@ async function confirmCloudAdd() {
           <button class="btn btn-pink" :disabled="!addTrackPath.trim()" @click="addTrack">添加</button>
         </div>
       </div>
-    </div>
-
-    <!-- Cloud Add Song Modal -->
-    <div v-if="showCloudAddSong" class="modal-overlay" @click.self="showCloudAddSong = false">
-      <div class="modal-content" style="max-width:480px;max-height:500px;display:flex;flex-direction:column;">
+      <div v-else class="modal-content" style="max-width:480px;max-height:500px;display:flex;flex-direction:column;">
         <h3 class="modal-title">添加歌曲到云端歌单</h3>
         <div v-if="cloudAddLoading" style="text-align:center;padding:20px;color:#868e96;">加载中...</div>
         <div v-else style="flex:1;overflow-y:auto;padding:8px 0;">
@@ -635,8 +518,8 @@ async function confirmCloudAdd() {
         </div>
         <div class="modal-actions" style="border-top:1px solid #eee;padding-top:12px;">
           <span style="font-size:12px;color:#868e96;margin-right:auto;">已选 {{ cloudSelectedIds.size }} 项</span>
-          <button class="btn btn-ghost" @click="showCloudAddSong = false">取消</button>
-          <button class="btn btn-pink" :disabled="cloudSelectedIds.size === 0" @click="confirmCloudAdd">添加 ({{ cloudSelectedIds.size }})</button>
+          <button class="btn btn-ghost" @click="showAddTrackModal = false">取消</button>
+          <button class="btn btn-pink" :disabled="cloudSelectedIds.size === 0" @click="addTrack">添加 ({{ cloudSelectedIds.size }})</button>
         </div>
       </div>
     </div>
@@ -659,6 +542,7 @@ async function confirmCloudAdd() {
 .sidebar-title-row { display: flex; align-items: center; justify-content: space-between; }
 .sidebar-title { font-size: 13px; font-weight: 600; color: #495057; text-transform: uppercase; letter-spacing: 0.5px; }
 .sidebar-list { flex: 1; overflow-y: auto; padding: 8px; }
+.group-label { font-size: 11px; font-weight: 600; color: #adb5bd; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 10px 4px; }
 .playlist-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; transition: background 0.15s; color: #868e96; }
 .playlist-item:hover { background: #e9ecef; color: #333; }
 .playlist-item.active { background: #fce4ec; color: #e91e63; }
@@ -681,6 +565,7 @@ async function confirmCloudAdd() {
 .flex-1 { flex: 1; }
 .min-w-0 { min-width: 0; }
 .shrink-0 { flex-shrink: 0; }
+.w-full { width: 100%; }
 
 /* Track area */
 .track-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
