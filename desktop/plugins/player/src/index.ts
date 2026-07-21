@@ -166,8 +166,14 @@ export default {
 
     await loadCloudPlaylists()
 
-    context.registerCommand('getPanelData', async () => getState())
-    context.registerCommand('getPageData', async () => getState())
+    context.registerCommand('getPanelData', async () => {
+      await loadCloudPlaylists()
+      return getState()
+    })
+    context.registerCommand('getPageData', async () => {
+      await loadCloudPlaylists()
+      return getState()
+    })
 
     context.registerCommand('open', async () => { context.openPage('player') })
     context.registerCommand('search', async (args: any) => { context.openPage('player') })
