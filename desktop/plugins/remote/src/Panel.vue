@@ -218,6 +218,7 @@ async function genPair() {
 <template>
   <div class="panel">
     <div class="panel-hd"><span class="title">远程控制</span></div>
+    <button class="btn ghost" @click="openPage" style="margin-bottom:6px">控制其他设备</button>
     <button v-if="!hosting" class="btn" @click="startHost">允许控制本机</button>
     <template v-else>
       <button class="btn danger" @click="stopHost">停止控制</button>
@@ -244,6 +245,8 @@ async function genPair() {
 .btn:hover { background:#f8bbd0; }
 .btn.danger { background:#ffebee; color:#c62828; }
 .btn.danger:hover { background:#ffcdd2; }
+.btn.ghost { background:#f1f3f5; color:#495057; }
+.btn.ghost:hover { background:#e9ecef; }
 .status { font-size:11px; color:#666; margin:8px 0 0; }
 .code { font-size:20px; font-weight:700; color:#e91e63; text-align:center; margin:6px 0 0; letter-spacing:2px; }
 .confirm { display:flex; flex-direction:column; gap:8px; padding:10px; margin-top:6px; border:1px solid #e8e8e8; border-radius:8px; background:#fafafa; }
