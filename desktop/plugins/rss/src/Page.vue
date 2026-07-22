@@ -307,8 +307,8 @@ watch(searchQuery, (val) => {
 
 /* Main area */
 .main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
-.entry-list { overflow-y:auto; flex-shrink:0; }
-.entry-list.collapsed { max-height:280px; border-bottom:1px solid #e9ecef; }
+.entry-list { flex:1; overflow-y:auto; }
+.entry-list.collapsed { flex:0 0 auto; max-height:280px; border-bottom:1px solid #e9ecef; }
 .entry-item { padding:10px 16px; cursor:pointer; border-bottom:1px solid #f5f5f5; }
 .entry-item:hover { background:#f8f9fa; }
 .entry-item.active { background:#fce4ec; }
@@ -322,19 +322,19 @@ watch(searchQuery, (val) => {
 
 /* Reader */
 .reader { flex:1; overflow-y:auto; padding:20px 24px; min-height:0; }
-.reader-empty { flex:1; display:flex; align-items:center; justify-content:center; color:#909399; font-size:13px; }
+.reader-empty { flex:0 0 auto; display:flex; align-items:center; justify-content:center; padding:24px; color:#909399; font-size:13px; }
 .reader-header { margin-bottom:16px; }
 .reader-title { margin:0 0 8px; font-size:18px; font-weight:600; color:#1a1a1a; line-height:1.4; }
 .reader-meta { display:flex; align-items:center; gap:12px; font-size:12px; color:#909399; flex-wrap:wrap; }
 .reader-link { color:#e91e63; text-decoration:none; }
 .reader-link:hover { text-decoration:underline; }
 .reader-author::before { content:'作者: '; }
-.reader-content { font-size:14px; line-height:1.75; color:#333; }
+.reader-content { font-size:14px; line-height:1.75; color:#333; word-wrap:break-word; overflow-wrap:break-word; }
 .reader-content :deep(img) { max-width:100%; height:auto; border-radius:6px; margin:8px 0; }
-.reader-content :deep(a) { color:#e91e63; }
+.reader-content :deep(a) { color:#e91e63; word-break:break-all; }
 .reader-content :deep(blockquote) { border-left:3px solid #e91e63; margin:12px 0; padding:6px 12px; background:#f8f9fa; color:#666; }
-.reader-content :deep(pre) { background:#f1f3f5; border-radius:6px; padding:12px; overflow-x:auto; font-size:13px; }
-.reader-content :deep(code) { background:#f1f3f5; padding:2px 4px; border-radius:3px; font-size:12px; }
+.reader-content :deep(pre) { background:#f1f3f5; border-radius:6px; padding:12px; overflow-x:auto; font-size:13px; word-wrap:break-word; white-space:pre-wrap; }
+.reader-content :deep(code) { background:#f1f3f5; padding:2px 4px; border-radius:3px; font-size:12px; word-break:break-all; }
 .reader-content :deep(pre code) { background:transparent; padding:0; }
 .reader-content :deep(h1),.reader-content :deep(h2),.reader-content :deep(h3) { margin:16px 0 8px; }
 
