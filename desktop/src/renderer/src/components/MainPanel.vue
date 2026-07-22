@@ -6,6 +6,7 @@ const pluginComponents: Record<string, any> = {
   'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Panel.vue')),
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Panel.vue')),
   'player': defineAsyncComponent(() => import('@plugins/player/src/Panel.vue')),
+  'remote': defineAsyncComponent(() => import('@plugins/remote/src/Panel.vue')),
   'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Panel.vue')),
   'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Panel.vue')),
   'files': defineAsyncComponent(() => import('@plugins/files/src/Panel.vue')),
