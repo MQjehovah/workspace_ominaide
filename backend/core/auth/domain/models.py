@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, func
 from core.database.base import Base
 
 
@@ -12,4 +12,17 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    name = Column(String(100), nullable=True)
+    role = Column(String(200), nullable=True)
+    company = Column(String(200), nullable=True)
+    contacts = Column(Text, nullable=True)
+    projects = Column(Text, nullable=True)
+    preferences = Column(Text, nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

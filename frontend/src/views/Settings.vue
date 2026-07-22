@@ -5,12 +5,48 @@
       <div class="page-card-body">
         <el-tabs v-model="activeTab">
           <el-tab-pane label="个人资料" name="profile">
-            <el-form v-if="profile" label-width="120px" style="margin-top:12px;max-width:600px">
+            <el-form v-if="profileForm" label-width="120px" style="margin-top:12px;max-width:600px">
               <el-form-item label="用户名">
-                <el-input :model-value="profile.username" disabled />
+                <el-input :model-value="auth.user?.username" disabled />
               </el-form-item>
               <el-form-item label="邮箱">
-                <el-input :model-value="profile.email" disabled />
+                <el-input :model-value="auth.user?.email" disabled />
+              </el-form-item>
+              <el-divider />
+              <el-form-item label="姓名">
+                <el-input v-model="profileForm.name" placeholder="您的姓名" />
+              </el-form-item>
+              <el-form-item label="身份/职位">
+                <el-input v-model="profileForm.role" placeholder="如：产品经理、设计师" />
+              </el-form-item>
+              <el-form-item label="公司/组织">
+                <el-input v-model="profileForm.company" placeholder="公司或组织名称" />
+              </el-form-item>
+
+              <el-form-item label="联系人">
+                <div style="width:100%">
+                  <div v-for="(c, i) in profileForm.contacts" :key="i" style="display:flex;gap:8px;margin-bottom:8px">
+                    <el-input v-model="c.name" placeholder="姓名" style="flex:1" />
+                    <el-input v-model="c.relation" placeholder="关系" style="flex:1" />
+                    <el-button type="danger" :icon="Delete" @click="removeContact(i)" />
+                  </div>
+                  <el-button type="primary" link @click="addContact">+ 添加联系人</el-button>
+                </div>
+              </el-form-item>
+
+              <el-form-item label="项目">
+                <div style="width:100%">
+                  <div v-for="(p, i) in profileForm.projects" :key="i" style="display:flex;gap:8px;margin-bottom:8px">
+                    <el-input v-model="p.name" placeholder="项目名称" style="flex:1" />
+                    <el-input v-model="p.deadline" placeholder="截止日期" style="flex:1" />
+                    <el-button type="danger" :icon="Delete" @click="removeProject(i)" />
+                  </div>
+                  <el-button type="primary" link @click="addProject">+ 添加项目</el-button>
+                </div>
+              </el-form-item>
+
+              <el-form-item>
+                <el-button type="primary" :loading="saving" @click="saveProfile">保存资料</el-button>
               </el-form-item>
             </el-form>
             <p v-else style="color:#909399;padding:20px">加载中...</p>
@@ -56,14 +92,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import client from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
+import { Delete } from '@element-plus/icons-vue'
 
 const activeTab = ref('profile')
 const auth = useAuthStore()
-const profile = ref<any>(null)
+const saving = ref(false)
+
+interface Contact { name: string; relation: string }
+interface Project { name: string; deadline: string }
+
+const profileForm = ref<{
+  name: string; role: string; company: string
+  contacts: Contact[]; projects: Project[]
+} | null>(null)
 
 const connected = ref(false)
 const serverVersion = ref('')
@@ -98,11 +143,53 @@ async function checkHealth() {
   }
 }
 
+async function fetchProfile() {
+  try {
+    const res = await client.get('/auth/profile')
+    const d = res.data
+    profileForm.value = {
+      name: d.name || '',
+      role: d.role || '',
+      company: d.company || '',
+      contacts: d.contacts || [],
+      projects: d.projects || [],
+    }
+  } catch { /* ignore */ }
+}
+
+function addContact() {
+  profileForm.value!.contacts.push({ name: '', relation: '' })
+}
+
+function removeContact(i: number) {
+  profileForm.value!.contacts.splice(i, 1)
+}
+
+function addProject() {
+  profileForm.value!.projects.push({ name: '', deadline: '' })
+}
+
+function removeProject(i: number) {
+  profileForm.value!.projects.splice(i, 1)
+}
+
+async function saveProfile() {
+  saving.value = true
+  try {
+    await client.put('/auth/profile', profileForm.value)
+    ElMessage.success('资料已保存')
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     await auth.fetchUser()
-    profile.value = auth.user
   } catch { /* ignore */ }
+  fetchProfile()
   checkHealth()
 })
 </script>

@@ -1,7 +1,9 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse, AdminUserResponse, ToggleActiveRequest, UpdateUserRequest
+from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse, AdminUserResponse, ToggleActiveRequest, UpdateUserRequest, UserProfileResponse, UserProfileUpdate
 from core.auth.domain.service import register, login, refresh_access_token
+from core.auth.domain.profile_service import get_or_create_profile, update_profile
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
 
@@ -79,6 +81,45 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(u)
     await db.flush()
     return {"message": "User deleted"}
+
+
+@router.get("/profile", response_model=UserProfileResponse)
+async def get_profile(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from core.auth.domain.models import User
+    result = await db.execute(select(User).where(User.id == user["id"]))
+    u = result.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    profile = await get_or_create_profile(db, u.id, u.username)
+    contacts = json.loads(profile.contacts) if profile.contacts else None
+    projects = json.loads(profile.projects) if profile.projects else None
+    preferences = json.loads(profile.preferences) if profile.preferences else None
+    return UserProfileResponse(
+        user_id=profile.user_id,
+        name=profile.name,
+        role=profile.role,
+        company=profile.company,
+        contacts=contacts,
+        projects=projects,
+        preferences=preferences,
+    )
+
+
+@router.put("/profile", response_model=UserProfileResponse)
+async def put_profile(req: UserProfileUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    profile = await update_profile(db, user["id"], req)
+    contacts = json.loads(profile.contacts) if profile.contacts else None
+    projects = json.loads(profile.projects) if profile.projects else None
+    preferences = json.loads(profile.preferences) if profile.preferences else None
+    return UserProfileResponse(
+        user_id=profile.user_id,
+        name=profile.name,
+        role=profile.role,
+        company=profile.company,
+        contacts=contacts,
+        projects=projects,
+        preferences=preferences,
+    )
 
 
 @router.put("/users/{user_id}")

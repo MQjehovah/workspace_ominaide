@@ -2,6 +2,36 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr
 
 
+class ContactInfo(BaseModel):
+    name: str
+    relation: str | None = None
+
+
+class ProjectInfo(BaseModel):
+    name: str
+    deadline: str | None = None
+
+
+class UserProfileResponse(BaseModel):
+    user_id: int
+    name: str | None = None
+    role: str | None = None
+    company: str | None = None
+    contacts: list[ContactInfo] | None = None
+    projects: list[ProjectInfo] | None = None
+    preferences: dict | None = None
+    model_config = {"from_attributes": True}
+
+
+class UserProfileUpdate(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    company: str | None = None
+    contacts: list[ContactInfo] | None = None
+    projects: list[ProjectInfo] | None = None
+    preferences: dict | None = None
+
+
 class RegisterRequest(BaseModel):
     username: str
     email: EmailStr
