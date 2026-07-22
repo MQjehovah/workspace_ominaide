@@ -1,8 +1,10 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from core.auth.dependencies import get_current_user
-from core.auth.jwt import decode_access_token
+from core.auth.jwt import create_access_token, decode_access_token
 from plugins.remote.backend import service as remote_service
 
 router = APIRouter(prefix="/api/remote", tags=["remote"])
@@ -72,7 +74,8 @@ async def consume_pair(code: str):
     room_id = remote_service.consume_pair(code)
     if not room_id:
         raise HTTPException(status_code=410, detail="Pair code invalid or expired")
-    return {"room_id": room_id}
+    guest_token = create_access_token({"sub": 0, "guest_room": room_id}, timedelta(minutes=30))
+    return {"room_id": room_id, "guest_token": guest_token}
 
 
 @router.get("/viewer", response_class=HTMLResponse)
@@ -86,6 +89,10 @@ async def remote_websocket(websocket: WebSocket, room_id: str):
     payload = decode_access_token(token) if token else None
     if not payload:
         await websocket.close(code=4001)
+        return
+    guest_room = payload.get("guest_room")
+    if guest_room and guest_room != room_id:
+        await websocket.close(code=4003)
         return
 
     await websocket.accept()
