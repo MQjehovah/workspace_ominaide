@@ -20,6 +20,10 @@ async function getDeviceId(context: any): Promise<string> {
   return id
 }
 
+async function persistState() {
+  try { await pluginCtx?.storage?.set('hostState', hostState) } catch {}
+}
+
 function getState() {
   return { hosting: hostState.enabled, hostState }
 }
@@ -30,8 +34,17 @@ export default {
   async activate(context: any) {
     pluginCtx = context
     await getDeviceId(context)
-    // Load persisted autoAccept
+    // Load persisted state
+    const saved = await context.storage?.get('hostState')
+    if (saved) {
+      hostState.enabled = saved.enabled || false
+      hostState.code = saved.code || ''
+      hostState.status = saved.enabled ? '上次在线，点击重新开启' : ''
+      hostState.peerConnected = false
+    }
+    // Load persisted autoAccept (separate key for backwards compat)
     hostState.autoAccept = !!(await context.storage?.get('autoAccept'))
+    if (saved?.autoAccept != null) hostState.autoAccept = saved.autoAccept
 
     // --- Host Management ---
 
@@ -51,6 +64,7 @@ export default {
           ws.send(JSON.stringify({ type: 'join' }))
           if (!hostState.enabled) hostState.enabled = true
           hostState.status = '已在线'
+          persistState()
         })
 
         ws.on('message', (data: Buffer) => {
@@ -62,6 +76,7 @@ export default {
           // Auto-reconnect if host was intentionally enabled (not stopped by user)
           if (hostState.enabled) {
             hostState.status = '信令断开，5秒后重连…'
+            persistState()
             clearTimeout(reconnectTimer)
             reconnectTimer = setTimeout(() => connectWs(id, roomId), 5000)
           }
@@ -104,6 +119,7 @@ export default {
         // Mark enabled immediately (not waiting for WS open)
         hostState.enabled = true
         hostState.status = '允许控制中（等待主控连接）'
+        await persistState()
 
         // Connect WS
         await connectWs(id, roomId)
@@ -113,15 +129,15 @@ export default {
         codeTimer = setInterval(async () => {
           try {
             const d = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
-            if (d?.code) hostState.code = d.code
+            if (d?.code) { hostState.code = d.code; persistState() }
           } catch {}
         }, 240000)
 
-        // Heartbeat every 30s
+        // Heartbeat every 30s (backend stale timeout is 90s)
         clearInterval(heartbeatTimer)
         heartbeatTimer = setInterval(async () => {
           try { await context.api.post('/remote/heartbeat', { device_id: id }) } catch {}
-        }, 60000)
+        }, 30000)
 
       } catch (e: any) {
         hostState.status = '启动失败: ' + (e?.message || e)
@@ -137,6 +153,7 @@ export default {
       clearInterval(codeTimer)
       clearInterval(heartbeatTimer)
       Object.assign(hostState, { enabled: false, code: '', status: '', peerConnected: false })
+      await persistState()
       return getState()
     })
 
@@ -191,6 +208,7 @@ export default {
 
     context.registerCommand('syncHostState', async (args: any) => {
       if (args) Object.assign(hostState, args)
+      await persistState()
       return getState()
     })
 

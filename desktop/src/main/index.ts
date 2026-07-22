@@ -152,10 +152,10 @@ ipcMain.handle('window:open-page', async (_, pluginId: string, query: string = '
   win.loadURL(url)
 })
 
-ipcMain.handle('window:open-plugin-window', async (_, pluginId: string) => {
+ipcMain.handle('window:open-plugin-window', async (_, pluginId: string, query: string = '') => {
   const cfg = await getConfig()
   if (!cfg.token) return
-  openPluginWindow(pluginId)
+  openPluginWindow(pluginId, query)
 })
 
 ipcMain.handle('shell:open', (_, url: string) => shell.openExternal(url))

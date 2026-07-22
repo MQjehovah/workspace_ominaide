@@ -4,14 +4,23 @@ import { ref, onMounted } from 'vue'
 const params = new URLSearchParams(window.location.search)
 const pluginId = ref(params.get('pluginId') || '')
 
+function getExtraQuery(): string {
+  const search = window.location.search
+  if (!search) return ''
+  const sp = new URLSearchParams(search)
+  sp.delete('view')
+  sp.delete('pluginId')
+  return sp.toString()
+}
+
 function openInNewWindow() {
-  window.mqbox?.window.openPluginWindow(pluginId.value)
+  window.mqbox?.window.openPluginWindow(pluginId.value, getExtraQuery())
 }
 
 onMounted(() => {
   // Auto-navigate to the plugin window
   if (pluginId.value) {
-    window.mqbox?.window.openPluginWindow(pluginId.value)
+    window.mqbox?.window.openPluginWindow(pluginId.value, getExtraQuery())
     window.close()
   }
 })

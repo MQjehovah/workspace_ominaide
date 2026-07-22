@@ -4,7 +4,7 @@ import { join } from 'path'
 const preloadPath = join(__dirname, '../preload/index.js')
 const windows = new Map<string, BrowserWindow>()
 
-export function openPluginWindow(pluginId: string): void {
+export function openPluginWindow(pluginId: string, query: string = ''): void {
   const existing = windows.get(pluginId)
   if (existing && !existing.isDestroyed()) {
     existing.focus()
@@ -26,7 +26,8 @@ export function openPluginWindow(pluginId: string): void {
 
   // Load plugin frontend from local disk via custom protocol
   // Falls back to backend URL if needed
-  const url = `plugin-app://${pluginId}/index.html`
+  const qs = query ? (query.startsWith('?') ? query : '?' + query) : ''
+  const url = `plugin-app://${pluginId}/index.html${qs}`
   win.loadURL(url)
 
   win.once('ready-to-show', () => win.show())

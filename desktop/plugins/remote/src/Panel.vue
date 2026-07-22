@@ -110,7 +110,7 @@ async function startHost() {
         const headers = await getAuthHeaders()
         await fetch(`${serverUrl}/api/remote/heartbeat`, { method: 'POST', headers, body: JSON.stringify({ device_id: deviceId }) })
       } catch {}
-    }, 60000)
+    }, 30000)
     await genPairAuto(deviceId)
   } catch (e: any) {
     status.value = '失败: ' + (e?.message || e)
