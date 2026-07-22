@@ -32,7 +32,7 @@
       </el-menu-item>
       <el-menu-item index="/admin/plugins">
         <el-icon><Monitor /></el-icon>
-        <span>插件管理</span>
+        <span>插件市场</span>
       </el-menu-item>
     </el-menu>
 
