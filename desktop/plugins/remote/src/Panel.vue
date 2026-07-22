@@ -55,9 +55,10 @@ async function handleInput(ev: any) {
         }, 16)
       }
     } else if (ev.type === 'mouseDown' || ev.type === 'mouseUp' || ev.type === 'wheel' || ev.type === 'keyDown' || ev.type === 'keyUp') {
-      await (window as any).mqbox.remote.injectInput(ev)
+      const r = await (window as any).mqbox.remote.injectInput(ev)
+      console.log('[host] inject', ev.type, '->', r)
     }
-  } catch {}
+  } catch (e) { console.log('[host] handleInput err', e) }
 }
 
 async function startHost() {
@@ -122,12 +123,14 @@ async function onSignal(m: any) {
       })
       pc = newPeer(await getIceServers())
       pc.ondatachannel = (e) => {
+        console.log('[host] dataChannel received')
         const dc = e.channel
+        dc.onopen = () => console.log('[host] dataChannel OPEN')
         dc.onmessage = async (msg) => {
           try {
             const ev = JSON.parse(msg.data)
             await handleInput(ev)
-          } catch {}
+          } catch (err) { console.log('[host] dc msg err', err) }
         }
       }
       stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
