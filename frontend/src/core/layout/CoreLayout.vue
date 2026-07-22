@@ -1,41 +1,25 @@
 <template>
-  <el-container style="height:100vh">
-    <CoreSidebar :collapsed="sidebarCollapsed" @toggle="sidebarCollapsed = !sidebarCollapsed" />
-    <el-container>
-      <CoreHeader @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed" />
-      <el-main style="background:#f5f7fa; padding:20px">
+  <div class="layout">
+    <CoreSidebar :collapsed="collapsed" />
+    <div class="layout-main">
+      <CoreHeader @toggle-sidebar="collapsed = !collapsed" />
+      <div class="layout-content">
         <router-view />
-      </el-main>
-    </el-container>
-  </el-container>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import CoreSidebar from './CoreSidebar.vue'
 import CoreHeader from './CoreHeader.vue'
-import { usePluginStore } from '@/stores/core/plugin'
-import { fetchPlugins } from '@/api/plugin'
 
-const sidebarCollapsed = ref(false)
-const pluginStore = usePluginStore()
-
-onMounted(async () => {
-  try {
-    const plugins = await fetchPlugins()
-    for (const p of plugins) {
-      const routeMap: Record<string, string> = { notes: '/notes' }
-      pluginStore.register({
-        name: p.name,
-        title: p.title,
-        icon: p.icon || 'Connection',
-        description: p.description || undefined,
-        version: p.version,
-        routes: { main: routeMap[p.name] || `/apps/${p.name}` }
-      })
-    }
-  } catch (e) {
-    console.warn('Failed to fetch plugins:', e)
-  }
-})
+const collapsed = ref(false)
 </script>
+
+<style scoped>
+.layout { display: flex; height: 100vh; }
+.layout-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.layout-content { flex: 1; overflow-y: auto; }
+</style>

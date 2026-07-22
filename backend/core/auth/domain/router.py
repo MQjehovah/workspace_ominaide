@@ -52,13 +52,7 @@ async def list_users(db: AsyncSession = Depends(get_db)):
     from core.auth.domain.models import User as UserModel
     result = await db.execute(select(UserModel).order_by(UserModel.id))
     users = result.scalars().all()
-    return [AdminUserResponse(
-        id=u.id,
-        username=u.username,
-        email=u.email,
-        is_active=u.is_active,
-        created_at=str(u.created_at) if u.created_at else None
-    ) for u in users]
+    return [AdminUserResponse.model_validate(u) for u in users]
 
 
 @router.put("/users/{user_id}/toggle-active")

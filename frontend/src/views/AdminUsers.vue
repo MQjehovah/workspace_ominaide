@@ -1,21 +1,25 @@
 <template>
-  <div>
-    <h2>用户管理</h2>
-    <el-table :data="users" stripe style="width:100%" v-loading="loading">
-      <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="username" label="用户名" min-width="140" />
-      <el-table-column prop="email" label="邮箱" min-width="200" />
-      <el-table-column label="状态" width="100">
-        <template #default="{ row }">
-          <el-switch
-            :model-value="row.is_active"
-            :loading="togglingId === row.id"
-            @change="(val: boolean) => toggleActive(row, val)"
-          />
-        </template>
-      </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180" />
-    </el-table>
+  <div class="page-wrapper">
+    <div class="page-header"><h2>用户管理</h2></div>
+    <div class="page-card">
+      <div class="page-card-body">
+        <el-table :data="users" stripe style="width:100%" v-loading="loading">
+          <el-table-column prop="id" label="ID" width="80" />
+          <el-table-column prop="username" label="用户名" min-width="140" />
+          <el-table-column prop="email" label="邮箱" min-width="200" />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-switch
+                :model-value="row.is_active"
+                :loading="togglingId === row.id"
+                @change="(val: boolean) => toggleActive(row, val)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="创建时间" width="180" />
+        </el-table>
+      </div>
+    </div>
   </div>
 </template>
 

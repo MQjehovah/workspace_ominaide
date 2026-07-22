@@ -1,7 +1,7 @@
 <template>
-  <div>
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
-      <h2 style="margin:0">文件管理</h2>
+  <div class="page-wrapper">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center">
+      <h2>文件管理</h2>
       <div style="display:flex; gap:8px">
         <el-upload
           :http-request="handleUpload"
@@ -102,7 +102,6 @@
       </div>
     </el-dialog>
   </div>
-</template>
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'

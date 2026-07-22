@@ -1,21 +1,25 @@
 <template>
-  <div>
-    <h2>插件管理</h2>
-    <el-table :data="plugins" stripe style="width:100%" v-loading="loading">
-      <el-table-column prop="name" label="名称" min-width="140" />
-      <el-table-column prop="title" label="标题" min-width="160" />
-      <el-table-column prop="version" label="版本" width="100" />
-      <el-table-column label="启用" width="80">
-        <template #default="{ row }">
-          <el-switch
-            :model-value="row.enabled"
-            :loading="togglingName === row.name"
-            @change="(val: boolean) => toggleEnabled(row, val)"
-          />
-        </template>
-      </el-table-column>
-      <el-table-column prop="installed_at" label="安装时间" width="180" />
-    </el-table>
+  <div class="page-wrapper">
+    <div class="page-header"><h2>插件管理</h2></div>
+    <div class="page-card">
+      <div class="page-card-body">
+        <el-table :data="plugins" stripe style="width:100%" v-loading="loading">
+          <el-table-column prop="name" label="名称" min-width="140" />
+          <el-table-column prop="title" label="标题" min-width="160" />
+          <el-table-column prop="version" label="版本" width="100" />
+          <el-table-column label="启用" width="80">
+            <template #default="{ row }">
+              <el-switch
+                :model-value="row.enabled"
+                :loading="togglingName === row.name"
+                @change="(val: boolean) => toggleEnabled(row, val)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column prop="installed_at" label="安装时间" width="180" />
+        </el-table>
+      </div>
+    </div>
   </div>
 </template>
 

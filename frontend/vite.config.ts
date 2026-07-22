@@ -10,8 +10,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/ws': { target: 'ws://localhost:8000', ws: true }
+      '/api': 'http://mqgeek.com:8000',
+      '/ws': { target: 'ws://mqgeek.com:8000', ws: true }
     }
   }
 })
