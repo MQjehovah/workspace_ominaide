@@ -11,7 +11,7 @@ export function openPluginWindow(pluginId: string, query: string = ''): void {
   // Viewer mode → always create a new window
   if (query) {
     const win = new BrowserWindow({
-      width: 1024, height: 740, minWidth: 680, minHeight: 500, show: false,
+      width: 1024, height: 740, minWidth: 680, minHeight: 500, show: false, autoHideMenuBar: true,
       webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
     })
     win.loadURL(url)
@@ -28,7 +28,7 @@ export function openPluginWindow(pluginId: string, query: string = ''): void {
   }
 
   const win = new BrowserWindow({
-    width: 1024, height: 740, minWidth: 680, minHeight: 500, show: false,
+    width: 1024, height: 740, minWidth: 680, minHeight: 500, show: false, autoHideMenuBar: true,
     webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
   })
 
