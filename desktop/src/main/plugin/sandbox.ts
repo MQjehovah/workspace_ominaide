@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { join } from 'path'
 import { app, Notification, clipboard, shell, BrowserWindow, dialog, ipcMain, desktopCapturer, screen } from 'electron'
-import { readdirSync, statSync } from 'fs'
+import { readdirSync, statSync, mkdirSync } from 'fs'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { getConfig, setConfig } from '../config'
@@ -16,6 +16,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
   let storage: any = null
   if (perms.includes('storage')) {
     const file = join(app.getPath('userData'), 'plugin-data', `${pluginInfo.id}.json`)
+    mkdirSync(join(app.getPath('userData'), 'plugin-data'), { recursive: true })
     const adapter = new JSONFile(file)
     storage = new Low(adapter, {})
   }
