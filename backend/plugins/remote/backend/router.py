@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from core.auth.dependencies import get_current_user
 from core.auth.jwt import decode_access_token
-from plugins.remote import service as remote_service
+from plugins.remote.backend import service as remote_service
 
 router = APIRouter(prefix="/api/remote", tags=["remote"])
 ws_router = APIRouter(tags=["remote"])
@@ -95,4 +95,6 @@ async def remote_websocket(websocket: WebSocket, room_id: str):
             message = await websocket.receive_json()
             await remote_service.room_broadcast(room_id, websocket, message)
     except WebSocketDisconnect:
+        pass
+    finally:
         await remote_service.room_leave(room_id, websocket)

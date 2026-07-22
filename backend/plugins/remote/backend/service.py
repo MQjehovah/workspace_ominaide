@@ -1,4 +1,4 @@
-import random
+import secrets
 import time
 from fastapi import WebSocket
 
@@ -26,7 +26,10 @@ def clear_user_devices(user_id: int):
 
 
 def create_pair(user_id: int, device_id: str, room_id: str, ttl: int = 300):
-    code = str(random.randint(100000, 999999))
+    while True:
+        code = ''.join(secrets.choice('0123456789') for _ in range(6))
+        if code not in _pairs:
+            break
     _pairs[code] = {"room_id": room_id, "user_id": user_id, "device_id": device_id, "expire_ts": time.time() + ttl}
     return code
 
@@ -55,9 +58,13 @@ async def room_leave(room_id: str, ws: WebSocket):
 
 
 async def room_broadcast(room_id: str, ws: WebSocket, message: dict):
-    for peer in list(_rooms.get(room_id, set())):
-        if peer is not ws:
-            try:
-                await peer.send_json(message)
-            except Exception:
-                pass
+    dead = []
+    for peer in list(_rooms.get(room_id, ())):
+        if peer is ws:
+            continue
+        try:
+            await peer.send_json(message)
+        except Exception:
+            dead.append(peer)
+    for peer in dead:
+        _rooms.get(room_id, set()).discard(peer)
