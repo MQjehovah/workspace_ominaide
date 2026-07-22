@@ -30,6 +30,15 @@ const keyMap: Record<string, string> = {
   ControlLeft: 'LeftControl', ControlRight: 'RightControl',
   AltLeft: 'LeftAlt', AltRight: 'RightAlt',
   ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Semicolon: 'Semicolon', Quote: 'Quote', Comma: 'Comma', Period: 'Period', Slash: 'Slash', Backquote: 'Grave', Backslash: 'Backslash', Minus: 'Minus', Equal: 'Equal',
+  BracketLeft: 'LeftBracket', BracketRight: 'RightBracket',
+  CapsLock: 'CapsLock',
+  MetaLeft: 'LeftSuper', MetaRight: 'RightSuper',
+  Numpad0: 'NumPad0', Numpad1: 'NumPad1', Numpad2: 'NumPad2', Numpad3: 'NumPad3', Numpad4: 'NumPad4',
+  Numpad5: 'NumPad5', Numpad6: 'NumPad6', Numpad7: 'NumPad7', Numpad8: 'NumPad8', Numpad9: 'NumPad9',
+  NumpadEnter: 'Enter', NumpadAdd: 'Add', NumpadSubtract: 'Subtract', NumpadMultiply: 'Multiply', NumpadDivide: 'Divide', NumpadDecimal: 'Decimal',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert', Delete: 'Delete',
+  F1: 'F1', F2: 'F2', F3: 'F3', F4: 'F4', F6: 'F6', F7: 'F7', F8: 'F8', F9: 'F9', F10: 'F10',
 }
 
 export function registerIpcHandlers() {

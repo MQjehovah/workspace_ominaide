@@ -14,6 +14,7 @@ let ws: WebSocket | null = null
 let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
 let pendingIce: any[] = []
+let connectionEnded = false
 
 async function loadDevices() {
   try {
@@ -27,6 +28,7 @@ async function loadDevices() {
 }
 
 async function connect(roomId: string) {
+  connectionEnded = false
   if (ws || pc) {
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
@@ -35,7 +37,7 @@ async function connect(roomId: string) {
   status.value = '连接中…'
   try {
     ws = await openSignal(roomId, onSignal)
-    ws.onclose = () => { status.value = '信令断开'; cleanup() }
+    ws.onclose = () => { if (!connectionEnded) status.value = '信令断开'; cleanup() }
     ws.onerror = () => { status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
     pc = newPeer()
@@ -67,10 +69,12 @@ async function onSignal(m: any) {
   if (m.type === 'controlAllowed') {
     await startOffering()
   } else if (m.type === 'controlDenied') {
+    connectionEnded = true
     status.value = m.reason === 'busy' ? '被控端忙（已有连接）' : '被控端拒绝'
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
   } else if (m.type === 'revoked') {
+    connectionEnded = true
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
@@ -157,6 +161,7 @@ function cleanup() {
 }
 
 function backToMenu() {
+  connectionEnded = false
   cleanup()
   if (ws) { try { ws.close() } catch {} ; ws = null }
   mode.value = 'menu'

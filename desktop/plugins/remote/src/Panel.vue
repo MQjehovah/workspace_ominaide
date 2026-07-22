@@ -18,11 +18,22 @@ let cachedScreen: { width: number; height: number } | null = null
 let lastMoveTs = 0
 let pendingMove: any = null
 let moveScheduled = false
+let trailingTimer: any = null
 
 async function getScreen(): Promise<{ width: number; height: number }> {
   if (cachedScreen) return cachedScreen
   cachedScreen = await (window as any).mqbox.remote.getScreenSize()
   return cachedScreen!
+}
+
+async function flushMove() {
+  if (!pendingMove) return
+  const s = await getScreen()
+  const m = pendingMove
+  pendingMove = null
+  const x = Math.round((Number(m.x) || 0) * s.width)
+  const y = Math.round((Number(m.y) || 0) * s.height)
+  await (window as any).mqbox.remote.injectInput({ type: 'mouseMove', x, y })
 }
 
 async function handleInput(ev: any) {
@@ -33,12 +44,15 @@ async function handleInput(ev: any) {
       if (now - lastMoveTs >= 16 && !moveScheduled) {
         lastMoveTs = now
         moveScheduled = true
-        const s = await getScreen()
-        const m = pendingMove
-        const x = Math.round((Number(m.x) || 0) * s.width)
-        const y = Math.round((Number(m.y) || 0) * s.height)
-        await (window as any).mqbox.remote.injectInput({ type: 'mouseMove', x, y })
+        await flushMove()
         moveScheduled = false
+        if (trailingTimer) { clearTimeout(trailingTimer); trailingTimer = null }
+      } else if (!trailingTimer) {
+        trailingTimer = setTimeout(async () => {
+          trailingTimer = null
+          lastMoveTs = Date.now()
+          await flushMove()
+        }, 16)
       }
     } else if (ev.type === 'mouseDown' || ev.type === 'mouseUp' || ev.type === 'wheel' || ev.type === 'keyDown' || ev.type === 'keyUp') {
       await (window as any).mqbox.remote.injectInput(ev)
