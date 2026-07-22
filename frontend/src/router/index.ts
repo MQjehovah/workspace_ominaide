@@ -53,6 +53,11 @@ const router = createRouter({
           path: 'admin/plugins',
           name: 'AdminPlugins',
           component: () => import('@/views/AdminPlugins.vue')
+        },
+        {
+          path: 'schedule',
+          name: 'Schedule',
+          component: () => import('@/views/Schedule.vue')
         }
       ]
     }
