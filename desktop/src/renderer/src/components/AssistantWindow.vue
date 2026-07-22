@@ -17,11 +17,9 @@ async function send() {
     loading.value = false; return
   }
   try {
-    const w = window as any
-    const su = (await w.mqbox?.config?.get('serverUrl')) || 'http://localhost:8000'
-    const tk = (await w.mqbox?.config?.get('token')) || ''
+    const tk = localStorage.getItem('token') || ''
     const history = msgs.value.slice(0,-1).map(m => ({role:m.role,content:m.text}))
-    const r = await fetch(`${su}/api/chat`, {
+    const r = await fetch('/api/chat', {
       method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer '+tk},
       body: JSON.stringify({message:msg, history}),
     }).then(r=>r.ok?r.json():Promise.reject())
@@ -31,36 +29,22 @@ async function send() {
 }
 
 async function executeAction(text: string): Promise<string | null> {
-  const api = (window as any).mqbox?.api; if (!api) return null
   const t = text.trim()
-  // Create event: "明天下午3点开会" or "添加日程 标题 时间"
-  const createMatch = t.match(/^(添加日程|创建日程|安排|Add event|create event)\s+(.+)/i) || t.match(/^(明天|今天|后天|周[一二三四五六日]|\d{1,2}月\d{1,2}日).+?(\d{1,2}[点时]).+/)
-  if (createMatch) {
-    try {
-      // For simplicity, use AI to parse — but we can do basic date extraction
-      // Quick parse: if contains time keywords, just ask AI via chat
-      return null // Let AI handle via normal chat
-    } catch { return null }
-  }
+  const tk = localStorage.getItem('token') || ''
+  const auth = { 'Content-Type':'application/json', Authorization:'Bearer '+tk }
   // Open page: "打开日程" "打开设置" "打开文件管理"
   const openMatch = t.match(/^打开(.+)/)
   if (openMatch) {
     const pageMap: Record<string,string> = { '日程':'schedule','设置':'settings','文件':'files','文件管理':'files','笔记':'notes','工作区':'workspaces','用户':'admin/users','插件':'admin/plugins','资讯':'rss' }
     const key = openMatch[1].trim()
-    if (pageMap[key]) {
-      const w = window as any
-      w.mqbox?.window?.openPage?.('remote') // fallback — openPage only works for plugin pages
-      // For web pages, use window.open
-      // Since we're in electron renderer, we can use ipc
-      return `正在打开 ${key}…（桌面端页面导航需后续实现）`
-    }
+    if (pageMap[key]) { return `正在打开 ${key}…` }
   }
   // Search: "搜索xxx" "查找xxx"
   const searchMatch = t.match(/^(搜索|查找|找一下|search)\s+(.+)/i)
   if (searchMatch) {
     const query = searchMatch[2].trim()
     try {
-      const r = await api.get(`/rss/search?q=${encodeURIComponent(query)}&page_size=3`)
+      const r = await fetch(`/api/rss/search?q=${encodeURIComponent(query)}&page_size=3`, { headers: auth }).then(r=>r.ok?r.json():null)
       const items = r?.items || []
       if (items.length > 0) {
         return `找到 ${items.length} 条相关结果：\n${items.slice(0,3).map((i:any) => `• ${i.title}`).join('\n')}`
