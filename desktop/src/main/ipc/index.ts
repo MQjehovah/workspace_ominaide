@@ -345,8 +345,9 @@ export function registerIpcHandlers() {
   ipcMain.handle('remote:screen-size', async () => {
     try {
       const { screen } = require('electron')
-      const b = screen.getPrimaryDisplay().bounds
-      return { width: b.width, height: b.height }
+      const d = screen.getPrimaryDisplay()
+      const sf = d.scaleFactor || 1
+      return { width: Math.round(d.bounds.width * sf), height: Math.round(d.bounds.height * sf) }
     } catch {
       return { width: 0, height: 0 }
     }

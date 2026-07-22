@@ -119,8 +119,9 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
         return sources.map((s: any) => ({ id: s.id, name: s.name, display_id: s.display_id }))
       },
       getScreenSize: () => {
-        const b = screen.getPrimaryDisplay().bounds
-        return { width: b.width, height: b.height }
+        const d = screen.getPrimaryDisplay()
+        const sf = d.scaleFactor || 1
+        return { width: Math.round(d.bounds.width * sf), height: Math.round(d.bounds.height * sf) }
       },
     } : null,
     files: perms.includes('files:read') ? {
