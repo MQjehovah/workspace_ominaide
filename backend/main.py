@@ -54,6 +54,11 @@ app.include_router(music_router)
 from core.plugin.marketplace import router as marketplace_router
 app.include_router(marketplace_router)
 
+from plugins.remote.router import router as remote_router
+app.include_router(remote_router)
+from plugins.remote.router import ws_router as remote_ws_router
+app.include_router(remote_ws_router)
+
 
 @app.websocket("/ws/sync/{workspace_id}")
 async def sync_websocket(websocket: WebSocket, workspace_id: int):
