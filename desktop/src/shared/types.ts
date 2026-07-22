@@ -67,6 +67,7 @@ export interface ScreenshotCapability {
 export interface RemoteCapability {
   getDesktopSources: () => Promise<any[]>
   getScreenSize: () => { width: number; height: number }
+  getAllDisplays: () => { id: number; name: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number }[]
 }
 
 export interface PluginContext {
@@ -88,7 +89,7 @@ export interface PluginContext {
   }
   screenshot: ScreenshotCapability | null
   remote: RemoteCapability | null
-  openPage: (pluginId: string) => void
+  openPage: (pluginId: string, query?: string) => void
   registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => void
   registerSearchProvider: (provider: SearchProvider) => void
 }
@@ -120,7 +121,7 @@ declare global {
       window: {
         openMain: () => void
   files: { openDirectory: () => Promise<string | undefined>; listAudio: (dirPath: string) => Promise<{ name: string; path: string }[]> } | null
-  openPage: (pluginId: string) => void
+  openPage: (pluginId: string, query?: string) => void
         openSearch: () => void
         hide: () => void
       }
@@ -154,6 +155,7 @@ declare global {
       remote: {
         getDesktopSources: () => Promise<any[]>
         getScreenSize: () => Promise<{ width: number; height: number }>
+        getAllDisplays: () => Promise<{ id: number; name: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number }[]>
         injectInput: (event: any) => Promise<any>
         onControlRequest: (cb: (info: any) => void) => void
       }

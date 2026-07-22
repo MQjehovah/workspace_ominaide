@@ -58,7 +58,7 @@ contextBridge.exposeInMainWorld('mqbox', {
   },
   window: {
     openMain: () => ipcRenderer.invoke('window:open-main'),
-    openPage: (pluginId: string) => ipcRenderer.invoke('window:open-page', pluginId),
+    openPage: (pluginId: string, query?: string) => ipcRenderer.invoke('window:open-page', pluginId, query || ''),
     openSearch: () => ipcRenderer.invoke('window:open-search'),
     openPluginManager: () => ipcRenderer.invoke('window:open-plugin-manager'),
     hide: () => ipcRenderer.invoke('window:hide'),
@@ -119,6 +119,7 @@ contextBridge.exposeInMainWorld('mqbox', {
   remote: {
     getDesktopSources: () => ipcRenderer.invoke('remote:get-sources'),
     getScreenSize: () => ipcRenderer.invoke('remote:screen-size'),
+    getAllDisplays: () => ipcRenderer.invoke('remote:get-all-displays'),
     injectInput: (event: any) => ipcRenderer.invoke('remote:inject', event),
     onControlRequest: (cb: (info: any) => void) => {
       ipcRenderer.on('remote:control-request', (_e, info) => cb(info))

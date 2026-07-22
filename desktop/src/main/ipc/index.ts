@@ -353,6 +353,20 @@ export function registerIpcHandlers() {
     }
   })
 
+  ipcMain.handle('remote:get-all-displays', async () => {
+    try {
+      const { screen } = require('electron')
+      return screen.getAllDisplays().map((d: any) => ({
+        id: d.id,
+        name: `${d.bounds.width}x${d.bounds.height}`,
+        bounds: { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height },
+        scaleFactor: d.scaleFactor || 1,
+      }))
+    } catch {
+      return []
+    }
+  })
+
   ipcMain.handle('remote:inject', async (_e, event: any) => {
     try {
       const nut = getNut()

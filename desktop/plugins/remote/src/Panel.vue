@@ -14,26 +14,23 @@ let pc: RTCPeerConnection | null = null
 let stream: MediaStream | null = null
 let pendingIce: any[] = []
 let currentRoomId = ''
-let cachedScreen: { width: number; height: number } | null = null
 let lastMoveTs = 0
 let pendingMove: any = null
 let moveScheduled = false
 let trailingTimer: any = null
 let heartbeatTimer: any = null
-
-async function getScreen(): Promise<{ width: number; height: number }> {
-  if (cachedScreen) return cachedScreen
-  cachedScreen = await (window as any).mqbox.remote.getScreenSize()
-  return cachedScreen!
-}
+let currentDisplay: any = null
+let currentSourceId = ''
+let codeTimer: any = null
 
 async function flushMove() {
-  if (!pendingMove) return
-  const s = await getScreen()
+  if (!pendingMove || !currentDisplay) return
   const m = pendingMove
   pendingMove = null
-  const x = Math.round((Number(m.x) || 0) * s.width)
-  const y = Math.round((Number(m.y) || 0) * s.height)
+  const d = currentDisplay
+  const sf = d.scaleFactor || 1
+  const x = Math.round((d.bounds.x + (Number(m.x) || 0) * d.bounds.width) * sf)
+  const y = Math.round((d.bounds.y + (Number(m.y) || 0) * d.bounds.height) * sf)
   await (window as any).mqbox.remote.injectInput({ type: 'mouseMove', x, y })
 }
 
@@ -95,6 +92,7 @@ async function startHost() {
         await fetch(`${serverUrl}/api/remote/heartbeat`, { method: 'POST', headers, body: JSON.stringify({ device_id: deviceId }) })
       } catch {}
     }, 30000)
+    await genPairAuto(deviceId)
   } catch (e: any) {
     status.value = '失败: ' + (e?.message || e)
   }
@@ -116,6 +114,9 @@ async function onSignal(m: any) {
       pendingIce = []
       const sources = await (window as any).mqbox.remote.getDesktopSources()
       if (!sources.length) { status.value = '无屏幕源'; return }
+      const allDisplays = await (window as any).mqbox.remote.getAllDisplays()
+      currentDisplay = matchDisplay(sources[0], allDisplays)
+      currentSourceId = sources[0].id
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sources[0].id, maxFrameRate: 30 } } as any,
@@ -123,9 +124,18 @@ async function onSignal(m: any) {
       pc = newPeer(await getIceServers())
       pc.ondatachannel = (e) => {
         const dc = e.channel
+        dc.onopen = () => {
+          try {
+            ;(window as any).mqbox.remote.getDesktopSources().then((srcs: any[]) => {
+              dc.send(JSON.stringify({ type: 'screens', list: srcs.map(s => ({ id: s.id, name: s.name })) }))
+              dc.send(JSON.stringify({ type: 'activeScreen', id: currentSourceId }))
+            })
+          } catch {}
+        }
         dc.onmessage = async (msg) => {
           try {
             const ev = JSON.parse(msg.data)
+            if (ev.type === 'switchScreen') { await switchScreen(ev.sourceId, dc); return }
             await handleInput(ev)
           } catch {}
         }
@@ -145,10 +155,12 @@ async function onSignal(m: any) {
           hasPeer.value = false
           pendingIce = []
           status.value = '主控已断开（仍允许新连接）'
+          props.execute('syncHostState', { peerConnected: false })
         }
       }
       hasPeer.value = true
       status.value = '主控已连接，推流中'
+      props.execute('syncHostState', { peerConnected: true })
     } catch (e: any) {
       status.value = '建立连接失败: ' + (e?.message || e)
       try { ws?.send(JSON.stringify({ type: 'error', message: 'host_getusermedia_failed' })) } catch {}
@@ -179,6 +191,7 @@ function revokePeer() {
   hasPeer.value = false
   pendingIce = []
   status.value = '已断开控制（仍允许新连接）'
+  props.execute('syncHostState', { peerConnected: false })
 }
 
 async function stopHost() {
@@ -186,6 +199,7 @@ async function stopHost() {
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   if (ws) { ws.close(); ws = null }
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
+  if (codeTimer) { clearInterval(codeTimer); codeTimer = null }
   if (currentRoomId) {
     try {
       const { serverUrl } = await getServer()
@@ -197,6 +211,7 @@ async function stopHost() {
   hosting.value = false
   status.value = ''
   pairCode.value = ''
+  await props.execute('syncHostState', { enabled: false, code: '', status: '', peerConnected: false })
 }
 
 async function genPair() {
@@ -213,11 +228,59 @@ async function genPair() {
     status.value = '生成配对码失败: ' + (e?.message || e)
   }
 }
+
+async function genPairAuto(deviceId: string) {
+  try {
+    const { serverUrl } = await getServer()
+    const headers = await getAuthHeaders()
+    const r = await fetch(`${serverUrl}/api/remote/pair`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ device_id: deviceId, room_id: currentRoomId }),
+    }).then(res => res.json())
+    pairCode.value = r.code
+    status.value = `配对码: ${r.code}（允许控制中）`
+    await props.execute('syncHostState', { enabled: true, code: r.code, status: '允许控制中' })
+    if (codeTimer) clearInterval(codeTimer)
+    codeTimer = setInterval(() => genPairAuto(deviceId), 240000)
+  } catch (e: any) {
+    status.value = '生成配对码失败: ' + (e?.message || e)
+  }
+}
+
+async function switchScreen(sourceId: string, dc: any) {
+  try {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxFrameRate: 30 } } as any,
+    })
+    const sender = pc?.getSenders().find((s: any) => s.track && s.track.kind === 'video')
+    if (sender && pc) await sender.replaceTrack(newStream.getVideoTracks()[0])
+    if (stream) stream.getTracks().forEach(t => t.stop())
+    stream = newStream
+    currentSourceId = sourceId
+    const allDisplays = await (window as any).mqbox.remote.getAllDisplays()
+    const srcs = await (window as any).mqbox.remote.getDesktopSources()
+    currentDisplay = matchDisplay(srcs.find((s: any) => s.id === sourceId), allDisplays)
+    dc.send(JSON.stringify({ type: 'activeScreen', id: sourceId }))
+  } catch (e: any) {
+    status.value = '切屏失败: ' + (e?.message || e)
+  }
+}
+
+function matchDisplay(src: any, displays: any[]) {
+  if (!src) return displays[0] || null
+  return displays.find((d: any) => String(d.id) === String(src.display_id)) || displays[0] || null
+}
+
+function openManagement() {
+  ;(props as any).openPage?.('remote') || (window as any).mqbox?.window?.openPage?.('remote')
+}
 </script>
 
 <template>
   <div class="panel">
     <div class="panel-hd"><span class="title">远程控制</span></div>
+    <button class="btn ghost" @click="openManagement" style="margin-bottom:6px">管理页</button>
     <button class="btn ghost" @click="openPage" style="margin-bottom:6px">控制其他设备</button>
     <button v-if="!hosting" class="btn" @click="startHost">允许控制本机</button>
     <template v-else>

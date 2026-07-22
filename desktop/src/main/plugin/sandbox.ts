@@ -123,6 +123,12 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
         const sf = d.scaleFactor || 1
         return { width: Math.round(d.bounds.width * sf), height: Math.round(d.bounds.height * sf) }
       },
+      getAllDisplays: () => screen.getAllDisplays().map((d: any) => ({
+        id: d.id,
+        name: `${d.bounds.width}x${d.bounds.height}`,
+        bounds: { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height },
+        scaleFactor: d.scaleFactor || 1,
+      })),
     } : null,
     files: perms.includes('files:read') ? {
       openDirectory: async () => {
@@ -142,15 +148,16 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
         } catch { return [] }
       },
     } : null,
-    openPage: (pluginId: string) => {
+    openPage: (pluginId: string, query: string = '') => {
       const preloadPath = join(__dirname, '../../preload/index.js')
       const win = new BrowserWindow({
         width: 900, height: 700,
         webPreferences: { preload: preloadPath, contextIsolation: true },
       })
+      const extra = query ? '&' + query : ''
       const url = process.env.VITE_DEV_SERVER_URL
-        ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}`
-        : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}`
+        ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}${extra}`
+        : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}${extra}`
       win.loadURL(url)
     },
     registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => {
