@@ -7,7 +7,6 @@ const pluginComponents: Record<string, any> = {
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Panel.vue')),
   'files': defineAsyncComponent(() => import('@plugins/files/src/Panel.vue')),
   'notes': defineAsyncComponent(() => import('@plugins/notes/src/Panel.vue')),
-  'notifications': defineAsyncComponent(() => import('@plugins/notifications/src/Panel.vue')),
   'player': defineAsyncComponent(() => import('@plugins/player/src/Panel.vue')),
   'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Panel.vue')),
   'remote': defineAsyncComponent(() => import('@plugins/remote/src/Panel.vue')),
@@ -22,6 +21,9 @@ const panels = ref<any[]>([])
 const isLoading = ref(false)
 const panelData = ref<Record<string, any>>({})
 const showUserMenu = ref(false)
+const notifCount = ref(0)
+const notifs = ref<any[]>([])
+let notifTimer: any = null
 
 const pluginColors: Record<string, string> = {
   screenshot: '#28A745', 'quick-notes': '#DC3545', 'clipboard-history': '#0078D4',
@@ -66,13 +68,34 @@ async function refreshPanel(pluginId: string) {
   panelData.value[pluginId] = await window.mqbox?.plugin.execute(pluginId, 'getPanelData', {})
 }
 
+async function fetchNotifs() {
+  try { const r = await window.mqbox?.api.get('/notifications?unread=true&limit=5'); notifs.value = r || [] } catch {}
+}
+async function fetchNotifCount() {
+  try { const r = await window.mqbox?.api.get('/notifications/unread-count'); notifCount.value = r?.count || 0 } catch {}
+}
+async function markRead(n: any) {
+  try { await window.mqbox?.api.put(`/notifications/${n.id}/read`); n.read = true; notifCount.value = Math.max(0, notifCount.value - 1) } catch {}
+}
+function openNotifPage() { window.mqbox?.window.openPage('notifications') }
+function fmt(iso: string) {
+  if (!iso) return ''; const d = new Date(iso); const now = new Date(); const diff = now.getTime() - d.getTime()
+  if (diff < 60000) return '刚刚'; if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
+  if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'
+  return (d.getMonth()+1)+'/'+d.getDate()+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0')
+}
+
 onMounted(() => {
   loadPlugins()
+  fetchNotifCount()
+  notifTimer = setInterval(fetchNotifCount, 15000)
   window.mqbox?.clipboard?.onUpdated(() => refreshPanel('clipboard-history'))
   window.mqbox?.player?.onUpdated(() => refreshPanel('player'))
   window.mqbox?.todo?.onUpdated(() => refreshPanel('todo'))
   window.mqbox?.plugin?.onUpdated(() => loadPlugins())
 })
+
+onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
 </script>
 
 <template>
@@ -99,6 +122,18 @@ onMounted(() => {
           <span>在线</span>
         </div>
       </div>
+      <el-dropdown v-if="notifCount > 0" trigger="click" @visible-change="fetchNotifs">
+        <button class="bell-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="bell-dot">{{ notifCount }}</span></button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <div v-for="n in notifs.slice(0,5)" :key="n.id" class="notif-item" @click="markRead(n)">
+              <div style="font-size:12px;font-weight:500;color:#333;white-space:normal">{{ n.title }}</div>
+              <div style="font-size:10px;color:#909399">{{ fmt(n.created_at) }}</div>
+            </div>
+            <el-dropdown-item divided @click="openNotifPage">查看全部</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
       <button class="settings-btn" @click="openSearch">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -140,6 +175,14 @@ onMounted(() => {
     <div class="resize-handle"></div>
   </div>
 </template>
+
+<style scoped>
+.bell-btn { position:relative; width:32px;height:32px;border:none;border-radius:6px;background:transparent;color:#868e96;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+.bell-btn:hover { background:#f1f3f5;color:#495057; }
+.bell-dot { position:absolute;top:1px;right:2px;width:16px;height:14px;border-radius:7px;background:#e91e63;color:#fff;font-size:10px;line-height:14px;text-align:center;font-weight:700; }
+.notif-item { padding:8px 12px;cursor:pointer;border-bottom:1px solid #f5f5f5;min-width:220px; }
+.notif-item:hover { background:#f8f9fa; }
+</style>
 
 <style scoped>
 .main-panel { width:300px; height:600px; border-radius:12px; background:#fff; box-shadow:0 4px 20px rgba(0,0,0,0.18); border:1px solid #e0e0e0; display:flex; flex-direction:column; position:relative; overflow:hidden; }
