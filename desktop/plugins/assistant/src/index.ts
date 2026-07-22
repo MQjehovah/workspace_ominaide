@@ -14,7 +14,7 @@ export default {
         if (assistantWin.isVisible()) { assistantWin.hide(); return }
         assistantWin.show(); assistantWin.focus(); return
       }
-      const preloadPath = join(__dirname, '../../dist-electron/preload/index.js')
+      const preloadPath = join(__dirname, '../../../dist-electron/preload/index.js')
       assistantWin = new BrowserWindow({
         width: 420,
         height: 620,
