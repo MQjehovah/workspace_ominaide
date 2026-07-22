@@ -5,7 +5,6 @@ const pluginComponents: Record<string, any> = {
   'assistant': defineAsyncComponent(() => import('@plugins/assistant/src/Panel.vue')),
   'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Panel.vue')),
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Panel.vue')),
-  'everything': defineAsyncComponent(() => import('@plugins/everything/src/Panel.vue')),
   'files': defineAsyncComponent(() => import('@plugins/files/src/Panel.vue')),
   'notes': defineAsyncComponent(() => import('@plugins/notes/src/Panel.vue')),
   'notifications': defineAsyncComponent(() => import('@plugins/notifications/src/Panel.vue')),
