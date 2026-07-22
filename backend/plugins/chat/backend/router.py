@@ -53,15 +53,15 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
 
     # If the LLM wants to call tools
     if msg.tool_calls:
+        import json
+        messages.append(msg)
         for tc in msg.tool_calls:
-            import json
             func_name = tc.function.name
             try:
                 func_args = json.loads(tc.function.arguments)
             except json.JSONDecodeError:
                 func_args = {}
             result = await tool_registry.call(user["id"], type("Req", (), {"name": func_name, "arguments": func_args})())
-            messages.append(msg)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
