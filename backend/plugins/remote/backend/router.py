@@ -22,26 +22,40 @@ class PairRequest(BaseModel):
     room_id: str
 
 
-VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>OmniAide Remote</title><style>body{margin:0;background:#000}video{width:100vw;height:100vh;object-fit:contain}#bar{position:fixed;top:8px;left:8px;color:#fff;font:13px sans-serif;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px}</style></head><body><div id='bar'>连接中…</div><video id='v' autoplay playsinline></video><script>
-const params=new URLSearchParams(location.search);const code=params.get('code');const token=params.get('token')||'';
+VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'><title>OmniAide Remote</title><style>body{margin:0;background:#000;overflow:hidden;touch-action:none}video{width:100vw;height:100vh;object-fit:contain}#bar{position:fixed;top:8px;left:8px;color:#fff;font:13px sans-serif;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px;z-index:10}</style></head><body><div id='bar'>连接中…</div><video id='v' autoplay playsinline></video><script>
+const params=new URLSearchParams(location.search);const code=params.get('code');
 const v=document.getElementById('v'),bar=document.getElementById('bar');
 const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接'};
+let dc=pc.createDataChannel('input');
+pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
+function send(ev){if(dc&&dc.readyState==='open'){try{dc.send(JSON.stringify(ev));}catch(e){}}}
+function btn(b){return b===2?'right':b===1?'middle':'left';}
+function norm(e){return v.clientWidth>0?e.offsetX/v.clientWidth:0;}
+function normY(e){return v.clientHeight>0?e.offsetY/v.clientHeight:0;}
+v.addEventListener('mousemove',e=>send({type:'mouseMove',x:norm(e),y:normY(e)}));
+v.addEventListener('mousedown',e=>{e.preventDefault();send({type:'mouseDown',button:btn(e.button)});});
+v.addEventListener('mouseup',e=>send({type:'mouseUp',button:btn(e.button)}));
+v.addEventListener('wheel',e=>{e.preventDefault();send({type:'wheel',deltaY:e.deltaY});},{passive:false});
+v.addEventListener('contextmenu',e=>e.preventDefault());
+function touchNorm(t){const r=v.getBoundingClientRect();return {x:(t.clientX-r.left)/r.width,y:(t.clientY-r.top)/r.height};}
+v.addEventListener('touchstart',e=>{e.preventDefault();const p=touchNorm(e.touches[0]);send({type:'mouseMove',x:p.x,y:p.y});send({type:'mouseDown',button:'left'});},{passive:false});
+v.addEventListener('touchmove',e=>{e.preventDefault();const p=touchNorm(e.touches[0]);send({type:'mouseMove',x:p.x,y:p.y});},{passive:false});
+v.addEventListener('touchend',e=>{e.preventDefault();send({type:'mouseUp',button:'left'});},{passive:false});
+function ignored(c){return c==='F5'||c==='F11'||c==='F12';}
+document.addEventListener('keydown',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyDown',code:e.code});}});
+document.addEventListener('keyup',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyUp',code:e.code});}});
+pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate.toJSON()});};
 let ws;
-function send(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
-pc.onicecandidate=e=>{if(e.candidate)send({type:'ice',payload:e.candidate.toJSON()});};
+function wsSend(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
 fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('code'))).then(d=>{
-  const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote/'+d.room_id+'?token='+encodeURIComponent(token);
+  const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote/'+d.room_id+'?token='+encodeURIComponent(d.guest_token);
   ws=new WebSocket(wsUrl);
-  ws.onopen=async()=>{
-    bar.textContent='等待被控端…';
-    const offer=await pc.createOffer();await pc.setLocalDescription(offer);
-    send({type:'offer',payload:offer.toJSON()});
-  };
+  ws.onopen=async()=>{bar.textContent='等待被控端…';const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer.toJSON()});};
   ws.onmessage=async ev=>{const m=JSON.parse(ev.data);
     if(m.type==='answer'){await pc.setRemoteDescription({type:'answer',sdp:m.payload.sdp});}
     else if(m.type==='ice'){try{await pc.addIceCandidate(m.payload);}catch(e){}}
   };
+  ws.onclose=()=>{bar.textContent='连接已断开';};
 }).catch(()=>{bar.textContent='配对码无效或已过期';});
 </script></body></html>"""
 
