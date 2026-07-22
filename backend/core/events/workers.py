@@ -20,8 +20,14 @@ async def indexing_handler(event):
 async def entity_handler(event):
     if not settings.memory_layer_enabled:
         return
-    # Future: extract entities from event and store in Qdrant entities collection
-    pass
+    from core.ai.indexer import extract_and_store_entities
+    await extract_and_store_entities(
+        user_id=event.user_id,
+        content=str(event.details or ""),
+        source_type=event.entity_type or event.event_type,
+        source_id=event.id,
+        title=event.summary or "",
+    )
 
 
 def register_workers():
