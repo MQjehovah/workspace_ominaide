@@ -47,7 +47,6 @@ async function handleInput(ev: any) {
         moveScheduled = true
         await flushMove()
         moveScheduled = false
-        if (trailingTimer) { clearTimeout(trailingTimer); trailingTimer = null }
       } else if (!trailingTimer) {
         trailingTimer = setTimeout(async () => {
           trailingTimer = null
