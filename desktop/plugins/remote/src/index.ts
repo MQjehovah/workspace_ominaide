@@ -7,6 +7,7 @@ let hostState = { enabled: false, code: '', status: '', peerConnected: false, au
 let hostWs: any = null
 let codeTimer: any = null
 let heartbeatTimer: any = null
+let reconnectTimer: any = null
 
 async function getDeviceId(context: any): Promise<string> {
   if (deviceId) return deviceId
@@ -29,64 +30,79 @@ export default {
   async activate(context: any) {
     pluginCtx = context
     await getDeviceId(context)
+    // Load persisted autoAccept
+    hostState.autoAccept = !!(await context.storage?.get('autoAccept'))
 
     // --- Host Management ---
 
-    context.registerCommand('startHost', async () => {
-      if (hostWs) return getState()
+    async function connectWs(id: string, roomId: string) {
+      const serverUrl = await getServerUrl()
+      const token = await getToken()
+      if (!serverUrl || !token) {
+        hostState.status = '配置错误: 服务器地址未设置'
+        return false
+      }
       try {
-        hostState.status = '启动中…'
-        const id = deviceId!
-        const roomId = `u_${id}`
-
-        // Get config
-        const cfg = await context.api.get('/remote/devices') // just to check connectivity
-        // We need serverUrl from parent config
-        const serverUrl = await getServerUrl()
-        const token = await getToken()
-
-        if (!serverUrl) {
-          hostState.status = '配置错误: 未设置服务器地址'
-          return getState()
-        }
-
-        const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-
-        // Register online
-        const hostname = require('os').hostname()
-        await context.api.post('/remote/online', { device_id: id, name: hostname, room_id: roomId })
-
-        // Get pair code
-        const pairData = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
-        hostState.code = pairData?.code || ''
-
-        // Connect WS using 'ws' library (available in Node.js child process)
         const WebSocket = require('ws')
         const wsUrl = `${serverUrl.replace(/^http/, 'ws')}/ws/remote/${roomId}?token=${encodeURIComponent(token)}`
-        hostWs = new WebSocket(wsUrl)
+        const ws = new WebSocket(wsUrl)
 
-        hostWs.on('open', () => {
-          hostWs.send(JSON.stringify({ type: 'join' }))
+        ws.on('open', () => {
+          ws.send(JSON.stringify({ type: 'join' }))
           hostState.enabled = true
           hostState.status = '允许控制中（等待主控连接）'
         })
 
-        hostWs.on('message', (data: Buffer) => {
-          try {
-            const msg = JSON.parse(data.toString())
-            handleSignal(msg)
-          } catch {}
+        ws.on('message', (data: Buffer) => {
+          try { handleSignal(JSON.parse(data.toString())) } catch {}
         })
 
-        hostWs.on('close', () => {
-          if (hostState.enabled) hostState.status = '信令断开'
+        ws.on('close', () => {
           hostWs = null
+          // Auto-reconnect if host was intentionally enabled (not stopped by user)
+          if (hostState.enabled) {
+            hostState.status = '信令断开，5秒后重连…'
+            clearTimeout(reconnectTimer)
+            reconnectTimer = setTimeout(() => connectWs(id, roomId), 5000)
+          }
         })
 
-        hostWs.on('error', (err: Error) => {
+        ws.on('error', (err: Error) => {
           console.error('[remote] WS error:', err.message)
-          hostState.status = '连接错误: ' + err.message
         })
+
+        hostWs = ws
+        return true
+      } catch (e: any) {
+        hostState.status = '连接失败: ' + (e?.message || e)
+        return false
+      }
+    }
+
+    context.registerCommand('startHost', async () => {
+      if (hostWs) {
+        // WS already exists, update online + code
+        try {
+          const pairData = await context.api.post('/remote/pair', { device_id: deviceId!, room_id: `u_${deviceId!}` })
+          if (pairData?.code) hostState.code = pairData.code
+        } catch {}
+        return getState()
+      }
+      try {
+        hostState.status = '启动中…'
+        const id = deviceId!
+        const roomId = `u_${id}`
+        const hostname = require('os').hostname()
+
+        // Register online
+        await context.api.post('/remote/online', { device_id: id, name: hostname, room_id: roomId })
+
+        // Get initial pair code
+        const pairData = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
+        hostState.code = pairData?.code || ''
+
+        // Connect WS
+        await connectWs(id, roomId)
 
         // Refresh code every 4 min
         clearInterval(codeTimer)
@@ -110,6 +126,7 @@ export default {
     })
 
     context.registerCommand('stopHost', async () => {
+      clearTimeout(reconnectTimer)
       try { await context.api.delete('/remote/online') } catch {}
       if (hostWs) { try { hostWs.close() } catch {} }
       hostWs = null
@@ -175,6 +192,7 @@ export default {
 
     context.registerCommand('setAutoAccept', async (args: any) => {
       hostState.autoAccept = !!args?.enabled
+      await context.storage?.set('autoAccept', hostState.autoAccept)
       return getState()
     })
 
@@ -187,6 +205,7 @@ export default {
     })
   },
   deactivate() {
+    clearTimeout(reconnectTimer)
     if (hostWs) { try { hostWs.close() } catch {} }
     hostWs = null
     clearInterval(codeTimer)
