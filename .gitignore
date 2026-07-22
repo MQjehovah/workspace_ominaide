@@ -29,3 +29,5 @@ docker/volumes/
 
 # Logs
 *.log
+
+desktop_plugins/

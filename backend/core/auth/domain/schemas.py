@@ -35,7 +35,7 @@ class AdminUserResponse(BaseModel):
     id: int
     username: str
     email: str
-    is_active: bool
+    is_active: bool | None = None
     created_at: str | None = None
 
     model_config = {"from_attributes": True}

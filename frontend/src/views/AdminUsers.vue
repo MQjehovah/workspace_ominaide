@@ -31,6 +31,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <p v-if="error" style="color:#f56c6c;text-align:center;padding:20px;font-size:13px">{{ error }}</p>
       </div>
     </div>
 
@@ -80,6 +81,7 @@ import { Search } from '@element-plus/icons-vue'
 interface AdminUser { id: number; username: string; email: string; is_active: boolean; created_at: string | null }
 const users = ref<AdminUser[]>([])
 const loading = ref(false)
+const error = ref('')
 const search = ref('')
 const togglingId = ref<number | null>(null)
 
@@ -88,7 +90,7 @@ const filtered = computed(() => {
   return q ? users.value.filter(u => u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) : users.value
 })
 
-async function fetchUsers() { loading.value = true; try { const r = await client.get('/auth/users'); users.value = r.data } finally { loading.value = false } }
+async function fetchUsers() { loading.value = true; error.value = ''; try { const r = await client.get('/auth/users'); users.value = r.data } catch (e: any) { error.value = e.response?.data?.detail || e.message || '加载失败'; ElMessage.error(error.value) } finally { loading.value = false } }
 async function toggleActive(row: AdminUser, val: boolean) {
   togglingId.value = row.id
   try { await client.put(`/auth/users/${row.id}/toggle-active`, { is_active: val }); row.is_active = val; ElMessage.success(val ? '已启用' : '已禁用') }
