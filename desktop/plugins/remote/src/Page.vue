@@ -7,10 +7,12 @@ defineProps<{ data: any; execute: (a: string, args?: any) => Promise<any>; refre
 const mode = ref<'menu' | 'viewer'>('menu')
 const devices = ref<any[]>([])
 const videoRef = ref<HTMLVideoElement | null>(null)
+const viewerRef = ref<HTMLElement | null>(null)
 const status = ref('')
 const pairInput = ref('')
 let ws: WebSocket | null = null
 let pc: RTCPeerConnection | null = null
+let dc: RTCDataChannel | null = null
 let pendingIce: any[] = []
 
 async function loadDevices() {
@@ -37,7 +39,12 @@ async function connect(roomId: string) {
     ws.onerror = () => { status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
     pc = newPeer()
-    pc.ontrack = (e) => { if (videoRef.value) videoRef.value.srcObject = e.streams[0]; status.value = '已连接' }
+    dc = pc.createDataChannel('input')
+    pc.ontrack = (e) => {
+      if (videoRef.value) videoRef.value.srcObject = e.streams[0]
+      status.value = '已连接（可控制）'
+      setTimeout(() => viewerRef.value?.focus(), 100)
+    }
     pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate.toJSON() })) }
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
@@ -80,7 +87,54 @@ async function connectByCode() {
   }
 }
 
+function sendInput(ev: any) {
+  if (dc && dc.readyState === 'open') {
+    try { dc.send(JSON.stringify(ev)) } catch {}
+  }
+}
+
+function onMouseMove(e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement
+  const x = el.clientWidth > 0 ? e.offsetX / el.clientWidth : 0
+  const y = el.clientHeight > 0 ? e.offsetY / el.clientHeight : 0
+  sendInput({ type: 'mouseMove', x, y })
+}
+
+function onMouseDown(e: MouseEvent) {
+  const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'
+  sendInput({ type: 'mouseDown', button })
+}
+
+function onMouseUp(e: MouseEvent) {
+  const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'
+  sendInput({ type: 'mouseUp', button })
+}
+
+function onWheel(e: WheelEvent) {
+  e.preventDefault()
+  sendInput({ type: 'wheel', deltaY: e.deltaY })
+}
+
+function isIgnoredKey(code: string): boolean {
+  return code === 'F5' || code === 'F11' || code === 'F12'
+}
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.code && !isIgnoredKey(e.code)) {
+    e.preventDefault()
+    sendInput({ type: 'keyDown', code: e.code })
+  }
+}
+
+function onKeyUp(e: KeyboardEvent) {
+  if (e.code && !isIgnoredKey(e.code)) {
+    e.preventDefault()
+    sendInput({ type: 'keyUp', code: e.code })
+  }
+}
+
 function cleanup() {
+  if (dc) { try { dc.close() } catch {} ; dc = null }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   pendingIce = []
   if (videoRef.value) videoRef.value.srcObject = null
@@ -124,8 +178,10 @@ onMounted(loadDevices)
       <p class="hint">被控端需在面板点"允许控制本机"并生成配对码</p>
     </div>
 
-    <div v-else class="viewer">
-      <video ref="videoRef" autoplay playsinline class="video"></video>
+    <div v-else class="viewer" ref="viewerRef" tabindex="0" @keydown="onKeyDown" @keyup="onKeyUp">
+      <video ref="videoRef" autoplay playsinline class="video"
+        @mousemove="onMouseMove" @mousedown="onMouseDown" @mouseup="onMouseUp"
+        @wheel.prevent="onWheel" @contextmenu.prevent></video>
       <p v-if="status" class="status">{{ status }}</p>
     </div>
   </div>
