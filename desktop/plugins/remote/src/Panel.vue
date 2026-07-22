@@ -5,6 +5,7 @@ import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from '.
 const props = defineProps<{ data: any; execute: (a: string, args?: any) => Promise<any>; openPage: () => void; refresh: () => Promise<void> }>()
 
 const hosting = ref(false)
+const hostingEnabled = ref(false)
 const status = ref('')
 const pairCode = ref('')
 const pendingRequest = ref<{ name: string } | null>(null)
@@ -74,6 +75,7 @@ async function startHost() {
     ws = await openSignal(roomId, onSignal)
     ws.onclose = () => {
       hosting.value = false
+      hostingEnabled.value = false
       status.value = status.value || '信令断开'
       if (pc) { try { pc.close() } catch {} ; pc = null }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
@@ -84,6 +86,7 @@ async function startHost() {
     ws.onerror = () => { status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
     hosting.value = true
+    hostingEnabled.value = true
     status.value = '允许控制中（等待主控连接）'
     heartbeatTimer = setInterval(async () => {
       try {
@@ -209,6 +212,7 @@ async function stopHost() {
   }
   currentRoomId = ''
   hosting.value = false
+  hostingEnabled.value = false
   status.value = ''
   pairCode.value = ''
   await props.execute('syncHostState', { enabled: false, code: '', status: '', peerConnected: false })
@@ -275,45 +279,78 @@ function matchDisplay(src: any, displays: any[]) {
 function openManagement() {
   ;(props as any).openPage?.('remote') || (window as any).mqbox?.window?.openPage?.('remote')
 }
+
+async function toggleHost() {
+  if (hostingEnabled.value) { await startHost() } else { await stopHost() }
+}
 </script>
 
 <template>
   <div class="panel">
-    <div class="panel-hd"><span class="title">远程控制</span></div>
-    <button class="btn ghost" @click="openManagement" style="margin-bottom:6px">管理页</button>
-    <button class="btn ghost" @click="openPage" style="margin-bottom:6px">控制其他设备</button>
-    <button v-if="!hosting" class="btn" @click="startHost">允许控制本机</button>
-    <template v-else>
-      <button class="btn danger" @click="stopHost">停止控制</button>
-      <button class="btn" @click="genPair" style="margin-top:6px">生成配对码</button>
-      <div v-if="pendingRequest" class="confirm">
-        <p>{{ pendingRequest.name }} 请求控制本机</p>
-        <div class="confirm-row">
-          <button class="btn" @click="allowControl">允许</button>
-          <button class="btn danger" @click="denyControl">拒绝</button>
-        </div>
-      </div>
-      <button v-if="hasPeer" class="btn danger" @click="revokePeer" style="margin-top:6px">断开控制</button>
-    </template>
+    <div class="panel-hd">
+      <span class="title">远程控制</span>
+      <button class="panel-arrow" @click="openPage">›</button>
+    </div>
+
+    <div class="host-row">
+      <span class="host-label" :class="{ active: hosting }">允许控制本机</span>
+      <label class="switch">
+        <input type="checkbox" v-model="hostingEnabled" @change="toggleHost" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div v-if="pairCode" class="code-block">
+      <span class="code-label">配对码</span>
+      <span class="code-num">{{ pairCode }}</span>
+    </div>
+
     <p v-if="status" class="status">{{ status }}</p>
-    <p v-if="pairCode" class="code">{{ pairCode }}</p>
+
+    <div v-if="pendingRequest" class="confirm">
+      <p>{{ pendingRequest.name }} 请求控制本机</p>
+      <div class="confirm-row">
+        <button class="confirm-btn allow" @click="allowControl">允许</button>
+        <button class="confirm-btn deny" @click="denyControl">拒绝</button>
+      </div>
+    </div>
+
+    <button v-if="hasPeer" class="revoke-btn" @click="revokePeer">断开控制</button>
   </div>
 </template>
 
 <style scoped>
 .panel { background:#fff; border-radius:10px; border:1px solid #e8e8e8; padding:12px; }
-.panel-hd { margin-bottom:8px; }
-.title { font-size:13px; font-weight:600; }
-.btn { width:100%; padding:8px; border:none; border-radius:8px; background:#fce4ec; color:#e91e63; font-size:12px; cursor:pointer; }
-.btn:hover { background:#f8bbd0; }
-.btn.danger { background:#ffebee; color:#c62828; }
-.btn.danger:hover { background:#ffcdd2; }
-.btn.ghost { background:#f1f3f5; color:#495057; }
-.btn.ghost:hover { background:#e9ecef; }
-.status { font-size:11px; color:#666; margin:8px 0 0; }
-.code { font-size:20px; font-weight:700; color:#e91e63; text-align:center; margin:6px 0 0; letter-spacing:2px; }
-.confirm { display:flex; flex-direction:column; gap:8px; padding:10px; margin-top:6px; border:1px solid #e8e8e8; border-radius:8px; background:#fafafa; }
-.confirm p { margin:0; font-size:12px; color:#333; font-weight:500; }
+.panel-hd { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.title { font-size:13px; font-weight:600; color:#1e1e1e; }
+.panel-arrow { width:24px;height:24px;border:none;border-radius:6px;background:transparent;color:#ccc;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center; }
+.panel-arrow:hover { background:#f5f5f5;color:#666; }
+
+.host-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; }
+.host-label { font-size:12px; color:#868e96; }
+.host-label.active { color:#e91e63; }
+
+.switch { position:relative; display:inline-block; width:36px; height:20px; flex-shrink:0; }
+.switch input { opacity:0; width:0; height:0; }
+.slider { position:absolute; cursor:pointer; inset:0; background:#dee2e6; border-radius:10px; transition:.2s; }
+.slider::before { content:''; position:absolute; height:16px; width:16px; left:2px; bottom:2px; background:#fff; border-radius:50%; transition:.2s; }
+input:checked + .slider { background:#e91e63; }
+input:checked + .slider::before { transform:translateX(16px); }
+
+.code-block { display:flex; align-items:center; gap:6px; padding:6px 0; }
+.code-label { font-size:11px; color:#adb5bd; }
+.code-num { font-size:16px; font-weight:700; color:#e91e63; letter-spacing:1.5px; }
+
+.status { font-size:11px; color:#868e96; margin:4px 0; }
+.confirm { border:1px solid #e8e8e8; border-radius:8px; padding:10px; margin-top:6px; background:#fafafa; }
+.confirm p { margin:0 0 8px; font-size:12px; color:#333; font-weight:500; }
 .confirm-row { display:flex; gap:8px; }
-.confirm-row .btn { width:auto; flex:1; }
+.confirm-btn { flex:1; height:32px; border:none; border-radius:8px; font-size:12px; cursor:pointer; }
+.confirm-btn.allow { background:#fce4ec; color:#e91e63; }
+.confirm-btn.allow:hover { background:#f8bbd0; }
+.confirm-btn.deny { background:#f1f3f5; color:#495057; }
+.confirm-btn.deny:hover { background:#e9ecef; }
+
+.revoke-btn { width:100%; margin-top:6px; padding:6px; border:none; border-radius:8px; background:#ffebee; color:#c62828; font-size:11px; cursor:pointer; }
+.revoke-btn:hover { background:#ffcdd2; }
 </style>
