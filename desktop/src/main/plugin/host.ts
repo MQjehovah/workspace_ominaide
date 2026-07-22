@@ -51,6 +51,48 @@ export async function initPlugins() {
   startClipboardMonitoring()
 }
 
+export async function reloadNewPlugins(): Promise<string[]> {
+  const loaded = loadPlugins()
+  const started: string[] = []
+
+  for (const [id, info] of loaded) {
+    if (plugins.has(id)) continue
+
+    try {
+      const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
+      if (!existsSync(modulePath)) {
+        console.warn(`[plugin] ${id}: main entry not found at ${modulePath}, skipping`)
+        continue
+      }
+
+      const proc = await processManager.startPlugin(info)
+      registerBridgeHandlers(proc)
+
+      const ready = await proc.waitForReady(8000)
+      if (!ready) {
+        console.warn(`[plugin] ${id}: not ready, will still add panel`)
+        proc.on('stderr', (msg: string) => console.error(`[plugin:${id}]`, msg))
+      }
+
+      plugins.set(id, info)
+      const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
+      panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
+      console.log(`[plugin] hot-loaded: ${info.manifest.id} (${info.manifest.version})`)
+      started.push(id)
+    } catch (e) {
+      console.error(`[plugin] failed to hot-load ${id}:`, e)
+    }
+  }
+
+  if (started.length > 0) {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('plugins:updated')
+    })
+  }
+
+  return started
+}
+
 let lastClipboardText = ''
 function startClipboardMonitoring() {
   setInterval(async () => {

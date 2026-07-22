@@ -2,7 +2,7 @@ import axios from 'axios'
 import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream } from 'fs'
-import { getPlugins, getPanels, executeCommand, getPluginPage } from '../plugin/host'
+import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins } from '../plugin/host'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
 import * as screenshot from '../screenshot'
@@ -131,6 +131,7 @@ export function registerIpcHandlers() {
       if (existsSync(dest)) return { success: false, error: '插件 ' + pluginId + ' 已存在' }
       mkdirSync(dest, { recursive: true })
       cpSync(pluginPath, dest, { recursive: true })
+      await reloadNewPlugins()
       return { success: true, pluginId }
     } catch { return { success: false, error: '导入失败' } }
   })
@@ -154,7 +155,7 @@ export function registerIpcHandlers() {
         headers: { Authorization: 'Bearer ' + (cfg.token || '') }
       })
 
-      const pluginsDir = join(__dirname, '../../../plugins')
+      const pluginsDir = join(app.getPath('userData'), 'plugins')
       const dest = join(pluginsDir, pluginId)
       if (existsSync(dest)) return { success: false, error: '插件已存在' }
       mkdirSync(dest, { recursive: true })
@@ -177,7 +178,20 @@ export function registerIpcHandlers() {
       }
       writeFileSync(join(dest, '.installed_from'), `marketplace:${pluginId}`)
 
+      // Notify windows to reload plugins
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) win.webContents.send('plugins:updated')
+      })
+
       return { success: true, pluginId }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  })
+  ipcMain.handle('plugin:reload', async () => {
+    try {
+      const started = await reloadNewPlugins()
+      return { success: true, started }
     } catch (e) {
       return { success: false, error: String(e) }
     }

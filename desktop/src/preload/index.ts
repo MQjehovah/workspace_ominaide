@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('mqbox', {
       ipcRenderer.invoke('plugin:install-from-market', pluginId),
     getPanelData: (pluginId: string) =>
       ipcRenderer.invoke('plugin:get-panel-data', pluginId),
+    reload: () =>
+      ipcRenderer.invoke('plugin:reload'),
     onUpdated: (callback: () => void) => {
       pluginListeners.push(callback)
     },
