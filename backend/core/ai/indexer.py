@@ -14,9 +14,10 @@ async def _ensure_collection():
     collections = client.get_collections().collections
     if not any(c.name == "omnidocs" for c in collections):
         from qdrant_client.http import models
+        size = getattr(settings, 'embedding_dimensions', 1024)
         client.create_collection(
             collection_name="omnidocs",
-            vectors_config=models.VectorParams(size=1536, distance=models.Distance.COSINE),
+            vectors_config=models.VectorParams(size=size, distance=models.Distance.COSINE),
         )
     _initialized = True
 
