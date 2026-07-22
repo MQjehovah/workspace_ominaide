@@ -38,9 +38,8 @@ export default {
 
     context.registerCommand('getPanelData', async () => ({
       title: 'AI 助理',
-      summary: '就绪',
-      items: [{ title: 'Ctrl+Shift+A 快速呼出', icon: '💬' }],
-      actions: [{ label: '打开', command: 'open' }],
+      subtitle: '语音对话 · 自然语言操作',
+      description: 'Ctrl+Shift+A 快速呼出 · 语音对话 · 自然语言操作',
     }))
     context.registerCommand('getPageData', async () => ({}))
     context.registerCommand('open', async () => { context.openPage('assistant') })

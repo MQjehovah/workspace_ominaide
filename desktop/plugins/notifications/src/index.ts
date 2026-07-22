@@ -7,9 +7,7 @@ export default {
   async activate(context: any) {
     context.registerCommand('getPanelData', async () => ({
       title: '通知',
-      summary: '0',
-      items: [{ title: '暂无新通知', icon: '🔔' }],
-      actions: [{ label: '查看', command: 'open' }],
+      subtitle: '暂无新通知',
     }))
     context.registerCommand('getPageData', async () => ({}))
     context.registerCommand('open', async () => { context.openPage('notifications') })

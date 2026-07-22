@@ -13,13 +13,11 @@ export default {
       const history = context.screenshot?.getHistory() || []
       return {
         title: '截图',
-        summary: history.length,
-        statusText: `${history.length} 张截图`,
-        items: history.slice(0, 5).map((s: any) => ({
-          title: new Date(s.time).toLocaleString(),
-          subtitle: `${s.width}x${s.height}`,
-        })),
-        actions: [{ label: '截图', command: 'region' }, { label: '全屏', command: 'fullscreen' }],
+        subtitle: `${history.length} 张截图`,
+        buttons: [
+          { label: '区域截图', command: 'region' },
+          { label: '全屏截图', command: 'fullscreen' },
+        ],
       }
     })
 

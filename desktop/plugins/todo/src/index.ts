@@ -35,15 +35,14 @@ export default {
       const pending = todos.filter(t => t.status !== 'done')
       return {
         title: '待办事项',
-        summary: pending.length,
-        status: pending.length > 0 ? 'info' : 'success',
-        statusText: pending.length > 0 ? `${pending.length} 项待办` : '全部完成',
+        subtitle: pending.length > 0 ? `${pending.length} 项待办` : '全部完成',
         items: pending.slice(0, 5).map(t => ({
           title: t.text,
           subtitle: t.due_date || t.priority || '',
-          icon: t.priority === 'high' ? '❗' : t.priority === 'medium' ? '📌' : '•',
+          action: 'update',
+          actionArgs: { id: t.id, status: 'done' },
         })),
-        actions: [{ label: '新建', command: 'create' }],
+        buttons: [{ label: '新建', command: 'create' }],
       }
     })
 

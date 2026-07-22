@@ -30,11 +30,10 @@ export default {
       const st = getState()
       return {
         title: '远程控制',
-        status: st.hosting ? 'success' : 'info',
-        statusText: st.hosting ? '连接中' : '未启用',
-        summary: st.hostState?.peerConnected ? '已连接' : '待连接',
-        items: st.hostState?.code ? [{ title: '连接码: ' + st.hostState.code, icon: '🔑' }] : [],
-        actions: [{ label: st.hosting ? '停止' : '开启', command: 'syncHostState' }],
+        subtitle: st.hosting ? '连接中' : '未启用',
+        switches: [
+          { label: '开启远程', value: st.hosting, command: 'syncHostState', commandArgs: { enabled: !st.hosting } },
+        ],
       }
     })
     context.registerCommand('getPageData', async () => getState())

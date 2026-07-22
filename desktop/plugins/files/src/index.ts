@@ -14,14 +14,14 @@ export default {
       const files = result.files || []
       return {
         title: '文件管理',
-        summary: result.total || 0,
-        statusText: `${result.total || 0} 个文件`,
+        subtitle: `${result.total || 0} 个文件`,
         items: files.slice(0, 5).map((f: any) => ({
           title: f.original_name || f.name || '',
           subtitle: f.size ? `${(f.size / 1024).toFixed(1)} KB` : '',
-          icon: f.is_folder ? '📁' : '📄',
+          action: 'open',
+          actionArgs: { id: f.id, path: f.object_key },
         })),
-        actions: [{ label: '上传', command: 'upload' }],
+        buttons: [{ label: '上传', command: 'upload' }],
       }
     })
 

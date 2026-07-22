@@ -5,19 +5,19 @@ export default {
     context.registerCommand('getPanelData', async () => {
       try {
         const data = await context.api.get('/plugins/notes/tree') || []
-        const count = Array.isArray(data) ? data.length : 0
+        const notesArr = Array.isArray(data) ? data : []
         return {
           title: '笔记',
-          summary: count,
-          statusText: `${count} 篇笔记`,
-          items: (Array.isArray(data) ? data : []).slice(0, 5).map((n: any) => ({
+          subtitle: `${notesArr.length} 篇笔记`,
+          items: notesArr.slice(0, 5).map((n: any) => ({
             title: n.title || n.name || '无标题',
             subtitle: n.updated_at ? new Date(n.updated_at).toLocaleDateString() : '',
-            icon: '📝',
+            action: 'open',
+            actionArgs: { id: n.id },
           })),
-          actions: [{ label: '新建', command: 'create' }],
+          buttons: [{ label: '新建', command: 'create' }],
         }
-      } catch { return { title: '笔记', summary: 0, items: [], actions: [{ label: '新建', command: 'create' }] } }
+      } catch { return { title: '笔记', subtitle: '0 篇笔记', buttons: [{ label: '新建', command: 'create' }] } }
     })
 
     context.registerCommand('getPageData', async () => {

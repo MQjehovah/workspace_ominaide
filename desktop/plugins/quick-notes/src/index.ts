@@ -16,13 +16,14 @@ export default {
     context.registerCommand('getPanelData', async () => {
       return {
         title: '快捷笔记',
-        summary: notes.length,
+        subtitle: `${notes.length} 条笔记`,
         items: notes.slice(0, 5).map(n => ({
           title: n.content.length > 40 ? n.content.slice(0, 40) + '...' : n.content,
           subtitle: new Date(n.time).toLocaleString(),
-          icon: n.tags?.includes('important') ? '❗' : '📝',
+          action: 'view',
+          actionArgs: { id: n.id },
         })),
-        actions: [{ label: '新建', command: 'add' }],
+        buttons: [{ label: '新建', command: 'add' }],
       }
     })
 

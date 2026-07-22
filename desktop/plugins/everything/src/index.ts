@@ -38,7 +38,11 @@ function searchEverything(query: string, maxResults = 20): Promise<any[]> {
 
 export default {
   async activate(context: PluginContext) {
-    context.registerCommand('getPanelData', async () => null)
+    context.registerCommand('getPanelData', async () => ({
+      title: '全局搜索',
+      subtitle: 'Everything 文件搜索',
+      description: '直接输入关键词搜索电脑上的任何文件',
+    }))
 
     context.registerCommand('open', async (args: any) => {
       if (args?.path && context.shell) {

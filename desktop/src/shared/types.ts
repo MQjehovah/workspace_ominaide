@@ -26,13 +26,32 @@ export interface PluginPanel {
   height?: number
 }
 
+export interface PanelItem {
+  title: string
+  subtitle?: string
+  action?: string
+  actionArgs?: unknown
+}
+
+export interface PanelSwitch {
+  label: string
+  value: boolean
+  command: string
+  commandArgs?: unknown
+}
+
+export interface PanelButton {
+  label: string
+  command: string
+}
+
 export interface PanelData {
   title: string
-  summary: string | number | null
-  items?: Array<{ title: string; subtitle?: string; icon?: string }>
-  actions?: Array<{ label: string; command: string }>
-  status?: 'success' | 'warning' | 'error' | 'info'
-  statusText?: string
+  subtitle?: string
+  description?: string
+  items?: PanelItem[]
+  switches?: PanelSwitch[]
+  buttons?: PanelButton[]
 }
 
 export interface SearchProvider {

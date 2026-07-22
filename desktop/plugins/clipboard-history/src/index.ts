@@ -27,17 +27,16 @@ export default {
     pluginCtx = context
 
     context.registerCommand('getPanelData', async () => {
-      const recent = history.slice(0, 3)
+      const recent = history.slice(0, 5)
       return {
         title: '剪贴板历史',
-        summary: history.length,
-        status: history.length > 0 ? 'info' : 'info',
-        statusText: `${history.length} 条记录`,
+        subtitle: `${history.length} 条记录`,
         items: recent.map(h => ({
           title: h.content.length > 40 ? h.content.slice(0, 40) + '...' : h.content,
           subtitle: new Date(h.time).toLocaleString(),
+          action: 'copy',
+          actionArgs: { content: h.content },
         })),
-        actions: [{ label: '清除', command: 'clear' }],
       }
     })
 

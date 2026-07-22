@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import type { PluginInfo, PluginPanel, PanelData } from '../../shared/types'
+import type { PluginInfo, PluginPanel, PanelData, PanelItem } from '../../shared/types'
 
 const pluginList = ref<PluginInfo[]>([])
 const panels = ref<PluginPanel[]>([])
@@ -10,11 +10,6 @@ const showUserMenu = ref(false)
 const notifCount = ref(0)
 const notifs = ref<any[]>([])
 let notifTimer: any = null
-
-const pluginColors: Record<string, string> = {
-  screenshot: '#28A745', 'quick-notes': '#DC3545', 'clipboard-history': '#0078D4',
-  todo: '#FF9800', player: '#E91E63', calculator: '#666', files: '#2196F3', notes: '#FF9800',
-}
 
 async function loadPlugins() {
   isLoading.value = true
@@ -49,12 +44,23 @@ async function logout() {
   window.mqbox?.window.openMain()
 }
 
-async function executeAction(pluginId: string, command: string) {
+async function executeCommand(pluginId: string, command: string, args?: unknown) {
   if (command === 'openPage') {
     openPluginPage(pluginId)
     return
   }
-  await window.mqbox?.plugin.execute(pluginId, command, {})
+  await window.mqbox?.plugin.execute(pluginId, command, args || {})
+  await loadPanelData(pluginId)
+}
+
+function handleItemClick(pluginId: string, item: PanelItem) {
+  if (item.action) {
+    executeCommand(pluginId, item.action, item.actionArgs)
+  }
+}
+
+async function handleSwitch(pluginId: string, sw: any, newVal: boolean) {
+  await executeCommand(pluginId, sw.command, sw.commandArgs)
   await loadPanelData(pluginId)
 }
 
@@ -75,13 +81,10 @@ function fmt(iso: string) {
   return (d.getMonth()+1)+'/'+d.getDate()+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0')
 }
 
-function getPluginIcon(pluginId: string): string {
-  const iconMap: Record<string, string> = {
-    assistant: '💬', calculator: '🔢', 'clipboard-history': '📋', files: '📁', notes: '📝',
-    player: '🎵', 'quick-notes': '⚡', remote: '🖥️', rss: '📡', schedule: '📅',
-    screenshot: '📸', todo: '✅', notifications: '🔔',
-  }
-  return iconMap[pluginId] || '🔌'
+const defaultIcon: Record<string, string> = {
+  assistant: '💬', calculator: '🔢', 'clipboard-history': '📋', files: '📁', notes: '📝',
+  player: '🎵', 'quick-notes': '⚡', remote: '🖥️', rss: '📡', schedule: '📅',
+  screenshot: '📸', todo: '✅', notifications: '🔔', everything: '🔍',
 }
 
 onMounted(() => {
@@ -146,35 +149,66 @@ onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
       <div v-if="isLoading" class="loading-state">加载中...</div>
       <div v-else class="panels-list">
         <template v-for="panel in panels" :key="panel.id">
-          <div
-            v-if="panelDataMap[panel.pluginId]"
-            class="panel-card"
-            @click="openPluginPage(panel.pluginId)"
-          >
-            <div class="panel-header">
-              <span class="panel-icon">{{ getPluginIcon(panel.pluginId) }}</span>
-              <span class="panel-title">{{ panelDataMap[panel.pluginId].title }}</span>
-              <span
-                v-if="panelDataMap[panel.pluginId].status"
-                class="panel-status"
-                :class="panelDataMap[panel.pluginId].status"
-              >{{ panelDataMap[panel.pluginId].statusText }}</span>
+          <div v-if="panelDataMap[panel.pluginId]" class="panel-card">
+
+            <!-- Header: icon + title/subtitle + arrow -->
+            <div class="panel-hd">
+              <span class="panel-icon">{{ defaultIcon[panel.pluginId] || '🔌' }}</span>
+              <div class="panel-hd-text">
+                <span class="panel-title">{{ panelDataMap[panel.pluginId].title }}</span>
+                <span v-if="panelDataMap[panel.pluginId].subtitle" class="panel-subtitle">{{ panelDataMap[panel.pluginId].subtitle }}</span>
+              </div>
+              <button class="panel-arrow" @click.stop="openPluginPage(panel.pluginId)">›</button>
             </div>
-            <div
-              v-if="panelDataMap[panel.pluginId].summary !== null && panelDataMap[panel.pluginId].summary !== undefined"
-              class="panel-summary"
-            >{{ panelDataMap[panel.pluginId].summary }}</div>
+
+            <!-- Description text -->
+            <div v-if="panelDataMap[panel.pluginId].description" class="panel-desc">
+              {{ panelDataMap[panel.pluginId].description }}
+            </div>
+
+            <!-- Action items (two-line: title + subtitle) -->
             <div v-if="panelDataMap[panel.pluginId].items?.length" class="panel-items">
               <div
-                v-for="(item, idx) in panelDataMap[panel.pluginId].items!.slice(0, 3)"
+                v-for="(item, idx) in panelDataMap[panel.pluginId].items!"
                 :key="idx"
                 class="panel-item"
+                :class="{ clickable: !!item.action }"
+                @click="handleItemClick(panel.pluginId, item)"
               >
-                <span class="item-icon">{{ item.icon || '•' }}</span>
-                <span class="item-title">{{ item.title }}</span>
-                <span v-if="item.subtitle" class="item-subtitle">{{ item.subtitle }}</span>
+                <span class="pi-title">{{ item.title }}</span>
+                <span v-if="item.subtitle" class="pi-subtitle">{{ item.subtitle }}</span>
               </div>
             </div>
+
+            <!-- Switches -->
+            <div v-if="panelDataMap[panel.pluginId].switches?.length" class="panel-switches">
+              <div
+                v-for="(sw, idx) in panelDataMap[panel.pluginId].switches!"
+                :key="idx"
+                class="panel-switch-row"
+              >
+                <span class="ps-label">{{ sw.label }}</span>
+                <label class="switch-toggle">
+                  <input
+                    type="checkbox"
+                    :checked="sw.value"
+                    @change="handleSwitch(panel.pluginId, sw, ($event.target as HTMLInputElement).checked)"
+                  >
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Buttons -->
+            <div v-if="panelDataMap[panel.pluginId].buttons?.length" class="panel-buttons">
+              <button
+                v-for="(btn, idx) in panelDataMap[panel.pluginId].buttons!"
+                :key="idx"
+                class="panel-btn"
+                @click.stop="executeCommand(panel.pluginId, btn.command)"
+              >{{ btn.label }}</button>
+            </div>
+
           </div>
         </template>
       </div>
@@ -209,31 +243,49 @@ onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
 .menu-item:hover { background:#f5f5f5; }
 .menu-item.danger { color:#E53935; }
 .menu-item.danger svg { color:#E53935; }
-
 .panels-area { flex:1; min-height:0; overflow-y:auto; padding:8px 12px; scrollbar-width:none; }
 .panels-area::-webkit-scrollbar { display:none; }
-.panels-list { display:flex; flex-direction:column; gap:6px; }
+.panels-list { display:flex; flex-direction:column; gap:8px; }
 .loading-state { display:flex; align-items:center; justify-content:center; height:100px; color:#666; font-size:14px; }
 
-.panel-card {
-  background:#f8f9fa; border-radius:8px; padding:10px 12px; cursor:pointer;
-  transition:background 0.15s; border:1px solid transparent;
-}
-.panel-card:hover { background:#eef0f4; border-color:#e0e0e0; }
-.panel-header { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
-.panel-icon { font-size:14px; }
-.panel-title { font-size:12px; font-weight:600; color:#333; flex:1; }
-.panel-status { font-size:10px; padding:1px 6px; border-radius:6px; }
-.panel-status.success { background:#e6f7e6; color:#28A745; }
-.panel-status.warning { background:#fff3e0; color:#FF9800; }
-.panel-status.error { background:#fde8e8; color:#E53935; }
-.panel-status.info { background:#e3f2fd; color:#1976D2; }
-.panel-summary { font-size:18px; font-weight:700; color:#1a1a1a; margin:2px 0 4px; }
-.panel-items { display:flex; flex-direction:column; gap:2px; }
-.panel-item { display:flex; align-items:center; gap:4px; font-size:11px; color:#555; }
-.item-icon { width:14px; text-align:center; }
-.item-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.item-subtitle { font-size:10px; color:#909399; }
+/* Panel Card */
+.panel-card { background:#f8f9fa; border-radius:8px; overflow:hidden; }
+
+/* Header: icon + text + arrow */
+.panel-hd { display:flex; align-items:center; gap:10px; padding:10px 12px; }
+.panel-icon { width:32px; height:32px; border-radius:8px; background:#eef0f4; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+.panel-hd-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.panel-title { font-size:14px; font-weight:700; color:#1a1a1a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.panel-subtitle { font-size:11px; color:#909399; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.panel-arrow { width:24px; height:24px; border:none; border-radius:12px; background:transparent; color:#909399; font-size:18px; line-height:24px; text-align:center; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.panel-arrow:hover { background:#e0e0e0; color:#333; }
+
+/* Description */
+.panel-desc { padding:0 12px 10px; font-size:11px; color:#909399; line-height:1.5; }
+
+/* Action Items (two-line) */
+.panel-items { padding:0 0 4px; border-top:1px solid #e8e8e8; }
+.panel-item { display:flex; flex-direction:column; gap:1px; padding:7px 12px; }
+.panel-item.clickable { cursor:pointer; }
+.panel-item.clickable:hover { background:#e3e5e8; }
+.pi-title { font-size:12px; font-weight:500; color:#333; }
+.pi-subtitle { font-size:10px; color:#909399; }
+
+/* Switches */
+.panel-switches { border-top:1px solid #e8e8e8; padding:4px 12px; }
+.panel-switch-row { display:flex; align-items:center; justify-content:space-between; padding:6px 0; }
+.ps-label { font-size:12px; color:#333; }
+.switch-toggle { position:relative; width:36px; height:20px; flex-shrink:0; }
+.switch-toggle input { opacity:0; width:0; height:0; }
+.switch-slider { position:absolute; inset:0; background:#ccc; border-radius:10px; cursor:pointer; transition:background .2s; }
+.switch-slider::before { content:''; position:absolute; left:2px; top:2px; width:16px; height:16px; border-radius:8px; background:#fff; transition:transform .2s; }
+.switch-toggle input:checked + .switch-slider { background:#0078D4; }
+.switch-toggle input:checked + .switch-slider::before { transform:translateX(16px); }
+
+/* Buttons */
+.panel-buttons { display:flex; gap:6px; padding:8px 12px; border-top:1px solid #e8e8e8; }
+.panel-btn { flex:1; padding:6px 0; font-size:12px; border-radius:6px; border:1px solid #d0d0d0; background:#fff; color:#333; cursor:pointer; text-align:center; }
+.panel-btn:hover { background:#ebebeb; color:#1a1a1a; }
 
 .resize-handle { position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:se-resize; -webkit-app-region:no-drag; }
 </style>

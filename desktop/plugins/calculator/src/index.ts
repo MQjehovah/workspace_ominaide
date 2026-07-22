@@ -8,9 +8,7 @@ export default {
   activate(context: any) {
     context.registerCommand('getPanelData', async () => ({
       title: '计算器',
-      summary: '0',
-      items: [{ title: '点击打开计算器', icon: '🔢' }],
-      actions: [{ label: '打开', command: 'open' }],
+      subtitle: '基础计算 · 科学计算',
     }))
     context.registerCommand('getPageData', async () => ({}))
 

@@ -140,15 +140,17 @@ export class PluginChildProcess extends EventEmitter {
       const trimmed = line.trim()
       if (!trimmed) continue
       try {
-      const msg = JSON.parse(trimmed)
-      if ((msg as any).id === 'ready') {
-        this._readyResolve?.()
-        this.emit('ready')
-      } else if (msg.type === 'result' || msg.type === 'error') {
-        this.handleResponse(msg as RpcResponse)
-      } else if (msg.type === 'parent-rpc') {
-        this.handleParentRpc(msg as any)
-      }
+        const msg = JSON.parse(trimmed)
+        if ((msg as any).id === 'ready') {
+          this._readyResolve?.()
+          this.emit('ready')
+        } else if (msg.type === 'result' || msg.type === 'error') {
+          this.handleResponse(msg as RpcResponse)
+        } else if (msg.type === 'parent-rpc') {
+          this.handleParentRpc(msg as any)
+        } else {
+          console.log(`[plugin:${this.pluginId}] unknown msg:`, JSON.stringify(msg).slice(0, 100))
+        }
       } catch (e) {
         console.error(`[plugin:${this.pluginId}] invalid message from child:`, (e as Error).message)
       }

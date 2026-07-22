@@ -77,11 +77,24 @@ export function registerIpcHandlers() {
       if (result && typeof result === 'object' && !result.error) {
         return {
           title: result.title || pluginId,
-          summary: result.summary ?? null,
-          items: result.items || [],
-          actions: result.actions || [],
-          status: result.status || null,
-          statusText: result.statusText || null,
+          subtitle: result.subtitle || undefined,
+          description: result.description || undefined,
+          items: (result.items || []).map((i: any) => ({
+            title: i.title || '',
+            subtitle: i.subtitle || undefined,
+            action: i.action || undefined,
+            actionArgs: i.actionArgs || undefined,
+          })),
+          switches: (result.switches || []).map((s: any) => ({
+            label: s.label || '',
+            value: !!s.value,
+            command: s.command || '',
+            commandArgs: s.commandArgs || undefined,
+          })),
+          buttons: (result.buttons || []).map((b: any) => ({
+            label: b.label || '',
+            command: b.command || '',
+          })),
         }
       }
       if (result?.error) {
@@ -90,7 +103,7 @@ export function registerIpcHandlers() {
     } catch (e: any) {
       console.warn(`[panel-data] ${pluginId}:`, e?.message)
     }
-    return { title: pluginId, summary: null, items: [], actions: [], status: null, statusText: null }
+    return { title: pluginId, subtitle: pluginId }
   })
   ipcMain.handle('plugin:set-enabled', async (_, pluginId: string, enabled: boolean) => {
     const cfg = await getConfig()

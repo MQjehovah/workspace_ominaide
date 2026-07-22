@@ -1,5 +1,5 @@
 import { execSync } from 'child_process'
-import { readdirSync, existsSync, readFileSync } from 'fs'
+import { readdirSync, existsSync, readFileSync, rmSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -17,11 +17,14 @@ for (const entry of entries) {
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
   if (!pkg.scripts?.build && !existsSync(join(pluginDir, 'vite.config.ts'))) continue
 
-  if (!existsSync(join(pluginDir, 'dist', 'index.js'))) {
-    console.log(`[BUILD] ${entry.name}`)
-    execSync('npm install', { cwd: pluginDir, stdio: 'inherit' })
-    execSync('npm run build', { cwd: pluginDir, stdio: 'inherit' })
-  } else {
-    console.log(`[SKIP]  ${entry.name} (already built)`)
+  // Force rebuild: delete old dist
+  const distDir = join(pluginDir, 'dist')
+  if (existsSync(distDir)) rmSync(distDir, { recursive: true })
+
+  console.log(`[BUILD] ${entry.name}`)
+  const nodeModules = join(pluginDir, 'node_modules')
+  if (!existsSync(nodeModules)) {
+    execSync('npm install', { cwd: pluginDir, stdio: 'inherit', timeout: 120000 })
   }
+  execSync('npm run build', { cwd: pluginDir, stdio: 'inherit', timeout: 120000 })
 }
