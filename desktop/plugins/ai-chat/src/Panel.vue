@@ -16,15 +16,17 @@ async function send() {
 </script>
 <template>
   <div class="panel">
-    <div class="panel-hd"><span class="title">AI 对话</span></div>
+    <div class="panel-hd"><span class="title">AI 对话</span><button class="panel-arrow" @click="openPage">›</button></div>
     <div v-if="reply" class="reply">{{ reply.slice(0, 200) }}{{ reply.length > 200 ? '...' : '' }}</div>
     <div class="row"><input v-model="input" class="input" placeholder="问 AI…" @keyup.enter="send" /><button class="btn" @click="send" :disabled="loading">{{ loading ? '…' : '>' }}</button></div>
   </div>
 </template>
 <style scoped>
 .panel { background:#fff; border-radius:10px; border:1px solid #e8e8e8; padding:12px; }
-.panel-hd { margin-bottom:8px; }
+.panel-hd { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
 .title { font-size:13px; font-weight:600; }
+.panel-arrow { width:24px;height:24px;border:none;border-radius:6px;background:transparent;color:#ccc;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center; }
+.panel-arrow:hover { background:#f5f5f5;color:#666; }
 .reply { font-size:11px; color:#495057; margin-bottom:8px; padding:8px; background:#f8f9fa; border-radius:6px; line-height:1.4; max-height:100px; overflow-y:auto; }
 .row { display:flex; gap:6px; }
 .input { flex:1; height:30px; padding:0 8px; border:1px solid #dee2e6; border-radius:6px; font-size:12px; outline:none; }
