@@ -18,8 +18,22 @@ export function openSignal(roomId: string, onMsg: (m: any) => void): Promise<Web
   })
 }
 
-export function newPeer(): RTCPeerConnection {
-  return new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
+let cachedIce: any[] | null = null
+
+export async function getIceServers(): Promise<any[]> {
+  if (cachedIce) return cachedIce
+  try {
+    const { serverUrl } = await getServer()
+    const r = await fetch(`${serverUrl}/api/remote/ice`).then(r => r.json())
+    cachedIce = (r && r.iceServers) || [{ urls: 'stun:stun.l.google.com:19302' }]
+  } catch {
+    cachedIce = [{ urls: 'stun:stun.l.google.com:19302' }]
+  }
+  return cachedIce!
+}
+
+export function newPeer(iceServers?: any[]): RTCPeerConnection {
+  return new RTCPeerConnection({ iceServers: iceServers || [{ urls: 'stun:stun.l.google.com:19302' }] })
 }
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {

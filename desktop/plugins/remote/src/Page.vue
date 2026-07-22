@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { openSignal, newPeer, getServer, getAuthHeaders } from './webrtc'
+import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from './webrtc'
 
 defineProps<{ data: any; execute: (a: string, args?: any) => Promise<any>; refresh?: () => void; close: () => void }>()
 
@@ -40,7 +40,7 @@ async function connect(roomId: string) {
     ws.onclose = () => { if (!connectionEnded) status.value = '信令断开'; cleanup() }
     ws.onerror = () => { status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
-    pc = newPeer()
+    pc = newPeer(await getIceServers())
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {

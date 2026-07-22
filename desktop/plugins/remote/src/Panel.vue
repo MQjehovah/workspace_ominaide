@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { openSignal, newPeer, getServer, getAuthHeaders } from './webrtc'
+import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from './webrtc'
 
 const props = defineProps<{ data: any; execute: (a: string, args?: any) => Promise<any>; openPage: () => void; refresh: () => Promise<void> }>()
 
@@ -19,6 +19,7 @@ let lastMoveTs = 0
 let pendingMove: any = null
 let moveScheduled = false
 let trailingTimer: any = null
+let heartbeatTimer: any = null
 
 async function getScreen(): Promise<{ width: number; height: number }> {
   if (cachedScreen) return cachedScreen
@@ -80,6 +81,7 @@ async function startHost() {
       status.value = status.value || '信令断开'
       if (pc) { try { pc.close() } catch {} ; pc = null }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
+      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
       hasPeer.value = false
       pendingRequest.value = null
     }
@@ -87,6 +89,13 @@ async function startHost() {
     ws.send(JSON.stringify({ type: 'join' }))
     hosting.value = true
     status.value = '允许控制中（等待主控连接）'
+    heartbeatTimer = setInterval(async () => {
+      try {
+        const { serverUrl } = await getServer()
+        const headers = await getAuthHeaders()
+        await fetch(`${serverUrl}/api/remote/heartbeat`, { method: 'POST', headers, body: JSON.stringify({ device_id: deviceId }) })
+      } catch {}
+    }, 30000)
   } catch (e: any) {
     status.value = '失败: ' + (e?.message || e)
   }
@@ -112,7 +121,7 @@ async function onSignal(m: any) {
         audio: false,
         video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sources[0].id, maxFrameRate: 30 } } as any,
       })
-      pc = newPeer()
+      pc = newPeer(await getIceServers())
       pc.ondatachannel = (e) => {
         const dc = e.channel
         dc.onmessage = async (msg) => {
@@ -177,6 +186,7 @@ async function stopHost() {
   if (pc) { pc.close(); pc = null }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   if (ws) { ws.close(); ws = null }
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
   if (currentRoomId) {
     try {
       const { serverUrl } = await getServer()

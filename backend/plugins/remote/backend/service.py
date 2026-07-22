@@ -15,9 +15,15 @@ def unregister_device(device_id: str):
     _online.pop(device_id, None)
 
 
+def heartbeat(device_id: str):
+    if device_id in _online:
+        _online[device_id]['ts'] = time.time()
+
+
 def list_devices(user_id: int):
+    now = time.time()
     return [{"device_id": d, "name": v["name"], "room_id": v["room_id"]}
-            for d, v in _online.items() if v["user_id"] == user_id]
+            for d, v in _online.items() if v["user_id"] == user_id and now - v["ts"] < 90]
 
 
 def clear_user_devices(user_id: int):

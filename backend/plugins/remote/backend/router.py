@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from core.auth.dependencies import get_current_user
 from core.auth.jwt import create_access_token, decode_access_token
+from core.config.settings import settings
 from plugins.remote.backend import service as remote_service
 
 router = APIRouter(prefix="/api/remote", tags=["remote"])
@@ -20,6 +21,10 @@ class OnlineRequest(BaseModel):
 class PairRequest(BaseModel):
     device_id: str
     room_id: str
+
+
+class HeartbeatRequest(BaseModel):
+    device_id: str
 
 
 VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'><title>OmniAide Remote</title><style>body{margin:0;background:#000;overflow:hidden;touch-action:none}video{width:100vw;height:100vh;object-fit:contain}#bar{position:fixed;top:8px;left:8px;color:#fff;font:13px sans-serif;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px;z-index:10}</style></head><body><div id='bar'>连接中…</div><video id='v' autoplay playsinline></video><script>
@@ -78,6 +83,21 @@ async def offline(user: dict = Depends(get_current_user)):
 @router.get("/devices")
 async def devices(user: dict = Depends(get_current_user)):
     return {"devices": remote_service.list_devices(user["id"])}
+
+
+@router.get("/ice")
+async def ice_config():
+    import json
+    try:
+        return {"iceServers": json.loads(settings.webrtc_ice_servers)}
+    except Exception:
+        return {"iceServers": [{"urls": "stun:stun.l.google.com:19302"}]}
+
+
+@router.post("/heartbeat")
+async def heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
+    remote_service.heartbeat(req.device_id)
+    return {"ok": True}
 
 
 @router.post("/pair")
