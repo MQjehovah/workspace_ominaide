@@ -52,12 +52,12 @@ function wsSend(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
 fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('code'))).then(d=>{
   pc=new RTCPeerConnection({iceServers:d.iceServers||[{urls:'stun:stun.l.google.com:19302'}]});
   pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
-  pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate.toJSON()});};
+  pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate});};
   const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote/'+d.room_id+'?token='+encodeURIComponent(d.guest_token);
   ws=new WebSocket(wsUrl);
   ws.onopen=()=>{bar.textContent='等待被控端授权…';wsSend({type:'requestControl',name:navigator.userAgent.includes('Mobile')?'手机':'浏览器'});};
   ws.onmessage=async ev=>{const m=JSON.parse(ev.data);
-    if(m.type==='controlAllowed'){dc=pc.createDataChannel('input');const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer.toJSON()});bar.textContent='等待画面…';}
+    if(m.type==='controlAllowed'){dc=pc.createDataChannel('input');const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer});bar.textContent='等待画面…';}
     else if(m.type==='controlDenied'){ended=true;bar.textContent=m.reason==='busy'?'被控端忙':'被控端拒绝';}
     else if(m.type==='revoked'){ended=true;bar.textContent='被控端断开了控制';}
     else if(m.type==='answer'){await pc.setRemoteDescription({type:'answer',sdp:m.payload.sdp});}

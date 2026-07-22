@@ -136,8 +136,8 @@ async function onSignal(m: any) {
       pendingIce = []
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
-      ws!.send(JSON.stringify({ type: 'answer', payload: answer.toJSON() }))
-      pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate.toJSON() })) }
+      ws!.send(JSON.stringify({ type: 'answer', payload: answer }))
+      pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
       pc.oniceconnectionstatechange = () => {
         if (pc && (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed')) {
           if (pc) { try { pc.close() } catch {} ; pc = null }

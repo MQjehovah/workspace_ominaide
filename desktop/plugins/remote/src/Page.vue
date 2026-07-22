@@ -60,7 +60,7 @@ async function startOffering() {
     connected.value = true
     setTimeout(() => viewerRef.value?.focus(), 100)
   }
-  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate.toJSON() })) }
+  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
@@ -70,7 +70,7 @@ async function startOffering() {
   }
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
-  ws.send(JSON.stringify({ type: 'offer', payload: offer.toJSON() }))
+  ws.send(JSON.stringify({ type: 'offer', payload: offer }))
   status.value = '等待画面…'
 }
 
