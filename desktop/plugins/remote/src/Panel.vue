@@ -81,13 +81,18 @@ async function startHost() {
     ws = await openSignal(roomId, onSignal)
     ws.onclose = () => {
       hosting.value = false
-      hostingEnabled.value = false
       status.value = status.value || '信令断开'
       if (pc) { try { pc.close() } catch {} ; pc = null }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
       if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
       hasPeer.value = false
       pendingRequest.value = null
+      // Auto-retry if user still wants hosting
+      if (hostingEnabled.value) {
+        setTimeout(async () => {
+          if (!hosting.value && hostingEnabled.value) await startHost()
+        }, 3000)
+      }
     }
     ws.onerror = () => { status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
