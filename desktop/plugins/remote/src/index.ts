@@ -3,7 +3,7 @@ import Page from './Page.vue'
 
 let pluginCtx: any = null
 let deviceId: string | null = null
-let hostState = { enabled: false, code: '', status: '', peerConnected: false, autoAccept: false }
+let hostState = { enabled: false, code: '', status: '', peerConnected: false, autoAccept: false, pendingOffer: null as any, pendingIce: [] as any[] }
 let hostWs: any = null
 let codeTimer: any = null
 let heartbeatTimer: any = null
@@ -21,7 +21,7 @@ async function getDeviceId(context: any): Promise<string> {
 }
 
 async function persistState() {
-  try { await pluginCtx?.storage?.set('hostState', hostState) } catch {}
+  try { await pluginCtx?.storage?.set('hostState', { enabled: hostState.enabled, code: hostState.code, status: hostState.status, autoAccept: hostState.autoAccept }) } catch {}
 }
 
 function getState() {
@@ -34,7 +34,6 @@ export default {
   async activate(context: any) {
     pluginCtx = context
     await getDeviceId(context)
-    // Load persisted state
     const saved = await context.storage?.get('hostState')
     if (saved) {
       hostState.enabled = saved.enabled || false
@@ -42,11 +41,10 @@ export default {
       hostState.status = saved.enabled ? '上次在线，点击重新开启' : ''
       hostState.peerConnected = false
     }
-    // Load persisted autoAccept (separate key for backwards compat)
     hostState.autoAccept = !!(await context.storage?.get('autoAccept'))
     if (saved?.autoAccept != null) hostState.autoAccept = saved.autoAccept
 
-    // --- Host Management ---
+    // --- WebSocket signaling (child process owns WS) ---
 
     async function connectWs(id: string, roomId: string) {
       const serverUrl = await getServerUrl()
@@ -68,12 +66,11 @@ export default {
         })
 
         ws.on('message', (data: Buffer) => {
-          try { handleSignal(JSON.parse(data.toString())) } catch {}
+          try { handleSignal(JSON.parse(data.toString()), ws) } catch {}
         })
 
         ws.on('close', () => {
           hostWs = null
-          // Auto-reconnect if host was intentionally enabled (not stopped by user)
           if (hostState.enabled) {
             hostState.status = '信令断开，5秒后重连…'
             persistState()
@@ -94,37 +91,53 @@ export default {
       }
     }
 
-    context.registerCommand('startHost', async () => {
-      if (hostWs) {
-        // WS already exists, update online + code
-        try {
-          const pairData = await context.api.post('/remote/pair', { device_id: deviceId!, room_id: `u_${deviceId!}` })
-          if (pairData?.code) hostState.code = pairData.code
-        } catch {}
-        return getState()
+    function handleSignal(msg: any, ws: any) {
+      if (msg.type === 'requestControl') {
+        if (hostState.autoAccept) {
+          ws.send(JSON.stringify({ type: 'controlAllowed' }))
+          hostState.status = '已自动授权'
+        } else {
+          ws.send(JSON.stringify({ type: 'controlDenied' }))
+          hostState.status = '已拒绝（未开启自动接受）'
+        }
+      } else if (msg.type === 'offer') {
+        // Store offer for Panel.vue (renderer) to handle WebRTC
+        hostState.pendingOffer = msg.payload
+        hostState.pendingIce = []
+        hostState.status = '正在建立连接…'
+      } else if (msg.type === 'ice') {
+        if (hostState.pendingOffer) {
+          hostState.pendingIce.push(msg.payload)
+        }
+      } else if (msg.type === 'revoked') {
+        hostState.status = '连接已断开'
+        hostState.peerConnected = false
+      } else if (msg.type === 'error') {
+        hostState.status = '错误: ' + (msg.message || '未知')
       }
+    }
+
+    // --- Host Management ---
+
+    context.registerCommand('startHost', async () => {
+      if (hostState.enabled) return getState()
       try {
         hostState.status = '启动中…'
         const id = deviceId!
         const roomId = `u_${id}`
         const hostname = require('os').hostname()
 
-        // Register online
         await context.api.post('/remote/online', { device_id: id, name: hostname, room_id: roomId })
 
-        // Get initial pair code
         const pairData = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
         hostState.code = pairData?.code || ''
 
-        // Mark enabled immediately (not waiting for WS open)
         hostState.enabled = true
         hostState.status = '允许控制中（等待主控连接）'
         await persistState()
 
-        // Connect WS
         await connectWs(id, roomId)
 
-        // Refresh code every 4 min
         clearInterval(codeTimer)
         codeTimer = setInterval(async () => {
           try {
@@ -133,7 +146,6 @@ export default {
           } catch {}
         }, 240000)
 
-        // Heartbeat every 30s (backend stale timeout is 90s)
         clearInterval(heartbeatTimer)
         heartbeatTimer = setInterval(async () => {
           try { await context.api.post('/remote/heartbeat', { device_id: id }) } catch {}
@@ -152,32 +164,27 @@ export default {
       hostWs = null
       clearInterval(codeTimer)
       clearInterval(heartbeatTimer)
+      hostState.pendingOffer = null
+      hostState.pendingIce = []
       Object.assign(hostState, { enabled: false, code: '', status: '', peerConnected: false })
       await persistState()
       return getState()
     })
 
-    function handleSignal(msg: any) {
-      if (msg.type === 'requestControl') {
-        if (hostState.autoAccept) {
-          hostWs?.send(JSON.stringify({ type: 'controlAllowed' }))
-          hostState.status = '已自动授权'
-        } else {
-          hostWs?.send(JSON.stringify({ type: 'controlDenied' }))
-          hostState.status = '已拒绝（未开启自动接受）'
-        }
-      } else if (msg.type === 'offer') {
-        hostState.status = '正在建立连接…'
-      } else if (msg.type === 'answer') {
-        hostState.status = '连接已建立'
-        hostState.peerConnected = true
-      } else if (msg.type === 'revoked') {
-        hostState.status = '连接已断开'
-        hostState.peerConnected = false
-      } else if (msg.type === 'error') {
-        hostState.status = '错误: ' + (msg.message || '未知')
+    // Renderer calls this after handling WebRTC offer
+    context.registerCommand('sendSignal', async (args: any) => {
+      if (hostWs && args) {
+        try { hostWs.send(JSON.stringify(args)) } catch {}
       }
-    }
+      return getState()
+    })
+
+    // Renderer calls this to clear pending offer after handling
+    context.registerCommand('clearPendingOffer', async () => {
+      hostState.pendingOffer = null
+      hostState.pendingIce = []
+      return getState()
+    })
 
     // --- State & Data Commands ---
 
@@ -207,7 +214,11 @@ export default {
     context.registerCommand('getState', async () => getState())
 
     context.registerCommand('syncHostState', async (args: any) => {
-      if (args) Object.assign(hostState, args)
+      if (args) {
+        // Don't overwrite pendingOffer from renderer
+        const { pendingOffer, pendingIce, ...rest } = args
+        Object.assign(hostState, rest)
+      }
       await persistState()
       return getState()
     })
@@ -232,6 +243,7 @@ export default {
     hostWs = null
     clearInterval(codeTimer)
     clearInterval(heartbeatTimer)
+    persistState()
   },
 }
 
