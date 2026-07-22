@@ -87,7 +87,7 @@ async def toggle_plugin(db: AsyncSession, name: str) -> PluginRegistry:
 
 
 def _register_plugin_tools(manifest: dict, plugin_name: str):
-    from core.mcp.tools.plugin_tools import register_plugin_tools_from_manifest
+    from core.ai.mcp.tools.plugin_tools import register_plugin_tools_from_manifest
     register_plugin_tools_from_manifest(manifest, plugin_name)
 
 

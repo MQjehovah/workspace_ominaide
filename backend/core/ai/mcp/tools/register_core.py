@@ -1,10 +1,10 @@
 """Register all core MCP tools at startup."""
 
-from core.mcp.registry import tool_registry
-from core.mcp.core import MCPTool
-from core.mcp.tools.files import search_files, list_files, get_file_info, get_file_download
-from core.mcp.tools.workspace_tools import list_workspaces_tool
-from core.mcp.tools.context_tool import get_system_context
+from core.ai.mcp.registry import tool_registry
+from core.ai.mcp.core import MCPTool
+from core.ai.mcp.tools.files import search_files, list_files, get_file_info, get_file_download
+from core.ai.mcp.tools.workspace_tools import list_workspaces_tool
+from core.ai.mcp.tools.context_tool import get_system_context
 
 
 def register_core_tools():

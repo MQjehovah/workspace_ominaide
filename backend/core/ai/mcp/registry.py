@@ -1,5 +1,5 @@
 from typing import Callable, Awaitable
-from core.mcp.core import MCPTool, MCPCallRequest, MCPCallResponse, MCPContent
+from core.ai.mcp.core import MCPTool, MCPCallRequest, MCPCallResponse, MCPContent
 
 ToolHandler = Callable[[int, dict], Awaitable[MCPCallResponse]]
 

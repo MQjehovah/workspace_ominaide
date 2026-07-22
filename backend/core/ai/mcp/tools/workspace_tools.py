@@ -1,6 +1,6 @@
 import json
-from core.mcp.core import MCPCallResponse, MCPContent
-from core.mcp.registry import tool_registry, MCPTool
+from core.ai.mcp.core import MCPCallResponse, MCPContent
+from core.ai.mcp.registry import tool_registry, MCPTool
 from plugins.workspaces.backend.service import get_workspaces
 
 

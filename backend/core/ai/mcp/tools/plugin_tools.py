@@ -1,8 +1,8 @@
 """Utilities for plugins to register MCP tools."""
 
 from collections.abc import Callable
-from core.mcp.registry import tool_registry
-from core.mcp.core import MCPTool
+from core.ai.mcp.registry import tool_registry
+from core.ai.mcp.core import MCPTool
 
 _plugin_handlers: dict[str, Callable] = {}
 

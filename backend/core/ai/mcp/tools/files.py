@@ -1,6 +1,6 @@
 import json
-from core.mcp.core import MCPCallResponse, MCPContent, MCPResource
-from core.mcp.registry import tool_registry, MCPTool
+from core.ai.mcp.core import MCPCallResponse, MCPContent, MCPResource
+from core.ai.mcp.registry import tool_registry, MCPTool
 from plugins.files.backend.service import get_files, get_file as get_file_record, get_download_url
 from plugins.files.backend.schemas import FileQueryParams
 

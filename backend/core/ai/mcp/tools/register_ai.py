@@ -1,6 +1,6 @@
 """Register MCP tools for schedule, notifications, RSS plugins."""
-from core.mcp.registry import tool_registry
-from core.mcp.core import MCPTool
+from core.ai.mcp.registry import tool_registry
+from core.ai.mcp.core import MCPTool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import async_session

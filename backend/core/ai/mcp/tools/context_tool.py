@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, timezone
-from core.mcp.core import MCPCallResponse, MCPContent
+from core.ai.mcp.core import MCPCallResponse, MCPContent
 
 
 async def get_system_context(user_id: int, args: dict) -> MCPCallResponse:

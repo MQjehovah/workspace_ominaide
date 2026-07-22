@@ -2,7 +2,7 @@
 import json
 from openai import AsyncOpenAI
 from core.config.settings import settings
-from core.mcp.registry import tool_registry
+from core.ai.mcp.registry import tool_registry
 
 
 def _to_openai_tools(mcp_tools):
@@ -25,7 +25,7 @@ async def run_agent(
     tools_filter: list[str] | None = None,
     max_turns: int = 8,
 ) -> str:
-    """Agent loop: LLM calls MCP tools → execute → feed back → final response."""
+    """Agent loop: LLM calls MCP tools -> execute -> feed back -> final response."""
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
     all_tools = tool_registry.get_tools()
     if tools_filter:

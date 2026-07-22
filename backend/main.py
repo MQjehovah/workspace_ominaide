@@ -8,8 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 async def lifespan(app: FastAPI):
     from core.minio.client import ensure_buckets
     from core.plugin.registry import discover_plugins
-    from core.mcp.tools.register_core import register_core_tools
-    from core.mcp.tools.register_ai import register_ai_tools
+    from core.ai.mcp.tools.register_core import register_core_tools
+    from core.ai.mcp.tools.register_ai import register_ai_tools
     from core.events.bus import worker_loop
     from core.events.workers import register_workers
 
@@ -52,7 +52,7 @@ app.include_router(workspace_router)
 from plugins.sync.backend.router import router as sync_router
 app.include_router(sync_router)
 
-from core.mcp.router import router as mcp_router
+from core.ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)
 
 from core.events.router import router as activities_router
