@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",
+    "@nut-tree-fork/nut-js": "^4.2.6",
     "@tiptap/extension-image": "^3.28.0",
     "@tiptap/extension-link": "^3.28.0",
     "@tiptap/extension-placeholder": "^3.28.0",
