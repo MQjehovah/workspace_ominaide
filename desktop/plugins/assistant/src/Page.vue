@@ -15,11 +15,16 @@ function loadConfig() {
   try { const raw = localStorage.getItem('ai_chat_config'); if (raw) { const c = JSON.parse(raw); config.value = c; cfgMode.value = c.mode; cfgKey.value = c.apiKey; cfgUrl.value = c.baseUrl; cfgModel.value = c.model } } catch {}
 }
 
+async function serverUrl(): Promise<string> {
+  try { return await (window as any).mqbox?.config?.get('serverUrl') || 'http://localhost:8000' } catch { return 'http://localhost:8000' }
+}
+
 async function sendMessage(message: string, history: {role:string;content:string}[]): Promise<string> {
   const cfg = config.value
   if (cfg.mode === 'backend') {
-    const tk = localStorage.getItem('token') || ''
-    const r = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer '+tk}, body:JSON.stringify({message, history}) }).then(r=>{if(!r.ok)throw new Error(r.statusText);return r.json()})
+    const tk = (await (window as any).mqbox?.config?.get('token')) || localStorage.getItem('token') || ''
+    const su = await serverUrl()
+    const r = await fetch(`${su}/api/chat`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer '+tk}, body:JSON.stringify({message, history}) }).then(r=>{if(!r.ok)throw new Error(r.statusText);return r.json()})
     return r.reply || '(no response)'
   } else {
     const messages = [...history, {role:'user',content:message}]
