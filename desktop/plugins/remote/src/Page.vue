@@ -75,6 +75,7 @@ async function startOffering() {
 }
 
 async function onSignal(m: any) {
+  console.log('[remote viewer] signal:', m.type)
   if (m.type === 'controlAllowed') {
     await startOffering()
   } else if (m.type === 'controlDenied') {
