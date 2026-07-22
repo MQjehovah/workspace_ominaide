@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse, AdminUserResponse, ToggleActiveRequest
+from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse, AdminUserResponse, ToggleActiveRequest, UpdateUserRequest
 from core.auth.domain.service import register, login, refresh_access_token
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
@@ -79,13 +79,6 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(u)
     await db.flush()
     return {"message": "User deleted"}
-
-
-from pydantic import BaseModel
-
-class UpdateUserRequest(BaseModel):
-    username: str | None = None
-    email: str | None = None
 
 
 @router.put("/users/{user_id}")

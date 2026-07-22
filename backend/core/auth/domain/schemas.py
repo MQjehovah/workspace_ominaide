@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, EmailStr
 
 
@@ -36,10 +37,15 @@ class AdminUserResponse(BaseModel):
     username: str
     email: str
     is_active: bool | None = None
-    created_at: str | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
 
 class ToggleActiveRequest(BaseModel):
     is_active: bool
+
+
+class UpdateUserRequest(BaseModel):
+    username: str | None = None
+    email: str | None = None
