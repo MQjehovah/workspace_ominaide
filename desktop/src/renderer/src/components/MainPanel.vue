@@ -134,11 +134,6 @@ onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <button class="settings-btn" @click="openSearch">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
-      </button>
 
       <!-- User Menu -->
       <div v-if="showUserMenu" class="user-menu" @click.stop>
