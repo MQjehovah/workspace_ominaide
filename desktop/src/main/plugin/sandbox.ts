@@ -166,6 +166,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     registerSearchProvider: (provider: any) => {
       searchProviders.push(provider)
     },
+    signal: (_method: string, ..._args: any[]) => Promise.resolve(),
   }
 
   return context

@@ -143,6 +143,7 @@ export interface PluginContext {
   openPage: (pluginId: string, query?: string) => void
   registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => void
   registerSearchProvider: (provider: SearchProvider) => void
+  signal: (method: string, ...args: any[]) => Promise<unknown>
 }
 
 export interface PluginModule {

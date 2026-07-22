@@ -142,6 +142,21 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     }))
   )
 
+  proc.registerBridgeHandler('remote:open-connection', async ([roomId]) => {
+    const preloadPath = join(__dirname, '../preload/index.js')
+    const display = screen.getPrimaryDisplay().workArea
+    const win = new BrowserWindow({
+      width: 280, height: 120, show: false, frame: false, resizable: false,
+      alwaysOnTop: true, skipTaskbar: true,
+      x: display.width - 290, y: display.height - 130,
+      webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
+    })
+    const url = `plugin-app://remote/index.html?mode=webrtc-accept&room=${roomId}`
+    win.loadURL(url)
+    win.once('ready-to-show', () => win.show())
+    win.on('closed', () => win.destroy())
+  })
+
   proc.registerBridgeHandler('openPage', async ([pluginId, query]) => {
     const preloadPath = join(__dirname, '../preload/index.js')
     const win = new BrowserWindow({

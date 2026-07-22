@@ -3,7 +3,7 @@ import Page from './Page.vue'
 
 let pluginCtx: any = null
 let deviceId: string | null = null
-let hostState = { enabled: false, code: '', status: '', peerConnected: false, autoAccept: false, pendingOffer: null as any, pendingIce: [] as any[] }
+let hostState = { enabled: false, code: '', status: '', peerConnected: false, autoAccept: false }
 let hostWs: any = null
 let codeTimer: any = null
 let heartbeatTimer: any = null
@@ -58,38 +58,62 @@ export default {
         const wsUrl = `${serverUrl.replace(/^http/, 'ws')}/ws/remote/${roomId}?token=${encodeURIComponent(token)}`
         const ws = new WebSocket(wsUrl)
 
-        ws.on('open', () => {
-          ws.send(JSON.stringify({ type: 'join' }))
-          if (!hostState.enabled) hostState.enabled = true
-          hostState.status = '已在线'
-          persistState()
-        })
+        const result = await new Promise<boolean>((resolve) => {
+          const timeout = setTimeout(() => {
+            console.error('[remote] connectWs timeout after 10s')
+            ws.close()
+            resolve(false)
+          }, 10000)
 
-        ws.on('message', (data: Buffer) => {
-          try { handleSignal(JSON.parse(data.toString()), ws) } catch {}
-        })
-
-        ws.on('close', () => {
-          hostWs = null
-          if (hostState.enabled) {
-            hostState.status = '信令断开，5秒后重连…'
+          ws.on('open', () => {
+            ws.send(JSON.stringify({ type: 'join' }))
+            if (!hostState.enabled) hostState.enabled = true
+            hostState.status = '已在线'
             persistState()
-            clearTimeout(reconnectTimer)
-            reconnectTimer = setTimeout(() => connectWs(id, roomId), 5000)
-          }
+            clearTimeout(timeout)
+            resolve(true)
+          })
+
+          ws.on('message', (data: Buffer) => {
+            const msg = JSON.parse(data.toString())
+            console.error('[remote] WS received:', msg.type)
+            try { handleSignal(msg, ws) } catch {}
+          })
+
+          ws.on('close', (code: number, reason: Buffer) => {
+            console.error('[remote] WS closed:', code, reason?.toString())
+            hostWs = null
+            if (hostState.enabled) {
+              hostState.status = '信令断开，5秒后重连…'
+              persistState()
+              clearTimeout(reconnectTimer)
+              reconnectTimer = setTimeout(() => connectWs(id, roomId), 5000)
+            }
+          })
+
+          ws.on('error', (err: Error) => {
+            console.error('[remote] WS error:', err.message)
+            clearTimeout(timeout)
+            resolve(false)
+          })
         })
 
-        ws.on('error', (err: Error) => {
-          console.error('[remote] WS error:', err.message)
-        })
+        if (!result) {
+          console.error('[remote] connectWs failed')
+          hostState.status = '信令连接超时'
+          return false
+        }
 
         hostWs = ws
+        console.error('[remote] connectWs OK, hostWs assigned')
         return true
       } catch (e: any) {
         hostState.status = '连接失败: ' + (e?.message || e)
         return false
       }
     }
+
+    let hasNotifiedWindow = false
 
     function handleSignal(msg: any, ws: any) {
       if (msg.type === 'requestControl') {
@@ -101,17 +125,22 @@ export default {
           hostState.status = '已拒绝（未开启自动接受）'
         }
       } else if (msg.type === 'offer') {
-        // Store offer for Panel.vue (renderer) to handle WebRTC
-        hostState.pendingOffer = msg.payload
-        hostState.pendingIce = []
+        ;(hostState as any).pendingOffer = msg.payload
+        ;(hostState as any).pendingIce = []
         hostState.status = '正在建立连接…'
-      } else if (msg.type === 'ice') {
-        if (hostState.pendingOffer) {
-          hostState.pendingIce.push(msg.payload)
+        if (!hasNotifiedWindow) {
+          hasNotifiedWindow = true
+          context.signal('remote:open-connection', `u_${deviceId}`).catch(() => {})
         }
+      } else if (msg.type === 'ice') {
+        const ice = (hostState as any).pendingIce
+        if (ice) ice.push(msg.payload)
       } else if (msg.type === 'revoked') {
         hostState.status = '连接已断开'
         hostState.peerConnected = false
+        hasNotifiedWindow = false
+        delete (hostState as any).pendingOffer
+        delete (hostState as any).pendingIce
       } else if (msg.type === 'error') {
         hostState.status = '错误: ' + (msg.message || '未知')
       }
@@ -119,8 +148,8 @@ export default {
 
     // --- Host Management ---
 
-    context.registerCommand('startHost', async () => {
-      if (hostState.enabled) return getState()
+    async function executeStartHostDirectly() {
+      if (hostState.enabled) return
       try {
         hostState.status = '启动中…'
         const id = deviceId!
@@ -154,6 +183,10 @@ export default {
       } catch (e: any) {
         hostState.status = '启动失败: ' + (e?.message || e)
       }
+    }
+
+    context.registerCommand('startHost', async () => {
+      await executeStartHostDirectly()
       return getState()
     })
 
@@ -164,27 +197,21 @@ export default {
       hostWs = null
       clearInterval(codeTimer)
       clearInterval(heartbeatTimer)
-      hostState.pendingOffer = null
-      hostState.pendingIce = []
       Object.assign(hostState, { enabled: false, code: '', status: '', peerConnected: false })
       await persistState()
       return getState()
     })
 
-    // Renderer calls this after handling WebRTC offer
+    // Renderer calls this to send WebRTC answer/ICE via WS
     context.registerCommand('sendSignal', async (args: any) => {
+      console.error('[remote] sendSignal:', args?.type, 'hostWs:', !!hostWs)
       if (hostWs && args) {
-        try { hostWs.send(JSON.stringify(args)) } catch {}
+        try { hostWs.send(JSON.stringify(args)) } catch (e) { console.error('[remote] sendSignal error:', e) }
       }
       return getState()
     })
 
-    // Renderer calls this to clear pending offer after handling
-    context.registerCommand('clearPendingOffer', async () => {
-      hostState.pendingOffer = null
-      hostState.pendingIce = []
-      return getState()
-    })
+
 
     // --- State & Data Commands ---
 

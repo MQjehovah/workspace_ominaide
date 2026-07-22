@@ -24,15 +24,18 @@ async function connect(roomId: string) {
     if (ws) { try { ws.close() } catch {} ; ws = null }
   }
   status.value = '连接中…'
+  console.log('[viewer] connect to room:', roomId)
   try {
     ws = await openSignal(roomId, onSignal)
-    ws.onclose = () => { if (!connectionEnded) status.value = '信令断开'; cleanup() }
-    ws.onerror = () => { status.value = '信令错误' }
+    console.log('[viewer] WS opened, join + requestControl')
+    ws.onclose = () => { console.log('[viewer] WS closed'); if (!connectionEnded) status.value = '信令断开'; cleanup() }
+    ws.onerror = () => { console.log('[viewer] WS error'); status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
     pc = newPeer(await getIceServers())
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
+    console.log('[viewer] connect failed:', e?.message || e)
     status.value = e?.message || String(e)
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
@@ -82,18 +85,23 @@ async function startOffering() {
 }
 
 async function onSignal(m: any) {
+  console.log('[viewer] onSignal:', m.type)
   if (m.type === 'controlAllowed') {
+    console.log('[viewer] controlAllowed, starting offer')
     await startOffering()
   } else if (m.type === 'controlDenied') {
+    console.log('[viewer] controlDenied:', m.reason)
     connectionEnded = true
     status.value = m.reason === 'busy' ? '被控端忙（已有连接）' : '被控端拒绝'
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
   } else if (m.type === 'revoked') {
+    console.log('[viewer] revoked by host')
     connectionEnded = true
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
+    console.log('[viewer] received answer')
     try {
       await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
       for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
@@ -103,6 +111,7 @@ async function onSignal(m: any) {
     if (pc && pc.remoteDescription) { try { await pc.addIceCandidate(m.payload) } catch {} }
     else pendingIce.push(m.payload)
   } else if (m.type === 'error') {
+    console.log('[viewer] error from host:', m.message)
     status.value = '被控端错误: ' + (m.message || '未知')
   }
 }

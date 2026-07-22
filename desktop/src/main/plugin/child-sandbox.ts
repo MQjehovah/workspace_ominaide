@@ -133,6 +133,7 @@ export function createChildContext(info: PluginInfo): PluginContext {
     },
     openPage: (pluginId: string, query?: string) => { rpc('openPage', pluginId, query) },
     registerCommand: (name: string, handler: Function) => { commands.set(name, handler) },
+    signal: (method: string, ...args: any[]) => rpc(method, ...args),
     registerSearchProvider: (provider: SearchProvider) => {
       providers.push({ ...provider, pluginId: info.id })
     },
