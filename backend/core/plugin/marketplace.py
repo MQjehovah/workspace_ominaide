@@ -14,7 +14,7 @@ def scan_packages() -> list[dict]:
     packages = []
     for entry in MARKETPLACE_DIR.iterdir():
         if entry.is_dir() and (entry / "package.json").exists():
-            pkg = json.loads((entry / "package.json").read_text())
+            pkg = json.loads((entry / "package.json").read_text(encoding="utf-8"))
             manifest = pkg.get("omniaide") or pkg.get("mqbox") or {}
             zip_path = entry / "plugin.zip"
             packages.append({
@@ -56,7 +56,7 @@ async def upload_plugin(file: UploadFile = File(...)):
     name = pkg.get("name", file.filename.replace(".zip", ""))
     plugin_dir = MARKETPLACE_DIR / name
     plugin_dir.mkdir(parents=True, exist_ok=True)
-    (plugin_dir / "package.json").write_text(json.dumps(pkg, ensure_ascii=False, indent=2))
+    (plugin_dir / "package.json").write_text(json.dumps(pkg, ensure_ascii=False, indent=2), encoding="utf-8")
     (plugin_dir / "plugin.zip").write_bytes(content)
     manifest = pkg.get("omniaide") or pkg.get("mqbox") or {}
     return {"id": manifest.get("id", name), "name": name, "displayName": manifest.get("displayName", name), "version": pkg.get("version", "0.0.0")}
