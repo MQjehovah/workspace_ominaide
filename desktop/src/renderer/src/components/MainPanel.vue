@@ -2,12 +2,21 @@
 import { ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 
 const pluginComponents: Record<string, any> = {
-  'rss': defineAsyncComponent(() => import('@plugins/rss/src/Panel.vue')),
-  'todo': defineAsyncComponent(() => import('@plugins/todo/src/Panel.vue')),
-  'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Panel.vue')),
+  'assistant': defineAsyncComponent(() => import('@plugins/assistant/src/Panel.vue')),
+  'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Panel.vue')),
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Panel.vue')),
+  'everything': defineAsyncComponent(() => import('@plugins/everything/src/Panel.vue')),
   'files': defineAsyncComponent(() => import('@plugins/files/src/Panel.vue')),
+  'notes': defineAsyncComponent(() => import('@plugins/notes/src/Panel.vue')),
   'notifications': defineAsyncComponent(() => import('@plugins/notifications/src/Panel.vue')),
+  'player': defineAsyncComponent(() => import('@plugins/player/src/Panel.vue')),
+  'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Panel.vue')),
+  'remote': defineAsyncComponent(() => import('@plugins/remote/src/Panel.vue')),
+  'rss': defineAsyncComponent(() => import('@plugins/rss/src/Panel.vue')),
+  'schedule': defineAsyncComponent(() => import('@plugins/schedule/src/Panel.vue')),
+  'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Panel.vue')),
+  'todo': defineAsyncComponent(() => import('@plugins/todo/src/Panel.vue')),
+}
 
 const pluginList = ref<any[]>([])
 const panels = ref<any[]>([])
