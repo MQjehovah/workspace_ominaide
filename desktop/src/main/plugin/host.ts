@@ -1,63 +1,188 @@
 import { join } from 'path'
-import { clipboard, BrowserWindow } from 'electron'
-import type { PluginInfo, PluginPanel, PluginModule, SearchProvider } from '../../shared/types'
+import { app, clipboard, BrowserWindow, Notification, shell, dialog, desktopCapturer, screen } from 'electron'
+import { existsSync, mkdirSync } from 'fs'
+import { Low } from 'lowdb'
+import { JSONFile } from 'lowdb/node'
+import axios from 'axios'
+import { getConfig, setConfig } from '../config'
+import * as screenshot from '../screenshot'
+import { showEditor } from '../pinWindow'
+import type { PluginInfo, PluginPanel, SearchProvider } from '../../shared/types'
 import { loadPlugins } from './loader'
-import { createSandbox } from './sandbox'
+import { PluginProcessManager } from './child-process'
 
+const processManager = new PluginProcessManager()
 const plugins = new Map<string, PluginInfo>()
-const modules = new Map<string, PluginModule>()
-const commands = new Map<string, Map<string, Function>>()
-const searchProviders: SearchProvider[] = []
 const panels: PluginPanel[] = []
 
-function getPluginDir(plugin: PluginInfo): string {
-  return plugin.path
+export function getProcessManager(): PluginProcessManager {
+  return processManager
 }
 
 export async function initPlugins() {
   const loaded = loadPlugins()
-  
+
   for (const [id, info] of loaded) {
     try {
-      const modulePath = join(getPluginDir(info), info.manifest.main || 'dist/index.js')
-      const fileUrl = 'file:///' + modulePath.replace(/\\/g, '/')
-      const mod = await import(/* @vite-ignore */ fileUrl)
-      const plugin: PluginModule = mod.default || mod
-      
-      if (plugin?.activate) {
-        const cmdMap = new Map<string, Function>()
-        commands.set(id, cmdMap)
-        
-        const ctx = createSandbox(info, cmdMap, searchProviders)
-        await plugin.activate(ctx)
-        
-        modules.set(id, plugin)
-        plugins.set(id, info)
-        
-        panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
-        console.log(`Plugin activated: ${info.manifest.id}`)
+      const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
+      if (!existsSync(modulePath)) {
+        console.warn(`[plugin] ${id}: main entry not found at ${modulePath}, skipping`)
+        continue
       }
+
+      const proc = await processManager.startPlugin(info)
+      registerBridgeHandlers(proc)
+
+      plugins.set(id, info)
+      panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
+      console.log(`[plugin] started in child process: ${info.manifest.id} (${info.manifest.version})`)
     } catch (e) {
-      console.error(`Failed to activate plugin ${id}:`, e)
+      console.error(`[plugin] failed to start ${id}:`, e)
     }
   }
-
-  startClipboardWatcher()
 }
 
-let lastClipboard = ''
+function registerBridgeHandlers(proc: import('./child-process').PluginChildProcess): void {
+  const store = { db: null as Low<any> | null }
 
-function startClipboardWatcher() {
-  setInterval(() => {
-    try {
-      const text = clipboard.readText()
-      if (text && text !== lastClipboard) {
-        lastClipboard = text
-        executeCommand('clipboard-history', 'onClipboardChange', text)
-        BrowserWindow.getAllWindows().forEach(win => win.webContents.send('clipboard:updated'))
-      }
-    } catch {}
-  }, 500)
+  proc.registerBridgeHandler('api:get', async ([path]) => {
+    const cfg = await getConfig()
+    const res = await axios.get(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, {
+      headers: { Authorization: 'Bearer ' + (cfg.token || '') }
+    })
+    return res.data
+  })
+
+  proc.registerBridgeHandler('api:post', async ([path, body]) => {
+    const cfg = await getConfig()
+    const res = await axios.post(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
+      headers: { Authorization: 'Bearer ' + (cfg.token || ''), 'Content-Type': 'application/json' }
+    })
+    return res.data
+  })
+
+  proc.registerBridgeHandler('api:put', async ([path, body]) => {
+    const cfg = await getConfig()
+    const res = await axios.put(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
+      headers: { Authorization: 'Bearer ' + (cfg.token || ''), 'Content-Type': 'application/json' }
+    })
+    return res.data
+  })
+
+  proc.registerBridgeHandler('api:delete', async ([path]) => {
+    const cfg = await getConfig()
+    const res = await axios.delete(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, {
+      headers: { Authorization: 'Bearer ' + (cfg.token || '') }
+    })
+    return res.data
+  })
+
+  proc.registerBridgeHandler('shell:openPath', async ([path]) => shell.openPath(path))
+  proc.registerBridgeHandler('shell:openExternal', async ([url]) => shell.openExternal(url))
+
+  proc.registerBridgeHandler('storage:get', async ([key]) => {
+    const file = join(app.getPath('userData'), 'plugin-data', `${proc.pluginId}.json`)
+    mkdirSync(join(app.getPath('userData'), 'plugin-data'), { recursive: true })
+    const adapter = new JSONFile(file)
+    const db = new Low(adapter, {})
+    await db.read()
+    return (db.data as any)?.[key]
+  })
+
+  proc.registerBridgeHandler('storage:set', async ([key, value]) => {
+    const file = join(app.getPath('userData'), 'plugin-data', `${proc.pluginId}.json`)
+    mkdirSync(join(app.getPath('userData'), 'plugin-data'), { recursive: true })
+    const adapter = new JSONFile(file)
+    const db = new Low(adapter, {})
+    await db.read()
+    ;(db.data as any)[key] = value
+    await db.write()
+  })
+
+  proc.registerBridgeHandler('notification:show', async ([title, body]) => {
+    new Notification({ title, body }).show()
+  })
+
+  proc.registerBridgeHandler('screenshot:start', async () => { screenshot.startScreenshot() })
+  proc.registerBridgeHandler('screenshot:capture-fullscreen', async () => screenshot.captureFullscreen())
+  proc.registerBridgeHandler('screenshot:show-editor', async ([dataUrl]) => showEditor(dataUrl))
+  proc.registerBridgeHandler('screenshot:get-history', async () => screenshot.getHistory())
+  proc.registerBridgeHandler('screenshot:clear-history', async () => screenshot.clearHistory())
+  proc.registerBridgeHandler('screenshot:delete-history', async ([id]) => screenshot.deleteFromHistory(id))
+
+  proc.registerBridgeHandler('remote:get-sources', async () => {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'], fetchWindowIcons: false, thumbnailSize: { width: 1, height: 1 }
+    })
+    return sources.map(s => ({ id: s.id, name: s.name, display_id: (s as any).display_id }))
+  })
+
+  proc.registerBridgeHandler('remote:screen-size', async () => {
+    const d = screen.getPrimaryDisplay()
+    const sf = d.scaleFactor || 1
+    return { width: Math.round(d.bounds.width * sf), height: Math.round(d.bounds.height * sf) }
+  })
+
+  proc.registerBridgeHandler('remote:get-all-displays', async () =>
+    screen.getAllDisplays().map(d => ({
+      id: d.id, name: `${d.bounds.width}x${d.bounds.height}`,
+      bounds: { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height },
+      scaleFactor: d.scaleFactor || 1,
+    }))
+  )
+
+  proc.registerBridgeHandler('openPage', async ([pluginId, query]) => {
+    const preloadPath = join(__dirname, '../preload/index.js')
+    const win = new BrowserWindow({
+      width: 900, height: 700,
+      webPreferences: { preload: preloadPath, contextIsolation: true },
+    })
+    const extra = query ? '?' + query : ''
+    const url = process.env.VITE_DEV_SERVER_URL
+      ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}${extra}`
+      : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}${extra}`
+    win.loadURL(url)
+  })
+
+  // Electron proxy handlers (child process require('electron') bridge)
+  const winMap = new Map<string, BrowserWindow>()
+
+  proc.registerBridgeHandler('BrowserWindow:create', async ([opts]) => {
+    // Create window but don't return it to child (child has stub)
+    const preloadPath = join(__dirname, '../preload/index.js')
+    const win = new BrowserWindow({
+      ...opts,
+      webPreferences: { ...opts.webPreferences, preload: preloadPath, contextIsolation: true },
+    })
+    return null // child doesn't use return value
+  })
+  proc.registerBridgeHandler('BrowserWindow:loadURL', async ([url]) => {})
+  proc.registerBridgeHandler('BrowserWindow:show', async () => {})
+  proc.registerBridgeHandler('BrowserWindow:focus', async () => {})
+  proc.registerBridgeHandler('BrowserWindow:hide', async () => {})
+  proc.registerBridgeHandler('BrowserWindow:close', async () => {})
+  proc.registerBridgeHandler('BrowserWindow:setAlwaysOnTop', async () => {})
+  proc.registerBridgeHandler('BrowserWindow:setSkipTaskbar', async () => {})
+  proc.registerBridgeHandler('globalShortcut:register', async ([accelerator]) => {
+    const { globalShortcut } = require('electron')
+    globalShortcut.register(accelerator, () => {
+      proc.executeCommand('toggleAssistant').catch(() => {})
+    })
+  })
+  proc.registerBridgeHandler('globalShortcut:unregister', async ([accelerator]) => {
+    const { globalShortcut } = require('electron')
+    globalShortcut.unregister(accelerator)
+  })
+  proc.registerBridgeHandler('globalShortcut:unregisterAll', async () => {
+    const { globalShortcut } = require('electron')
+    globalShortcut.unregisterAll()
+  })
+  proc.registerBridgeHandler('clipboard:writeText', async ([text]) => {
+    clipboard.writeText(text)
+  })
+  proc.registerBridgeHandler('shell:showItemInFolder', async ([path]) => {
+    shell.showItemInFolder(path)
+  })
 }
 
 export function getPlugins(): PluginInfo[] {
@@ -69,28 +194,20 @@ export function getPanels(): PluginPanel[] {
 }
 
 export function getSearchProviders(): SearchProvider[] {
-  return searchProviders
+  const providers: SearchProvider[] = []
+  for (const [id] of plugins) {
+    const proc = processManager.getProcess(id)
+    if (proc && proc.searchProviders) providers.push(...proc.searchProviders)
+  }
+  return providers
 }
 
 export async function executeCommand(pluginId: string, command: string, args?: unknown): Promise<unknown> {
-  const cmdMap = commands.get(pluginId)
-  if (!cmdMap) throw new Error(`Plugin ${pluginId} not found`)
-  const handler = cmdMap.get(command)
-  if (!handler) throw new Error(`Command ${command} not found in plugin ${pluginId}`)
-  const result = await handler(args)
-  if (pluginId === 'clipboard-history' && command === 'copy') {
-    BrowserWindow.getAllWindows().forEach(win => win.webContents.send('clipboard:updated'))
-  }
-  if (pluginId === 'player' && !['getPanelData', 'getPageData', 'cloudGetStreamUrl', 'cloudListPlaylists', 'cloudListSongs', 'cloudListAudioFiles'].includes(command)) {
-    BrowserWindow.getAllWindows().forEach(win => win.webContents.send('player:updated'))
-  }
-  if (pluginId === 'todo' && !['getPanelData', 'getPageData'].includes(command)) {
-    BrowserWindow.getAllWindows().forEach(win => win.webContents.send('todo:updated'))
-  }
-  return result
+  const proc = processManager.getProcess(pluginId)
+  if (proc) return proc.executeCommand(command, args)
+  throw new Error(`Plugin ${pluginId} not running`)
 }
 
 export function getPluginPage(pluginId: string): any {
-  const mod = modules.get(pluginId)
-  return mod?.page || null
+  return null
 }

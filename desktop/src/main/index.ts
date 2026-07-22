@@ -1,13 +1,16 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, protocol, net, session } from 'electron'
-import { join } from 'path'
-import { initPlugins } from './plugin/host'
+import { join, resolve } from 'path'
+import { existsSync, readFileSync } from 'fs'
+import { initPlugins, getProcessManager } from './plugin/host'
 import { registerIpcHandlers } from './ipc'
 import { setupShortcut } from './shortcut'
 import { startSync, stopSync } from './sync/syncWorker'
 import { getConfig } from './config'
+import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
+  { scheme: 'plugin-app', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, standard: true } },
 ])
 
 let mainPanel: BrowserWindow | null = null
@@ -89,6 +92,27 @@ app.whenReady().then(async () => {
     const filePath = decodeURIComponent(request.url.replace('local-file://', ''))
     return net.fetch(`file://${filePath}`)
   })
+
+  // Plugin app protocol — serves plugin frontend files from local disk
+  // URL format: plugin-app://{pluginId}/{path}
+  // Example:    plugin-app://assistant/index.html
+  protocol.handle('plugin-app', (request) => {
+    const url = new URL(request.url)
+    const pluginId = url.hostname
+    const filePath = url.pathname.replace(/^\//, '') || 'index.html'
+    const searchPaths = [
+      join(__dirname, '../../../plugins', pluginId, 'frontend', filePath),
+      join(__dirname, '../../plugins', pluginId, 'frontend', filePath),
+      join(app.getPath('userData'), 'plugins', pluginId, 'frontend', filePath),
+      join(process.resourcesPath, 'plugins', pluginId, 'frontend', filePath),
+    ]
+    for (const p of searchPaths) {
+      if (existsSync(p)) {
+        return net.fetch(`file://${resolve(p).replace(/\\/g, '/')}`)
+      }
+    }
+    return new Response('Plugin frontend not found', { status: 404 })
+  })
   registerIpcHandlers()
   await initPlugins()
   createTray()
@@ -106,7 +130,11 @@ ipcMain.handle('sync:restart', async () => { try { await startSync() } catch (e:
 ipcMain.handle('window:quit', () => { isQuitting = true; app.quit() })
 
 app.on('window-all-closed', () => {})
-app.on('before-quit', () => { isQuitting = true })
+app.on('before-quit', () => {
+  isQuitting = true
+  getProcessManager().stopAll()
+  closeAllPluginWindows()
+})
 
 ipcMain.handle('window:open-main', () => showMainPanel())
 
@@ -122,6 +150,12 @@ ipcMain.handle('window:open-page', async (_, pluginId: string, query: string = '
     ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}${extra}`
     : `file://${join(__dirname, '../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}${extra}`
   win.loadURL(url)
+})
+
+ipcMain.handle('window:open-plugin-window', async (_, pluginId: string) => {
+  const cfg = await getConfig()
+  if (!cfg.token) return
+  openPluginWindow(pluginId)
 })
 
 ipcMain.handle('shell:open', (_, url: string) => shell.openExternal(url))

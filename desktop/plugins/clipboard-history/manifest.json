@@ -1,0 +1,18 @@
+{
+  "id": "clipboard-history",
+  "name": "omniaide-clipboard-history",
+  "displayName": "剪贴板历史",
+  "description": "记录和管理剪贴板历史",
+  "version": "1.0.0",
+  "icon": "CopyDocument",
+  "keywords": [
+    "cb"
+  ],
+  "permissions": [
+    "clipboard",
+    "notification",
+    "storage"
+  ],
+  "builtin": false,
+  "main": "dist/index.js"
+}

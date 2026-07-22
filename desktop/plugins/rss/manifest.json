@@ -1,0 +1,20 @@
+{
+  "id": "rss",
+  "name": "omniaide-rss",
+  "displayName": "RSS 订阅",
+  "description": "RSS 订阅阅读",
+  "version": "1.0.0",
+  "icon": "Rss",
+  "keywords": [
+    "rss",
+    "news",
+    "资讯",
+    "订阅"
+  ],
+  "permissions": [
+    "storage",
+    "notification"
+  ],
+  "builtin": false,
+  "main": "dist/index.js"
+}

@@ -19,27 +19,27 @@ async def discover_plugins(app: FastAPI):
         return
 
     async with async_session() as db:
-        for plugin_dir in PLUGINS_DIR.iterdir():
+        for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
             if not plugin_dir.is_dir():
                 continue
-            manifest_path = plugin_dir / "manifest.json"
-            if not manifest_path.exists():
+
+            manifest = _load_manifest(plugin_dir)
+            if manifest is None:
                 continue
 
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            name = manifest.get("name", plugin_dir.name)
+            plugin_id = manifest.get("id") or manifest.get("name", plugin_dir.name)
+            version = manifest.get("version", "0.0.0")
 
-            # Check if registered in DB
             result = await db.execute(
-                select(PluginRegistry).where(PluginRegistry.name == name)
+                select(PluginRegistry).where(PluginRegistry.name == plugin_id)
             )
             record = result.scalar_one_or_none()
 
             if record is None:
                 record = PluginRegistry(
-                    name=name,
-                    version=manifest.get("version", "0.0.0"),
-                    title=manifest.get("title", name),
+                    name=plugin_id,
+                    version=version,
+                    title=manifest.get("displayName", plugin_id),
                     description=manifest.get("description", ""),
                     icon=manifest.get("icon", ""),
                     enabled=True,
@@ -49,10 +49,35 @@ async def discover_plugins(app: FastAPI):
                 await db.flush()
 
             if record.enabled:
-                await _register_plugin_routes(app, name, plugin_dir)
-                _register_plugin_tools(manifest, name)
+                await _register_plugin_routes(app, plugin_id, plugin_dir)
+                _register_plugin_tools(manifest, plugin_id)
 
         await db.commit()
+
+
+def _load_manifest(plugin_dir: Path) -> dict | None:
+    """Load manifest from either manifest.json or package.json (legacy)."""
+    manifest_path = plugin_dir / "manifest.json"
+    if manifest_path.exists():
+        return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    pkg_path = plugin_dir / "package.json"
+    if pkg_path.exists():
+        pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+        ns = pkg.get("omniaide") or pkg.get("mqbox") or {}
+        return {
+            "id": ns.get("id", pkg.get("name")),
+            "name": pkg.get("name"),
+            "displayName": ns.get("displayName", pkg.get("displayName", pkg.get("name"))),
+            "description": pkg.get("description", ""),
+            "version": pkg.get("version", "0.0.0"),
+            "icon": ns.get("icon"),
+            "permissions": ns.get("permissions", []),
+            "main": pkg.get("main", "dist/index.js"),
+            "builtin": True,
+        }
+
+    return None
 
 
 async def _register_plugin_routes(app: FastAPI, name: str, plugin_dir: Path):
@@ -97,37 +122,55 @@ async def uninstall_plugin(db: AsyncSession, app: FastAPI, name: str):
     if not record:
         raise ValueError(f"Plugin {name} not found")
 
-    # Remove from DB
     await db.delete(record)
 
-    # Remove plugin directory
     plugin_dir = PLUGINS_DIR / name
     if plugin_dir.exists():
         shutil.rmtree(plugin_dir)
 
 
 def install_plugin_from_zip(zip_path: Path, plugin_name: str | None = None) -> dict:
-    """Extract a plugin zip into the plugins directory and return its manifest."""
+    """Extract a plugin zip into the plugins directory and return its manifest.
+
+    Supports both new unified format (manifest.json) and legacy format (package.json).
+    """
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(tmp)
 
-        files = list(Path(tmp).rglob("manifest.json"))
-        if not files:
-            raise ValueError("No manifest.json found in plugin archive")
+        # try new unified format first
+        manifest_paths = list(Path(tmp).rglob("manifest.json"))
+        if not manifest_paths:
+            # fallback to legacy format
+            pkg_paths = list(Path(tmp).rglob("package.json"))
+            if not pkg_paths:
+                raise ValueError("No manifest.json or package.json found in plugin archive")
+            pkg = json.loads(pkg_paths[0].read_text(encoding="utf-8"))
+            ns = pkg.get("omniaide") or pkg.get("mqbox") or {}
+            manifest = {
+                "id": ns.get("id", pkg.get("name")),
+                "name": pkg.get("name"),
+                "displayName": ns.get("displayName", pkg.get("displayName", pkg.get("name"))),
+                "description": pkg.get("description", ""),
+                "version": pkg.get("version", "0.0.0"),
+                "icon": ns.get("icon"),
+                "permissions": ns.get("permissions", []),
+                "main": pkg.get("main", "dist/index.js"),
+                "builtin": False,
+            }
+            source = pkg_paths[0].parent
+        else:
+            manifest = json.loads(manifest_paths[0].read_text(encoding="utf-8"))
+            source = manifest_paths[0].parent
 
-        manifest_path = files[0]
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        name = plugin_name or manifest.get("name", manifest_path.parent.name)
+        name = plugin_name or manifest.get("id") or manifest.get("name", source.name)
 
         target = PLUGINS_DIR / name
         if target.exists():
             shutil.rmtree(target)
 
-        # Copy everything into target
-        source = manifest_path.parent
         shutil.copytree(str(source), str(target), dirs_exist_ok=True)
 
     return manifest

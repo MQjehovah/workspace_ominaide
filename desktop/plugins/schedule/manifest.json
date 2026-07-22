@@ -1,0 +1,19 @@
+{
+  "id": "schedule",
+  "name": "omniaide-schedule",
+  "displayName": "日程管理",
+  "description": "日历日程管理",
+  "version": "1.0.0",
+  "icon": "Calendar",
+  "keywords": [
+    "schedule",
+    "calendar",
+    "日程",
+    "日历"
+  ],
+  "permissions": [
+    "storage"
+  ],
+  "builtin": false,
+  "main": "dist/index.js"
+}

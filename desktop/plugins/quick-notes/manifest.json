@@ -1,0 +1,17 @@
+{
+  "id": "quick-notes",
+  "name": "omniaide-quick-notes",
+  "displayName": "快捷笔记",
+  "description": "快速记录和管理笔记",
+  "version": "1.1.0",
+  "icon": "Lightning",
+  "keywords": [
+    "note"
+  ],
+  "permissions": [
+    "storage",
+    "notification"
+  ],
+  "builtin": false,
+  "main": "dist/index.js"
+}

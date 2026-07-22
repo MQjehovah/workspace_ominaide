@@ -9,6 +9,8 @@ export interface PluginManifest {
   permissions?: string[]
   builtin?: boolean
   main?: string
+  frontend?: string
+  backend?: string
 }
 
 export interface PluginInfo {
@@ -16,6 +18,21 @@ export interface PluginInfo {
   manifest: PluginManifest
   path: string
   enabled: boolean
+}
+
+export interface PluginPanel {
+  id: string
+  pluginId: string
+  height?: number
+}
+
+export interface PanelData {
+  title: string
+  summary: string | number | null
+  items?: Array<{ title: string; subtitle?: string; icon?: string }>
+  actions?: Array<{ label: string; command: string }>
+  status?: 'success' | 'warning' | 'error' | 'info'
+  statusText?: string
 }
 
 export interface SearchProvider {
@@ -40,10 +57,22 @@ export interface PluginCommand {
   handler: (args: unknown) => Promise<unknown> | unknown
 }
 
-export interface PluginPanel {
+export interface RpcRequest {
   id: string
-  pluginId: string
-  height?: number
+  type: 'execute' | 'getState' | 'setState'
+  command?: string
+  args?: unknown
+  key?: string
+  value?: unknown
+}
+
+export interface RpcResponse {
+  id: string
+  type: 'result' | 'error' | 'event'
+  data?: unknown
+  error?: string
+  event?: string
+  eventData?: unknown
 }
 
 export interface ScreenshotRecord {
@@ -109,6 +138,12 @@ declare global {
         getPanels: () => Promise<PluginPanel[]>
         getPage: (pluginId: string) => Promise<any>
         execute: (pluginId: string, command: string, args?: unknown) => Promise<unknown>
+        setEnabled: (pluginId: string, enabled: boolean) => Promise<void>
+        importPlugin: () => Promise<any>
+        listMarketplace: () => Promise<any[]>
+        installFromMarket: (pluginId: string) => Promise<any>
+        getPanelData: (pluginId: string) => Promise<PanelData>
+        onUpdated: (callback: () => void) => void
       }
       search: {
         plugin: (keyword: string, query: string) => Promise<SearchResult[]>
@@ -120,10 +155,11 @@ declare global {
       }
       window: {
         openMain: () => void
-  files: { openDirectory: () => Promise<string | undefined>; listAudio: (dirPath: string) => Promise<{ name: string; path: string }[]> } | null
-  openPage: (pluginId: string, query?: string) => void
+        files: { openDirectory: () => Promise<string | undefined>; listAudio: (dirPath: string) => Promise<{ name: string; path: string }[]> } | null
+        openPage: (pluginId: string, query?: string) => void
         openSearch: () => void
         hide: () => void
+        openPluginWindow: (pluginId: string) => void
       }
       screenshot: {
         onImage: (callback: (dataUrl: string) => void) => void
@@ -151,7 +187,7 @@ declare global {
         post: (path: string, body?: any) => Promise<any>
         put: (path: string, body?: any) => Promise<any>
         delete: (path: string) => Promise<any>
-      },
+      }
       remote: {
         getDesktopSources: () => Promise<any[]>
         getScreenSize: () => Promise<{ width: number; height: number }>

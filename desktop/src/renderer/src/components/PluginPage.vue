@@ -1,57 +1,39 @@
-<template>
-  <div class="page" v-if="component">
-    <component :is="component" :data="pageData" :execute="execute" :close="close" :refresh="refresh" />
-  </div>
-  <div v-else class="empty">
-    <h2>{{ pluginId }}</h2>
-    <p>插件页面加载中...</p>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { ref, onMounted, defineAsyncComponent } from 'vue'
+import { ref, onMounted } from 'vue'
 
 const params = new URLSearchParams(window.location.search)
 const pluginId = ref(params.get('pluginId') || '')
-const pageData = ref<any>({})
-const component = ref<any>(null)
 
-const pageComponents: Record<string, any> = {
-  'rss': defineAsyncComponent(() => import('@plugins/rss/src/Page.vue')),
-  'todo': defineAsyncComponent(() => import('@plugins/todo/src/Page.vue')),
-  'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Page.vue')),
-  'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Page.vue')),
-  'notifications': defineAsyncComponent(() => import('@plugins/notifications/src/Page.vue')),
-  'player': defineAsyncComponent(() => import('@plugins/player/src/Page.vue')),
-  'remote': defineAsyncComponent(() => import('@plugins/remote/src/Page.vue')),
-  'schedule': defineAsyncComponent(() => import('@plugins/schedule/src/Page.vue')),
-  'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Page.vue')),
-  'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Page.vue')),
-  'assistant': defineAsyncComponent(() => import('@plugins/assistant/src/Page.vue')),
-  'files': defineAsyncComponent(() => import('@plugins/files/src/Page.vue')),
-  'notes': defineAsyncComponent(() => import('@plugins/notes/src/Page.vue')),
+function openInNewWindow() {
+  window.mqbox?.window.openPluginWindow(pluginId.value)
 }
 
-async function load() {
-  component.value = pageComponents[pluginId.value] || null
-  if (!component.value) return
-  try {
-    const data = await window.mqbox?.plugin.execute(pluginId.value, 'getPageData') || {}
-    pageData.value = data
-  } catch {}
-}
-
-function execute(command: string, args?: unknown) {
-  return window.mqbox?.plugin.execute(pluginId.value, command, args || {})
-}
-
-function refresh() { load() }
-function close() { window.close() }
-
-onMounted(load)
+onMounted(() => {
+  // Auto-navigate to the plugin window
+  if (pluginId.value) {
+    window.mqbox?.window.openPluginWindow(pluginId.value)
+    window.close()
+  }
+})
 </script>
 
+<template>
+  <div class="page">
+    <div class="empty" v-if="pluginId">
+      <h2>{{ pluginId }}</h2>
+      <p>正在打开插件窗口...</p>
+      <button @click="openInNewWindow">手动打开</button>
+    </div>
+    <div class="empty" v-else>
+      <h2>插件页面</h2>
+      <p>未指定插件 ID</p>
+    </div>
+  </div>
+</template>
+
 <style scoped>
-.page { height:100vh; }
-.empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; color:#909399; }
+.page { height:100vh; display:flex; align-items:center; justify-content:center; }
+.empty { text-align:center; color:#909399; }
+.empty button { margin-top:12px; padding:6px 16px; border-radius:6px; border:1px solid #e0e0e0; background:#fff; cursor:pointer; }
+.empty button:hover { background:#f5f5f5; }
 </style>

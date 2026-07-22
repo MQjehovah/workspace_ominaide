@@ -1,0 +1,14 @@
+{
+  "id": "calculator",
+  "name": "omniaide-calculator",
+  "displayName": "计算器",
+  "description": "简单计算器",
+  "version": "1.0.0",
+  "icon": "Calculator",
+  "keywords": [
+    "calc"
+  ],
+  "permissions": [],
+  "builtin": false,
+  "main": "dist/index.js"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "notes",
+  "name": "omniaide-notes",
+  "displayName": "笔记",
+  "description": "Markdown 笔记",
+  "version": "1.0.0",
+  "icon": "Document",
+  "keywords": [
+    "note"
+  ],
+  "permissions": [],
+  "builtin": false,
+  "main": "dist/index.js"
+}

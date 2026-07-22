@@ -1,0 +1,18 @@
+{
+  "id": "everything",
+  "name": "omniaide-everything",
+  "displayName": "Everything 搜索",
+  "description": "搜索服务端文件",
+  "version": "1.0.0",
+  "icon": "Search",
+  "keywords": [
+    "f",
+    "file",
+    "搜索"
+  ],
+  "permissions": [
+    "shell"
+  ],
+  "builtin": false,
+  "main": "dist/index.js"
+}

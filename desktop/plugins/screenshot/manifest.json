@@ -1,0 +1,17 @@
+{
+  "id": "screenshot",
+  "name": "omniaide-screenshot",
+  "displayName": "截图",
+  "description": "快速截图和标注",
+  "version": "1.0.0",
+  "icon": "Camera",
+  "keywords": [
+    "ss"
+  ],
+  "permissions": [
+    "screenshot",
+    "notification"
+  ],
+  "builtin": false,
+  "main": "dist/index.js"
+}

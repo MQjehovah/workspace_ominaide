@@ -1,0 +1,21 @@
+{
+  "id": "remote",
+  "name": "omniaide-remote",
+  "displayName": "远程控制",
+  "description": "WebRTC 远程桌面控制",
+  "version": "1.0.0",
+  "icon": "Monitor",
+  "keywords": [
+    "remote",
+    "control",
+    "screen"
+  ],
+  "permissions": [
+    "storage",
+    "notification",
+    "shell",
+    "remote"
+  ],
+  "builtin": false,
+  "main": "dist/index.js"
+}

@@ -16,7 +16,7 @@ function findPluginDirs(): string[] {
     for (const entry of readdirSync(base, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         const pluginDir = join(base, entry.name)
-        if (existsSync(join(pluginDir, 'package.json'))) {
+        if (existsSync(join(pluginDir, 'manifest.json')) || existsSync(join(pluginDir, 'package.json'))) {
           dirs.push(pluginDir)
         }
       }
@@ -29,6 +29,27 @@ export function loadPlugins(): Map<string, PluginInfo> {
   const plugins = new Map<string, PluginInfo>()
   for (const dir of findPluginDirs()) {
     try {
+      // try unified manifest first
+      const manifestPath = join(dir, 'manifest.json')
+      if (existsSync(manifestPath)) {
+        const m = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+        const manifest: PluginManifest = {
+          id: m.id || m.name,
+          name: m.name || m.id,
+          displayName: m.displayName || m.name || m.id,
+          description: m.description,
+          version: m.version,
+          icon: m.icon,
+          keywords: m.keywords || [],
+          permissions: m.permissions || [],
+          builtin: m.builtin !== false,
+          main: m.main || 'dist/index.js',
+        }
+        plugins.set(manifest.id, { id: manifest.id, manifest, path: dir, enabled: true })
+        continue
+      }
+
+      // fallback to legacy package.json
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8'))
       const mqbox = pkg.omniaide || pkg.mqbox || {}
       const manifest: PluginManifest = {

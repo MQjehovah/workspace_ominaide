@@ -4,8 +4,10 @@
   "description": "OmniAide Desktop - Plugin-based AI Workbench",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "node scripts/build-plugins.mjs && vite",
-    "build": "node scripts/build-plugins.mjs && vite build && electron-builder",
+    "dev": "vite",
+    "build": "node scripts/build-frontends.mjs && vite build && electron-builder",
+    "build-frontends": "node scripts/build-frontends.mjs",
+    "migrate-plugins": "node scripts/migrate-to-unified.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -48,16 +50,7 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*",
-      "plugins/**/*.json",
-      "plugins/**/dist/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "plugins",
-        "to": "plugins",
-        "filter": ["**/package.json", "**/dist/**/*"]
-      }
+      "dist-electron/**/*"
     ],
     "win": {
       "target": ["nsis"],

@@ -3,7 +3,6 @@ import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream } from 'fs'
 import { getPlugins, getPanels, getSearchProviders, executeCommand, getPluginPage } from '../plugin/host'
-import { setAuth } from '../plugin/sandbox'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
 import * as screenshot from '../screenshot'
@@ -47,7 +46,10 @@ export function registerIpcHandlers() {
   ipcMain.handle('config:set', async (_, key: string, value: any) => setConfig(key, value))
 
   // Auth
-  ipcMain.handle('auth:set', (_, serverUrl: string, token: string) => setAuth(serverUrl, token))
+  ipcMain.handle('auth:set', async (_, serverUrl: string, token: string) => {
+    await setConfig('serverUrl', serverUrl)
+    await setConfig('token', token)
+  })
   // Plugin management
   ipcMain.handle('plugin:list', async () => {
     const cfg = await getConfig()
@@ -68,6 +70,18 @@ export function registerIpcHandlers() {
   ipcMain.handle('plugin:execute', async (_, pluginId: string, command: string, args?: unknown) => {
     try { return await executeCommand(pluginId, command, args) }
     catch (e) { return { error: (e as Error).message } }
+  })
+  ipcMain.handle('plugin:get-panel-data', async (_, pluginId: string) => {
+    try {
+      const cfg = await getConfig()
+      const base = cfg.serverUrl || 'http://localhost:8000'
+      const res = await axios.get(`${base}/api/plugins/${encodeURIComponent(pluginId)}/panel-data`, {
+        headers: { Authorization: 'Bearer ' + (cfg.token || '') }
+      })
+      return res.data
+    } catch {
+      return { title: pluginId, summary: null, items: [], actions: [], status: null, statusText: null }
+    }
   })
   ipcMain.handle('plugin:set-enabled', async (_, pluginId: string, enabled: boolean) => {
     const cfg = await getConfig()

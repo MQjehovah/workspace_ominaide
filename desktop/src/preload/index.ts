@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('mqbox', {
       ipcRenderer.invoke('plugin:list-marketplace'),
     installFromMarket: (pluginId: string) =>
       ipcRenderer.invoke('plugin:install-from-market', pluginId),
+    getPanelData: (pluginId: string) =>
+      ipcRenderer.invoke('plugin:get-panel-data', pluginId),
     onUpdated: (callback: () => void) => {
       pluginListeners.push(callback)
     },
@@ -59,6 +61,7 @@ contextBridge.exposeInMainWorld('mqbox', {
   window: {
     openMain: () => ipcRenderer.invoke('window:open-main'),
     openPage: (pluginId: string, query?: string) => ipcRenderer.invoke('window:open-page', pluginId, query || ''),
+    openPluginWindow: (pluginId: string) => ipcRenderer.invoke('window:open-plugin-window', pluginId),
     openSearch: () => ipcRenderer.invoke('window:open-search'),
     openPluginManager: () => ipcRenderer.invoke('window:open-plugin-manager'),
     hide: () => ipcRenderer.invoke('window:hide'),

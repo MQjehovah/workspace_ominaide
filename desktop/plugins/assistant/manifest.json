@@ -1,0 +1,21 @@
+{
+  "id": "assistant",
+  "name": "omniaide-assistant",
+  "displayName": "AI 助理",
+  "description": "桌面 AI 助理——语音对话、自然语言操作",
+  "version": "1.0.0",
+  "icon": "ChatDotSquare",
+  "keywords": [
+    "ai",
+    "assistant",
+    "chat",
+    "voice"
+  ],
+  "permissions": [
+    "storage",
+    "notification",
+    "shell"
+  ],
+  "builtin": false,
+  "main": "dist/index.js"
+}

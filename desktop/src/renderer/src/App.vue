@@ -22,7 +22,7 @@ import PluginManager from './components/PluginManager.vue'
 import LoginPage from './components/LoginPage.vue'
 import ScreenshotPanel from './components/ScreenshotPanel.vue'
 import AssistantWindow from './components/AssistantWindow.vue'
-import ScreenshotEditor from '@plugins/screenshot/src/Editor.vue'
+import ScreenshotEditor from './components/ScreenshotEditor.vue'
 
 const ready = ref(false)
 const error = ref('')

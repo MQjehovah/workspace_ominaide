@@ -9,7 +9,10 @@ export default defineConfig({
     vue(),
     electron([
       {
-        entry: resolve(__dirname, 'src/main/index.ts'),
+        entry: [
+          resolve(__dirname, 'src/main/index.ts'),
+          resolve(__dirname, 'src/main/plugin/child-entry.ts'),
+        ],
         onstart(args) { args.startup() },
         vite: {
           build: {
@@ -28,7 +31,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src/renderer/src'),
-      '@plugins': resolve(__dirname, 'plugins'),
     },
   },
   build: {
