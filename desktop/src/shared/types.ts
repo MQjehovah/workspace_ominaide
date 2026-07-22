@@ -64,6 +64,11 @@ export interface ScreenshotCapability {
   deleteHistory: (id: string) => void
 }
 
+export interface RemoteCapability {
+  getDesktopSources: () => Promise<any[]>
+  getScreenSize: () => { width: number; height: number }
+}
+
 export interface PluginContext {
   plugin: PluginInfo
   api: {
@@ -82,6 +87,7 @@ export interface PluginContext {
     show: (title: string, body?: string) => void
   }
   screenshot: ScreenshotCapability | null
+  remote: RemoteCapability | null
   openPage: (pluginId: string) => void
   registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => void
   registerSearchProvider: (provider: SearchProvider) => void
@@ -144,6 +150,12 @@ declare global {
         post: (path: string, body?: any) => Promise<any>
         put: (path: string, body?: any) => Promise<any>
         delete: (path: string) => Promise<any>
+      },
+      remote: {
+        getDesktopSources: () => Promise<any[]>
+        getScreenSize: () => Promise<{ width: number; height: number }>
+        injectInput: (event: any) => Promise<any>
+        onControlRequest: (cb: (info: any) => void) => void
       }
     }
   }

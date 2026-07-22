@@ -300,4 +300,20 @@ export function registerIpcHandlers() {
   ipcMain.handle('clipboard:write-image', async (_, dataUrl: string) => {
     try { await copyImage(dataUrl); return true } catch { return false }
   })
+
+  ipcMain.handle('remote:get-sources', async () => {
+    const { desktopCapturer } = require('electron')
+    const sources = await desktopCapturer.getSources({ types: ['screen'], fetchWindowIcons: false })
+    return sources.map((s: any) => ({ id: s.id, name: s.name, display_id: s.display_id }))
+  })
+
+  ipcMain.handle('remote:screen-size', async () => {
+    const { screen } = require('electron')
+    const b = screen.getPrimaryDisplay().bounds
+    return { width: b.width, height: b.height }
+  })
+
+  ipcMain.handle('remote:inject', async (_e, event: any) => {
+    return { ok: true, note: 'inject not implemented in phase 1' }
+  })
 }
