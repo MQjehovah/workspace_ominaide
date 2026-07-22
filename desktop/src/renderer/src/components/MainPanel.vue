@@ -9,6 +9,7 @@ const pluginComponents: Record<string, any> = {
   'remote': defineAsyncComponent(() => import('@plugins/remote/src/Panel.vue')),
   'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Panel.vue')),
   'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Panel.vue')),
+  'ai-chat': defineAsyncComponent(() => import('@plugins/ai-chat/src/Panel.vue')),
   'files': defineAsyncComponent(() => import('@plugins/files/src/Panel.vue')),
   'notes': defineAsyncComponent(() => import('@plugins/notes/src/Panel.vue')),
 }

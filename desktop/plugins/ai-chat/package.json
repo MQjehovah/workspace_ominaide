@@ -1,0 +1,25 @@
+{
+  "name": "omniaide-ai-chat",
+  "version": "1.0.0",
+  "displayName": "AI 对话",
+  "description": "与 AI 助手对话",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "omniaide": {
+    "id": "ai-chat",
+    "displayName": "AI 对话",
+    "icon": "Chat",
+    "keywords": ["ai","chat"],
+    "permissions": ["storage","notification"],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40",
+    "typescript": "~5.6.0"
+  }
+}
