@@ -91,8 +91,9 @@ function handleCmd(cmd: string) {
 .menu-divider { height: 1px; background: rgba(255,255,255,.06); margin: 8px 12px; }
 .menu-label { font-size: 11px; font-weight: 600; color: var(--color-sidebar-text); text-transform: uppercase; letter-spacing: .5px; padding: 8px 16px 4px; }
 .sidebar-footer { border-top: 1px solid rgba(255,255,255,.06); padding: 12px; }
-.user-btn { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 4px; border-radius: 8px; }
+.sidebar-footer :deep(.el-dropdown) { display: block; width: 100%; }
+.user-btn { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 4px; border-radius: 8px; width: 100%; }
 .user-btn:hover { background: var(--color-sidebar-hover); }
-.user-name { font-size: 13px; color: var(--color-sidebar-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-name { font-size: 13px; color: var(--color-sidebar-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .sidebar.collapsed .user-name { display: none; }
 </style>
