@@ -10,9 +10,11 @@ const pairCode = ref('')
 let ws: WebSocket | null = null
 let pc: RTCPeerConnection | null = null
 let stream: MediaStream | null = null
+let pendingIce: any[] = []
 let currentRoomId = ''
 
 async function startHost() {
+  if (hosting.value) return
   try {
     status.value = '上线中…'
     const { serverUrl } = await getServer()
@@ -26,6 +28,13 @@ async function startHost() {
       body: JSON.stringify({ device_id: deviceId, name: '我的电脑', room_id: roomId }),
     })
     ws = await openSignal(roomId, onSignal)
+    ws.onclose = () => {
+      hosting.value = false
+      status.value = status.value || '信令断开'
+      if (pc) { try { pc.close() } catch {} ; pc = null }
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
+    }
+    ws.onerror = () => { status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
     hosting.value = true
     status.value = '允许控制中（等待主控连接）'
@@ -37,6 +46,9 @@ async function startHost() {
 async function onSignal(m: any) {
   if (m.type === 'offer') {
     try {
+      if (pc) { try { pc.close() } catch {} ; pc = null }
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
+      pendingIce = []
       const sources = await (window as any).mqbox.remote.getDesktopSources()
       if (!sources.length) { status.value = '无屏幕源'; return }
       stream = await navigator.mediaDevices.getUserMedia({
@@ -46,6 +58,8 @@ async function onSignal(m: any) {
       pc = newPeer()
       stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
       await pc.setRemoteDescription({ type: 'offer', sdp: m.payload.sdp })
+      for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
+      pendingIce = []
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
       ws!.send(JSON.stringify({ type: 'answer', payload: answer.toJSON() }))
@@ -53,9 +67,14 @@ async function onSignal(m: any) {
       status.value = '主控已连接，推流中'
     } catch (e: any) {
       status.value = '建立连接失败: ' + (e?.message || e)
+      try { ws?.send(JSON.stringify({ type: 'error', message: 'host_getusermedia_failed' })) } catch {}
     }
-  } else if (m.type === 'ice' && pc) {
-    try { await pc.addIceCandidate(m.payload) } catch {}
+  } else if (m.type === 'ice') {
+    if (pc && pc.remoteDescription) {
+      try { await pc.addIceCandidate(m.payload) } catch {}
+    } else {
+      pendingIce.push(m.payload)
+    }
   }
 }
 
