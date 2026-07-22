@@ -67,6 +67,7 @@ export interface ScreenshotCapability {
 export interface RemoteCapability {
   getDesktopSources: () => Promise<any[]>
   getScreenSize: () => { width: number; height: number }
+  getAllDisplays: () => { id: number; name: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number }[]
 }
 
 export interface PluginContext {
@@ -154,6 +155,7 @@ declare global {
       remote: {
         getDesktopSources: () => Promise<any[]>
         getScreenSize: () => Promise<{ width: number; height: number }>
+        getAllDisplays: () => Promise<{ id: number; name: string; bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number }[]>
         injectInput: (event: any) => Promise<any>
         onControlRequest: (cb: (info: any) => void) => void
       }

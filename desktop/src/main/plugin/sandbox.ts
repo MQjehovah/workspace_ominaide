@@ -123,6 +123,12 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
         const sf = d.scaleFactor || 1
         return { width: Math.round(d.bounds.width * sf), height: Math.round(d.bounds.height * sf) }
       },
+      getAllDisplays: () => screen.getAllDisplays().map((d: any) => ({
+        id: d.id,
+        name: `${d.bounds.width}x${d.bounds.height}`,
+        bounds: { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height },
+        scaleFactor: d.scaleFactor || 1,
+      })),
     } : null,
     files: perms.includes('files:read') ? {
       openDirectory: async () => {
