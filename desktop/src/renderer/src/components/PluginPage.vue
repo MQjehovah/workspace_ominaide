@@ -22,6 +22,7 @@ const pageComponents: Record<string, any> = {
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Page.vue')),
   'player': defineAsyncComponent(() => import('@plugins/player/src/Page.vue')),
   'remote': defineAsyncComponent(() => import('@plugins/remote/src/Page.vue')),
+  'schedule': defineAsyncComponent(() => import('@plugins/schedule/src/Page.vue')),
   'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Page.vue')),
   'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Page.vue')),
   'ai-chat': defineAsyncComponent(() => import('@plugins/ai-chat/src/Page.vue')),
