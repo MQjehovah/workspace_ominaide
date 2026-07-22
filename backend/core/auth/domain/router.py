@@ -66,3 +66,39 @@ async def toggle_user_active(user_id: int, req: ToggleActiveRequest, db: AsyncSe
     u.is_active = req.is_active
     await db.flush()
     return {"id": u.id, "is_active": u.is_active}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import select
+    from core.auth.domain.models import User as UserModel
+    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
+    u = result.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.delete(u)
+    await db.flush()
+    return {"message": "User deleted"}
+
+
+from pydantic import BaseModel
+
+class UpdateUserRequest(BaseModel):
+    username: str | None = None
+    email: str | None = None
+
+
+@router.put("/users/{user_id}")
+async def update_user(user_id: int, req: UpdateUserRequest, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import select
+    from core.auth.domain.models import User as UserModel
+    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
+    u = result.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    if req.username is not None:
+        u.username = req.username
+    if req.email is not None:
+        u.email = req.email
+    await db.flush()
+    return {"id": u.id, "username": u.username, "email": u.email}
