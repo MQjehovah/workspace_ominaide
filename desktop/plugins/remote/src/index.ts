@@ -44,6 +44,15 @@ export default {
     hostState.autoAccept = !!(await context.storage?.get('autoAccept'))
     if (saved?.autoAccept != null) hostState.autoAccept = saved.autoAccept
 
+    // Auto-reconnect if was enabled before restart
+    if (saved?.enabled) {
+      hostState.enabled = false // reset so executeStartHostDirectly doesn't skip
+      try { await context.api.delete('/remote/online') } catch {} // cleanup stale registration
+      executeStartHostDirectly().catch((e: any) => {
+        console.error('[remote] auto-reconnect failed:', e?.message || e)
+      })
+    }
+
     // --- WebSocket signaling (child process owns WS) ---
 
     async function connectWs(id: string, roomId: string) {

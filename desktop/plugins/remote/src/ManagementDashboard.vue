@@ -9,6 +9,7 @@ const hostStatus = ref('')
 const peerConnected = ref(false)
 const autoAccept = ref(false)
 const devices = ref<any[]>([])
+const localDeviceId = ref('')
 const pairInput = ref('')
 const loadingStatus = ref('')
 const starting = ref(false)
@@ -29,8 +30,14 @@ function loadState() {
 
 async function loadDevices() {
   try {
-    const r = await props.execute?.('getDevices')
-    devices.value = r?.devices || []
+    const [r, myId] = await Promise.all([
+      props.execute?.('getDevices'),
+      props.execute?.('getDeviceId'),
+    ])
+    localDeviceId.value = myId || ''
+    const list: any[] = r?.devices || []
+    list.forEach(d => d.isLocal = d.device_id === myId)
+    devices.value = list
   } catch {}
 }
 
@@ -122,10 +129,11 @@ onUnmounted(() => {
     <div class="section">
       <div class="section-title">在线设备（同账号）</div>
       <div v-if="devices.length === 0" class="empty">暂无在线设备</div>
-      <button v-for="d in devices" :key="d.device_id" class="device" @click="controlDevice(d.room_id)">
+      <button v-for="d in devices" :key="d.device_id" class="device" :class="{ local: d.isLocal }" @click="!d.isLocal && controlDevice(d.room_id)">
         <span class="dev-icon">🖥</span>
         <span class="dev-name">{{ d.name }}</span>
-        <span class="dev-id">{{ d.device_id.slice(0, 6) }}</span>
+        <span class="dev-badge" v-if="d.isLocal">本机</span>
+        <span class="dev-id" v-else>{{ d.device_id.slice(0, 6) }}</span>
       </button>
     </div>
 
@@ -176,8 +184,11 @@ onUnmounted(() => {
 .empty { font-size:12px; color:#c0c4cc; text-align:center; padding:14px 0; }
 .device { width:100%; display:flex; align-items:center; padding:10px 12px; border:1px solid #e8e8e8; border-radius:8px; background:#fff; cursor:pointer; margin-bottom:6px; gap:8px; }
 .device:hover { background:#f5f7fa; border-color:#0078D4; }
+.device.local { cursor:default; background:#f8f9fa; border-color:#e0e0e0; }
+.device.local:hover { border-color:#e0e0e0; }
 .dev-icon { font-size:16px; }
 .dev-name { flex:1; font-size:13px; font-weight:500; color:#1a1a1a; }
+.dev-badge { font-size:10px; color:#0078D4; background:#e8f4fd; padding:1px 7px; border-radius:8px; font-weight:500; }
 .dev-id { font-size:11px; color:#c0c4cc; font-family:monospace; }
 
 .pair-row { display:flex; gap:8px; }
