@@ -44,7 +44,7 @@ onMounted(() => {
   loadDevices(); loadHostState()
   pollTimer = setInterval(() => {
     loadDevices(); props.refresh?.(); loadHostState()
-  }, 5000)
+  }, 15000)
 })
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>

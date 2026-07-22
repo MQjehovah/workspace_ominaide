@@ -37,6 +37,19 @@ export function newPeer(iceServers?: any[]): RTCPeerConnection {
   return new RTCPeerConnection({ iceServers: iceServers || [{ urls: 'stun:stun.l.google.com:19302' }] })
 }
 
+export function setCodecPreferencesH264(pc: RTCPeerConnection) {
+  try {
+    const transceivers = pc.getTransceivers?.()
+    if (!transceivers) return
+    const videoTransceiver = transceivers.find(t => t.kind === 'video')
+    if (!videoTransceiver?.setCodecPreferences) return
+    const caps = (RTCRtpSender as any).getCapabilities?.('video')
+    if (!caps?.codecs) return
+    const h264 = caps.codecs.filter((c: any) => c.mimeType.toLowerCase().includes('h264'))
+    if (h264.length > 0) videoTransceiver.setCodecPreferences(h264)
+  } catch {}
+}
+
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   const { token } = await getServer()
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }

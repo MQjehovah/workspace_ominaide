@@ -14,6 +14,8 @@ let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
 let pendingIce: any[] = []
 let connectionEnded = false
+let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
+function invalidateNormCache() { cachedNorm = null }
 
 async function connect(roomId: string) {
   connectionEnded = false
@@ -37,9 +39,20 @@ async function connect(roomId: string) {
   }
 }
 
+function determineQuality() {
+  const el = videoRef.value
+  if (!el) return
+  const w = el.clientWidth, h = el.clientHeight
+  let maxWidth = 1920, maxHeight = 1080, maxFrameRate = 30
+  if (w <= 800 || h <= 600) { maxWidth = 800; maxHeight = 600; maxFrameRate = 15 }
+  else if (w <= 1280 || h <= 720) { maxWidth = 1280; maxHeight = 720; maxFrameRate = 24 }
+  sendInput({ type: 'setQuality', maxWidth, maxHeight, maxFrameRate })
+}
+
 async function startOffering() {
   if (!pc || !ws) return
   dc = pc.createDataChannel('input')
+  dc.onopen = () => determineQuality()
   dc.onmessage = (msg) => {
     try {
       const ev = JSON.parse(msg.data)
@@ -52,6 +65,7 @@ async function startOffering() {
     if (videoRef.value) videoRef.value.srcObject = e.streams[0]
     status.value = '已连接（可控制）'
     connected.value = true
+    setTimeout(() => determineQuality(), 500)
   }
   pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
   pc.oniceconnectionstatechange = () => {
@@ -107,9 +121,15 @@ function normVideo(e: MouseEvent) {
   const el = e.currentTarget as HTMLVideoElement
   const cw = el.clientWidth, ch = el.clientHeight
   const vw = el.videoWidth || cw, vh = el.videoHeight || ch
+  if (cachedNorm && cachedNorm.cw === cw && cachedNorm.ch === ch && cachedNorm.vw === vw && cachedNorm.vh === vh) {
+    const x = cachedNorm.rw > 0 ? (e.offsetX - cachedNorm.ox) / cachedNorm.rw : 0
+    const y = cachedNorm.rh > 0 ? (e.offsetY - cachedNorm.oy) / cachedNorm.rh : 0
+    return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
+  }
   const scale = Math.min(cw / vw, ch / vh)
   const rw = vw * scale, rh = vh * scale
   const ox = (cw - rw) / 2, oy = (ch - rh) / 2
+  cachedNorm = { cw, ch, vw, vh, scale, rw, rh, ox, oy }
   const x = rw > 0 ? (e.offsetX - ox) / rw : 0
   const y = rh > 0 ? (e.offsetY - oy) / rh : 0
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
@@ -173,12 +193,14 @@ function backToMenu() {
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('resize', invalidateNormCache)
   if (props.room) connect(props.room)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
+  window.removeEventListener('resize', invalidateNormCache)
   cleanup()
   if (ws) { try { ws.close() } catch {} ; ws = null }
 })
