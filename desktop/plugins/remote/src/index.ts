@@ -3,6 +3,7 @@ import Page from './Page.vue'
 
 let pluginCtx: any = null
 let deviceId: string | null = null
+let hostState = { enabled: false, code: '', status: '', peerConnected: false }
 
 async function getDeviceId(context: any): Promise<string> {
   if (deviceId) return deviceId
@@ -16,7 +17,7 @@ async function getDeviceId(context: any): Promise<string> {
 }
 
 function getState() {
-  return { hosting: false }
+  return { hosting: hostState.enabled, hostState }
 }
 
 export default {
@@ -29,6 +30,10 @@ export default {
     context.registerCommand('getPageData', async () => getState())
     context.registerCommand('open', async () => { context.openPage('remote') })
     context.registerCommand('getDeviceId', async () => deviceId)
+    context.registerCommand('syncHostState', async (args: any) => {
+      if (args) hostState = { ...hostState, ...args }
+      return getState()
+    })
   },
   deactivate() {},
 }
