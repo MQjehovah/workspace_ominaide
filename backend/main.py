@@ -62,6 +62,9 @@ app.include_router(remote_ws_router)
 from plugins.chat.backend.router import router as chat_router
 app.include_router(chat_router)
 
+from plugins.schedule.backend.router import router as schedule_router
+app.include_router(schedule_router)
+
 
 @app.websocket("/ws/sync/{workspace_id}")
 async def sync_websocket(websocket: WebSocket, workspace_id: int):
