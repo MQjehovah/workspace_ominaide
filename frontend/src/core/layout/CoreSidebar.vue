@@ -16,6 +16,7 @@
         <span>仪表盘</span>
       </el-menu-item>
       <el-menu-item index="/schedule"><el-icon><Calendar /></el-icon><span>日程</span></el-menu-item>
+      <el-menu-item index="/rss"><el-icon><Promotion /></el-icon><span>资讯</span></el-menu-item>
       <el-menu-item index="/files">
         <el-icon><Folder /></el-icon>
         <span>文件</span>
@@ -60,7 +61,7 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, Grid, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar } from '@element-plus/icons-vue'
+import { Folder, Document, Grid, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()

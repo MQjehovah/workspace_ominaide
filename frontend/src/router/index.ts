@@ -58,6 +58,11 @@ const router = createRouter({
           path: 'schedule',
           name: 'Schedule',
           component: () => import('@/views/Schedule.vue')
+        },
+        {
+          path: 'rss',
+          name: 'RSS',
+          component: () => import('@/views/RSS.vue')
         }
       ]
     }
