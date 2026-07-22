@@ -142,15 +142,16 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
         } catch { return [] }
       },
     } : null,
-    openPage: (pluginId: string) => {
+    openPage: (pluginId: string, query: string = '') => {
       const preloadPath = join(__dirname, '../../preload/index.js')
       const win = new BrowserWindow({
         width: 900, height: 700,
         webPreferences: { preload: preloadPath, contextIsolation: true },
       })
+      const extra = query ? '&' + query : ''
       const url = process.env.VITE_DEV_SERVER_URL
-        ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}`
-        : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}`
+        ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}${extra}`
+        : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}${extra}`
       win.loadURL(url)
     },
     registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => {

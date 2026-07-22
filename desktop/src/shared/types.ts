@@ -88,7 +88,7 @@ export interface PluginContext {
   }
   screenshot: ScreenshotCapability | null
   remote: RemoteCapability | null
-  openPage: (pluginId: string) => void
+  openPage: (pluginId: string, query?: string) => void
   registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => void
   registerSearchProvider: (provider: SearchProvider) => void
 }
@@ -120,7 +120,7 @@ declare global {
       window: {
         openMain: () => void
   files: { openDirectory: () => Promise<string | undefined>; listAudio: (dirPath: string) => Promise<{ name: string; path: string }[]> } | null
-  openPage: (pluginId: string) => void
+  openPage: (pluginId: string, query?: string) => void
         openSearch: () => void
         hide: () => void
       }
