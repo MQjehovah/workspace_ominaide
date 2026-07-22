@@ -6,15 +6,15 @@ _embedding_client: AsyncOpenAI | None = None
 
 def get_embedding_client() -> AsyncOpenAI | None:
     global _embedding_client
-    if _embedding_client is None and settings.llm_api_key:
-        _embedding_client = AsyncOpenAI(
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-        )
+    if _embedding_client is None:
+        key = settings.embedding_api_key or settings.llm_api_key
+        base = settings.embedding_base_url
+        if key:
+            _embedding_client = AsyncOpenAI(api_key=key, base_url=base)
     return _embedding_client
 
 
-async def generate_embedding(text: str, model: str = "text-embedding-3-small") -> list[float] | None:
+async def generate_embedding(text: str, model: str | None = None) -> list[float] | None:
     client = get_embedding_client()
     if not client:
         return None
@@ -23,6 +23,7 @@ async def generate_embedding(text: str, model: str = "text-embedding-3-small") -
     if not text.strip():
         return None
 
+    model = model or settings.embedding_model
     try:
         resp = await client.embeddings.create(model=model, input=text)
         return resp.data[0].embedding

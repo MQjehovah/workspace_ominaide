@@ -36,11 +36,11 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
                 if prof.contacts:
                     import json
                     contacts = json.loads(prof.contacts) if isinstance(prof.contacts, str) else prof.contacts
-                    if contacts: parts.append(f"联系人: {'; '.join([f'{c.get(\"name\",\"\")}({c.get(\"relation\",\"\")})' for c in contacts])}")
+                    if contacts: parts.append("联系人: " + "; ".join([f'{c.get("name","")}({c.get("relation","")})' for c in contacts]))
                 if prof.projects:
                     import json
                     projects = json.loads(prof.projects) if isinstance(prof.projects, str) else prof.projects
-                    if projects: parts.append(f"项目: {'; '.join([f'{p.get(\"name\",\"\")}({p.get(\"deadline\",\"\")})' for p in projects])}")
+                    if projects: parts.append("项目: " + "; ".join([f'{p.get("name","")}({p.get("deadline","")})' for p in projects]))
                 if parts:
                     user_ctx.append("【用户信息】\n" + "\n".join(parts))
     except Exception:

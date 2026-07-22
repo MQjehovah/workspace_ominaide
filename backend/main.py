@@ -55,8 +55,8 @@ app.include_router(sync_router)
 from core.mcp.router import router as mcp_router
 app.include_router(mcp_router)
 
-from core.events.router import router as events_router
-app.include_router(events_router)
+from core.events.router import router as activities_router
+app.include_router(activities_router)
 
 from plugins.music.backend.router import router as music_router
 app.include_router(music_router)

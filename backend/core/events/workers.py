@@ -13,7 +13,7 @@ async def indexing_handler(event):
         source_id=event.id,
         title=event.summary or event.event_type,
         content=str(event.details or ""),
-        metadata={"link": f"/events/{event.id}", "event_type": event.event_type},
+        metadata={"link": f"/activities/{event.id}", "event_type": event.event_type},
     )
 
 

@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
+    embedding_api_key: str = ""
+    embedding_base_url: str = "https://api.openai.com/v1"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
     jwt_secret: str = "dev-secret-key"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30

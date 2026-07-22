@@ -57,7 +57,7 @@ async function fetchStats() {
       client.get('/auth/users').then(r => r.data.length || r.data.length).catch(() => '?'),
       client.get('/files?page_size=1').then(r => r.data.total ?? r.data.length ?? '?').catch(() => '?'),
       Promise.resolve(0).catch(() => '?'),
-      client.get('/events?limit=0').then(r => Array.isArray(r.data) ? r.data.length : '?').catch(() => '?'),
+      client.get('/activities?limit=0').then(r => Array.isArray(r.data) ? r.data.length : '?').catch(() => '?'),
     ])
     stats.value = [
       { label: '用户数', value: String(users) },
@@ -71,7 +71,7 @@ async function fetchStats() {
 async function fetchEvents() {
   eventsLoading.value = true
   try {
-    const r = await client.get('/events?limit=10')
+    const r = await client.get('/activities?limit=10')
     events.value = r.data || []
   } catch { events.value = [] }
   finally { eventsLoading.value = false }

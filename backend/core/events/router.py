@@ -5,12 +5,12 @@ from pydantic import BaseModel
 from datetime import datetime
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
-from core.events.models import UserEvent
+from core.events.models import UserActivity
 
-router = APIRouter(prefix="/api/events", tags=["events"])
+router = APIRouter(prefix="/api/activities", tags=["activities"])
 
 
-class EventResponse(BaseModel):
+class ActivityResponse(BaseModel):
     id: int
     user_id: int
     event_type: str
@@ -23,20 +23,20 @@ class EventResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("", response_model=list[EventResponse])
-async def list_events(
+@router.get("", response_model=list[ActivityResponse])
+async def list_activities(
     limit: int = Query(50, ge=1, le=200),
     event_type: str | None = None,
     entity_type: str | None = None,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(UserEvent).where(UserEvent.user_id == user["id"])
+    query = select(UserActivity).where(UserActivity.user_id == user["id"])
     if event_type:
-        query = query.where(UserEvent.event_type == event_type)
+        query = query.where(UserActivity.event_type == event_type)
     if entity_type:
-        query = query.where(UserEvent.entity_type == entity_type)
-    query = query.order_by(desc(UserEvent.created_at)).limit(limit)
+        query = query.where(UserActivity.entity_type == entity_type)
+    query = query.order_by(desc(UserActivity.created_at)).limit(limit)
     result = await db.execute(query)
-    events = list(result.scalars().all())
-    return [EventResponse.model_validate(e) for e in events]
+    activities = list(result.scalars().all())
+    return [ActivityResponse.model_validate(e) for e in activities]
