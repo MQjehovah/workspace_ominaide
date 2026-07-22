@@ -105,6 +105,11 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     await db.write()
   })
 
+  proc.registerBridgeHandler('config:get', async ([key]) => {
+    const cfg = await getConfig()
+    return (cfg as any)?.[key]
+  })
+
   proc.registerBridgeHandler('notification:show', async ([title, body]) => {
     new Notification({ title, body }).show()
   })

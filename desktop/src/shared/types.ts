@@ -120,6 +120,9 @@ export interface RemoteCapability {
 
 export interface PluginContext {
   plugin: PluginInfo
+  config: {
+    get: (key: string) => Promise<any>
+  }
   api: {
     get: (path: string) => Promise<any>
     post: (path: string, body?: any) => Promise<any>

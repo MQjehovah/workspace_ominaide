@@ -97,6 +97,9 @@ export function createChildContext(info: PluginInfo): PluginContext {
 
   const context: PluginContext = {
     plugin: info,
+    config: {
+      get: (key: string) => rpc('config:get', key),
+    },
     api: {
       get: (path: string) => rpc('api:get', path),
       post: (path: string, body?: any) => rpc('api:post', path, body),

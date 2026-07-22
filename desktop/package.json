@@ -30,7 +30,8 @@
     "lowdb": "^7.0.0",
     "pinia": "^2.1.0",
     "prosemirror-markdown": "^1.13.5",
-    "vue": "^3.5.40"
+    "vue": "^3.5.40",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -53,7 +54,9 @@
       "dist-electron/**/*"
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": null
     },
     "nsis": {
