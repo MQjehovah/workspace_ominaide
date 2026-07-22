@@ -30,6 +30,7 @@ export default {
     context.registerCommand('getPageData', async () => getState())
     context.registerCommand('open', async () => { context.openPage('remote') })
     context.registerCommand('getDeviceId', async () => deviceId)
+    context.registerCommand('getHostName', async () => { const { hostname } = require('os'); return hostname() })
     context.registerCommand('syncHostState', async (args: any) => {
       if (args) hostState = { ...hostState, ...args }
       return getState()

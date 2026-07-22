@@ -5,7 +5,7 @@ import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from '.
 const props = defineProps<{ data: any; execute: (a: string, args?: any) => Promise<any>; openPage: () => void; refresh: () => Promise<void> }>()
 
 const hosting = ref(false)
-const hostingEnabled = ref(false)
+const hostingEnabled = ref(localStorage.getItem('remote_hostEnabled') === '1')
 const status = ref('')
 const pairCode = ref('')
 const pendingRequest = ref<{ name: string } | null>(null)
@@ -71,16 +71,18 @@ async function startHost() {
     const headers = await getAuthHeaders()
     const deviceId = await props.execute('getDeviceId')
     const me = await fetch(`${serverUrl}/api/auth/me`, { headers }).then(r => r.json())
+    const hostName = await props.execute('getHostName')
     const roomId = `u${me.id}_d${deviceId}`
     currentRoomId = roomId
     await fetch(`${serverUrl}/api/remote/online`, {
       method: 'POST', headers,
-      body: JSON.stringify({ device_id: deviceId, name: '我的电脑', room_id: roomId }),
+      body: JSON.stringify({ device_id: deviceId, name: hostName, room_id: roomId }),
     })
     ws = await openSignal(roomId, onSignal)
     ws.onclose = () => {
       hosting.value = false
       hostingEnabled.value = false
+      localStorage.setItem('remote_hostEnabled', '0')
       status.value = status.value || '信令断开'
       if (pc) { try { pc.close() } catch {} ; pc = null }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
@@ -289,7 +291,12 @@ function openManagement() {
 }
 
 async function toggleHost() {
+  localStorage.setItem('remote_hostEnabled', hostingEnabled.value ? '1' : '0')
   if (hostingEnabled.value) { await startHost() } else { await stopHost() }
+}
+
+if (hostingEnabled.value) {
+  setTimeout(async () => { if (!hosting.value) await startHost() }, 1500)
 }
 </script>
 
