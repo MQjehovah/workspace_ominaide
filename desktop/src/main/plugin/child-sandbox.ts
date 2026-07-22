@@ -54,6 +54,27 @@ export function createChildContext(info: PluginInfo): PluginContext {
    */
   function handleParentRequest(req: any): boolean {
     if (req.type === 'execute' && req.command) {
+      if (req.command === '__search__') {
+        const args = req.args || {}
+        // Return provider list
+        if (args.getProviders) {
+          const meta = providers.map(p => ({
+            keyword: p.keyword,
+            name: p.name,
+            priority: p.priority,
+          }))
+          sendToParent({ id: req.id, type: 'result', data: meta })
+          return true
+        }
+        // Execute search
+        const kw = args.keyword || ''
+        const q = args.query || ''
+        const matching = providers.filter((p: any) => !kw || p.keyword === kw)
+        Promise.all(matching.map((p: any) => Promise.resolve(p.onSearch(q))))
+          .then(results => sendToParent({ id: req.id, type: 'result', data: results.flat().slice(0, 20) }))
+          .catch(err => sendToParent({ id: req.id, type: 'error', error: err.message }))
+        return true
+      }
       const handler = commands.get(req.command)
       if (handler) {
         Promise.resolve(handler(req.args))
@@ -109,7 +130,9 @@ export function createChildContext(info: PluginInfo): PluginContext {
     },
     openPage: (pluginId: string, query?: string) => { rpc('openPage', pluginId, query) },
     registerCommand: (name: string, handler: Function) => { commands.set(name, handler) },
-    registerSearchProvider: (provider: SearchProvider) => { providers.push(provider) },
+    registerSearchProvider: (provider: SearchProvider) => {
+      providers.push({ ...provider, pluginId: info.id })
+    },
   }
 
   return Object.assign(context, { handleParentRequest, commands, providers })

@@ -92,6 +92,9 @@ onMounted(() => {
   fetchNotifCount()
   notifTimer = setInterval(fetchNotifCount, 15000)
   window.mqbox?.plugin?.onUpdated(() => loadPlugins())
+  window.mqbox?.clipboard?.onUpdated(() => loadPlugins())
+  window.mqbox?.player?.onUpdated(() => loadPlugins())
+  window.mqbox?.todo?.onUpdated(() => loadPlugins())
 })
 
 onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })

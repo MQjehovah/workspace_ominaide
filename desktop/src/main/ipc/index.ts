@@ -2,7 +2,7 @@ import axios from 'axios'
 import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream } from 'fs'
-import { getPlugins, getPanels, getSearchProviders, executeCommand, getPluginPage } from '../plugin/host'
+import { getPlugins, getPanels, executeCommand, getPluginPage } from '../plugin/host'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
 import * as screenshot from '../screenshot'
@@ -192,23 +192,28 @@ export function registerIpcHandlers() {
 
   // Search
   ipcMain.handle('search:plugin', async (_, keyword: string, query: string) => {
-    const providers = getSearchProviders()
+    const allPlugins = getPlugins()
     const results: any[] = []
-    for (const p of providers) {
-      if (keyword && p.keyword !== keyword) continue
-      if (!keyword && p.keyword !== '') continue
+    for (const plugin of allPlugins) {
       try {
-        const res = await Promise.race([
-          Promise.resolve(p.onSearch(query)),
-          new Promise<[]>((_, reject) => setTimeout(() => reject([]), 2000)),
-        ])
-        results.push(...res)
+        const res = await executeCommand(plugin.id, '__search__', { keyword, query })
+        if (Array.isArray(res)) results.push(...res)
       } catch {}
       if (results.length >= 20) break
     }
     return results.slice(0, 20)
   })
-  ipcMain.handle('search:get-providers', () => getSearchProviders().map(p => ({ keyword: p.keyword, name: p.name, priority: p.priority })))
+  ipcMain.handle('search:get-providers', async () => {
+    const allPlugins = getPlugins()
+    const providers: any[] = []
+    for (const plugin of allPlugins) {
+      try {
+        const res = await executeCommand(plugin.id, '__search__', { getProviders: true })
+        if (Array.isArray(res)) providers.push(...res)
+      } catch {}
+    }
+    return providers
+  })
 
   // API proxy
   async function tryRefresh(): Promise<boolean> {

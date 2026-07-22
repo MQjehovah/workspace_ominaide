@@ -199,11 +199,15 @@ export function getPanels(): PluginPanel[] {
   return panels
 }
 
-export function getSearchProviders(): SearchProvider[] {
-  const providers: SearchProvider[] = []
+export function getSearchProviders(): Array<SearchProvider & { pluginId: string }> {
+  const providers: Array<SearchProvider & { pluginId: string }> = []
   for (const [id] of plugins) {
     const proc = processManager.getProcess(id)
-    if (proc && proc.searchProviders) providers.push(...proc.searchProviders)
+    if (proc && proc.searchProviders) {
+      for (const p of proc.searchProviders as any[]) {
+        providers.push({ ...p, pluginId: id })
+      }
+    }
   }
   return providers
 }
