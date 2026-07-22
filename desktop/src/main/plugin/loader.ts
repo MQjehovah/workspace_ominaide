@@ -7,7 +7,8 @@ function findPluginDirs(): string[] {
   const searchPaths = [
     join(__dirname, '../../../plugins'),       // dev
     join(__dirname, '../../plugins'),          // dev alt
-    join(app.getPath('userData'), 'plugins'),  // production
+    join(app.getPath('userData'), 'plugins'),  // marketplace downloads
+    join(process.resourcesPath, 'plugins'),    // production bundled
   ]
   const dirs: string[] = []
   for (const base of searchPaths) {
