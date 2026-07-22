@@ -19,6 +19,55 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
             messages.append({"role": m.role, "content": m.content})
     messages.append({"role": "user", "content": req.message})
 
+    # Inject user context (profile + entities) as system prompt
+    user_ctx = []
+    try:
+        from sqlalchemy import select
+        from core.auth.domain.models import UserProfile
+        from core.database.session import async_session
+        async with async_session() as db:
+            r = await db.execute(select(UserProfile).where(UserProfile.user_id == user["id"]))
+            prof = r.scalar_one_or_none()
+            if prof:
+                parts = []
+                if prof.name: parts.append(f"姓名: {prof.name}")
+                if prof.role: parts.append(f"角色: {prof.role}")
+                if prof.company: parts.append(f"公司: {prof.company}")
+                if prof.contacts:
+                    import json
+                    contacts = json.loads(prof.contacts) if isinstance(prof.contacts, str) else prof.contacts
+                    if contacts: parts.append(f"联系人: {'; '.join([f'{c.get(\"name\",\"\")}({c.get(\"relation\",\"\")})' for c in contacts])}")
+                if prof.projects:
+                    import json
+                    projects = json.loads(prof.projects) if isinstance(prof.projects, str) else prof.projects
+                    if projects: parts.append(f"项目: {'; '.join([f'{p.get(\"name\",\"\")}({p.get(\"deadline\",\"\")})' for p in projects])}")
+                if parts:
+                    user_ctx.append("【用户信息】\n" + "\n".join(parts))
+    except Exception:
+        pass
+
+    # Fetch recent entities from Qdrant if memory layer enabled
+    if settings.memory_layer_enabled and user_ctx:
+        try:
+            from qdrant_client import QdrantClient
+            from core.ai.embeddings import generate_embedding
+            host = settings.qdrant_url.replace("http://","").split(":")[0]
+            port = int(settings.qdrant_url.split(":")[-1])
+            qc = QdrantClient(host=host, port=port)
+            collections = qc.get_collections().collections
+            if any(c.name == "entities" for c in collections):
+                vec = await generate_embedding(req.message)
+                if vec:
+                    hits = qc.search("entities", query_vector=vec, limit=5, query_filter={"must": [{"key": "user_id", "match": {"value": user["id"]}}]})
+                    if hits:
+                        related = [f"{h.payload.get('name','')}({h.payload.get('type','')})" for h in hits]
+                        user_ctx.append("【相关实体】\n" + ", ".join(related))
+        except Exception:
+            pass
+
+    if user_ctx:
+        messages.insert(0, {"role": "system", "content": "\n\n".join(user_ctx)})
+
     # Convert MCP tools to OpenAI tool format
     mcp_tools = tool_registry.get_tools()
     openai_tools = [
