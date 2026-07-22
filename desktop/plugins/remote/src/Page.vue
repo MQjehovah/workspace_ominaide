@@ -61,6 +61,8 @@ async function startOffering() {
     setTimeout(() => viewerRef.value?.focus(), 100)
   }
   pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
+  pc.oniceconnectionstatechange = () => console.log('[remote viewer] ICE state:', pc?.iceConnectionState, '| conn:', pc?.connectionState)
+  pc.onconnectionstatechange = () => console.log('[remote viewer] conn state:', pc?.connectionState)
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState

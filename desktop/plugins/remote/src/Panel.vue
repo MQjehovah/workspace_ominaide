@@ -148,6 +148,7 @@ async function onSignal(m: any) {
       ws!.send(JSON.stringify({ type: 'answer', payload: answer }))
       pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
       pc.oniceconnectionstatechange = () => {
+        console.log('[remote host] ICE state:', pc?.iceConnectionState, '| conn:', pc?.connectionState)
         if (pc && (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed')) {
           if (pc) { try { pc.close() } catch {} ; pc = null }
           if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
