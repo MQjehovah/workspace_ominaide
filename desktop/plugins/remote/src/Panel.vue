@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from './webrtc'
+import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers, setCodecPreferencesH264 } from './webrtc'
 
 const props = defineProps<{ data: any; execute: (a: string, args?: any) => Promise<any>; openPage: () => void; refresh: () => Promise<void> }>()
 
@@ -20,11 +20,22 @@ let pc: RTCPeerConnection | null = null
 let stream: MediaStream | null = null
 let pendingIce: any[] = []
 let currentRoomId = ''
-let lastMoveTs = 0
 let pendingMove: any = null
 let moveScheduled = false
-let trailingTimer: any = null
 let heartbeatTimer: any = null
+const qualityConfig = { maxWidth: 1920, maxHeight: 1080, maxFrameRate: 30 }
+let cachedSources: any[] | null = null
+let cachedDisplays: any[] | null = null
+let cacheTime = 0
+const CACHE_TTL = 5000
+async function getCachedSources() {
+  const now = Date.now()
+  if (cachedSources && now - cacheTime < CACHE_TTL) return { sources: cachedSources, displays: cachedDisplays }
+  cachedSources = await (window as any).mqbox.remote.getDesktopSources()
+  cachedDisplays = await (window as any).mqbox.remote.getAllDisplays()
+  cacheTime = now
+  return { sources: cachedSources, displays: cachedDisplays }
+}
 let currentDisplay: any = null
 let currentSourceId = ''
 let codeTimer: any = null
@@ -44,18 +55,12 @@ async function handleInput(ev: any) {
   try {
     if (ev.type === 'mouseMove') {
       pendingMove = ev
-      const now = Date.now()
-      if (now - lastMoveTs >= 16 && !moveScheduled) {
-        lastMoveTs = now
+      if (!moveScheduled) {
         moveScheduled = true
-        await flushMove()
-        moveScheduled = false
-      } else if (!trailingTimer) {
-        trailingTimer = setTimeout(async () => {
-          trailingTimer = null
-          lastMoveTs = Date.now()
+        requestAnimationFrame(async () => {
+          moveScheduled = false
           await flushMove()
-        }, 16)
+        })
       }
     } else if (ev.type === 'mouseDown' || ev.type === 'mouseUp' || ev.type === 'wheel' || ev.type === 'keyDown' || ev.type === 'keyUp') {
       await (window as any).mqbox.remote.injectInput(ev)
@@ -105,7 +110,7 @@ async function startHost() {
         const headers = await getAuthHeaders()
         await fetch(`${serverUrl}/api/remote/heartbeat`, { method: 'POST', headers, body: JSON.stringify({ device_id: deviceId }) })
       } catch {}
-    }, 30000)
+    }, 60000)
     await genPairAuto(deviceId)
   } catch (e: any) {
     status.value = '失败: ' + (e?.message || e)
@@ -129,16 +134,24 @@ async function onSignal(m: any) {
       if (pc) { try { pc.close() } catch {} ; pc = null }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
       pendingIce = []
-      const sources = await (window as any).mqbox.remote.getDesktopSources()
-      if (!sources.length) { status.value = '无屏幕源'; return }
-      const allDisplays = await (window as any).mqbox.remote.getAllDisplays()
-      currentDisplay = matchDisplay(sources[0], allDisplays)
-      currentSourceId = sources[0].id
+      const { sources: srcList, displays: allDisplays } = await getCachedSources()
+      if (!srcList.length) { status.value = '无屏幕源'; return }
+      currentDisplay = matchDisplay(srcList[0], allDisplays)
+      currentSourceId = srcList[0].id
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sources[0].id, maxFrameRate: 30 } } as any,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: srcList[0].id,
+            maxFrameRate: qualityConfig.maxFrameRate,
+            maxWidth: qualityConfig.maxWidth,
+            maxHeight: qualityConfig.maxHeight,
+          } as any,
+        },
       })
       pc = newPeer(await getIceServers())
+      setCodecPreferencesH264(pc)
       pc.ondatachannel = (e) => {
         const dc = e.channel
         dc.onopen = () => {
@@ -153,6 +166,26 @@ async function onSignal(m: any) {
           try {
             const ev = JSON.parse(msg.data)
             if (ev.type === 'switchScreen') { await switchScreen(ev.sourceId, dc); return }
+            if (ev.type === 'setQuality') {
+              Object.assign(qualityConfig, ev)
+              const newStream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: {
+                  mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: currentSourceId,
+                    maxFrameRate: qualityConfig.maxFrameRate,
+                    maxWidth: qualityConfig.maxWidth,
+                    maxHeight: qualityConfig.maxHeight,
+                  } as any,
+                },
+              })
+              const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+              if (sender && pc) await sender.replaceTrack(newStream.getVideoTracks()[0])
+              if (stream) stream.getTracks().forEach(t => t.stop())
+              stream = newStream
+              return
+            }
             await handleInput(ev)
           } catch {}
         }
@@ -270,15 +303,22 @@ async function switchScreen(sourceId: string, dc: any) {
   try {
     const newStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxFrameRate: 30 } } as any,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: sourceId,
+          maxFrameRate: qualityConfig.maxFrameRate,
+          maxWidth: qualityConfig.maxWidth,
+          maxHeight: qualityConfig.maxHeight,
+        } as any,
+      },
     })
-    const sender = pc?.getSenders().find((s: any) => s.track && s.track.kind === 'video')
+    const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
     if (sender && pc) await sender.replaceTrack(newStream.getVideoTracks()[0])
     if (stream) stream.getTracks().forEach(t => t.stop())
     stream = newStream
     currentSourceId = sourceId
-    const allDisplays = await (window as any).mqbox.remote.getAllDisplays()
-    const srcs = await (window as any).mqbox.remote.getDesktopSources()
+    const { sources: srcs, displays: allDisplays } = await getCachedSources()
     currentDisplay = matchDisplay(srcs.find((s: any) => s.id === sourceId), allDisplays)
     dc.send(JSON.stringify({ type: 'activeScreen', id: sourceId }))
   } catch (e: any) {

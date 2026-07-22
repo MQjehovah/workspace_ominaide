@@ -78,7 +78,7 @@ async function refreshAll() {
 
 onMounted(() => {
   refreshAll()
-  pollTimer = setInterval(refreshAll, 5000)
+  pollTimer = setInterval(refreshAll, 15000)
 })
 
 onUnmounted(() => {

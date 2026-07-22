@@ -49,8 +49,8 @@ export default {
 
         ws.on('open', () => {
           ws.send(JSON.stringify({ type: 'join' }))
-          hostState.enabled = true
-          hostState.status = '允许控制中（等待主控连接）'
+          if (!hostState.enabled) hostState.enabled = true
+          hostState.status = '已在线'
         })
 
         ws.on('message', (data: Buffer) => {
@@ -101,6 +101,10 @@ export default {
         const pairData = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
         hostState.code = pairData?.code || ''
 
+        // Mark enabled immediately (not waiting for WS open)
+        hostState.enabled = true
+        hostState.status = '允许控制中（等待主控连接）'
+
         // Connect WS
         await connectWs(id, roomId)
 
@@ -117,7 +121,7 @@ export default {
         clearInterval(heartbeatTimer)
         heartbeatTimer = setInterval(async () => {
           try { await context.api.post('/remote/heartbeat', { device_id: id }) } catch {}
-        }, 30000)
+        }, 60000)
 
       } catch (e: any) {
         hostState.status = '启动失败: ' + (e?.message || e)

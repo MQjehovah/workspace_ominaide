@@ -16,6 +16,9 @@
     "permissions": ["storage", "notification", "shell", "remote"],
     "builtin": true
   },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
   "devDependencies": {
     "vite": "^5.2.0",
     "@vitejs/plugin-vue": "^5.2.4",
