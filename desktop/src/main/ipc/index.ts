@@ -103,7 +103,7 @@ export function registerIpcHandlers() {
     } catch (e: any) {
       console.warn(`[panel-data] ${pluginId}:`, e?.message)
     }
-    return { title: pluginId, subtitle: pluginId }
+    return null
   })
   ipcMain.handle('plugin:set-enabled', async (_, pluginId: string, enabled: boolean) => {
     const cfg = await getConfig()

@@ -7,8 +7,10 @@ const panels = ref<PluginPanel[]>([])
 const panelDataMap = ref<Record<string, PanelData>>({})
 const isLoading = ref(false)
 const showUserMenu = ref(false)
+const showNotifPage = ref(false)
 const notifCount = ref(0)
 const notifs = ref<any[]>([])
+const allNotifs = ref<any[]>([])
 let notifTimer: any = null
 
 async function loadPlugins() {
@@ -73,7 +75,18 @@ async function fetchNotifCount() {
 async function markRead(n: any) {
   try { await window.mqbox?.api.put(`/notifications/${n.id}/read`); n.read = true; notifCount.value = Math.max(0, notifCount.value - 1) } catch {}
 }
-function openNotifPage() { window.mqbox?.window.openPage('notifications') }
+async function openNotifPage() {
+  showNotifPage.value = true
+  try { const r = await window.mqbox?.api.get('/notifications?limit=100'); allNotifs.value = r || [] } catch {}
+}
+async function markAllRead() {
+  try {
+    await window.mqbox?.api.put('/notifications/read-all')
+    allNotifs.value.forEach(n => n.read = true)
+    notifCount.value = 0
+  } catch {}
+}
+function closeNotifPage() { showNotifPage.value = false }
 function fmt(iso: string) {
   if (!iso) return ''; const d = new Date(iso); const now = new Date(); const diff = now.getTime() - d.getTime()
   if (diff < 60000) return '刚刚'; if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
@@ -149,72 +162,58 @@ onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
     </div>
 
     <div class="panels-area">
-      <div v-if="isLoading" class="loading-state">加载中...</div>
-      <div v-else class="panels-list">
-        <template v-for="panel in panels" :key="panel.id">
-          <div v-if="panelDataMap[panel.pluginId]" class="panel-card">
-
-            <!-- Header: icon + title/subtitle + arrow -->
-            <div class="panel-hd">
-              <span class="panel-icon">{{ defaultIcon[panel.pluginId] || '🔌' }}</span>
-              <div class="panel-hd-text">
-                <span class="panel-title">{{ panelDataMap[panel.pluginId].title }}</span>
-                <span v-if="panelDataMap[panel.pluginId].subtitle" class="panel-subtitle">{{ panelDataMap[panel.pluginId].subtitle }}</span>
-              </div>
-              <button class="panel-arrow" @click.stop="openPluginPage(panel.pluginId)">›</button>
-            </div>
-
-            <!-- Description text -->
-            <div v-if="panelDataMap[panel.pluginId].description" class="panel-desc">
-              {{ panelDataMap[panel.pluginId].description }}
-            </div>
-
-            <!-- Action items (two-line: title + subtitle) -->
-            <div v-if="panelDataMap[panel.pluginId].items?.length" class="panel-items">
-              <div
-                v-for="(item, idx) in panelDataMap[panel.pluginId].items!"
-                :key="idx"
-                class="panel-item"
-                :class="{ clickable: !!item.action }"
-                @click="handleItemClick(panel.pluginId, item)"
-              >
-                <span class="pi-title">{{ item.title }}</span>
-                <span v-if="item.subtitle" class="pi-subtitle">{{ item.subtitle }}</span>
-              </div>
-            </div>
-
-            <!-- Switches -->
-            <div v-if="panelDataMap[panel.pluginId].switches?.length" class="panel-switches">
-              <div
-                v-for="(sw, idx) in panelDataMap[panel.pluginId].switches!"
-                :key="idx"
-                class="panel-switch-row"
-              >
-                <span class="ps-label">{{ sw.label }}</span>
-                <label class="switch-toggle">
-                  <input
-                    type="checkbox"
-                    :checked="sw.value"
-                    @change="handleSwitch(panel.pluginId, sw, ($event.target as HTMLInputElement).checked)"
-                  >
-                  <span class="switch-slider"></span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Buttons -->
-            <div v-if="panelDataMap[panel.pluginId].buttons?.length" class="panel-buttons">
-              <button
-                v-for="(btn, idx) in panelDataMap[panel.pluginId].buttons!"
-                :key="idx"
-                class="panel-btn"
-                @click.stop="executeCommand(panel.pluginId, btn.command)"
-              >{{ btn.label }}</button>
-            </div>
-
-          </div>
-        </template>
+      <div v-if="showNotifPage" class="notif-page">
+        <div class="notif-page-hd">
+          <span class="notif-page-title">通知</span>
+          <button class="notif-page-btn" @click="markAllRead">全部已读</button>
+          <button class="notif-close-btn" @click="closeNotifPage">×</button>
+        </div>
+        <div v-if="allNotifs.length === 0" class="loading-state" style="padding:40px">暂无通知</div>
+        <div v-for="n in allNotifs" :key="n.id" class="notif-list-item" :class="{ unread: !n.read }" @click="markRead(n)">
+          <div class="notif-title">{{ n.title }}</div>
+          <div v-if="n.body" class="notif-body">{{ n.body }}</div>
+          <div class="notif-time">{{ fmt(n.created_at) }}</div>
+        </div>
       </div>
+
+      <template v-else>
+        <div v-if="isLoading" class="loading-state">加载中...</div>
+        <div v-else class="panels-list">
+          <template v-for="panel in panels" :key="panel.id">
+            <div v-if="panelDataMap[panel.pluginId]" class="panel-card">
+              <div class="panel-hd">
+                <span class="panel-icon">{{ defaultIcon[panel.pluginId] || '🔌' }}</span>
+                <div class="panel-hd-text">
+                  <span class="panel-title">{{ panelDataMap[panel.pluginId].title }}</span>
+                  <span v-if="panelDataMap[panel.pluginId].subtitle" class="panel-subtitle">{{ panelDataMap[panel.pluginId].subtitle }}</span>
+                </div>
+                <button v-if="panel.hasPage" class="panel-arrow" @click.stop="openPluginPage(panel.pluginId)">›</button>
+              </div>
+              <div v-if="panelDataMap[panel.pluginId].description" class="panel-desc">
+                {{ panelDataMap[panel.pluginId].description }}
+              </div>
+              <div v-if="panelDataMap[panel.pluginId].items?.length" class="panel-items">
+                <div v-for="(item, idx) in panelDataMap[panel.pluginId].items!" :key="idx" class="panel-item" :class="{ clickable: !!item.action }" @click="handleItemClick(panel.pluginId, item)">
+                  <span class="pi-title">{{ item.title }}</span>
+                  <span v-if="item.subtitle" class="pi-subtitle">{{ item.subtitle }}</span>
+                </div>
+              </div>
+              <div v-if="panelDataMap[panel.pluginId].switches?.length" class="panel-switches">
+                <div v-for="(sw, idx) in panelDataMap[panel.pluginId].switches!" :key="idx" class="panel-switch-row">
+                  <span class="ps-label">{{ sw.label }}</span>
+                  <label class="switch-toggle">
+                    <input type="checkbox" :checked="sw.value" @change="handleSwitch(panel.pluginId, sw, ($event.target as HTMLInputElement).checked)">
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+              </div>
+              <div v-if="panelDataMap[panel.pluginId].buttons?.length" class="panel-buttons">
+                <button v-for="(btn, idx) in panelDataMap[panel.pluginId].buttons!" :key="idx" class="panel-btn" @click.stop="executeCommand(panel.pluginId, btn.command)">{{ btn.label }}</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
     </div>
 
     <div class="resize-handle"></div>
@@ -291,4 +290,17 @@ onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
 .panel-btn:hover { background:#ebebeb; color:#1a1a1a; }
 
 .resize-handle { position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:se-resize; -webkit-app-region:no-drag; }
+.notif-page { height:100%; overflow-y:auto; }
+.notif-page-hd { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid #e9ecef; position:sticky; top:0; background:#f8f9fa; z-index:1; }
+.notif-page-title { font-size:15px; font-weight:600; flex:1; }
+.notif-page-btn { height:30px;padding:0 12px;border:none;border-radius:6px;background:#f1f3f5;color:#495057;font-size:12px;cursor:pointer; }
+.notif-page-btn:hover { background:#e9ecef; }
+.notif-close-btn { width:28px;height:28px;border:none;border-radius:6px;background:transparent;font-size:18px;cursor:pointer;color:#868e96;display:flex;align-items:center;justify-content:center; }
+.notif-close-btn:hover { background:#ffebee;color:#e91e63; }
+.notif-list-item { padding:10px 16px;border-bottom:1px solid #f0f0f0;cursor:pointer; }
+.notif-list-item.unread { background:#f0f7ff;border-left:3px solid #409EFF; }
+.notif-list-item:hover { background:#f5f5f5; }
+.notif-list-item .notif-title { font-size:13px;font-weight:500;color:#333; }
+.notif-list-item .notif-body { font-size:12px;color:#666;margin-top:3px; }
+.notif-list-item .notif-time { font-size:10px;color:#909399;margin-top:3px; }
 </style>

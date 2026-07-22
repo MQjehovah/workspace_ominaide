@@ -24,6 +24,7 @@ export interface PluginPanel {
   id: string
   pluginId: string
   height?: number
+  hasPage?: boolean
 }
 
 export interface PanelItem {

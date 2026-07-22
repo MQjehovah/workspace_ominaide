@@ -40,12 +40,36 @@ export async function initPlugins() {
       }
 
       plugins.set(id, info)
-      panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
+      const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
+      panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
       console.log(`[plugin] started in child process: ${info.manifest.id} (${info.manifest.version})`)
     } catch (e) {
       console.error(`[plugin] failed to start ${id}:`, e)
     }
   }
+
+  startClipboardMonitoring()
+}
+
+let lastClipboardText = ''
+function startClipboardMonitoring() {
+  setInterval(async () => {
+    try {
+      const text = clipboard.readText()
+      if (text && text !== lastClipboardText) {
+        lastClipboardText = text
+
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) win.webContents.send('clipboard:updated')
+        })
+
+        const proc = processManager.getProcess('clipboard-history')
+        if (proc) {
+          proc.executeCommand('onClipboardChange', text).catch(() => {})
+        }
+      }
+    } catch {}
+  }, 500)
 }
 
 function registerBridgeHandlers(proc: import('./child-process').PluginChildProcess): void {
@@ -235,8 +259,30 @@ export function getSearchProviders(): Array<SearchProvider & { pluginId: string 
 
 export async function executeCommand(pluginId: string, command: string, args?: unknown): Promise<unknown> {
   const proc = processManager.getProcess(pluginId)
-  if (proc) return proc.executeCommand(command, args)
-  throw new Error(`Plugin ${pluginId} not running`)
+  if (!proc) throw new Error(`Plugin ${pluginId} not running`)
+  const result = await proc.executeCommand(command, args)
+
+  if (pluginId === 'clipboard-history' && command === 'copy') {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('clipboard:updated')
+    })
+  }
+
+  const playerReadonlyCommands = ['getPanelData', 'getPageData', 'cloudGetStreamUrl', 'cloudListPlaylists', 'cloudListSongs', 'cloudListAudioFiles']
+  if (pluginId === 'player' && !playerReadonlyCommands.includes(command)) {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('player:updated')
+    })
+  }
+
+  const todoReadonlyCommands = ['getPanelData', 'getPageData']
+  if (pluginId === 'todo' && !todoReadonlyCommands.includes(command)) {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('todo:updated')
+    })
+  }
+
+  return result
 }
 
 export function getPluginPage(pluginId: string): any {
