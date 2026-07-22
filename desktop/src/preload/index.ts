@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('mqbox', {
       ipcRenderer.invoke('plugin:set-enabled', pluginId, enabled),
     importPlugin: () =>
       ipcRenderer.invoke('plugin:import'),
+    uninstall: (pluginId: string) =>
+      ipcRenderer.invoke('plugin:uninstall', pluginId),
     listMarketplace: () =>
       ipcRenderer.invoke('plugin:list-marketplace'),
     installFromMarket: (pluginId: string) =>

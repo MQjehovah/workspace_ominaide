@@ -2,7 +2,7 @@ import axios from 'axios'
 import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream } from 'fs'
-import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins } from '../plugin/host'
+import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager } from '../plugin/host'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
 import * as screenshot from '../screenshot'
@@ -184,6 +184,24 @@ export function registerIpcHandlers() {
       })
 
       return { success: true, pluginId }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  })
+  ipcMain.handle('plugin:uninstall', async (_, pluginId: string) => {
+    try {
+      const plugin = getPlugins().find(p => p.id === pluginId)
+      if (!plugin) return { success: false, error: '插件不存在' }
+      if (plugin.manifest.builtin !== false) return { success: false, error: '内置插件不能卸载' }
+
+      const { rmSync } = require('fs')
+      rmSync(plugin.path, { recursive: true, force: true })
+      removePlugin(pluginId)
+
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) win.webContents.send('plugins:updated')
+      })
+      return { success: true }
     } catch (e) {
       return { success: false, error: String(e) }
     }

@@ -21,6 +21,7 @@
           </div>
           <div class="plugin-actions">
             <button class="cfg-btn" title="配置" @click="openConfig(p)">⚙</button>
+            <button v-if="!p.manifest?.builtin" class="uninstall-btn" title="卸载" @click="uninstallPlugin(p)">🗑</button>
             <label class="switch"><input type="checkbox" :checked="p.enabled" @change="togglePlugin(p)" /><span class="slider"></span></label>
           </div>
         </div>
@@ -43,9 +44,11 @@
           </div>
           <div class="plugin-actions">
             <button v-if="isInstalled(p.id)" class="key-badge" disabled style="color:#28A745;border-color:#28A745">已安装</button>
+            <button v-else-if="installingId === p.id" class="key-badge" disabled style="color:#999">安装中...</button>
             <button v-else class="key-badge install-btn" @click="installFromMarket(p)">安装</button>
           </div>
         </div>
+        <div v-if="marketplaceError" style="text-align:center;padding:12px;color:#DC3545;font-size:12px">{{ marketplaceError }}</div>
       </div>
 
       <div v-if="tab === 'shortcuts'" class="card-body">
@@ -92,7 +95,10 @@ const tab = ref('plugins')
 const plugins = ref<any[]>([])
 const marketplacePlugins = ref<any[]>([])
 const marketplaceLoading = ref(false)
+const marketplaceError = ref('')
+const installingId = ref('')
 const builtinShortcuts = ref<any[]>([])
+const customShortcuts = ref<any[]>([])
 const showAddForm = ref(false)
 const recording = ref(false)
 const recordTarget = ref('')
@@ -128,9 +134,13 @@ async function importPlugin() {
 
 async function loadMarketplace() {
   marketplaceLoading.value = true
+  marketplaceError.value = ''
   try {
     marketplacePlugins.value = await window.mqbox.plugin.listMarketplace()
-  } catch { marketplacePlugins.value = [] }
+    if (marketplacePlugins.value.length === 0) {
+      marketplaceError.value = '后端服务未运行或插件市场为空'
+    }
+  } catch { marketplacePlugins.value = []; marketplaceError.value = '无法加载插件市场' }
   marketplaceLoading.value = false
 }
 
@@ -139,14 +149,33 @@ function isInstalled(id: string) {
 }
 
 async function installFromMarket(p: any) {
-  const result = await window.mqbox.plugin.installFromMarket(p.id)
-  if (result?.success) {
-    await load()
+  installingId.value = p.id
+  marketplaceError.value = ''
+  try {
+    const result = await window.mqbox.plugin.installFromMarket(p.id)
+    if (result?.success) {
+      await load()
+    } else {
+      marketplaceError.value = result?.error || '安装失败'
+    }
+  } catch (e: any) {
+    marketplaceError.value = e?.message || '安装失败'
   }
+  installingId.value = ''
 }
 
 function openConfig(p: any) {
   configPluginId.value = p.id
+}
+
+async function uninstallPlugin(p: any) {
+  if (!confirm(`确定要卸载插件 "${p.manifest?.displayName || p.id}" 吗？`)) return
+  const result = await window.mqbox.plugin.uninstall(p.id)
+  if (result?.success) {
+    await load()
+  } else {
+    alert(result?.error || '卸载失败')
+  }
 }
 
 window.mqbox?.plugin?.onUpdated(() => load())
@@ -170,7 +199,7 @@ function recordBuiltin(s: any) {
   recordTarget.value = 'builtin'
 }
 
-function onKeydown(e: KeyboardEvent) {
+async function onKeydown(e: KeyboardEvent) {
   if (!recording.value) return
   e.preventDefault()
   const mods: string[] = []
@@ -181,8 +210,8 @@ function onKeydown(e: KeyboardEvent) {
   const key = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key
   const acc = [...mods, key].join('+')
   if (recordTarget.value === 'builtin') {
-    window.mqbox.shortcut.updateBuiltin(editingBuiltin.value, acc)
-    builtinShortcuts.value = window.mqbox.shortcut.getBuiltin()
+    await window.mqbox.shortcut.updateBuiltin(editingBuiltin.value, acc)
+    builtinShortcuts.value = await window.mqbox.shortcut.getBuiltin()
     editingBuiltin.value = ''
   } else {
     newBinding.value.accelerator = acc
@@ -214,6 +243,8 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 .plugin-actions { display:flex; align-items:center; gap:8px; }
 .cfg-btn { border:none; background:transparent; cursor:pointer; font-size:16px; color:#999; padding:2px 4px; border-radius:4px; }
 .cfg-btn:hover { background:#f0f0f0; color:#333; }
+.uninstall-btn { border:none; background:transparent; cursor:pointer; font-size:15px; color:#DC3545; padding:2px 4px; border-radius:4px; opacity:0.4; }
+.uninstall-btn:hover { opacity:1; background:#fff0f0; }
 .switch { position:relative; width:36px; height:20px; flex-shrink:0; }
 .switch input { opacity:0; width:0; height:0; }
 .slider { position:absolute; cursor:pointer; inset:0; background:#ddd; border-radius:20px; transition:0.2s; }

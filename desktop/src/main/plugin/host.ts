@@ -278,6 +278,15 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   })
 }
 
+export function removePlugin(id: string): boolean {
+  const proc = processManager.getProcess(id)
+  if (proc) {
+    proc.stop()
+    processManager.stopPlugin(id)
+  }
+  return plugins.delete(id)
+}
+
 export function getPlugins(): PluginInfo[] {
   return Array.from(plugins.values())
 }
