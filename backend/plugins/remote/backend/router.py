@@ -57,7 +57,7 @@ fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('
   ws=new WebSocket(wsUrl);
   ws.onopen=()=>{bar.textContent='等待被控端授权…';wsSend({type:'requestControl',name:navigator.userAgent.includes('Mobile')?'手机':'浏览器'});};
   ws.onmessage=async ev=>{const m=JSON.parse(ev.data);
-    if(m.type==='controlAllowed'){dc=pc.createDataChannel('input');const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer});bar.textContent='等待画面…';}
+    if(m.type==='controlAllowed'){dc=pc.createDataChannel('input');pc.addTransceiver('video',{direction:'recvonly'});const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer});bar.textContent='等待画面…';}
     else if(m.type==='controlDenied'){ended=true;bar.textContent=m.reason==='busy'?'被控端忙':'被控端拒绝';}
     else if(m.type==='revoked'){ended=true;bar.textContent='被控端断开了控制';}
     else if(m.type==='answer'){await pc.setRemoteDescription({type:'answer',sdp:m.payload.sdp});}

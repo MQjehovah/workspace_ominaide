@@ -54,7 +54,9 @@ async function connect(roomId: string) {
 async function startOffering() {
   if (!pc || !ws) return
   dc = pc.createDataChannel('input')
+  pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
+    console.log('[remote viewer] ontrack:', e.track.kind)
     if (videoRef.value) videoRef.value.srcObject = e.streams[0]
     status.value = '已连接（可控制）'
     connected.value = true
