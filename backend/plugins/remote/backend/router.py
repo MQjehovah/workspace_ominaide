@@ -33,16 +33,14 @@ const v=document.getElementById('v'),bar=document.getElementById('bar');
 let pc=null;let dc=null;let ended=false;
 function send(ev){if(dc&&dc.readyState==='open'){try{dc.send(JSON.stringify(ev));}catch(e){}}}
 function btn(b){return b===2?'right':b===1?'middle':'left';}
-function norm(e){return v.clientWidth>0?e.offsetX/v.clientWidth:0;}
-function normY(e){return v.clientHeight>0?e.offsetY/v.clientHeight:0;}
-v.addEventListener('mousemove',e=>send({type:'mouseMove',x:norm(e),y:normY(e)}));
+function normAt(cx,cy){const r=v.getBoundingClientRect();const vw=v.videoWidth||r.width,vh=v.videoHeight||r.height;const sc=Math.min(r.width/vw,r.height/vh);const rw=vw*sc,rh=vh*sc;const ox=r.left+(r.width-rw)/2,oy=r.top+(r.height-rh)/2;return {x:rw>0?Math.max(0,Math.min(1,(cx-ox)/rw)):0,y:rh>0?Math.max(0,Math.min(1,(cy-oy)/rh)):0};}
+v.addEventListener('mousemove',e=>{const p=normAt(e.clientX,e.clientY);send({type:'mouseMove',x:p.x,y:p.y});});
 v.addEventListener('mousedown',e=>{e.preventDefault();send({type:'mouseDown',button:btn(e.button)});});
 v.addEventListener('mouseup',e=>send({type:'mouseUp',button:btn(e.button)}));
 v.addEventListener('wheel',e=>{e.preventDefault();send({type:'wheel',deltaY:e.deltaY});},{passive:false});
 v.addEventListener('contextmenu',e=>e.preventDefault());
-function touchNorm(t){const r=v.getBoundingClientRect();return {x:(t.clientX-r.left)/r.width,y:(t.clientY-r.top)/r.height};}
-v.addEventListener('touchstart',e=>{e.preventDefault();const p=touchNorm(e.touches[0]);send({type:'mouseMove',x:p.x,y:p.y});send({type:'mouseDown',button:'left'});},{passive:false});
-v.addEventListener('touchmove',e=>{e.preventDefault();const p=touchNorm(e.touches[0]);send({type:'mouseMove',x:p.x,y:p.y});},{passive:false});
+v.addEventListener('touchstart',e=>{e.preventDefault();const p=normAt(e.touches[0].clientX,e.touches[0].clientY);send({type:'mouseMove',x:p.x,y:p.y});send({type:'mouseDown',button:'left'});},{passive:false});
+v.addEventListener('touchmove',e=>{e.preventDefault();const p=normAt(e.touches[0].clientX,e.touches[0].clientY);send({type:'mouseMove',x:p.x,y:p.y});},{passive:false});
 v.addEventListener('touchend',e=>{e.preventDefault();send({type:'mouseUp',button:'left'});},{passive:false});
 function ignored(c){return c==='F5'||c==='F11'||c==='F12';}
 document.addEventListener('keydown',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyDown',code:e.code});}});

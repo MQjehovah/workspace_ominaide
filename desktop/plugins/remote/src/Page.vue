@@ -128,10 +128,20 @@ function sendInput(ev: any) {
   }
 }
 
+function normVideo(e: MouseEvent) {
+  const el = e.currentTarget as HTMLVideoElement
+  const cw = el.clientWidth, ch = el.clientHeight
+  const vw = el.videoWidth || cw, vh = el.videoHeight || ch
+  const scale = Math.min(cw / vw, ch / vh)
+  const rw = vw * scale, rh = vh * scale
+  const ox = (cw - rw) / 2, oy = (ch - rh) / 2
+  const x = rw > 0 ? (e.offsetX - ox) / rw : 0
+  const y = rh > 0 ? (e.offsetY - oy) / rh : 0
+  return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
+}
+
 function onMouseMove(e: MouseEvent) {
-  const el = e.currentTarget as HTMLElement
-  const x = el.clientWidth > 0 ? e.offsetX / el.clientWidth : 0
-  const y = el.clientHeight > 0 ? e.offsetY / el.clientHeight : 0
+  const { x, y } = normVideo(e)
   sendInput({ type: 'mouseMove', x, y })
 }
 
