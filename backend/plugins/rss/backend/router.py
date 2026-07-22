@@ -85,6 +85,6 @@ async def search(
         cond.append(Entry.feed_id == feed_id)
     base = select(Entry).join(Feed).where(*cond)
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
-    r = await db.execute(base.order_by(Entry.published.desc().nullslast()).offset((page - 1) * page_size).limit(page_size))
+    r = await db.execute(base.order_by(Entry.published.desc()).offset((page - 1) * page_size).limit(page_size))
     items = r.scalars().all()
     return {"items": [EntryResponse.model_validate(e) for e in items], "total": total}

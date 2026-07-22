@@ -6,16 +6,8 @@ const pluginComponents: Record<string, any> = {
   'todo': defineAsyncComponent(() => import('@plugins/todo/src/Panel.vue')),
   'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Panel.vue')),
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Panel.vue')),
-  'notifications': defineAsyncComponent(() => import('@plugins/notifications/src/Panel.vue')),
-  'player': defineAsyncComponent(() => import('@plugins/player/src/Panel.vue')),
-  'remote': defineAsyncComponent(() => import('@plugins/remote/src/Panel.vue')),
-  'schedule': defineAsyncComponent(() => import('@plugins/schedule/src/Panel.vue')),
-  'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Panel.vue')),
-  'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Panel.vue')),
-  'ai-chat': defineAsyncComponent(() => import('@plugins/ai-chat/src/Panel.vue')),
   'files': defineAsyncComponent(() => import('@plugins/files/src/Panel.vue')),
-  'notes': defineAsyncComponent(() => import('@plugins/notes/src/Panel.vue')),
-}
+  'notifications': defineAsyncComponent(() => import('@plugins/notifications/src/Panel.vue')),
 
 const pluginList = ref<any[]>([])
 const panels = ref<any[]>([])

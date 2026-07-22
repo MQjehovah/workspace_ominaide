@@ -42,14 +42,14 @@ export default {
     context.registerCommand('toggleAssistant', async () => { showAssistant() })
 
     context.registerSearchProvider({
-      keyword: '?',
+      keyword: '>',
       name: 'AI 助理',
       priority: 11,
       onSearch: async (query: string) => {
-        const text = query.startsWith('?') ? query.slice(1).trim() : query
+        const text = query.startsWith('>') ? query.slice(1).trim() : query
         return [{
           title: text ? `问助理: ${text}` : '打开 AI 助理',
-          subtitle: text ? '回车发送' : 'Ctrl+Shift+A 呼出助理',
+          subtitle: text ? '回车发送' : 'Ctrl+Shift+A 呼出助理 › 输入消息',
           icon: 'ChatDotSquare',
           action: 'assistant:open',
           actionArgs: text ? { message: text } : {},

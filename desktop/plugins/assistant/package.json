@@ -1,0 +1,17 @@
+{
+  "name": "omniaide-assistant",
+  "version": "1.0.0",
+  "displayName": "AI 助理",
+  "description": "桌面 AI 助理——语音对话、自然语言操作",
+  "main": "dist/index.js",
+  "scripts": { "dev": "vite", "build": "vite build" },
+  "omniaide": {
+    "id": "assistant",
+    "displayName": "AI 助理",
+    "icon": "ChatDotSquare",
+    "keywords": ["ai","assistant","chat","voice"],
+    "permissions": ["storage","notification","shell"],
+    "builtin": true
+  },
+  "devDependencies": { "vite": "^5.2.0", "@vitejs/plugin-vue": "^5.2.4", "vue": "^3.5.40", "typescript": "~5.6.0" }
+}

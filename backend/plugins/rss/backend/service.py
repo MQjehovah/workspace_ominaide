@@ -47,7 +47,7 @@ async def list_entries(
     if starred:
         q = q.where(Entry.starred == True)
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    q = q.order_by(Entry.published.desc().nullslast()).offset((page - 1) * page_size).limit(page_size)
+    q = q.order_by(Entry.published.desc()).offset((page - 1) * page_size).limit(page_size)
     r = await db.execute(q)
     return list(r.scalars().all()), total
 

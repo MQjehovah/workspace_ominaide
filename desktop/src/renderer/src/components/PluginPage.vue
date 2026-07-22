@@ -27,7 +27,7 @@ const pageComponents: Record<string, any> = {
   'schedule': defineAsyncComponent(() => import('@plugins/schedule/src/Page.vue')),
   'screenshot': defineAsyncComponent(() => import('@plugins/screenshot/src/Page.vue')),
   'calculator': defineAsyncComponent(() => import('@plugins/calculator/src/Page.vue')),
-  'ai-chat': defineAsyncComponent(() => import('@plugins/ai-chat/src/Page.vue')),
+  'assistant': defineAsyncComponent(() => import('@plugins/assistant/src/Page.vue')),
   'files': defineAsyncComponent(() => import('@plugins/files/src/Page.vue')),
   'notes': defineAsyncComponent(() => import('@plugins/notes/src/Page.vue')),
 }
