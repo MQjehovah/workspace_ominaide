@@ -11,10 +11,15 @@ export default {
   async activate(context: PluginContext) {
     context.registerCommand('getPanelData', async () => {
       const history = context.screenshot?.getHistory() || []
-      const last = history.length > 0 ? history[0] : null
       return {
-        lastCapture: last,
-        captureCount: history.length,
+        title: '截图',
+        summary: history.length,
+        statusText: `${history.length} 张截图`,
+        items: history.slice(0, 5).map((s: any) => ({
+          title: new Date(s.time).toLocaleString(),
+          subtitle: `${s.width}x${s.height}`,
+        })),
+        actions: [{ label: '截图', command: 'region' }, { label: '全屏', command: 'fullscreen' }],
       }
     })
 

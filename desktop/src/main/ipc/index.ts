@@ -73,15 +73,24 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('plugin:get-panel-data', async (_, pluginId: string) => {
     try {
-      const cfg = await getConfig()
-      const base = cfg.serverUrl || 'http://localhost:8000'
-      const res = await axios.get(`${base}/api/plugins/${encodeURIComponent(pluginId)}/panel-data`, {
-        headers: { Authorization: 'Bearer ' + (cfg.token || '') }
-      })
-      return res.data
-    } catch {
-      return { title: pluginId, summary: null, items: [], actions: [], status: null, statusText: null }
+      const result = await executeCommand(pluginId, 'getPanelData')
+      if (result && typeof result === 'object' && !result.error) {
+        return {
+          title: result.title || pluginId,
+          summary: result.summary ?? null,
+          items: result.items || [],
+          actions: result.actions || [],
+          status: result.status || null,
+          statusText: result.statusText || null,
+        }
+      }
+      if (result?.error) {
+        console.warn(`[panel-data] ${pluginId}: execute error:`, result.error)
+      }
+    } catch (e: any) {
+      console.warn(`[panel-data] ${pluginId}:`, e?.message)
     }
+    return { title: pluginId, summary: null, items: [], actions: [], status: null, statusText: null }
   })
   ipcMain.handle('plugin:set-enabled', async (_, pluginId: string, enabled: boolean) => {
     const cfg = await getConfig()

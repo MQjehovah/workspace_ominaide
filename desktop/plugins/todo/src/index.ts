@@ -33,7 +33,18 @@ export default {
 
     context.registerCommand('getPanelData', async () => {
       const pending = todos.filter(t => t.status !== 'done')
-      return { pendingCount: pending.length, items: pending.slice(0, 5) }
+      return {
+        title: '待办事项',
+        summary: pending.length,
+        status: pending.length > 0 ? 'info' : 'success',
+        statusText: pending.length > 0 ? `${pending.length} 项待办` : '全部完成',
+        items: pending.slice(0, 5).map(t => ({
+          title: t.text,
+          subtitle: t.due_date || t.priority || '',
+          icon: t.priority === 'high' ? '❗' : t.priority === 'medium' ? '📌' : '•',
+        })),
+        actions: [{ label: '新建', command: 'create' }],
+      }
     })
 
     context.registerCommand('getPageData', async () => {

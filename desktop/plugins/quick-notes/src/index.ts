@@ -14,7 +14,16 @@ export default {
 
   activate(context: any) {
     context.registerCommand('getPanelData', async () => {
-      return { notes }
+      return {
+        title: '快捷笔记',
+        summary: notes.length,
+        items: notes.slice(0, 5).map(n => ({
+          title: n.content.length > 40 ? n.content.slice(0, 40) + '...' : n.content,
+          subtitle: new Date(n.time).toLocaleString(),
+          icon: n.tags?.includes('important') ? '❗' : '📝',
+        })),
+        actions: [{ label: '新建', command: 'add' }],
+      }
     })
 
     context.registerCommand('getPageData', async () => {

@@ -33,6 +33,12 @@ export async function initPlugins() {
       const proc = await processManager.startPlugin(info)
       registerBridgeHandlers(proc)
 
+      const ready = await proc.waitForReady(8000)
+      if (!ready) {
+        console.warn(`[plugin] ${id}: not ready, will still add panel`)
+        proc.on('stderr', (msg: string) => console.error(`[plugin:${id}]`, msg))
+      }
+
       plugins.set(id, info)
       panels.push({ id: `${id}-panel`, pluginId: id, height: 120 })
       console.log(`[plugin] started in child process: ${info.manifest.id} (${info.manifest.version})`)

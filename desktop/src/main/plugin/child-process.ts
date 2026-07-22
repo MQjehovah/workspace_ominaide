@@ -22,9 +22,16 @@ export class PluginChildProcess extends EventEmitter {
   private bridgeHandlers: Map<string, (args: any[]) => Promise<any>> = new Map()
   private rpcBuffer = ''
 
+  private _exitCode: number | null = null
+  private _readyResolve: (() => void) | null = null
+  private _readyPromise: Promise<void>
+
   constructor(private info: PluginInfo) {
     super()
     this.pluginId = info.id
+    this._readyPromise = new Promise((resolve) => {
+      this._readyResolve = resolve
+    })
   }
 
   start(): void {
@@ -42,9 +49,14 @@ export class PluginChildProcess extends EventEmitter {
 
     this.proc.stdout?.on('data', (chunk: Buffer) => this.handleOutgoing(chunk.toString()))
     this.proc.stderr?.on('data', (chunk: Buffer) => {
-      console.error(`[plugin:${this.pluginId}]`, chunk.toString().trim())
+      const msg = chunk.toString().trim()
+      if (msg) {
+        console.error(`[plugin:${this.pluginId}]`, msg)
+        this.emit('stderr', msg)
+      }
     })
     this.proc.on('exit', (code) => {
+      this._exitCode = code
       console.log(`[plugin:${this.pluginId}] exited with code ${code}`)
       this.emit('exit', code)
       this.proc = null
@@ -53,6 +65,20 @@ export class PluginChildProcess extends EventEmitter {
       console.error(`[plugin:${this.pluginId}] error:`, err.message)
       this.emit('error', err)
     })
+  }
+
+  async waitForReady(timeoutMs = 10000): Promise<boolean> {
+    const result = await Promise.race([
+      this._readyPromise.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+    ])
+    if (!result) {
+      console.warn(`[plugin:${this.pluginId}] ready timeout after ${timeoutMs}ms`)
+      if (this._exitCode !== null) {
+        console.warn(`[plugin:${this.pluginId}] process already exited with code ${this._exitCode}`)
+      }
+    }
+    return result
   }
 
   stop(): void {
@@ -114,14 +140,15 @@ export class PluginChildProcess extends EventEmitter {
       const trimmed = line.trim()
       if (!trimmed) continue
       try {
-        const msg = JSON.parse(trimmed)
-        if (msg.type === 'result' || msg.type === 'error') {
-          this.handleResponse(msg as RpcResponse)
-        } else if (msg.type === 'parent-rpc') {
-          this.handleParentRpc(msg as any)
-        } else if ((msg as any).id === 'ready') {
-          this.emit('ready')
-        }
+      const msg = JSON.parse(trimmed)
+      if ((msg as any).id === 'ready') {
+        this._readyResolve?.()
+        this.emit('ready')
+      } else if (msg.type === 'result' || msg.type === 'error') {
+        this.handleResponse(msg as RpcResponse)
+      } else if (msg.type === 'parent-rpc') {
+        this.handleParentRpc(msg as any)
+      }
       } catch (e) {
         console.error(`[plugin:${this.pluginId}] invalid message from child:`, (e as Error).message)
       }

@@ -168,7 +168,21 @@ export default {
 
     context.registerCommand('getPanelData', async () => {
       await loadCloudPlaylists()
-      return getState()
+      const st = getState()
+      return {
+        title: '音乐播放器',
+        summary: st.currentTrack?.name || '未播放',
+        status: st.isPlaying ? 'success' : 'info',
+        statusText: st.isPlaying ? '播放中' : '已暂停',
+        items: [
+          ...(st.currentTrack ? [{ title: st.currentTrack.name, subtitle: st.currentTrack.artist || '', icon: '🎵' }] : []),
+          ...(st.playlists?.slice(0, 3).map((p: any) => ({ title: p.name, icon: '📋' })) || []),
+        ],
+        actions: [
+          ...(st.isPlaying ? [{ label: '暂停', command: 'pause' }] : [{ label: '播放', command: 'play' }]),
+          { label: '下一首', command: 'next' },
+        ],
+      }
     })
     context.registerCommand('getPageData', async () => {
       await loadCloudPlaylists()
