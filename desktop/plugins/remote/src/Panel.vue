@@ -82,7 +82,6 @@ async function startHost() {
     ws.onclose = () => {
       hosting.value = false
       hostingEnabled.value = false
-      localStorage.setItem('remote_hostEnabled', '0')
       status.value = status.value || '信令断开'
       if (pc) { try { pc.close() } catch {} ; pc = null }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
