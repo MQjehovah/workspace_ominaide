@@ -208,6 +208,7 @@ function revokePeer() {
 }
 
 async function stopHost() {
+  try { ws?.send(JSON.stringify({ type: 'revoked' })) } catch {}
   if (pc) { pc.close(); pc = null }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   if (ws) { ws.close(); ws = null }
