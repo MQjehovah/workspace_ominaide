@@ -8,10 +8,12 @@ async def lifespan(app: FastAPI):
     from core.minio.client import ensure_buckets
     from core.plugin.registry import discover_plugins
     from core.mcp.tools.register_core import register_core_tools
+    from core.mcp.tools.register_ai import register_ai_tools
 
     await ensure_buckets()
     await discover_plugins(app)
     register_core_tools()
+    register_ai_tools()
     yield
     from core.database.redis import close_redis
     await close_redis()
