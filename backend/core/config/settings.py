@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 30
     jwt_refresh_secret: str = "dev-refresh-secret-key"
     jwt_refresh_expire_days: int = 7
+    data_layer_enabled: bool = False
+    memory_layer_enabled: bool = False
+    intelligence_layer_enabled: bool = False
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     webrtc_ice_servers: str = '[{"urls":"stun:stun.l.google.com:19302"}]'

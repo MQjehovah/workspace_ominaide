@@ -66,9 +66,31 @@ async def get_user_info(user_id: int, args: dict) -> dict:
         return {"username": u.username, "email": u.email, "created_at": str(u.created_at) if u.created_at else ""}
 
 
+async def unified_search_tool(user_id: int, args: dict) -> dict:
+    q = args.get("q", "")
+    if not q:
+        return {"results": []}
+    from core.ai.embeddings import generate_embedding
+    from qdrant_client import QdrantClient
+    from core.config.settings import settings
+    host = settings.qdrant_url.replace("http://", "").split(":")[0]
+    port = int(settings.qdrant_url.split(":")[-1])
+    client = QdrantClient(host=host, port=port)
+    vector = await generate_embedding(q)
+    if vector is None:
+        return {"results": []}
+    filter_cond = {"must": [{"key": "user_id", "match": {"value": user_id}}]}
+    types = args.get("types")
+    if types:
+        filter_cond["must"].append({"key": "source_type", "match": {"value": types}})
+    results = client.search(collection_name="omnidocs", query_vector=vector, limit=10, query_filter=filter_cond)
+    return {"results": [{"type": p.payload.get("source_type"), "title": p.payload.get("title"), "snippet": p.payload.get("content", "")[:200], "score": p.score} for p in results]}
+
+
 def register_ai_tools():
     tool_registry.register(MCPTool(name="list_schedule_events", description="List upcoming schedule/calendar events within a date range. Returns event titles and times.", inputSchema={"type":"object","properties":{"start":{"type":"string","description":"Start date ISO format"},"end":{"type":"string","description":"End date ISO format"}}}), list_schedule_events)
     tool_registry.register(MCPTool(name="search_articles", description="Search RSS feed articles by keyword. Returns matching article titles and summaries.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Search keyword"}},"required":["q"]}), search_articles)
     tool_registry.register(MCPTool(name="list_notifications", description="List recent notifications. Use unread=true to see only unread.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results"},"unread":{"type":"boolean","description":"Only unread"}}}), list_notifications)
     tool_registry.register(MCPTool(name="get_unread_count", description="Get the number of unread notifications.", inputSchema={"type":"object","properties":{}}), get_unread_count)
     tool_registry.register(MCPTool(name="get_user_info", description="Get info about the currently logged-in user.", inputSchema={"type":"object","properties":{}}), get_user_info)
+    tool_registry.register(MCPTool(name="unified_search", description="Search across all your data (files, notes, articles, events) with a natural language query. Use this as the primary search tool.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Natural language search query"},"types":{"type":"array","items":{"type":"string"},"description":"Optional: filter by type (file, note, rss_entry, event)"}},"required":["q"]}), unified_search_tool)
