@@ -302,15 +302,23 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('remote:get-sources', async () => {
-    const { desktopCapturer } = require('electron')
-    const sources = await desktopCapturer.getSources({ types: ['screen'], fetchWindowIcons: false })
-    return sources.map((s: any) => ({ id: s.id, name: s.name, display_id: s.display_id }))
+    try {
+      const { desktopCapturer } = require('electron')
+      const sources = await desktopCapturer.getSources({ types: ['screen'], fetchWindowIcons: false, thumbnailSize: { width: 1, height: 1 } })
+      return sources.map((s: any) => ({ id: s.id, name: s.name, display_id: s.display_id }))
+    } catch {
+      return []
+    }
   })
 
   ipcMain.handle('remote:screen-size', async () => {
-    const { screen } = require('electron')
-    const b = screen.getPrimaryDisplay().bounds
-    return { width: b.width, height: b.height }
+    try {
+      const { screen } = require('electron')
+      const b = screen.getPrimaryDisplay().bounds
+      return { width: b.width, height: b.height }
+    } catch {
+      return { width: 0, height: 0 }
+    }
   })
 
   ipcMain.handle('remote:inject', async (_e, event: any) => {

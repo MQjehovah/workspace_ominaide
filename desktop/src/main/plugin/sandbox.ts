@@ -113,7 +113,10 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     notification: notification || { show: () => {} },
     screenshot: screenshotApi,
     remote: perms.includes('remote') ? {
-      getDesktopSources: () => desktopCapturer.getSources({ types: ['screen'] }),
+      getDesktopSources: async () => {
+        const sources = await desktopCapturer.getSources({ types: ['screen'], fetchWindowIcons: false, thumbnailSize: { width: 1, height: 1 } })
+        return sources.map((s: any) => ({ id: s.id, name: s.name, display_id: s.display_id }))
+      },
       getScreenSize: () => {
         const b = screen.getPrimaryDisplay().bounds
         return { width: b.width, height: b.height }
