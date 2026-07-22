@@ -25,6 +25,21 @@
       </el-menu-item>
     </template>
 
+    <!-- Admin group -->
+    <template v-if="auth.user">
+      <el-divider style="margin:8px 0">
+        <span style="font-size:12px; color:#909399">管理</span>
+      </el-divider>
+      <el-menu-item index="/admin/users">
+        <el-icon><User /></el-icon>
+        <span>用户管理</span>
+      </el-menu-item>
+      <el-menu-item index="/admin/plugins">
+        <el-icon><Grid /></el-icon>
+        <span>插件管理</span>
+      </el-menu-item>
+    </template>
+
     <!-- Spacer + User + Settings at bottom -->
     <div style="flex:1"></div>
     <el-dropdown v-if="auth.user" trigger="click" @command="handleUserCmd">
@@ -48,7 +63,7 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { Setting, User, SwitchButton } from '@element-plus/icons-vue'
+import { Setting, User, SwitchButton, Grid } from '@element-plus/icons-vue'
 import { usePluginStore } from '@/stores/core/plugin'
 import { useAuthStore } from '@/stores/auth'
 

@@ -38,6 +38,16 @@ const router = createRouter({
           path: 'apps/:pluginName/:pathMatch(.*)*',
           name: 'PluginHost',
           component: () => import('@/core/layout/PluginHost.vue')
+        },
+        {
+          path: 'admin/users',
+          name: 'AdminUsers',
+          component: () => import('@/views/AdminUsers.vue')
+        },
+        {
+          path: 'admin/plugins',
+          name: 'AdminPlugins',
+          component: () => import('@/views/AdminPlugins.vue')
         }
       ]
     }

@@ -102,4 +102,4 @@ async def sync_websocket(websocket: WebSocket, workspace_id: int):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "0.1.0"}

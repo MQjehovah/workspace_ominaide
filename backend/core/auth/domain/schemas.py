@@ -29,3 +29,17 @@ class UserResponse(BaseModel):
     avatar_url: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class AdminUserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    is_active: bool
+    created_at: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ToggleActiveRequest(BaseModel):
+    is_active: bool
