@@ -10,6 +10,11 @@ const status = ref('')
 const pairCode = ref('')
 const pendingRequest = ref<{ name: string } | null>(null)
 const hasPeer = ref(false)
+const autoAccept = ref(localStorage.getItem('remote_autoAccept') === 'true')
+function toggleAutoAccept() {
+  if (autoAccept.value) localStorage.setItem('remote_autoAccept', 'true')
+  else localStorage.removeItem('remote_autoAccept')
+}
 let ws: WebSocket | null = null
 let pc: RTCPeerConnection | null = null
 let stream: MediaStream | null = null
@@ -105,6 +110,9 @@ async function onSignal(m: any) {
   if (m.type === 'requestControl') {
     if (pc || hasPeer.value) {
       ws?.send(JSON.stringify({ type: 'controlDenied', reason: 'busy' }))
+    } else if (autoAccept.value) {
+      ws?.send(JSON.stringify({ type: 'controlAllowed' }))
+      status.value = `已接受 ${m.name || '未知设备'} 的请求`
     } else {
       pendingRequest.value = { name: m.name || '未知设备' }
     }
@@ -303,6 +311,14 @@ async function toggleHost() {
     <div v-if="pairCode" class="code-block">
       <span class="code-label">配对码</span>
       <span class="code-num">{{ pairCode }}</span>
+    </div>
+
+    <div class="host-row" v-if="hosting">
+      <span class="host-label" :class="{ active: autoAccept }">自动接受</span>
+      <label class="switch">
+        <input type="checkbox" v-model="autoAccept" @change="toggleAutoAccept" />
+        <span class="slider"></span>
+      </label>
     </div>
 
     <p v-if="status" class="status">{{ status }}</p>
