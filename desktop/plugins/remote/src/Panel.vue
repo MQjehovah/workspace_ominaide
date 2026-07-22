@@ -101,7 +101,6 @@ async function startHost() {
 }
 
 async function onSignal(m: any) {
-  console.log('[remote host] signal:', m.type)
   if (m.type === 'requestControl') {
     if (pc || hasPeer.value) {
       ws?.send(JSON.stringify({ type: 'controlDenied', reason: 'busy' }))
@@ -112,20 +111,15 @@ async function onSignal(m: any) {
   }
   if (m.type === 'offer') {
     try {
-      console.log('[remote host] offer received, cleaning old')
       if (pc) { try { pc.close() } catch {} ; pc = null }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
       pendingIce = []
-      console.log('[remote host] getDesktopSources')
       const sources = await (window as any).mqbox.remote.getDesktopSources()
-      console.log('[remote host] sources:', sources.length)
       if (!sources.length) { status.value = '无屏幕源'; return }
-      console.log('[remote host] getUserMedia desktop')
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sources[0].id, maxFrameRate: 30 } } as any,
       })
-      console.log('[remote host] got stream, tracks:', stream.getVideoTracks().length)
       pc = newPeer(await getIceServers())
       pc.ondatachannel = (e) => {
         const dc = e.channel
@@ -137,18 +131,14 @@ async function onSignal(m: any) {
         }
       }
       stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
-      console.log('[remote host] setRemoteDescription')
       await pc.setRemoteDescription({ type: 'offer', sdp: m.payload.sdp })
       for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
       pendingIce = []
-      console.log('[remote host] createAnswer')
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
-      console.log('[remote host] sending answer')
       ws!.send(JSON.stringify({ type: 'answer', payload: answer }))
       pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
       pc.oniceconnectionstatechange = () => {
-        console.log('[remote host] ICE state:', pc?.iceConnectionState, '| conn:', pc?.connectionState)
         if (pc && (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed')) {
           if (pc) { try { pc.close() } catch {} ; pc = null }
           if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
@@ -160,7 +150,6 @@ async function onSignal(m: any) {
       hasPeer.value = true
       status.value = '主控已连接，推流中'
     } catch (e: any) {
-      console.error('[remote host] offer FAILED:', e)
       status.value = '建立连接失败: ' + (e?.message || e)
       try { ws?.send(JSON.stringify({ type: 'error', message: 'host_getusermedia_failed' })) } catch {}
     }

@@ -56,15 +56,12 @@ async function startOffering() {
   dc = pc.createDataChannel('input')
   pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
-    console.log('[remote viewer] ontrack:', e.track.kind)
     if (videoRef.value) videoRef.value.srcObject = e.streams[0]
     status.value = '已连接（可控制）'
     connected.value = true
     setTimeout(() => viewerRef.value?.focus(), 100)
   }
   pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
-  pc.oniceconnectionstatechange = () => console.log('[remote viewer] ICE state:', pc?.iceConnectionState, '| conn:', pc?.connectionState)
-  pc.onconnectionstatechange = () => console.log('[remote viewer] conn state:', pc?.connectionState)
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
@@ -79,7 +76,6 @@ async function startOffering() {
 }
 
 async function onSignal(m: any) {
-  console.log('[remote viewer] signal:', m.type)
   if (m.type === 'controlAllowed') {
     await startOffering()
   } else if (m.type === 'controlDenied') {
