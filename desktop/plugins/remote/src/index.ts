@@ -130,7 +130,10 @@ export default {
         hostState.status = '正在建立连接…'
         if (!hasNotifiedWindow) {
           hasNotifiedWindow = true
-          context.signal('remote:open-connection', `u_${deviceId}`).catch(() => {})
+          console.error('[remote] sending signal remote:open-connection')
+          context.signal('remote:open-connection', `u_${deviceId}`).catch((e: any) => {
+            console.error('[remote] signal failed:', e)
+          })
         }
       } else if (msg.type === 'ice') {
         const ice = (hostState as any).pendingIce

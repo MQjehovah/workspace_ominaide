@@ -143,6 +143,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   )
 
   proc.registerBridgeHandler('remote:open-connection', async ([roomId]) => {
+    console.log('[remote] open-connection window for room:', roomId)
     const preloadPath = join(__dirname, '../preload/index.js')
     const display = screen.getPrimaryDisplay().workArea
     const win = new BrowserWindow({

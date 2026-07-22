@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('mqbox', {
     openPluginManager: () => ipcRenderer.invoke('window:open-plugin-manager'),
     hide: () => ipcRenderer.invoke('window:hide'),
     quit: () => ipcRenderer.invoke('window:quit'),
+    move: (dx: number, dy: number) => ipcRenderer.invoke('window:move-relative', dx, dy),
+    resize: (w: number, h: number) => ipcRenderer.invoke('window:resize', w, h),
   },
   clipboard: {
     onUpdated: (callback: () => void) => {

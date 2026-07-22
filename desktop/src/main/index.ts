@@ -10,7 +10,7 @@ import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
-  { scheme: 'plugin-app', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, standard: true } },
+  { scheme: 'plugin-app', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, standard: true, secure: true } },
 ])
 
 let mainPanel: BrowserWindow | null = null
@@ -156,6 +156,16 @@ ipcMain.handle('window:open-plugin-window', async (_, pluginId: string, query: s
   const cfg = await getConfig()
   if (!cfg.token) return
   openPluginWindow(pluginId, query)
+})
+
+ipcMain.handle('window:move-relative', (_, dx: number, dy: number) => {
+  const win = BrowserWindow.getFocusedWindow()
+  if (win) { const [x, y] = win.getPosition(); win.setPosition(x + dx, y + dy) }
+})
+
+ipcMain.handle('window:resize', (_, w: number, h: number) => {
+  const win = BrowserWindow.getFocusedWindow()
+  if (win) win.setSize(w, h)
 })
 
 ipcMain.handle('shell:open', (_, url: string) => shell.openExternal(url))
