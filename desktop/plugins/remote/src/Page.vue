@@ -39,16 +39,8 @@ async function connect(roomId: string) {
     ws.onerror = () => { status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
     pc = newPeer()
-    dc = pc.createDataChannel('input')
-    pc.ontrack = (e) => {
-      if (videoRef.value) videoRef.value.srcObject = e.streams[0]
-      status.value = '已连接（可控制）'
-      setTimeout(() => viewerRef.value?.focus(), 100)
-    }
-    pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate.toJSON() })) }
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-    ws.send(JSON.stringify({ type: 'offer', payload: offer.toJSON() }))
+    ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
+    status.value = '等待被控端授权…'
   } catch (e: any) {
     status.value = e?.message || String(e)
     cleanup()
@@ -56,8 +48,32 @@ async function connect(roomId: string) {
   }
 }
 
+async function startOffering() {
+  if (!pc || !ws) return
+  dc = pc.createDataChannel('input')
+  pc.ontrack = (e) => {
+    if (videoRef.value) videoRef.value.srcObject = e.streams[0]
+    status.value = '已连接（可控制）'
+    setTimeout(() => viewerRef.value?.focus(), 100)
+  }
+  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate.toJSON() })) }
+  const offer = await pc.createOffer()
+  await pc.setLocalDescription(offer)
+  ws.send(JSON.stringify({ type: 'offer', payload: offer.toJSON() }))
+  status.value = '等待画面…'
+}
+
 async function onSignal(m: any) {
-  if (m.type === 'answer' && pc) {
+  if (m.type === 'controlAllowed') {
+    await startOffering()
+  } else if (m.type === 'controlDenied') {
+    status.value = m.reason === 'busy' ? '被控端忙（已有连接）' : '被控端拒绝'
+    cleanup()
+    if (ws) { try { ws.close() } catch {} ; ws = null }
+  } else if (m.type === 'revoked') {
+    status.value = '被控端断开了控制'
+    cleanup()
+  } else if (m.type === 'answer' && pc) {
     try {
       await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
       for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }

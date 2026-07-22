@@ -26,7 +26,7 @@ VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='vi
 const params=new URLSearchParams(location.search);const code=params.get('code');
 const v=document.getElementById('v'),bar=document.getElementById('bar');
 const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-let dc=pc.createDataChannel('input');
+let dc=null;
 pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
 function send(ev){if(dc&&dc.readyState==='open'){try{dc.send(JSON.stringify(ev));}catch(e){}}}
 function btn(b){return b===2?'right':b===1?'middle':'left';}
@@ -50,9 +50,12 @@ function wsSend(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
 fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('code'))).then(d=>{
   const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote/'+d.room_id+'?token='+encodeURIComponent(d.guest_token);
   ws=new WebSocket(wsUrl);
-  ws.onopen=async()=>{bar.textContent='等待被控端…';const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer.toJSON()});};
+  ws.onopen=()=>{bar.textContent='等待被控端授权…';wsSend({type:'requestControl',name:navigator.userAgent.includes('Mobile')?'手机':'浏览器'});};
   ws.onmessage=async ev=>{const m=JSON.parse(ev.data);
-    if(m.type==='answer'){await pc.setRemoteDescription({type:'answer',sdp:m.payload.sdp});}
+    if(m.type==='controlAllowed'){dc=pc.createDataChannel('input');const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer.toJSON()});bar.textContent='等待画面…';}
+    else if(m.type==='controlDenied'){bar.textContent=m.reason==='busy'?'被控端忙':'被控端拒绝';}
+    else if(m.type==='revoked'){bar.textContent='被控端断开了控制';}
+    else if(m.type==='answer'){await pc.setRemoteDescription({type:'answer',sdp:m.payload.sdp});}
     else if(m.type==='ice'){try{await pc.addIceCandidate(m.payload);}catch(e){}}
   };
   ws.onclose=()=>{bar.textContent='连接已断开';};
