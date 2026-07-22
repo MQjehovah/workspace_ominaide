@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     jwt_refresh_expire_days: int = 7
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    webrtc_ice_servers: str = '[{"urls":"stun:stun.l.google.com:19302"}]'
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

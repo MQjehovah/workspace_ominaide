@@ -10,6 +10,37 @@ import * as screenshot from '../screenshot'
 import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins } from '../pinWindow'
 import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
 
+let nutLoader: any = null
+async function getNut() {
+  if (nutLoader) return nutLoader
+  nutLoader = await import('@nut-tree-fork/nut-js')
+  return nutLoader
+}
+
+const buttonMap: Record<string, string> = { left: 'LEFT', right: 'RIGHT', middle: 'MIDDLE' }
+
+const keyMap: Record<string, string> = {
+  KeyA: 'A', KeyB: 'B', KeyC: 'C', KeyD: 'D', KeyE: 'E', KeyF: 'F', KeyG: 'G', KeyH: 'H', KeyI: 'I', KeyJ: 'J',
+  KeyK: 'K', KeyL: 'L', KeyM: 'M', KeyN: 'N', KeyO: 'O', KeyP: 'P', KeyQ: 'Q', KeyR: 'R', KeyS: 'S', KeyT: 'T',
+  KeyU: 'U', KeyV: 'V', KeyW: 'W', KeyX: 'X', KeyY: 'Y', KeyZ: 'Z',
+  Digit0: 'Num0', Digit1: 'Num1', Digit2: 'Num2', Digit3: 'Num3', Digit4: 'Num4',
+  Digit5: 'Num5', Digit6: 'Num6', Digit7: 'Num7', Digit8: 'Num8', Digit9: 'Num9',
+  Enter: 'Enter', Space: 'Space', Backspace: 'Backspace', Tab: 'Tab', Escape: 'Escape',
+  ShiftLeft: 'LeftShift', ShiftRight: 'RightShift',
+  ControlLeft: 'LeftControl', ControlRight: 'RightControl',
+  AltLeft: 'LeftAlt', AltRight: 'RightAlt',
+  ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Semicolon: 'Semicolon', Quote: 'Quote', Comma: 'Comma', Period: 'Period', Slash: 'Slash', Backquote: 'Grave', Backslash: 'Backslash', Minus: 'Minus', Equal: 'Equal',
+  BracketLeft: 'LeftBracket', BracketRight: 'RightBracket',
+  CapsLock: 'CapsLock',
+  MetaLeft: 'LeftSuper', MetaRight: 'RightSuper',
+  Numpad0: 'NumPad0', Numpad1: 'NumPad1', Numpad2: 'NumPad2', Numpad3: 'NumPad3', Numpad4: 'NumPad4',
+  Numpad5: 'NumPad5', Numpad6: 'NumPad6', Numpad7: 'NumPad7', Numpad8: 'NumPad8', Numpad9: 'NumPad9',
+  NumpadEnter: 'Enter', NumpadAdd: 'Add', NumpadSubtract: 'Subtract', NumpadMultiply: 'Multiply', NumpadDivide: 'Divide', NumpadDecimal: 'Decimal',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert', Delete: 'Delete',
+  F1: 'F1', F2: 'F2', F3: 'F3', F4: 'F4', F6: 'F6', F7: 'F7', F8: 'F8', F9: 'F9', F10: 'F10',
+}
+
 export function registerIpcHandlers() {
   // Config
   ipcMain.handle('config:get', async (_, key: string) => (await getConfig())?.[key])
@@ -299,5 +330,54 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('clipboard:write-image', async (_, dataUrl: string) => {
     try { await copyImage(dataUrl); return true } catch { return false }
+  })
+
+  ipcMain.handle('remote:get-sources', async () => {
+    try {
+      const { desktopCapturer } = require('electron')
+      const sources = await desktopCapturer.getSources({ types: ['screen'], fetchWindowIcons: false, thumbnailSize: { width: 1, height: 1 } })
+      return sources.map((s: any) => ({ id: s.id, name: s.name, display_id: s.display_id }))
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('remote:screen-size', async () => {
+    try {
+      const { screen } = require('electron')
+      const b = screen.getPrimaryDisplay().bounds
+      return { width: b.width, height: b.height }
+    } catch {
+      return { width: 0, height: 0 }
+    }
+  })
+
+  ipcMain.handle('remote:inject', async (_e, event: any) => {
+    try {
+      const nut = await getNut()
+      const ev = event || {}
+      if (ev.type === 'mouseMove') {
+        await nut.mouse.setPosition(new nut.Point(Math.round(ev.x), Math.round(ev.y)))
+      } else if (ev.type === 'mouseDown') {
+        const b = buttonMap[ev.button]
+        if (b && nut.Button[b] !== undefined) await nut.mouse.pressButton(nut.Button[b])
+      } else if (ev.type === 'mouseUp') {
+        const b = buttonMap[ev.button]
+        if (b && nut.Button[b] !== undefined) await nut.mouse.releaseButton(nut.Button[b])
+      } else if (ev.type === 'wheel') {
+        const amt = Math.max(1, Math.min(10, Math.round(Math.abs(ev.deltaY) / 100) || 1))
+        if (ev.deltaY > 0) await nut.mouse.scrollDown(amt)
+        else await nut.mouse.scrollUp(amt)
+      } else if (ev.type === 'keyDown') {
+        const k = keyMap[ev.code]
+        if (k && nut.Key[k] !== undefined) await nut.keyboard.pressKey(nut.Key[k])
+      } else if (ev.type === 'keyUp') {
+        const k = keyMap[ev.code]
+        if (k && nut.Key[k] !== undefined) await nut.keyboard.releaseKey(nut.Key[k])
+      }
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) }
+    }
   })
 }

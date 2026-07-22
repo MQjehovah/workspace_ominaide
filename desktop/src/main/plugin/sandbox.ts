@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { join } from 'path'
-import { app, Notification, clipboard, shell, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, Notification, clipboard, shell, BrowserWindow, dialog, ipcMain, desktopCapturer, screen } from 'electron'
 import { readdirSync, statSync } from 'fs'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
@@ -112,6 +112,16 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     },
     notification: notification || { show: () => {} },
     screenshot: screenshotApi,
+    remote: perms.includes('remote') ? {
+      getDesktopSources: async () => {
+        const sources = await desktopCapturer.getSources({ types: ['screen'], fetchWindowIcons: false, thumbnailSize: { width: 1, height: 1 } })
+        return sources.map((s: any) => ({ id: s.id, name: s.name, display_id: s.display_id }))
+      },
+      getScreenSize: () => {
+        const b = screen.getPrimaryDisplay().bounds
+        return { width: b.width, height: b.height }
+      },
+    } : null,
     files: perms.includes('files:read') ? {
       openDirectory: async () => {
         const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })

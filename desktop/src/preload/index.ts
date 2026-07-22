@@ -116,4 +116,12 @@ contextBridge.exposeInMainWorld('mqbox', {
     put: (path: string, body?: any) => ipcRenderer.invoke('api:put', path, body),
     delete: (path: string) => ipcRenderer.invoke('api:delete', path),
   },
+  remote: {
+    getDesktopSources: () => ipcRenderer.invoke('remote:get-sources'),
+    getScreenSize: () => ipcRenderer.invoke('remote:screen-size'),
+    injectInput: (event: any) => ipcRenderer.invoke('remote:inject', event),
+    onControlRequest: (cb: (info: any) => void) => {
+      ipcRenderer.on('remote:control-request', (_e, info) => cb(info))
+    },
+  },
 })
