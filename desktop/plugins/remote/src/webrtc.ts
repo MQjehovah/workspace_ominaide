@@ -24,7 +24,8 @@ export async function getIceServers(): Promise<any[]> {
   if (cachedIce) return cachedIce
   try {
     const { serverUrl } = await getServer()
-    const r = await fetch(`${serverUrl}/api/remote/ice`).then(r => r.json())
+    const headers = await getAuthHeaders()
+    const r = await fetch(`${serverUrl}/api/remote/ice`, { headers }).then(r => r.json())
     cachedIce = (r && r.iceServers) || [{ urls: 'stun:stun.l.google.com:19302' }]
   } catch {
     cachedIce = [{ urls: 'stun:stun.l.google.com:19302' }]

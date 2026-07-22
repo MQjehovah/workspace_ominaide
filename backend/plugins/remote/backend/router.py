@@ -30,9 +30,7 @@ class HeartbeatRequest(BaseModel):
 VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'><title>OmniAide Remote</title><style>body{margin:0;background:#000;overflow:hidden;touch-action:none}video{width:100vw;height:100vh;object-fit:contain}#bar{position:fixed;top:8px;left:8px;color:#fff;font:13px sans-serif;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px;z-index:10}</style></head><body><div id='bar'>连接中…</div><video id='v' autoplay playsinline></video><script>
 const params=new URLSearchParams(location.search);const code=params.get('code');
 const v=document.getElementById('v'),bar=document.getElementById('bar');
-const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-let dc=null;let ended=false;
-pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
+let pc=null;let dc=null;let ended=false;
 function send(ev){if(dc&&dc.readyState==='open'){try{dc.send(JSON.stringify(ev));}catch(e){}}}
 function btn(b){return b===2?'right':b===1?'middle':'left';}
 function norm(e){return v.clientWidth>0?e.offsetX/v.clientWidth:0;}
@@ -49,10 +47,12 @@ v.addEventListener('touchend',e=>{e.preventDefault();send({type:'mouseUp',button
 function ignored(c){return c==='F5'||c==='F11'||c==='F12';}
 document.addEventListener('keydown',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyDown',code:e.code});}});
 document.addEventListener('keyup',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyUp',code:e.code});}});
-pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate.toJSON()});};
 let ws;
 function wsSend(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
 fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('code'))).then(d=>{
+  pc=new RTCPeerConnection({iceServers:d.iceServers||[{urls:'stun:stun.l.google.com:19302'}]});
+  pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
+  pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate.toJSON()});};
   const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote/'+d.room_id+'?token='+encodeURIComponent(d.guest_token);
   ws=new WebSocket(wsUrl);
   ws.onopen=()=>{bar.textContent='等待被控端授权…';wsSend({type:'requestControl',name:navigator.userAgent.includes('Mobile')?'手机':'浏览器'});};
@@ -85,13 +85,17 @@ async def devices(user: dict = Depends(get_current_user)):
     return {"devices": remote_service.list_devices(user["id"])}
 
 
-@router.get("/ice")
-async def ice_config():
+def _ice_servers() -> list:
     import json
     try:
-        return {"iceServers": json.loads(settings.webrtc_ice_servers)}
+        return json.loads(settings.webrtc_ice_servers)
     except Exception:
-        return {"iceServers": [{"urls": "stun:stun.l.google.com:19302"}]}
+        return [{"urls": "stun:stun.l.google.com:19302"}]
+
+
+@router.get("/ice")
+async def ice_config(user: dict = Depends(get_current_user)):
+    return {"iceServers": _ice_servers()}
 
 
 @router.post("/heartbeat")
@@ -112,7 +116,7 @@ async def consume_pair(code: str):
     if not room_id:
         raise HTTPException(status_code=410, detail="Pair code invalid or expired")
     guest_token = create_access_token({"sub": 0, "guest_room": room_id}, timedelta(minutes=30))
-    return {"room_id": room_id, "guest_token": guest_token}
+    return {"room_id": room_id, "guest_token": guest_token, "iceServers": _ice_servers()}
 
 
 @router.get("/viewer", response_class=HTMLResponse)

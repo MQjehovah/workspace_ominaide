@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from './webrtc'
 
 defineProps<{ data: any; execute: (a: string, args?: any) => Promise<any>; refresh?: () => void; close: () => void }>()
@@ -10,6 +10,7 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const viewerRef = ref<HTMLElement | null>(null)
 const status = ref('')
 const pairInput = ref('')
+const connected = ref(false)
 let ws: WebSocket | null = null
 let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
@@ -56,9 +57,17 @@ async function startOffering() {
   pc.ontrack = (e) => {
     if (videoRef.value) videoRef.value.srcObject = e.streams[0]
     status.value = '已连接（可控制）'
+    connected.value = true
     setTimeout(() => viewerRef.value?.focus(), 100)
   }
   pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate.toJSON() })) }
+  pc.oniceconnectionstatechange = () => {
+    if (!pc) return
+    const st = pc.iceConnectionState
+    if (st === 'failed') { if (!connectionEnded) status.value = '连接失败（ICE）'; connected.value = false; cleanup() }
+    else if (st === 'disconnected') { if (!connectionEnded) status.value = '连接中断，尝试恢复…' }
+    else if (st === 'closed') { connected.value = false }
+  }
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
   ws.send(JSON.stringify({ type: 'offer', payload: offer.toJSON() }))
@@ -140,6 +149,7 @@ function isIgnoredKey(code: string): boolean {
 }
 
 function onKeyDown(e: KeyboardEvent) {
+  if (!connected.value) return
   if (e.code && !isIgnoredKey(e.code)) {
     e.preventDefault()
     sendInput({ type: 'keyDown', code: e.code })
@@ -147,6 +157,7 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 function onKeyUp(e: KeyboardEvent) {
+  if (!connected.value) return
   if (e.code && !isIgnoredKey(e.code)) {
     e.preventDefault()
     sendInput({ type: 'keyUp', code: e.code })
@@ -154,6 +165,7 @@ function onKeyUp(e: KeyboardEvent) {
 }
 
 function cleanup() {
+  connected.value = false
   if (dc) { try { dc.close() } catch {} ; dc = null }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   pendingIce = []
@@ -169,7 +181,18 @@ function backToMenu() {
   loadDevices()
 }
 
-onMounted(loadDevices)
+onMounted(() => {
+  loadDevices()
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keyup', onKeyUp)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('keyup', onKeyUp)
+  cleanup()
+  if (ws) { try { ws.close() } catch {} ; ws = null }
+})
 </script>
 
 <template>
@@ -199,7 +222,7 @@ onMounted(loadDevices)
       <p class="hint">被控端需在面板点"允许控制本机"并生成配对码</p>
     </div>
 
-    <div v-else class="viewer" ref="viewerRef" tabindex="0" @keydown="onKeyDown" @keyup="onKeyUp">
+    <div v-else class="viewer" ref="viewerRef" tabindex="0">
       <video ref="videoRef" autoplay playsinline class="video"
         @mousemove="onMouseMove" @mousedown="onMouseDown" @mouseup="onMouseUp"
         @wheel.prevent="onWheel" @contextmenu.prevent></video>
