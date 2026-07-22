@@ -1,0 +1,25 @@
+{
+  "name": "omniaide-rss",
+  "version": "1.0.0",
+  "displayName": "资讯",
+  "description": "RSS 订阅阅读",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "omniaide": {
+    "id": "rss",
+    "displayName": "资讯",
+    "icon": "Rss",
+    "keywords": ["rss","news","资讯","订阅"],
+    "permissions": ["storage","notification"],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40",
+    "typescript": "~5.6.0"
+  }
+}

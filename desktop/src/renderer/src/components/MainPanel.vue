@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 
 const pluginComponents: Record<string, any> = {
+  'rss': defineAsyncComponent(() => import('@plugins/rss/src/Panel.vue')),
   'todo': defineAsyncComponent(() => import('@plugins/todo/src/Panel.vue')),
   'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Panel.vue')),
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Panel.vue')),

@@ -17,6 +17,7 @@ const pageData = ref<any>({})
 const component = ref<any>(null)
 
 const pageComponents: Record<string, any> = {
+  'rss': defineAsyncComponent(() => import('@plugins/rss/src/Page.vue')),
   'todo': defineAsyncComponent(() => import('@plugins/todo/src/Page.vue')),
   'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Page.vue')),
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Page.vue')),
