@@ -11,7 +11,12 @@ export default defineConfig({
       {
         entry: resolve(__dirname, 'src/main/index.ts'),
         onstart(args) { args.startup() },
-        vite: { build: { outDir: resolve(__dirname, 'dist-electron/main') } },
+        vite: {
+          build: {
+            outDir: resolve(__dirname, 'dist-electron/main'),
+            rollupOptions: { external: (id: string) => id.startsWith('@nut-tree-fork/') },
+          },
+        },
       },
       {
         entry: resolve(__dirname, 'src/preload/index.ts'),

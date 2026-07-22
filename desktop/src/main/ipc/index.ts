@@ -11,9 +11,9 @@ import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins }
 import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
 
 let nutLoader: any = null
-async function getNut() {
+function getNut(): any {
   if (nutLoader) return nutLoader
-  nutLoader = await import('@nut-tree-fork/nut-js')
+  nutLoader = require('@nut-tree-fork/nut-js')
   return nutLoader
 }
 
@@ -354,7 +354,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('remote:inject', async (_e, event: any) => {
     try {
-      const nut = await getNut()
+      const nut = getNut()
       const ev = event || {}
       if (ev.type === 'mouseMove') {
         await nut.mouse.setPosition(new nut.Point(Math.round(ev.x), Math.round(ev.y)))
