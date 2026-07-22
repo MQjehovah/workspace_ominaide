@@ -87,6 +87,12 @@ async def unified_search_tool(user_id: int, args: dict) -> dict:
     return {"results": [{"type": p.payload.get("source_type"), "title": p.payload.get("title"), "snippet": p.payload.get("content", "")[:200], "score": p.score} for p in results]}
 
 
+async def get_daily_briefing_tool(user_id: int, args: dict) -> dict:
+    from plugins.chat.backend.briefing import generate_briefing
+    briefing = await generate_briefing(user_id)
+    return {"briefing": briefing}
+
+
 def register_ai_tools():
     tool_registry.register(MCPTool(name="list_schedule_events", description="List upcoming schedule/calendar events within a date range. Returns event titles and times.", inputSchema={"type":"object","properties":{"start":{"type":"string","description":"Start date ISO format"},"end":{"type":"string","description":"End date ISO format"}}}), list_schedule_events)
     tool_registry.register(MCPTool(name="search_articles", description="Search RSS feed articles by keyword. Returns matching article titles and summaries.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Search keyword"}},"required":["q"]}), search_articles)
@@ -94,3 +100,4 @@ def register_ai_tools():
     tool_registry.register(MCPTool(name="get_unread_count", description="Get the number of unread notifications.", inputSchema={"type":"object","properties":{}}), get_unread_count)
     tool_registry.register(MCPTool(name="get_user_info", description="Get info about the currently logged-in user.", inputSchema={"type":"object","properties":{}}), get_user_info)
     tool_registry.register(MCPTool(name="unified_search", description="Search across all your data (files, notes, articles, events) with a natural language query. Use this as the primary search tool.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Natural language search query"},"types":{"type":"array","items":{"type":"string"},"description":"Optional: filter by type (file, note, rss_entry, event)"}},"required":["q"]}), unified_search_tool)
+    tool_registry.register(MCPTool(name="get_daily_briefing", description="Generate a daily briefing summarizing today's schedule, notifications, and articles.", inputSchema={"type":"object","properties":{}}), get_daily_briefing_tool)
