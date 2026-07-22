@@ -12,6 +12,37 @@ let pc: RTCPeerConnection | null = null
 let stream: MediaStream | null = null
 let pendingIce: any[] = []
 let currentRoomId = ''
+let cachedScreen: { width: number; height: number } | null = null
+let lastMoveTs = 0
+let pendingMove: any = null
+let moveScheduled = false
+
+async function getScreen(): Promise<{ width: number; height: number }> {
+  if (cachedScreen) return cachedScreen
+  cachedScreen = await (window as any).mqbox.remote.getScreenSize()
+  return cachedScreen!
+}
+
+async function handleInput(ev: any) {
+  try {
+    if (ev.type === 'mouseMove') {
+      pendingMove = ev
+      const now = Date.now()
+      if (now - lastMoveTs >= 16 && !moveScheduled) {
+        lastMoveTs = now
+        moveScheduled = true
+        const s = await getScreen()
+        const m = pendingMove
+        const x = Math.round((Number(m.x) || 0) * s.width)
+        const y = Math.round((Number(m.y) || 0) * s.height)
+        await (window as any).mqbox.remote.injectInput({ type: 'mouseMove', x, y })
+        moveScheduled = false
+      }
+    } else if (ev.type === 'mouseDown' || ev.type === 'mouseUp' || ev.type === 'wheel' || ev.type === 'keyDown' || ev.type === 'keyUp') {
+      await (window as any).mqbox.remote.injectInput(ev)
+    }
+  } catch {}
+}
 
 async function startHost() {
   if (hosting.value) return
@@ -56,6 +87,15 @@ async function onSignal(m: any) {
         video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sources[0].id, maxFrameRate: 30 } } as any,
       })
       pc = newPeer()
+      pc.ondatachannel = (e) => {
+        const dc = e.channel
+        dc.onmessage = async (msg) => {
+          try {
+            const ev = JSON.parse(msg.data)
+            await handleInput(ev)
+          } catch {}
+        }
+      }
       stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
       await pc.setRemoteDescription({ type: 'offer', sdp: m.payload.sdp })
       for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
