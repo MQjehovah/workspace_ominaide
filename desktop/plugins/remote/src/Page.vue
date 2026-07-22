@@ -54,9 +54,6 @@ async function connect(roomId: string) {
 async function startOffering() {
   if (!pc || !ws) return
   dc = pc.createDataChannel('input')
-  dc.onopen = () => console.log('[viewer] dataChannel OPEN')
-  dc.onclose = () => console.log('[viewer] dataChannel CLOSED')
-  dc.onerror = (e: any) => console.log('[viewer] dataChannel ERROR', e?.error)
   pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
     if (videoRef.value) videoRef.value.srcObject = e.streams[0]
@@ -122,9 +119,7 @@ async function connectByCode() {
 
 function sendInput(ev: any) {
   if (dc && dc.readyState === 'open') {
-    try { dc.send(JSON.stringify(ev)) } catch (e) { console.log('[viewer] send err', e) }
-  } else {
-    console.log('[viewer] dc not open, state:', dc ? dc.readyState : 'null')
+    try { dc.send(JSON.stringify(ev)) } catch {}
   }
 }
 
