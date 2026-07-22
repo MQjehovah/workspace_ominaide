@@ -10,7 +10,11 @@ export function openSignal(roomId: string, onMsg: (m: any) => void): Promise<Web
     const wsUrl = serverUrl.replace(/^http/, 'ws') + `/ws/remote/${roomId}?token=${encodeURIComponent(token)}`
     const ws = new WebSocket(wsUrl)
     ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)) } catch {} }
-    return new Promise<WebSocket>((res) => { ws.onopen = () => res(ws) })
+    return new Promise<WebSocket>((res, rej) => {
+      ws.onopen = () => res(ws)
+      ws.onerror = () => rej(new Error('信令连接失败'))
+      ws.onclose = () => rej(new Error('信令连接关闭'))
+    })
   })
 }
 

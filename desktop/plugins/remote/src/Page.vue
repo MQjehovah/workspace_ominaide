@@ -25,18 +25,28 @@ async function loadDevices() {
 }
 
 async function connect(roomId: string) {
+  if (ws || pc) {
+    cleanup()
+    if (ws) { try { ws.close() } catch {} ; ws = null }
+  }
   mode.value = 'viewer'
   status.value = '连接中…'
-  ws = await openSignal(roomId, onSignal)
-  ws.onclose = () => { status.value = status.value || '信令断开'; cleanup() }
-  ws.onerror = () => { status.value = '信令错误' }
-  ws.send(JSON.stringify({ type: 'join' }))
-  pc = newPeer()
-  pc.ontrack = (e) => { if (videoRef.value) videoRef.value.srcObject = e.streams[0]; status.value = '已连接' }
-  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate.toJSON() })) }
-  const offer = await pc.createOffer()
-  await pc.setLocalDescription(offer)
-  ws.send(JSON.stringify({ type: 'offer', payload: offer.toJSON() }))
+  try {
+    ws = await openSignal(roomId, onSignal)
+    ws.onclose = () => { status.value = '信令断开'; cleanup() }
+    ws.onerror = () => { status.value = '信令错误' }
+    ws.send(JSON.stringify({ type: 'join' }))
+    pc = newPeer()
+    pc.ontrack = (e) => { if (videoRef.value) videoRef.value.srcObject = e.streams[0]; status.value = '已连接' }
+    pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate.toJSON() })) }
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    ws.send(JSON.stringify({ type: 'offer', payload: offer.toJSON() }))
+  } catch (e: any) {
+    status.value = e?.message || String(e)
+    cleanup()
+    if (ws) { try { ws.close() } catch {} ; ws = null }
+  }
 }
 
 async function onSignal(m: any) {
@@ -64,6 +74,7 @@ async function connectByCode() {
       return resp.json()
     })
     await connect(r.room_id)
+    pairInput.value = ''
   } catch (e: any) {
     status.value = e?.message || String(e)
   }
@@ -72,6 +83,7 @@ async function connectByCode() {
 function cleanup() {
   if (pc) { try { pc.close() } catch {} ; pc = null }
   pendingIce = []
+  if (videoRef.value) videoRef.value.srcObject = null
 }
 
 function backToMenu() {
