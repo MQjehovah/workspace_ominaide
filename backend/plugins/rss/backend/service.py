@@ -1,9 +1,10 @@
+import asyncio
 import feedparser
 import httpx
 from sqlalchemy import select, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-
+from core.ai.indexer import index_content
 from plugins.rss.backend.models import Feed, Entry
 
 
@@ -79,6 +80,7 @@ async def fetch_feed_content(db: AsyncSession, feed: Feed) -> int:
         feed.title = f.feed.get("title", feed.title)
         feed.last_fetch = datetime.utcnow()
         new = 0
+        new_entries = []
         for e in f.entries:
             guid = e.get("id") or e.get("link") or ""
             if not guid:
@@ -100,8 +102,18 @@ async def fetch_feed_content(db: AsyncSession, feed: Feed) -> int:
                 published=published,
             )
             db.add(entry)
+            new_entries.append(entry)
             new += 1
         await db.flush()
+        for entry in new_entries:
+            asyncio.create_task(index_content(
+                user_id=feed.user_id,
+                source_type='rss_entry',
+                source_id=entry.id,
+                title=entry.title,
+                content=entry.summary or entry.content or str(entry.id),
+                metadata={"link": entry.link} if entry.link else None,
+            ))
         return new
     except Exception as ex:
         print(f"[rss] fetch error {feed.url}: {ex}")

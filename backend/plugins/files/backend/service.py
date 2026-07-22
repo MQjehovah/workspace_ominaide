@@ -1,8 +1,10 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from minio import Minio
+from core.ai.indexer import index_content
 from core.config.settings import settings
 from core.minio.client import minio_client
 from plugins.files.backend.models import File
@@ -90,6 +92,16 @@ async def confirm_upload(db: AsyncSession, user_id: int, file_id: int) -> File:
     file_record.status = "active"
     await db.flush()
     await db.refresh(file_record)
+
+    asyncio.create_task(index_content(
+        user_id=user_id,
+        source_type='file',
+        source_id=file_record.id,
+        title=file_record.original_name,
+        content=str(file_record.id),
+        metadata={"link": f"/files/{file_record.id}"},
+    ))
+
     return file_record
 
 

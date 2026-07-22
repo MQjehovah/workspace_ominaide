@@ -1,5 +1,7 @@
+import asyncio
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from core.ai.indexer import index_content
 from plugins.notes.backend.models import PluginNote
 from plugins.notes.backend.schemas import NoteCreate, NoteUpdate
 
@@ -16,6 +18,17 @@ async def create_note(db: AsyncSession, user_id: int, req: NoteCreate) -> Plugin
     db.add(note)
     await db.flush()
     await db.refresh(note)
+
+    if not note.is_folder:
+        asyncio.create_task(index_content(
+            user_id=user_id,
+            source_type='note',
+            source_id=note.id,
+            title=note.title,
+            content=note.content or '',
+            metadata={"link": f"/notes/{note.id}"},
+        ))
+
     return note
 
 
@@ -53,6 +66,17 @@ async def update_note(
     if req.sort_order is not None: note.sort_order = req.sort_order
     await db.flush()
     await db.refresh(note)
+
+    if not note.is_folder:
+        asyncio.create_task(index_content(
+            user_id=user_id,
+            source_type='note',
+            source_id=note.id,
+            title=note.title,
+            content=note.content or '',
+            metadata={"link": f"/notes/{note.id}"},
+        ))
+
     return note
 
 
