@@ -12,15 +12,20 @@ async def lifespan(app: FastAPI):
     from core.ai.mcp.tools.register_ai import register_ai_tools
     from core.events.bus import worker_loop
     from core.events.workers import register_workers
+    from core.ai.scheduler import scheduler_loop
 
     register_workers()
     worker_task = asyncio.create_task(worker_loop())
+    scheduler_task = asyncio.create_task(scheduler_loop())
     await ensure_buckets()
     await discover_plugins(app)
     register_core_tools()
     register_ai_tools()
     yield
+    scheduler_task.cancel()
     worker_task.cancel()
+    try: await scheduler_task
+    except asyncio.CancelledError: pass
     try: await worker_task
     except asyncio.CancelledError: pass
     from core.database.redis import close_redis
