@@ -24,11 +24,13 @@ let cachedDisplays: any[] | null = null
 let cacheTime = 0
 const CACHE_TTL = 5000
 
+const win = window as any
+
 async function getCachedSources() {
   const now = Date.now()
   if (cachedSources && now - cacheTime < CACHE_TTL) return { sources: cachedSources, displays: cachedDisplays }
-  cachedSources = await (window as any).mqbox.remote.getDesktopSources()
-  cachedDisplays = await (window as any).mqbox.remote.getAllDisplays()
+  cachedSources = await win.mqbox.remote.getDesktopSources()
+  cachedDisplays = await win.mqbox.remote.getAllDisplays()
   cacheTime = now
   return { sources: cachedSources, displays: cachedDisplays }
 }
@@ -58,7 +60,7 @@ async function flushMove() {
   const sf = d.scaleFactor || 1
   const x = Math.round((d.bounds.x + (Number(m.x) || 0) * d.bounds.width) * sf)
   const y = Math.round((d.bounds.y + (Number(m.y) || 0) * d.bounds.height) * sf)
-  await (window as any).mqbox.remote.injectInput({ type: 'mouseMove', x, y })
+  await win.mqbox.remote.injectInput({ type: 'mouseMove', x, y })
 }
 
 async function handleInput(ev: any) {
@@ -73,7 +75,7 @@ async function handleInput(ev: any) {
         })
       }
     } else if (ev.type === 'mouseDown' || ev.type === 'mouseUp' || ev.type === 'wheel' || ev.type === 'keyDown' || ev.type === 'keyUp') {
-      await (window as any).mqbox.remote.injectInput(ev)
+      await win.mqbox.remote.injectInput(ev)
     }
   } catch {}
 }
@@ -132,6 +134,7 @@ async function startConnection() {
     await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
     for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
     pendingIce = []
+
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
     sendToChild('answer', answer)
@@ -161,7 +164,6 @@ async function startConnection() {
     hasPeer.value = true
     props.execute?.('syncHostState', { peerConnected: true })
   } catch (e: any) {
-    console.log('[accept] error:', e?.message || e)
     status.value = '连接失败: ' + (e?.message || '')
   }
 }
@@ -193,9 +195,11 @@ function disconnect() {
   setTimeout(() => window.close(), 500)
 }
 
+// --- Window drag + collapse ---
 let dragStartX = 0, dragStartY = 0, dragMoved = false
 
 function onBarMouseDown(e: MouseEvent) {
+  if ((e.target as HTMLElement)?.closest?.('.close-btn, .btn-icon, .disconnect-btn')) return
   dragStartX = e.screenX
   dragStartY = e.screenY
   dragMoved = false
@@ -206,9 +210,9 @@ function onBarMouseDown(e: MouseEvent) {
 function onDragMove(e: MouseEvent) {
   const dx = e.screenX - dragStartX
   const dy = e.screenY - dragStartY
-  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
     dragMoved = true
-    ;(window as any).mqbox?.window.move(dx, dy)
+    win.mqbox?.window.move(dx, dy)
     dragStartX = e.screenX
     dragStartY = e.screenY
   }
@@ -222,9 +226,8 @@ function onDragEnd() {
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value
-  // Resize window to fit content
   const h = collapsed.value ? 40 : 130
-  ;(window as any).mqbox?.window.resize(280, h)
+  win.mqbox?.window.resize(280, h)
 }
 
 function closeWindow(e: MouseEvent) {
@@ -243,14 +246,12 @@ onUnmounted(() => {
 
 <template>
   <div class="container">
-    <!-- Collapsed bar -->
     <div v-if="collapsed" class="bar" @mousedown="onBarMouseDown">
       <span class="dot" :class="{ active: connected }"></span>
       <span class="bar-text">远程控制中</span>
       <button class="close-btn" @click="closeWindow">×</button>
     </div>
 
-    <!-- Expanded panel -->
     <div v-else class="panel">
       <div class="panel-hd" @mousedown="onBarMouseDown">
         <span class="panel-title">远程控制</span>
@@ -271,7 +272,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; backg
 
 .bar {
   display:flex; align-items:center; gap:6px; padding:8px 12px;
-  background:#1a1a1a; cursor:pointer;
+  background:#1a1a1a; cursor:pointer; user-select:none;
 }
 .dot { width:8px;height:8px;border-radius:50%;background:#666;flex-shrink:0; }
 .dot.active { background:#28a745; }
@@ -279,8 +280,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; backg
 .close-btn { width:18px;height:18px;border:none;border-radius:4px;background:transparent;color:#666;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
 .close-btn:hover { background:#333;color:#fff; }
 
-.panel { background:#1a1a1a; padding:10px; }
-.panel-hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.panel { background:#1a1a1a; padding:10px; user-select:none; }
+.panel-hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; cursor:pointer; }
 .panel-title { font-size:12px; font-weight:600; color:#eee; }
 .btn-icon { width:20px;height:20px;border:none;border-radius:4px;background:transparent;color:#999;cursor:pointer;font-size:14px;line-height:1; }
 .btn-icon:hover { background:#333;color:#fff; }

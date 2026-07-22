@@ -158,13 +158,13 @@ ipcMain.handle('window:open-plugin-window', async (_, pluginId: string, query: s
   openPluginWindow(pluginId, query)
 })
 
-ipcMain.handle('window:move-relative', (_, dx: number, dy: number) => {
-  const win = BrowserWindow.getFocusedWindow()
+ipcMain.handle('window:move-relative', (event, dx: number, dy: number) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
   if (win) { const [x, y] = win.getPosition(); win.setPosition(x + dx, y + dy) }
 })
 
-ipcMain.handle('window:resize', (_, w: number, h: number) => {
-  const win = BrowserWindow.getFocusedWindow()
+ipcMain.handle('window:resize', (event, w: number, h: number) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
   if (win) win.setSize(w, h)
 })
 
