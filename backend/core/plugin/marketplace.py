@@ -7,6 +7,19 @@ MARKETPLACE_DIR = Path(__file__).resolve().parent.parent.parent / "desktop_plugi
 router = APIRouter(prefix="/api/plugins/marketplace", tags=["marketplace"])
 
 
+def resolve_plugin_dir(plugin_id: str) -> Path | None:
+    if not MARKETPLACE_DIR.exists():
+        return None
+    for entry in MARKETPLACE_DIR.iterdir():
+        if not entry.is_dir() or not (entry / "package.json").exists():
+            continue
+        pkg = json.loads((entry / "package.json").read_text(encoding="utf-8"))
+        manifest = pkg.get("omniaide") or pkg.get("mqbox") or {}
+        if manifest.get("id") == plugin_id or entry.name == plugin_id:
+            return entry
+    return None
+
+
 def scan_packages() -> list[dict]:
     if not MARKETPLACE_DIR.exists():
         MARKETPLACE_DIR.mkdir(parents=True, exist_ok=True)
@@ -16,9 +29,10 @@ def scan_packages() -> list[dict]:
         if entry.is_dir() and (entry / "package.json").exists():
             pkg = json.loads((entry / "package.json").read_text(encoding="utf-8"))
             manifest = pkg.get("omniaide") or pkg.get("mqbox") or {}
+            plugin_id = manifest.get("id", entry.name)
             zip_path = entry / "plugin.zip"
             packages.append({
-                "id": manifest.get("id", entry.name),
+                "id": plugin_id,
                 "name": pkg.get("name", entry.name),
                 "displayName": manifest.get("displayName", pkg.get("displayName", entry.name)),
                 "description": pkg.get("description", ""),
@@ -27,7 +41,7 @@ def scan_packages() -> list[dict]:
                 "keywords": manifest.get("keywords", []),
                 "permissions": manifest.get("permissions", []),
                 "builtin": manifest.get("builtin", False),
-                "downloadUrl": f"/api/plugins/marketplace/{entry.name}/download",
+                "downloadUrl": f"/api/plugins/marketplace/{plugin_id}/download",
                 "hasBuild": zip_path.exists(),
             })
     return packages
@@ -64,7 +78,9 @@ async def upload_plugin(file: UploadFile = File(...)):
 
 @router.get("/{plugin_id}/download")
 async def download_plugin(plugin_id: str):
-    plugin_dir = MARKETPLACE_DIR / plugin_id
+    plugin_dir = resolve_plugin_dir(plugin_id)
+    if not plugin_dir:
+        raise HTTPException(status_code=404, detail="Plugin not found")
     zip_path = plugin_dir / "plugin.zip"
     if not zip_path.exists():
         raise HTTPException(status_code=404, detail="Plugin build not found")
@@ -73,8 +89,8 @@ async def download_plugin(plugin_id: str):
 
 @router.delete("/{plugin_id}")
 async def delete_plugin(plugin_id: str):
-    plugin_dir = MARKETPLACE_DIR / plugin_id
-    if not plugin_dir.exists():
+    plugin_dir = resolve_plugin_dir(plugin_id)
+    if not plugin_dir:
         raise HTTPException(status_code=404, detail="Plugin not found")
     shutil.rmtree(plugin_dir)
     return {"message": "Plugin deleted"}
