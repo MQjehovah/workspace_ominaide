@@ -187,10 +187,12 @@ export default {
           } catch {}
         }, 240000)
 
-        clearInterval(heartbeatTimer)
-        heartbeatTimer = setInterval(async () => {
+        async function doHeartbeat() {
           try { await context.api.post('/remote/heartbeat', { device_id: id }) } catch {}
-        }, 30000)
+          heartbeatTimer = setTimeout(doHeartbeat, 30000)
+        }
+        clearTimeout(heartbeatTimer)
+        heartbeatTimer = setTimeout(doHeartbeat, 30000)
 
       } catch (e: any) {
         hostState.status = '启动失败: ' + (e?.message || e)
@@ -208,7 +210,7 @@ export default {
       if (hostWs) { try { hostWs.close() } catch {} }
       hostWs = null
       clearInterval(codeTimer)
-      clearInterval(heartbeatTimer)
+      clearTimeout(heartbeatTimer)
       Object.assign(hostState, { enabled: false, code: '', status: '', peerConnected: false })
       await persistState()
       return getState()
@@ -281,7 +283,7 @@ export default {
     if (hostWs) { try { hostWs.close() } catch {} }
     hostWs = null
     clearInterval(codeTimer)
-    clearInterval(heartbeatTimer)
+    clearTimeout(heartbeatTimer)
     persistState()
   },
 }
