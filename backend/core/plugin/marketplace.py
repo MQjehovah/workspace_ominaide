@@ -59,3 +59,37 @@ async def download_plugin(plugin_id: str):
         media_type="application/zip",
         filename=f"{plugin_id}.zip",
     )
+
+
+@router.post("/{plugin_id}/install")
+async def install_from_marketplace(plugin_id: str):
+    from sqlalchemy import select
+    from core.plugin.models import PluginRegistry
+    from core.plugin.registry import install_plugin_from_zip
+    from core.database.session import async_session
+
+    plugin_dir = MARKETPLACE_DIR / plugin_id
+    zip_path = plugin_dir / "plugin.zip"
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="Plugin build not found")
+
+    manifest = install_plugin_from_zip(zip_path)
+    name = manifest["name"]
+
+    async with async_session() as db:
+        result = await db.execute(select(PluginRegistry).where(PluginRegistry.name == name))
+        record = result.scalar_one_or_none()
+        if record is None:
+            record = PluginRegistry(
+                name=name,
+                version=manifest.get("version", "0.0.0"),
+                title=manifest.get("title", name),
+                description=manifest.get("description", ""),
+                icon=manifest.get("icon", ""),
+                enabled=True,
+                manifest=manifest,
+            )
+            db.add(record)
+            await db.commit()
+            await db.refresh(record)
+        return {"name": record.name, "title": record.title, "enabled": record.enabled}
