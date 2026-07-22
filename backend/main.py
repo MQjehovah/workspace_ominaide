@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,12 +10,19 @@ async def lifespan(app: FastAPI):
     from core.plugin.registry import discover_plugins
     from core.mcp.tools.register_core import register_core_tools
     from core.mcp.tools.register_ai import register_ai_tools
+    from core.events.bus import worker_loop
+    from core.events.workers import register_workers
 
+    register_workers()
+    worker_task = asyncio.create_task(worker_loop())
     await ensure_buckets()
     await discover_plugins(app)
     register_core_tools()
     register_ai_tools()
     yield
+    worker_task.cancel()
+    try: await worker_task
+    except asyncio.CancelledError: pass
     from core.database.redis import close_redis
     await close_redis()
 
