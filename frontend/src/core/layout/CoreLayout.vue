@@ -11,11 +11,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import CoreSidebar from './CoreSidebar.vue'
 import CoreHeader from './CoreHeader.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const collapsed = ref(false)
+const auth = useAuthStore()
+
+onMounted(async () => {
+  if (auth.token && !auth.user) {
+    try { await auth.fetchUser() } catch { /* silently fail */ }
+  }
+})
 </script>
 
 <style scoped>
