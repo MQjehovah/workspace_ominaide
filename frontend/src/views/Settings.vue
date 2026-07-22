@@ -5,7 +5,7 @@
       <div class="page-card-body">
         <el-tabs v-model="activeTab">
           <el-tab-pane label="个人资料" name="profile">
-            <el-form v-if="profile" label-width="100px" style="max-width:480px;margin-top:12px">
+            <el-form v-if="profile" label-width="120px" style="margin-top:12px;max-width:600px">
               <el-form-item label="用户名">
                 <el-input :model-value="profile.username" disabled />
               </el-form-item>
@@ -17,7 +17,7 @@
           </el-tab-pane>
 
           <el-tab-pane label="服务器" name="server">
-            <el-form label-width="120px" style="max-width:480px;margin-top:12px">
+            <el-form label-width="120px" style="margin-top:12px;max-width:600px">
               <el-form-item label="服务器地址">
                 <el-input v-model="serverUrl" placeholder="http://localhost:8000" />
               </el-form-item>
@@ -34,7 +34,7 @@
           </el-tab-pane>
 
           <el-tab-pane label="LLM" name="llm">
-            <el-form label-width="120px" style="max-width:480px;margin-top:12px">
+            <el-form label-width="120px" style="margin-top:12px;max-width:600px">
               <el-form-item label="API Key">
                 <el-input v-model="llmConfig.apiKey" type="password" show-password placeholder="sk-..." />
               </el-form-item>
