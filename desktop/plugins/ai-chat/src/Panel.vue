@@ -1,22 +1,17 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { loadConfig, sendMessage } from './chat'
 defineProps<{ data: any; execute: (a: string, args?: any) => Promise<any>; openPage: () => void; refresh: () => Promise<void> }>()
 const input = ref('')
 const loading = ref(false)
 const reply = ref('')
 async function send() {
   const msg = input.value.trim(); if (!msg || loading.value) return
-  loading.value = true; input.value = ''
+  loading.value = true; reply.value = ''
   try {
-    const w = window as any
-    const su = (await w.mqbox?.config?.get('serverUrl')) || 'http://localhost:8000'
-    const tk = (await w.mqbox?.config?.get('token')) || ''
-    const r = await fetch(`${su}/api/chat`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
-      body: JSON.stringify({ message: msg }),
-    }).then(r => r.json())
-    reply.value = r.reply || '(no response)'
-  } catch (e: any) { reply.value = 'Error: ' + (e?.message || e) } finally { loading.value = false }
+    reply.value = await sendMessage(msg, [], loadConfig())
+  } catch (e: any) { reply.value = 'Error: ' + (e?.message || e) }
+  finally { input.value = ''; loading.value = false }
 }
 </script>
 <template>
