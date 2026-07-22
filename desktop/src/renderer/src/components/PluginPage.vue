@@ -21,6 +21,7 @@ const pageComponents: Record<string, any> = {
   'todo': defineAsyncComponent(() => import('@plugins/todo/src/Page.vue')),
   'quick-notes': defineAsyncComponent(() => import('@plugins/quick-notes/src/Page.vue')),
   'clipboard-history': defineAsyncComponent(() => import('@plugins/clipboard-history/src/Page.vue')),
+  'notifications': defineAsyncComponent(() => import('@plugins/notifications/src/Page.vue')),
   'player': defineAsyncComponent(() => import('@plugins/player/src/Page.vue')),
   'remote': defineAsyncComponent(() => import('@plugins/remote/src/Page.vue')),
   'schedule': defineAsyncComponent(() => import('@plugins/schedule/src/Page.vue')),
