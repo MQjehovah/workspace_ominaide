@@ -13,7 +13,12 @@ const router = createRouter({
       component: () => import('@/core/layout/CoreLayout.vue'),
       meta: { requiresAuth: true },
       children: [
-        { path: '', redirect: '/files' },
+        { path: '', redirect: '/dashboard' },
+        {
+          path: 'dashboard',
+          name: 'Dashboard',
+          component: () => import('@/views/Dashboard.vue')
+        },
         {
           path: 'files',
           name: 'Files',

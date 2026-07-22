@@ -11,6 +11,10 @@
       :router="true"
       class="sidebar-menu"
     >
+      <el-menu-item index="/dashboard">
+        <el-icon><DataAnalysis /></el-icon>
+        <span>仪表盘</span>
+      </el-menu-item>
       <el-menu-item index="/files">
         <el-icon><Folder /></el-icon>
         <span>文件</span>
@@ -55,7 +59,7 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, Grid, User, Monitor, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { Folder, Document, Grid, User, Monitor, Setting, SwitchButton, DataAnalysis } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()
