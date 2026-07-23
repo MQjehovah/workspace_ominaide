@@ -25,6 +25,8 @@ class PairRequest(BaseModel):
 
 class HeartbeatRequest(BaseModel):
     device_id: str
+    name: str | None = None
+    room_id: str | None = None
 
 
 VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'><title>OmniAide Remote</title><style>body{margin:0;background:#000;overflow:hidden;touch-action:none}video{width:100vw;height:100vh;object-fit:contain}#bar{position:fixed;top:8px;left:8px;color:#fff;font:13px sans-serif;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px;z-index:10}</style></head><body><div id='bar'>连接中…</div><video id='v' autoplay playsinline></video><script>
@@ -98,7 +100,7 @@ async def ice_config(user: dict = Depends(get_current_user)):
 
 @router.post("/heartbeat")
 async def heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
-    remote_service.heartbeat(req.device_id)
+    remote_service.heartbeat(req.device_id, user["id"], req.name, req.room_id)
     return {"ok": True}
 
 

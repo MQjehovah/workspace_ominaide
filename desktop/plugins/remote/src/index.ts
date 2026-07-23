@@ -96,7 +96,10 @@ export default {
               hostState.status = '信令断开，5秒后重连…'
               persistState()
               clearTimeout(reconnectTimer)
-              reconnectTimer = setTimeout(() => connectWs(id, roomId), 5000)
+              reconnectTimer = setTimeout(async () => {
+                try { await context.api.post('/remote/online', { device_id: id, name: require('os').hostname(), room_id: roomId }) } catch {}
+                await connectWs(id, roomId)
+              }, 5000)
             }
           })
 
@@ -188,7 +191,7 @@ export default {
         }, 240000)
 
         async function doHeartbeat() {
-          try { await context.api.post('/remote/heartbeat', { device_id: id }) } catch {}
+          try { await context.api.post('/remote/heartbeat', { device_id: id, name: require('os').hostname(), room_id: roomId }) } catch {}
           heartbeatTimer = setTimeout(doHeartbeat, 30000)
         }
         clearTimeout(heartbeatTimer)

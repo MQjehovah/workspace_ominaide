@@ -21,9 +21,11 @@ def _sweep_stale():
         _online.pop(d, None)
 
 
-def heartbeat(device_id: str):
+def heartbeat(device_id: str, user_id: int | None = None, name: str | None = None, room_id: str | None = None):
     if device_id in _online:
         _online[device_id]['ts'] = time.time()
+    elif user_id and name and room_id:
+        _online[device_id] = {"user_id": user_id, "room_id": room_id, "name": name, "ts": time.time()}
 
 
 def list_devices(user_id: int):
