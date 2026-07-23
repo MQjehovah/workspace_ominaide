@@ -7,39 +7,56 @@ _pairs: dict[str, dict] = {}
 _rooms: dict[str, set] = {}
 
 
+def _log(msg: str):
+    print(f"[remote] {msg}")
+
+
 def register_device(user_id: int, device_id: str, name: str, room_id: str):
     _online[device_id] = {"user_id": user_id, "room_id": room_id, "name": name, "ts": time.time()}
+    _log(f"register device={device_id} name={name} user={user_id} room={room_id}")
 
 
 def unregister_device(device_id: str):
     _online.pop(device_id, None)
+    _log(f"unregister device={device_id}")
 
 
 def _sweep_stale():
     now = time.time()
-    for d in [k for k, v in _online.items() if now - v["ts"] >= 90]:
+    stale = [d for d, v in _online.items() if now - v["ts"] >= 90]
+    for d in stale:
+        _log(f"sweep stale device={d} age={now - _online[d]['ts']:.0f}s")
         _online.pop(d, None)
 
 
 def heartbeat(device_id: str, user_id: int | None = None, name: str | None = None, room_id: str | None = None):
     if device_id in _online:
         _online[device_id]['ts'] = time.time()
+        _log(f"heartbeat device={device_id} ts={_online[device_id]['ts']:.0f}")
     elif user_id and name and room_id:
         _online[device_id] = {"user_id": user_id, "room_id": room_id, "name": name, "ts": time.time()}
+        _log(f"heartbeat re-register device={device_id} name={name} user={user_id}")
+    else:
+        _log(f"heartbeat MISS device={device_id} (not found, no re-register data)")
 
 
 def list_devices(user_id: int):
     _sweep_stale()
     now = time.time()
-    return [{"device_id": d, "name": v["name"], "room_id": v["room_id"]}
-            for d, v in _online.items() if v["user_id"] == user_id and now - v["ts"] < 90]
+    result = [{"device_id": d, "name": v["name"], "room_id": v["room_id"]}
+              for d, v in _online.items() if v["user_id"] == user_id and now - v["ts"] < 90]
+    _log(f"list_devices user={user_id} count={len(result)} online_keys={list(_online.keys())}")
+    return result
 
 
 def clear_user_devices(user_id: int, device_id: str | None = None):
     if device_id:
+        _log(f"clear_user_devices device={device_id} user={user_id}")
         _online.pop(device_id, None)
     else:
-        for d in [k for k, v in _online.items() if v["user_id"] == user_id]:
+        removed = [d for d, v in _online.items() if v["user_id"] == user_id]
+        _log(f"clear_user_devices ALL user={user_id} devices={removed}")
+        for d in removed:
             _online.pop(d, None)
 
 

@@ -33,6 +33,7 @@ export default {
   page: Page,
   async activate(context: any) {
     pluginCtx = context
+    console.error('[remote] activate')
     await getDeviceId(context)
     const saved = await context.storage?.get('hostState')
     if (saved) {
@@ -46,10 +47,13 @@ export default {
 
     // Auto-reconnect if was enabled before restart
     if (saved?.enabled) {
+      console.error('[remote] auto-reconnect: saved.enabled was true, re-starting host')
       hostState.enabled = false // reset so executeStartHostDirectly doesn't skip
       executeStartHostDirectly().catch((e: any) => {
         console.error('[remote] auto-reconnect failed:', e?.message || e)
       })
+    } else {
+      console.error('[remote] no saved host state, host disabled')
     }
 
     // --- WebSocket signaling (child process owns WS) ---
@@ -64,6 +68,7 @@ export default {
       try {
         const WebSocket = require('ws')
         const wsUrl = `${serverUrl.replace(/^http/, 'ws')}/ws/remote/${roomId}?token=${encodeURIComponent(token)}`
+        console.error('[remote] connectWs to', wsUrl.replace(/token=.*/, 'token=***'))
         const ws = new WebSocket(wsUrl)
 
         const result = await new Promise<boolean>((resolve) => {
@@ -164,13 +169,15 @@ export default {
     // --- Host Management ---
 
     async function executeStartHostDirectly() {
-      if (hostState.enabled) return
+      if (hostState.enabled) { console.error('[remote] startHost skipped (already enabled)'); return }
       try {
+        console.error('[remote] startHost begin')
         hostState.status = '启动中…'
         const id = deviceId!
         const roomId = `u_${id}`
         const hostname = require('os').hostname()
 
+        console.error('[remote] POST /remote/online')
         await context.api.post('/remote/online', { device_id: id, name: hostname, room_id: roomId })
 
         const pairData = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
@@ -190,10 +197,15 @@ export default {
           } catch {}
         }, 240000)
 
-        async function doHeartbeat() {
-          try { await context.api.post('/remote/heartbeat', { device_id: id, name: require('os').hostname(), room_id: roomId }) } catch {}
-          heartbeatTimer = setTimeout(doHeartbeat, 30000)
-        }
+    async function doHeartbeat() {
+      try {
+        await context.api.post('/remote/heartbeat', { device_id: id, name: require('os').hostname(), room_id: roomId })
+        console.error('[remote] heartbeat OK')
+      } catch (e: any) {
+        console.error('[remote] heartbeat FAIL:', e?.message || e)
+      }
+      heartbeatTimer = setTimeout(doHeartbeat, 30000)
+    }
         clearTimeout(heartbeatTimer)
         heartbeatTimer = setTimeout(doHeartbeat, 30000)
 
@@ -282,6 +294,7 @@ export default {
     })
   },
   deactivate() {
+    console.error('[remote] deactivate')
     clearTimeout(reconnectTimer)
     if (hostWs) { try { hostWs.close() } catch {} }
     hostWs = null
