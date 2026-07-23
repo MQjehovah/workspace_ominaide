@@ -159,6 +159,11 @@ Module.prototype.require = function (id: string) {
 
 async function main() {
   const { readFileSync, existsSync } = require('fs')
+  // resolve modules from app's node_modules (e.g. ws for remote plugin)
+  const appNodeModules = join(__dirname, '../../node_modules')
+  if (existsSync(appNodeModules) && !module.paths.includes(appNodeModules)) {
+    module.paths.push(appNodeModules)
+  }
   const manifestPath = join(pluginPath, 'manifest.json')
   const pkgPath = join(pluginPath, 'package.json')
   let manifest: any = {}

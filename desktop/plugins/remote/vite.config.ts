@@ -12,6 +12,10 @@ export default defineConfig({
       fileName: 'index'
     },
 
+    rollupOptions: {
+      external: ['ws'],
+    },
+
     outDir: 'dist',
     emptyOutDir: true
   }
