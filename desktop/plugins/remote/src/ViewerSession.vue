@@ -36,8 +36,7 @@ async function connect(roomId: string) {
     ws.send(JSON.stringify({ type: 'join' }))
     const iceServers = await getIceServers()
     vlog('ICE servers: ' + JSON.stringify(iceServers))
-    mlog('testing basic PC without STUN...')
-    pc = new RTCPeerConnection()
+    pc = newPeer(iceServers)
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {

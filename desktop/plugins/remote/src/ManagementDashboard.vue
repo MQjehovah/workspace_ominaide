@@ -65,7 +65,7 @@ function toggleAutoAccept() {
 }
 
 function controlDevice(roomId: string) {
-  emit('controlDevice', roomId)
+  ;(window as any).mqbox?.window?.openPage('remote', `mode=viewer&room=${roomId}`)
 }
 
 async function connectByCode() {
