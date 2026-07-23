@@ -117,16 +117,6 @@ export default {
         }
 
         hostWs = ws
-
-        // WebSocket keepalive ping every 25s to prevent idle disconnects
-        const pingTimer = setInterval(() => {
-          if (hostWs?.readyState === 1) {
-            try { hostWs.ping() } catch {}
-          } else {
-            clearInterval(pingTimer)
-          }
-        }, 25000)
-
         console.error('[remote] connectWs OK, hostWs assigned')
         return true
       } catch (e: any) {
