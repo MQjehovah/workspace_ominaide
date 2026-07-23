@@ -174,7 +174,8 @@ export default {
       } else if (msg.type === 'error') {
         hostState.status = '错误: ' + (msg.message || '未知')
       } else if (msg.type === 'diag') {
-        context.log('info', 'viewer diag: ' + msg.msg)
+        const level = msg.level || 'info'
+        context.log(level, 'viewer| ' + msg.msg)
       }
     }
 

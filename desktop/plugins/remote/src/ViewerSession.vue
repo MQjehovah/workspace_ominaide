@@ -132,6 +132,7 @@ async function onSignal(m: any) {
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
+    console.log('[VLOG] answer handler, sdp len=' + (m.payload?.sdp?.length || 0))
     mlog('received answer, sdp len=' + (m.payload?.sdp?.length || 0))
     const desc = new RTCSessionDescription({ type: 'answer', sdp: m.payload.sdp })
     pc.setRemoteDescription(desc)
