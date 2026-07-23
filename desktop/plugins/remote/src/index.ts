@@ -133,6 +133,9 @@ export default {
 
     function handleSignal(msg: any, ws: any) {
       if (msg.type === 'requestControl') {
+        hasNotifiedWindow = false
+        delete (hostState as any).pendingOffer
+        delete (hostState as any).pendingIce
         if (hostState.autoAccept) {
           ws.send(JSON.stringify({ type: 'controlAllowed' }))
           hostState.status = '已自动授权'
