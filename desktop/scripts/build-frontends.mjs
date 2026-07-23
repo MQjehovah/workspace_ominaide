@@ -38,15 +38,11 @@ async function buildPluginFrontend(name) {
   // Template files from plugin's own directory
   writeFileSync(resolve(buildDir, 'index.html'), readFileSync(resolve(pluginDir, 'index.html'), 'utf-8'), 'utf-8')
   writeFileSync(resolve(buildDir, 'plugin-app.ts'), readFileSync(resolve(pluginDir, 'plugin-app.ts'), 'utf-8'), 'utf-8')
-
-  writeFileSync(resolve(buildDir, 'index.html'), readFileSync(htmlSrc, 'utf-8'), 'utf-8')
-  writeFileSync(resolve(buildDir, 'plugin-app.ts'), readFileSync(appSrc, 'utf-8'), 'utf-8')
   const entryContent = `import Page from '../src/Page.vue'
 import { mountPlugin } from './plugin-app'
 mountPlugin(Page, '${name}')
 `
   writeFileSync(resolve(buildDir, 'entry.ts'), entryContent, 'utf-8')
-  cpSync(resolve(templateDir, 'plugin-app.ts'), resolve(buildDir, 'plugin-app.ts'))
 
   try {
     await build({
