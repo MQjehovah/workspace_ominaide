@@ -134,6 +134,10 @@ async function startConnection() {
     for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
     pendingIce = []
 
+    const answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+    sendToChild('answer', answer)
+
     pc.onicecandidate = (e) => {
       if (e.candidate) sendToChild('ice', e.candidate)
     }
@@ -153,10 +157,6 @@ async function startConnection() {
         setTimeout(() => window.close(), 2000)
       }
     }
-
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    sendToChild('answer', answer)
 
     status.value = '推流中'
     connected.value = true
