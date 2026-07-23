@@ -96,7 +96,6 @@ export default {
           ws.on('close', (code: number, reason: Buffer) => {
             console.error('[remote] WS closed:', code, reason?.toString())
             hostWs = null
-            clearInterval(pingTimer)
             if (hostState.enabled) {
               hostState.status = '信令断开，5秒后重连…'
               persistState()
