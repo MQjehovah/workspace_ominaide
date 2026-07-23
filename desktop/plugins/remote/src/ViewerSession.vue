@@ -37,7 +37,6 @@ async function connect(roomId: string) {
     const iceServers = await getIceServers()
     vlog('ICE servers: ' + JSON.stringify(iceServers))
     pc = newPeer(iceServers)
-    setCodecPreferencesH264(pc)
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
@@ -70,6 +69,7 @@ async function startOffering() {
     } catch {}
   }
   pc.addTransceiver('video', { direction: 'recvonly' })
+  setCodecPreferencesH264(pc)
   pc.ontrack = (e) => {
     status.value = '已连接（可控制）'
     connected.value = true
