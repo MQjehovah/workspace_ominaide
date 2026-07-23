@@ -47,7 +47,6 @@ export default {
     // Auto-reconnect if was enabled before restart
     if (saved?.enabled) {
       hostState.enabled = false // reset so executeStartHostDirectly doesn't skip
-      try { await context.api.delete('/remote/online', { params: { device_id: id } }) } catch {} // cleanup stale registration
       executeStartHostDirectly().catch((e: any) => {
         console.error('[remote] auto-reconnect failed:', e?.message || e)
       })

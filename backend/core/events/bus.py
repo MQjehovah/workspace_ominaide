@@ -79,8 +79,9 @@ async def worker_loop():
         try:
             from core.database.redis import get_redis
             redis = await get_redis()
-            _, raw = await redis.blpop("event_queue", timeout=30)
-            if raw:
+            result = await redis.blpop("event_queue", timeout=30)
+            if result:
+                _, raw = result
                 payload = json.loads(raw)
                 asyncio.create_task(_process_event(payload))
         except asyncio.TimeoutError:
