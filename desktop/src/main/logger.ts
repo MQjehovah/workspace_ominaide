@@ -2,7 +2,10 @@ import { app } from 'electron'
 import { mkdirSync, appendFileSync } from 'fs'
 import { join } from 'path'
 
-const LOG_DIR = join(app.getPath('userData'), 'logs')
+const LOG_DIR = app.isPackaged
+  ? join(app.getPath('userData'), 'logs')
+  : join(app.getAppPath(), 'logs')
+
 mkdirSync(LOG_DIR, { recursive: true })
 
 export function writeLog(pluginId: string, level: string, message: string) {
