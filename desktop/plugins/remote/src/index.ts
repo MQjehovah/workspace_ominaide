@@ -97,6 +97,8 @@ export default {
             context.log('warn', 'WS closed: ' + code + ' ' + (reason?.toString() || ''))
             hostWs = null
             if (hostState.enabled) {
+              // Immediately re-register so device stays visible even during reconnect
+              context.api.post('/remote/online', { device_id: id, name: require('os').hostname(), room_id: roomId }).catch(() => {})
               hostState.status = '信令断开，5秒后重连…'
               persistState()
               clearTimeout(reconnectTimer)
