@@ -70,19 +70,27 @@ fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('
 
 @router.post("/online")
 async def online(req: OnlineRequest, user: dict = Depends(get_current_user)):
+    import logging
+    logging.getLogger("uvicorn").info(f"[remote] POST /online device={req.device_id} name={req.name} user={user['id']}")
     remote_service.register_device(user["id"], req.device_id, req.name, req.room_id)
     return {"ok": True}
 
 
 @router.delete("/online")
 async def offline(device_id: str, user: dict = Depends(get_current_user)):
+    import logging
+    logging.getLogger("uvicorn").info(f"[remote] DELETE /online device={device_id} user={user['id']}")
     remote_service.clear_user_devices(user["id"], device_id)
     return {"ok": True}
 
 
 @router.get("/devices")
 async def devices(user: dict = Depends(get_current_user)):
-    return {"devices": remote_service.list_devices(user["id"])}
+    import logging
+    logger = logging.getLogger("uvicorn")
+    result = remote_service.list_devices(user["id"])
+    logger.info(f"[remote] list_devices user={user['id']} count={len(result)}")
+    return {"devices": result}
 
 
 def _ice_servers() -> list:
@@ -101,6 +109,8 @@ async def ice_config(user: dict = Depends(get_current_user)):
 @router.post("/heartbeat")
 async def heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
     remote_service.heartbeat(req.device_id, user["id"], req.name, req.room_id)
+    import logging
+    logging.getLogger("uvicorn").info(f"[remote] heartbeat device={req.device_id} user={user['id']} name={req.name}")
     return {"ok": True}
 
 
