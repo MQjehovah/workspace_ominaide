@@ -103,6 +103,7 @@ async def get_tree(db: AsyncSession, user_id: int) -> list[dict]:
     notes_dict = {n.id: {
         "id": n.id, "title": n.title, "parent_id": n.parent_id,
         "is_folder": bool(n.is_folder), "icon": n.icon,
+        "sort_order": n.sort_order or 0,
         "updated_at": n.updated_at.isoformat() if n.updated_at else None,
         "children": [],
     } for n in all_notes}

@@ -15,6 +15,7 @@
           @select="openNote"
           @create-child="(id) => createChildNote(id)"
           @delete="deleteNode"
+          @move="handleMove"
         />
         <div v-if="tree.length === 0" style="padding:16px;color:#999;font-size:12px">暂无笔记</div>
       </div>
@@ -97,6 +98,71 @@ function flattenTree(nodes: any[]): any[] {
     if (n.children?.length) result.push(...flattenTree(n.children))
   }
   return result
+}
+
+function findNodePath(nodes: any[], id: number): any[] {
+  for (const n of nodes) {
+    if (n.id === id) return [n]
+    if (n.children?.length) {
+      const path = findNodePath(n.children, id)
+      if (path.length) return [n, ...path]
+    }
+  }
+  return []
+}
+
+async function handleMove(sourceId: number, targetId: number, position: 'before' | 'after' | 'inside') {
+  const all = flattenTree(tree.value)
+  const target = all.find((n: any) => n.id === targetId)
+  if (!target) return
+  const source = all.find((n: any) => n.id === sourceId)
+  if (!source) return
+
+  let parentId: number | null = null
+  let sortOrder = 0
+
+  if (position === 'inside') {
+    parentId = target.id
+    const siblings = (target.children || [])
+    sortOrder = siblings.length > 0 ? Math.max(...siblings.map((s: any) => s.sort_order || 0)) + 1 : 0
+  } else if (position === 'before') {
+    parentId = target.parent_id
+    const siblings = findSiblings(tree.value, target.parent_id) || []
+    const idx = siblings.indexOf(target)
+    if (idx > 0) {
+      sortOrder = siblings[idx - 1].sort_order + Math.round((target.sort_order - siblings[idx - 1].sort_order) / 2)
+    } else {
+      sortOrder = (target.sort_order || 0) - 1
+    }
+  } else {
+    parentId = target.parent_id
+    const siblings = findSiblings(tree.value, target.parent_id) || []
+    const idx = siblings.indexOf(target)
+    if (idx < siblings.length - 1) {
+      sortOrder = target.sort_order + Math.round((siblings[idx + 1].sort_order - target.sort_order) / 2)
+    } else {
+      sortOrder = (target.sort_order || 0) + 1
+    }
+  }
+
+  try {
+    await window.mqbox?.api.post(`/plugins/notes/${sourceId}/move`, { parent_id: parentId, sort_order: sortOrder })
+    await loadTree()
+  } catch (e) {
+    console.error('move failed', e)
+  }
+}
+
+function findSiblings(nodes: any[], parentId: number | null): any[] | null {
+  if (parentId === null) return tree.value
+  for (const n of nodes) {
+    if (n.id === parentId) return n.children || []
+    if (n.children?.length) {
+      const found = findSiblings(n.children, parentId)
+      if (found !== null) return found
+    }
+  }
+  return null
 }
 
 function scheduleSave() {
