@@ -97,6 +97,7 @@ async function startOffering() {
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
+    console.error('[ice] state=' + st)
     vlog('viewer ICE=' + st)
     if (st === 'connected' || st === 'completed') clearTimeout(iceTimeout)
     if (st === 'failed') {
@@ -133,10 +134,15 @@ async function onSignal(m: any) {
   } else if (m.type === 'answer' && pc) {
     mlog('received answer')
     try {
-      await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
+      const t0 = Date.now()
+      await Promise.race([
+        pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('setRemoteDescription timeout after 10s')), 10000))
+      ])
+      mlog('remote desc set OK in ' + (Date.now() - t0) + 'ms, ICE state=' + pc.iceConnectionState)
       for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
       pendingIce = []
-    } catch (e: any) { status.value = '连接失败: ' + (e?.message || e) }
+    } catch (e: any) { status.value = '连接失败: ' + (e?.message || e); mlogErr('setRemoteDesc error: ' + e?.message) }
   } else if (m.type === 'ice') {
     if (pc && pc.remoteDescription) { try { await pc.addIceCandidate(m.payload) } catch {} }
     else pendingIce.push(m.payload)
