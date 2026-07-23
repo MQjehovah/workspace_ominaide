@@ -33,9 +33,12 @@ def list_devices(user_id: int):
             for d, v in _online.items() if v["user_id"] == user_id and now - v["ts"] < 90]
 
 
-def clear_user_devices(user_id: int):
-    for d in [k for k, v in _online.items() if v["user_id"] == user_id]:
-        _online.pop(d, None)
+def clear_user_devices(user_id: int, device_id: str | None = None):
+    if device_id:
+        _online.pop(device_id, None)
+    else:
+        for d in [k for k, v in _online.items() if v["user_id"] == user_id]:
+            _online.pop(d, None)
 
 
 def create_pair(user_id: int, device_id: str, room_id: str, ttl: int = 300):

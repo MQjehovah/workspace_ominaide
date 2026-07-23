@@ -73,8 +73,8 @@ async def online(req: OnlineRequest, user: dict = Depends(get_current_user)):
 
 
 @router.delete("/online")
-async def offline(user: dict = Depends(get_current_user)):
-    remote_service.clear_user_devices(user["id"])
+async def offline(device_id: str, user: dict = Depends(get_current_user)):
+    remote_service.clear_user_devices(user["id"], device_id)
     return {"ok": True}
 
 
