@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers, setCodecPreferencesH264 } from './webrtc'
+import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; room?:string }>()
 const videoRef = ref<HTMLVideoElement|null>(null)
@@ -69,7 +69,6 @@ async function startOffering() {
     } catch {}
   }
   pc.addTransceiver('video', { direction: 'recvonly' })
-  setCodecPreferencesH264(pc)
   pc.ontrack = (e) => {
     status.value = '已连接（可控制）'
     connected.value = true
@@ -133,6 +132,7 @@ async function onSignal(m: any) {
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
+    console.log('[viewer-test] answer handler running')
     mlog('received answer, sdp len=' + (m.payload?.sdp?.length || 0))
     try {
       const t0 = Date.now()

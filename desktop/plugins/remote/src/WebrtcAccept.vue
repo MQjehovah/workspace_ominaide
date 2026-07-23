@@ -106,7 +106,6 @@ async function startConnection() {
     })
 
     pc = newPeer(await getIceServers())
-    setCodecPreferencesH264(pc)
 
     pc.ondatachannel = (e) => {
       currentDataChannel = e.channel
