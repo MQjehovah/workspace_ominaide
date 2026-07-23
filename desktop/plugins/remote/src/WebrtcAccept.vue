@@ -106,6 +106,7 @@ async function startConnection() {
     })
 
     pc = newPeer(await getIceServers())
+    setCodecPreferencesH264(pc)
 
     pc.ondatachannel = (e) => {
       currentDataChannel = e.channel
@@ -134,10 +135,6 @@ async function startConnection() {
     for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
     pendingIce = []
 
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    sendToChild('answer', answer)
-
     pc.onicecandidate = (e) => {
       if (e.candidate) sendToChild('ice', e.candidate)
     }
@@ -157,6 +154,10 @@ async function startConnection() {
         setTimeout(() => window.close(), 2000)
       }
     }
+
+    const answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+    sendToChild('answer', answer)
 
     status.value = '推流中'
     connected.value = true

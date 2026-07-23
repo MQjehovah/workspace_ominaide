@@ -37,6 +37,7 @@ export async function getIceServers(): Promise<any[]> {
 export function newPeer(iceServers?: any[], opts?: { relay?: boolean }): RTCPeerConnection {
   const config: any = { iceServers: iceServers || [{ urls: 'stun:stun.l.google.com:19302' }] }
   if (opts?.relay) config.iceTransportPolicy = 'relay'
+  config.iceCandidatePoolSize = 10
   return new RTCPeerConnection(config)
 }
 
