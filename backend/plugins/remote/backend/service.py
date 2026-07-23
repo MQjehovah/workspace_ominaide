@@ -1,5 +1,6 @@
 import secrets
 import time
+import sys
 from fastapi import WebSocket
 
 _online: dict[str, dict] = {}
@@ -8,7 +9,7 @@ _rooms: dict[str, set] = {}
 
 
 def _log(msg: str):
-    print(f"[remote] {msg}")
+    print(f"[remote] {msg}", flush=True, file=sys.stderr)
 
 
 def register_device(user_id: int, device_id: str, name: str, room_id: str):
@@ -47,6 +48,12 @@ def list_devices(user_id: int):
               for d, v in _online.items() if v["user_id"] == user_id and now - v["ts"] < 90]
     _log(f"list_devices user={user_id} count={len(result)} online_keys={list(_online.keys())}")
     return result
+
+
+def debug_state() -> dict:
+    """Return copy of _online state for debugging."""
+    return {k: {kk: vv for kk, vv in v.items() if kk != "ts"} | {"ts_age": time.time() - v["ts"]}
+            for k, v in _online.items()}
 
 
 def clear_user_devices(user_id: int, device_id: str | None = None):

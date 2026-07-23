@@ -38,8 +38,11 @@ async function loadDevices() {
     localDeviceId.value = myId || ''
     const list: any[] = r?.devices || []
     list.forEach(d => d.isLocal = d.device_id === myId)
+    if (list.length === 0 && devices.value.length > 0) console.warn('[remote] device list went empty')
     devices.value = list
-  } catch {}
+  } catch (e: any) {
+    console.error('[remote] loadDevices error:', e?.message)
+  }
 }
 
 async function toggleHost() {

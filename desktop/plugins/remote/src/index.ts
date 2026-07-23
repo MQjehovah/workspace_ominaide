@@ -285,7 +285,10 @@ export default {
     })
 
     context.registerCommand('getDevices', async () => {
-      try { return await context.api.get('/remote/devices') } catch { return { devices: [] } }
+      try { return await context.api.get('/remote/devices') } catch (e: any) {
+        console.error('[remote] getDevices failed:', e?.code, e?.message?.slice(0, 80))
+        try { return await context.api.get('/remote/devices') } catch { return { devices: [] } }
+      }
     })
 
     context.registerCommand('connectByCode', async (args: any) => {

@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from core.auth.dependencies import get_current_user
@@ -69,28 +69,33 @@ fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('
 
 
 @router.post("/online")
-async def online(req: OnlineRequest, user: dict = Depends(get_current_user)):
+async def online(req: OnlineRequest, user: dict = Depends(get_current_user), response: Response = None):
     import logging
     logging.getLogger("uvicorn").info(f"[remote] POST /online device={req.device_id} name={req.name} user={user['id']}")
+    if response: response.headers["Connection"] = "close"
     remote_service.register_device(user["id"], req.device_id, req.name, req.room_id)
     return {"ok": True}
 
 
 @router.delete("/online")
-async def offline(device_id: str, user: dict = Depends(get_current_user)):
+async def offline(device_id: str, user: dict = Depends(get_current_user), response: Response = None):
     import logging
     logging.getLogger("uvicorn").info(f"[remote] DELETE /online device={device_id} user={user['id']}")
+    if response: response.headers["Connection"] = "close"
     remote_service.clear_user_devices(user["id"], device_id)
     return {"ok": True}
 
 
 @router.get("/devices")
-async def devices(user: dict = Depends(get_current_user)):
-    import logging
-    logger = logging.getLogger("uvicorn")
+async def devices(user: dict = Depends(get_current_user), response: Response = None):
     result = remote_service.list_devices(user["id"])
-    logger.info(f"[remote] list_devices user={user['id']} count={len(result)}")
+    if response: response.headers["Connection"] = "close"
     return {"devices": result}
+
+
+@router.get("/debug")
+async def debug(user: dict = Depends(get_current_user)):
+    return remote_service.debug_state()
 
 
 def _ice_servers() -> list:
