@@ -132,19 +132,13 @@ async function onSignal(m: any) {
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
-    console.log('[viewer-test] answer handler running')
     mlog('received answer, sdp len=' + (m.payload?.sdp?.length || 0))
-    try {
-      const t0 = Date.now()
-      const desc = new RTCSessionDescription({ type: 'answer', sdp: m.payload.sdp })
-      await Promise.race([
-        pc.setRemoteDescription(desc),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('setRemoteDescription timeout after 10s')), 10000))
-      ])
-      mlog('remote desc set OK in ' + (Date.now() - t0) + 'ms, ICE state=' + pc.iceConnectionState)
-      for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
-      pendingIce = []
-    } catch (e: any) { status.value = '连接失败: ' + (e?.message || e); mlogErr('setRemoteDesc error: ' + e?.message) }
+    const desc = new RTCSessionDescription({ type: 'answer', sdp: m.payload.sdp })
+    pc.setRemoteDescription(desc)
+      .then(() => mlog('remote desc set OK'))
+      .catch((e: any) => mlogErr('setRemoteDesc error: ' + e?.message))
+    for (const c of pendingIce) { try { pc.addIceCandidate(c) } catch {} }
+    pendingIce = []
   } else if (m.type === 'ice') {
     if (pc && pc.remoteDescription) { try { await pc.addIceCandidate(m.payload) } catch {} }
     else pendingIce.push(m.payload)
