@@ -53,7 +53,7 @@ export default {
         context.log('error', `auto-reconnect failed: ${e?.message || e}`)
       })
     } else {
-      console.error('[remote] no saved host state, host disabled')
+      context.log('info', 'no saved host state, host disabled')
     }
 
     // --- WebSocket signaling (child process owns WS) ---
@@ -68,12 +68,12 @@ export default {
       try {
         const WebSocket = require('ws')
         const wsUrl = `${serverUrl.replace(/^http/, 'ws')}/ws/remote/${roomId}?token=${encodeURIComponent(token)}`
-        console.error('[remote] connectWs to', wsUrl.replace(/token=.*/, 'token=***'))
+        context.log('info', 'connectWs to ' + wsUrl.replace(/token=.*/, 'token=***'))
         const ws = new WebSocket(wsUrl)
 
         const result = await new Promise<boolean>((resolve) => {
           const timeout = setTimeout(() => {
-            console.error('[remote] connectWs timeout after 10s')
+            context.log('warn', 'connectWs timeout after 10s')
             ws.close()
             resolve(false)
           }, 10000)
@@ -89,12 +89,12 @@ export default {
 
           ws.on('message', (data: Buffer) => {
             const msg = JSON.parse(data.toString())
-            console.error('[remote] WS received:', msg.type)
+            context.log('info', 'WS received: ' + msg.type)
             try { handleSignal(msg, ws) } catch {}
           })
 
           ws.on('close', (code: number, reason: Buffer) => {
-            console.error('[remote] WS closed:', code, reason?.toString())
+            context.log('warn', 'WS closed: ' + code + ' ' + (reason?.toString() || ''))
             hostWs = null
             if (hostState.enabled) {
               hostState.status = '信令断开，5秒后重连…'
@@ -108,20 +108,20 @@ export default {
           })
 
           ws.on('error', (err: Error) => {
-            console.error('[remote] WS error:', err.message)
+            context.log('error', 'WS error: ' + err.message)
             clearTimeout(timeout)
             resolve(false)
           })
         })
 
         if (!result) {
-          console.error('[remote] connectWs failed')
+          context.log('error', 'connectWs failed')
           hostState.status = '信令连接超时'
           return false
         }
 
         hostWs = ws
-        console.error('[remote] connectWs OK, hostWs assigned')
+        context.log('info', 'connectWs OK, hostWs assigned')
         return true
       } catch (e: any) {
         hostState.status = '连接失败: ' + (e?.message || e)
@@ -147,23 +147,23 @@ export default {
         ;(hostState as any).pendingOffer = msg.payload
         ;(hostState as any).pendingIce = []
         hostState.status = '正在建立连接…'
-        console.error('[remote] offer received, ice candidates pending:', (hostState as any).pendingIce?.length)
+        context.log('info', 'offer received, ice candidates pending: ' + ((hostState as any).pendingIce?.length))
         // Timeout: if no peerConnected within 30s, log it
         setTimeout(() => {
-          if (!hostState.peerConnected) console.error('[remote] 30s timeout: peer NOT connected')
+          if (!hostState.peerConnected) context.log('warn', '30s timeout: peer NOT connected')
         }, 30000)
         if (!hasNotifiedWindow) {
           hasNotifiedWindow = true
-          console.error('[remote] sending signal remote:open-connection')
+          context.log('info', 'sending signal remote:open-connection')
           context.signal('remote:open-connection', `u_${deviceId}`).catch((e: any) => {
-            console.error('[remote] signal failed:', e)
+            context.log('error', 'signal failed: ' + String(e))
           })
         }
       } else if (msg.type === 'ice') {
         const ice = (hostState as any).pendingIce
         if (ice) {
           ice.push(msg.payload)
-          if (ice.length % 5 === 0) console.error('[remote] received', ice.length, 'viewer ICE candidates')
+          if (ice.length % 5 === 0) context.log('info', 'received ' + ice.length + ' viewer ICE candidates')
         }
       } else if (msg.type === 'revoked') {
         hostState.status = '连接已断开'
@@ -174,22 +174,22 @@ export default {
       } else if (msg.type === 'error') {
         hostState.status = '错误: ' + (msg.message || '未知')
       } else if (msg.type === 'diag') {
-        console.error('[remote] viewer diag:', msg.msg)
+        context.log('info', 'viewer diag: ' + msg.msg)
       }
     }
 
     // --- Host Management ---
 
     async function executeStartHostDirectly() {
-      if (hostState.enabled) { console.error('[remote] startHost skipped (already enabled)'); return }
+      if (hostState.enabled) { context.log('warn', 'startHost skipped (already enabled)'); return }
       try {
-        console.error('[remote] startHost begin')
+        context.log('info', 'startHost begin')
         hostState.status = '启动中…'
         const id = deviceId!
         const roomId = `u_${id}`
         const hostname = require('os').hostname()
 
-        console.error('[remote] POST /remote/online')
+        context.log('info', 'POST /remote/online')
         await context.api.post('/remote/online', { device_id: id, name: hostname, room_id: roomId })
 
         const pairData = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
@@ -212,9 +212,9 @@ export default {
     async function doHeartbeat() {
       try {
         await context.api.post('/remote/heartbeat', { device_id: id, name: require('os').hostname(), room_id: roomId })
-        console.error('[remote] heartbeat OK')
+        context.log('info', 'heartbeat OK')
       } catch (e: any) {
-        console.error('[remote] heartbeat FAIL:', e?.message || e)
+        context.log('error', 'heartbeat FAIL: ' + (e?.message || String(e)))
       }
       heartbeatTimer = setTimeout(doHeartbeat, 30000)
     }
@@ -245,9 +245,9 @@ export default {
 
     // Renderer calls this to send WebRTC answer/ICE via WS
     context.registerCommand('sendSignal', async (args: any) => {
-      console.error('[remote] sendSignal:', args?.type, 'hostWs:', !!hostWs)
+      context.log('info', 'sendSignal: ' + (args?.type) + ' hostWs: ' + !!hostWs)
       if (hostWs && args) {
-        try { hostWs.send(JSON.stringify(args)) } catch (e) { console.error('[remote] sendSignal error:', e) }
+        try { hostWs.send(JSON.stringify(args)) } catch (e) { context.log('error', 'sendSignal error: ' + String(e)) }
       }
       return getState()
     })
@@ -299,7 +299,7 @@ export default {
 
     context.registerCommand('getDevices', async () => {
       try { return await context.api.get('/remote/devices') } catch (e: any) {
-        console.error('[remote] getDevices failed:', e?.code, e?.message?.slice(0, 80))
+        context.log('error', 'getDevices failed: ' + (e?.code || '') + ' ' + (e?.message?.slice(0, 80) || ''))
         try { return await context.api.get('/remote/devices') } catch { return { devices: [] } }
       }
     })
@@ -309,7 +309,7 @@ export default {
     })
   },
   deactivate() {
-    console.error('[remote] deactivate')
+    context.log('info', 'deactivate')
     clearTimeout(reconnectTimer)
     if (hostWs) { try { hostWs.close() } catch {} }
     hostWs = null
