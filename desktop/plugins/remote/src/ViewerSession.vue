@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from './webrtc'
+import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers, setCodecPreferencesH264 } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; room?:string }>()
 const videoRef = ref<HTMLVideoElement|null>(null)
@@ -37,6 +37,7 @@ async function connect(roomId: string) {
     const iceServers = await getIceServers()
     vlog('ICE servers: ' + JSON.stringify(iceServers))
     pc = newPeer(iceServers)
+    setCodecPreferencesH264(pc)
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
