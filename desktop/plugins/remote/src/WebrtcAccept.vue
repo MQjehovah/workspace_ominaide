@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { newPeer, getIceServers, setCodecPreferencesH264 } from './webrtc'
+import { newPeer, getIceServers } from './webrtc'
 
 const props = defineProps<{ data?: any; execute?: (a: string, args?: any) => Promise<any> }>()
 
@@ -106,7 +106,6 @@ async function startConnection() {
     })
 
     pc = newPeer(await getIceServers())
-    setCodecPreferencesH264(pc)
 
     pc.ondatachannel = (e) => {
       currentDataChannel = e.channel
