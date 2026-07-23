@@ -125,7 +125,7 @@ async function onSignal(m: any) {
     mlog('received answer, sdp len=' + (m.payload?.sdp?.length || 0))
     try {
       await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
-      mlog('remote desc set OK')
+      mlog('remote desc set OK, iceState=' + pc.iceConnectionState + ' ufrag=' + (pc.remoteDescription?.sdp?.match(/^a=ice-ufrag:(.+)$/m)?.[1] || '?'))
       // Poll ICE state every 2s to detect state changes
       let lastIce = pc.iceConnectionState
       const icePoll = setInterval(() => {
