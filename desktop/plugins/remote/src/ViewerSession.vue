@@ -97,7 +97,6 @@ async function startOffering() {
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
-    console.error('[ice] state=' + st)
     vlog('viewer ICE=' + st)
     if (st === 'connected' || st === 'completed') clearTimeout(iceTimeout)
     if (st === 'failed') {
