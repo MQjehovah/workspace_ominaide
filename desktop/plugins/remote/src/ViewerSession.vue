@@ -127,10 +127,10 @@ async function onSignal(m: any) {
       await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
       const localUfrag = pc.localDescription?.sdp?.match(/^a=ice-ufrag:(.+)$/m)?.[1] || '?'
       const remoteUfrag = pc.remoteDescription?.sdp?.match(/^a=ice-ufrag:(.+)$/m)?.[1] || '?'
-      mlog('remote desc set OK, ice=' + pc.iceConnectionState + ' lufrag=' + localUfrag + ' rufrag=' + remoteUfrag)
+      mlog('remote desc set OK, ice=' + pc.iceConnectionState + ' gather=' + pc.iceGatheringState + ' lufrag=' + localUfrag + ' rufrag=' + remoteUfrag)
       for (const c of pendingIce) { try { pc.addIceCandidate(c) } catch {} }
       pendingIce = []
-      // Poll ICE state every 2s, restart if stuck
+      // Poll ICE state, restartIce if stuck
       let pollCount = 0
       const icePoll = setInterval(() => {
         if (!pc) { clearInterval(icePoll); return }
@@ -142,7 +142,7 @@ async function onSignal(m: any) {
           mlog('ICE stuck in new, restarting...')
           pc.restartIce()
         }
-        mlog('viewer ICE poll=' + st)
+        mlog('viewer ICE=' + st + ' gather=' + pc.iceGatheringState)
       }, 2000)
     } catch (e: any) { status.value = '连接失败: ' + (e?.message || e); mlogErr('setRemoteDesc error: ' + e?.message) }
   } else if (m.type === 'ice') {
