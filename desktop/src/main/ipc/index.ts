@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'path'
-import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream } from 'fs'
+import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream, rmSync } from 'fs'
 import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager } from '../plugin/host'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
@@ -119,21 +119,52 @@ export function registerIpcHandlers() {
     BrowserWindow.getAllWindows().forEach(win => win.webContents.send('plugins:updated'))
   })
   ipcMain.handle('plugin:import', async () => {
-    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Plugin ZIP', extensions: ['zip'] }],
+    })
     if (result.canceled) return { success: false }
-    const pluginPath = result.filePaths[0]
-    const pkgPath = join(pluginPath, 'package.json')
-    if (!existsSync(pkgPath)) return { success: false, error: '所选目录没有 package.json' }
+    const zipPath = result.filePaths[0]
+    const { basename } = require('path')
+
+    // Extract to temp dir to read package.json
+    const tmpDir = join(app.getPath('temp'), 'omniaide-plugin-import')
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true })
+    mkdirSync(tmpDir, { recursive: true })
+
+    const { execSync } = require('child_process')
+    execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${tmpDir}' -Force"`, { stdio: 'pipe' })
+
+    // Find package.json in extracted files
+    const pkgPath = join(tmpDir, 'package.json')
+    if (!existsSync(pkgPath)) {
+      rmSync(tmpDir, { recursive: true })
+      return { success: false, error: 'ZIP 中没有 package.json' }
+    }
+
     try {
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
-      const pluginId = pkg.omniaide?.id || pkg.name
-      const dest = join(__dirname, '../../../plugins', pluginId)
-      if (existsSync(dest)) return { success: false, error: '插件 ' + pluginId + ' 已存在' }
-      mkdirSync(dest, { recursive: true })
-      cpSync(pluginPath, dest, { recursive: true })
+      const manifest = pkg.omniaide || pkg.mqbox || {}
+      const pluginId = manifest.id || pkg.name
+
+      const pluginsDir = join(app.getPath('userData'), 'plugins')
+      const dest = join(pluginsDir, pluginId)
+      if (existsSync(dest)) {
+        rmSync(tmpDir, { recursive: true })
+        return { success: false, error: '插件 ' + pluginId + ' 已存在' }
+      }
+      mkdirSync(pluginsDir, { recursive: true })
+
+      // Copy extracted files to destination
+      cpSync(tmpDir, dest, { recursive: true })
+      rmSync(tmpDir, { recursive: true })
+
       await reloadNewPlugins()
       return { success: true, pluginId }
-    } catch { return { success: false, error: '导入失败' } }
+    } catch (e) {
+      if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true })
+      return { success: false, error: '导入失败: ' + String(e) }
+    }
   })
   ipcMain.handle('plugin:list-marketplace', async () => {
     try {
@@ -333,6 +364,7 @@ export function registerIpcHandlers() {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return result.canceled ? null : result.filePaths[0]
   })
+
 
   // Screenshot
   ipcMain.handle('screenshot:get-all-screens', async () => {

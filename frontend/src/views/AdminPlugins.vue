@@ -2,9 +2,13 @@
   <div class="page-wrapper">
     <div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
       <h2>插件市场</h2>
-      <el-upload :http-request="handleUpload" :show-file-list="false" accept=".zip">
-        <el-button type="primary">上传插件</el-button>
-      </el-upload>
+      <div style="display:flex;gap:8px">
+        <el-upload :http-request="handleUpload" :show-file-list="false" accept=".zip">
+          <el-button type="primary">上传插件</el-button>
+        </el-upload>
+        <el-button @click="batchUpload" :disabled="batchUploading">批量上传</el-button>
+        <input ref="fileInput" type="file" multiple accept=".zip" style="display:none" @change="onFilesSelected" />
+      </div>
     </div>
     <div class="page-card">
       <div class="page-card-body">
@@ -35,6 +39,12 @@
         </el-row>
         <p v-if="loading" style="text-align:center;color:#909399;padding:40px">加载中...</p>
         <p v-else-if="filtered.length === 0" style="text-align:center;color:#909399;padding:40px">暂无插件。点击右上角「上传插件」添加</p>
+        <div v-if="batchResults.length" style="margin-top:16px;padding:12px;background:#f8f9fa;border-radius:8px;font-size:13px">
+          <div style="font-weight:600;margin-bottom:8px">批量上传结果</div>
+          <div v-for="r in batchResults" :key="r.name" :style="{ color: r.ok ? '#67c23a' : '#f56c6c', padding: '2px 0' }">
+            {{ r.ok ? '✓' : '✗' }} {{ r.name }} — {{ r.msg }}
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -48,6 +58,9 @@ import { ElMessage } from 'element-plus'
 const plugins = ref<any[]>([])
 const loading = ref(true)
 const search = ref('')
+const fileInput = ref<HTMLInputElement>()
+const batchUploading = ref(false)
+const batchResults = ref<{ name: string; ok: boolean; msg: string }[]>([])
 
 const filtered = computed(() => {
   const q = search.value.toLowerCase()
@@ -67,6 +80,28 @@ async function handleUpload(options: any) {
     await client.post('/plugins/marketplace/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
     ElMessage.success('上传成功'); fetchPlugins()
   } catch (e: any) { ElMessage.error(e.response?.data?.detail || '上传失败') }
+}
+
+function batchUpload() { fileInput.value?.click() }
+
+async function onFilesSelected(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (!files || files.length === 0) return
+  batchUploading.value = true
+  batchResults.value = []
+  for (const file of files) {
+    const form = new FormData(); form.append('file', file)
+    try {
+      await client.post('/plugins/marketplace/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      batchResults.value.push({ name: file.name, ok: true, msg: '上传成功' })
+    } catch (e: any) {
+      batchResults.value.push({ name: file.name, ok: false, msg: e.response?.data?.detail || e.message || '上传失败' })
+    }
+  }
+  batchUploading.value = false
+  fetchPlugins()
+  // reset input so same files can be selected again
+  ;(e.target as HTMLInputElement).value = ''
 }
 
 function downloadPlugin(p: any) { window.open(p.downloadUrl, '_blank') }

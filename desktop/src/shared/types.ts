@@ -159,11 +159,13 @@ declare global {
     mqbox: {
       plugin: {
         list: () => Promise<PluginInfo[]>
+        listAll: () => Promise<PluginInfo[]>
         getPanels: () => Promise<PluginPanel[]>
         getPage: (pluginId: string) => Promise<any>
         execute: (pluginId: string, command: string, args?: unknown) => Promise<unknown>
         setEnabled: (pluginId: string, enabled: boolean) => Promise<void>
         importPlugin: () => Promise<any>
+        uninstall: (pluginId: string) => Promise<any>
         listMarketplace: () => Promise<any[]>
         installFromMarket: (pluginId: string) => Promise<any>
         getPanelData: (pluginId: string) => Promise<PanelData>
@@ -176,6 +178,9 @@ declare global {
       config: {
         get: (key: string) => Promise<any>
         set: (key: string, value: any) => Promise<void>
+      }
+      dialog: {
+        selectFolder: () => Promise<string | null>
       }
       window: {
         openMain: () => void
