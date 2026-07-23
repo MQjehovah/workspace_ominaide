@@ -35,14 +35,9 @@ async function buildPluginFrontend(name) {
   if (existsSync(buildDir)) rmSync(buildDir, { recursive: true })
   mkdirSync(buildDir, { recursive: true })
 
-  // Use template files from plugin's own directory, fallback to shared
-  const localHtml = resolve(pluginDir, 'index.html')
-  const localPluginApp = resolve(pluginDir, 'plugin-app.ts')
-  const sharedHtml = resolve(__dirname, '..', 'plugin-frontend-template', 'index.html')
-  const sharedPluginApp = resolve(__dirname, '..', 'plugin-frontend-template', 'plugin-app.ts')
-
-  const htmlSrc = existsSync(localHtml) ? localHtml : sharedHtml
-  const appSrc = existsSync(localPluginApp) ? localPluginApp : sharedPluginApp
+  // Template files from plugin's own directory
+  writeFileSync(resolve(buildDir, 'index.html'), readFileSync(resolve(pluginDir, 'index.html'), 'utf-8'), 'utf-8')
+  writeFileSync(resolve(buildDir, 'plugin-app.ts'), readFileSync(resolve(pluginDir, 'plugin-app.ts'), 'utf-8'), 'utf-8')
 
   writeFileSync(resolve(buildDir, 'index.html'), readFileSync(htmlSrc, 'utf-8'), 'utf-8')
   writeFileSync(resolve(buildDir, 'plugin-app.ts'), readFileSync(appSrc, 'utf-8'), 'utf-8')
