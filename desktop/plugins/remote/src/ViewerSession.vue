@@ -126,6 +126,18 @@ async function onSignal(m: any) {
     try {
       await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
       mlog('remote desc set OK')
+      // Poll ICE state every 2s to detect state changes
+      let lastIce = pc.iceConnectionState
+      const icePoll = setInterval(() => {
+        if (!pc) { clearInterval(icePoll); return }
+        const st = pc.iceConnectionState
+        if (st !== lastIce) {
+          lastIce = st
+          mlog('viewer ICE=' + st)
+          if (st === 'connected' || st === 'completed') clearInterval(icePoll)
+          if (st === 'failed') { mlogErr('ICE failed'); clearInterval(icePoll) }
+        }
+      }, 2000)
       for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
       pendingIce = []
     } catch (e: any) { status.value = '连接失败: ' + (e?.message || e); mlogErr('setRemoteDesc error: ' + e?.message) }
