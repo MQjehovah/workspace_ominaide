@@ -134,14 +134,14 @@ async function onSignal(m: any) {
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
-    console.log('[VLOG] answer handler, sdp len=' + (m.payload?.sdp?.length || 0))
     mlog('received answer, sdp len=' + (m.payload?.sdp?.length || 0))
-    const desc = new RTCSessionDescription({ type: 'answer', sdp: m.payload.sdp })
-    pc.setRemoteDescription(desc)
-      .then(() => mlog('remote desc set OK'))
-      .catch((e: any) => mlogErr('setRemoteDesc error: ' + e?.message))
-    for (const c of pendingIce) { try { pc.addIceCandidate(c) } catch {} }
-    pendingIce = []
+    try {
+      const desc = new RTCSessionDescription({ type: 'answer', sdp: m.payload.sdp })
+      await pc.setRemoteDescription(desc)
+      mlog('remote desc set OK')
+      for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
+      pendingIce = []
+    } catch (e: any) { status.value = '连接失败: ' + (e?.message || e); mlogErr('setRemoteDesc error: ' + e?.message) }
   } else if (m.type === 'ice') {
     if (pc && pc.remoteDescription) { try { await pc.addIceCandidate(m.payload) } catch {} }
     else pendingIce.push(m.payload)
