@@ -4,3 +4,6 @@ logs/
 plugin-packages/
 
 dist-electron/
+
+# Plugin build outputs
+plugins/*/frontend/
