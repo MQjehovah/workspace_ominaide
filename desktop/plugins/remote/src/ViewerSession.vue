@@ -59,59 +59,47 @@ function determineQuality() {
 
 async function startOffering() {
   if (!pc || !ws) return
+  vlog('offering start')
+  dc = pc.createDataChannel('input')
+  dc.onopen = () => determineQuality()
+  dc.onmessage = (msg) => {
+    try {
+      const ev = JSON.parse(msg.data)
+      if (ev.type === 'screens') { screens.value = ev.list || []; return }
+      if (ev.type === 'activeScreen') { activeScreenId.value = ev.id; return }
+    } catch {}
+  }
+  pc.addTransceiver('video', { direction: 'recvonly' })
+  pc.ontrack = (e) => {
+    status.value = '已连接（可控制）'
+    connected.value = true
+    if (videoRef.value) {
+      videoRef.value.srcObject = e.streams[0]
+      videoRef.value.play().catch((err: any) => vlogErr('video play: ' + err?.message))
+    } else {
+      vlogErr('ontrack but videoRef is null')
+    }
+    setTimeout(() => determineQuality(), 500)
+  }
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate }))
+    }
+  }
+  pc.oniceconnectionstatechange = () => {
+    if (!pc) return
+    const st = pc.iceConnectionState
+    if (st === 'failed') { if (!connectionEnded) status.value = '连接失败（ICE）'; connected.value = false; cleanup() }
+    else if (st === 'disconnected') { if (!connectionEnded) status.value = '连接中断，尝试恢复…' }
+    else if (st === 'closed') { connected.value = false }
+  }
   try {
-    const iceTimeout = setTimeout(() => {
-      if (!connected.value) {
-        const st = pc?.iceConnectionState || 'unknown'
-        vlog('viewer ICE timeout 15s, state=' + st)
-      }
-    }, 15000)
-    pc.oniceconnectionstatechange = () => {
-      if (!pc) return
-      const st = pc.iceConnectionState
-      vlog('viewer ICE=' + st)
-      if (st === 'connected' || st === 'completed') clearTimeout(iceTimeout)
-      if (st === 'failed') {
-        if (!connectionEnded) { status.value = '连接失败（ICE）'; vlogErr('ICE failed') }
-        connected.value = false; cleanup()
-      } else if (st === 'disconnected') {
-        if (!connectionEnded) status.value = '连接中断，尝试恢复…'
-      } else if (st === 'closed') { connected.value = false }
-    }
-    dc = pc.createDataChannel('input')
-    dc.onopen = () => determineQuality()
-    dc.onmessage = (msg) => {
-      try {
-        const ev = JSON.parse(msg.data)
-        if (ev.type === 'screens') { screens.value = ev.list || []; return }
-        if (ev.type === 'activeScreen') { activeScreenId.value = ev.id; return }
-      } catch {}
-    }
-    pc.addTransceiver('video', { direction: 'recvonly' })
-    pc.ontrack = (e) => {
-      status.value = '已连接（可控制）'
-      connected.value = true
-      if (videoRef.value) {
-        videoRef.value.srcObject = e.streams[0]
-        videoRef.value.play().catch((err: any) => vlogErr('video play: ' + err?.message))
-      } else {
-        vlogErr('ontrack but videoRef is null')
-      }
-      setTimeout(() => determineQuality(), 500)
-    }
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate }))
-      } else {
-        ws!.send(JSON.stringify({ type: 'diag', msg: 'viewer ICE gathering complete' }))
-      }
-    }
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
     ws.send(JSON.stringify({ type: 'offer', payload: offer }))
     status.value = '等待画面…'
   } catch (e: any) {
-    vlogErr('startOffering error: ' + e?.message)
+    vlogErr('createOffer error: ' + e?.message)
   }
 }
 
@@ -136,8 +124,7 @@ async function onSignal(m: any) {
   } else if (m.type === 'answer' && pc) {
     mlog('received answer, sdp len=' + (m.payload?.sdp?.length || 0))
     try {
-      const desc = new RTCSessionDescription({ type: 'answer', sdp: m.payload.sdp })
-      await pc.setRemoteDescription(desc)
+      await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
       mlog('remote desc set OK')
       for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
       pendingIce = []
