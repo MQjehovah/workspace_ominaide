@@ -1,4 +1,4 @@
-import { readdirSync, existsSync, writeFileSync, mkdirSync, rmSync, cpSync, readFileSync } from 'fs'
+import { readdirSync, existsSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'fs'
 import { join, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { build } from 'vite'
@@ -6,7 +6,6 @@ import vue from '@vitejs/plugin-vue'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pluginsDir = resolve(__dirname, '..', 'plugins')
-const templateDir = resolve(__dirname, '..', 'plugin-frontend-template')
 
 const pagePlugins = [
   'assistant', 'calculator', 'clipboard-history', 'files', 'notes',
@@ -36,11 +35,17 @@ async function buildPluginFrontend(name) {
   if (existsSync(buildDir)) rmSync(buildDir, { recursive: true })
   mkdirSync(buildDir, { recursive: true })
 
-  // Copy template files
-  const htmlContent = readFileSync(resolve(templateDir, 'index.html'), 'utf-8')
-  writeFileSync(resolve(buildDir, 'index.html'), htmlContent, 'utf-8')
+  // Use template files from plugin's own directory, fallback to shared
+  const localHtml = resolve(pluginDir, 'index.html')
+  const localPluginApp = resolve(pluginDir, 'plugin-app.ts')
+  const sharedHtml = resolve(__dirname, '..', 'plugin-frontend-template', 'index.html')
+  const sharedPluginApp = resolve(__dirname, '..', 'plugin-frontend-template', 'plugin-app.ts')
 
-  // Generate entry.ts - import Page from relative path
+  const htmlSrc = existsSync(localHtml) ? localHtml : sharedHtml
+  const appSrc = existsSync(localPluginApp) ? localPluginApp : sharedPluginApp
+
+  writeFileSync(resolve(buildDir, 'index.html'), readFileSync(htmlSrc, 'utf-8'), 'utf-8')
+  writeFileSync(resolve(buildDir, 'plugin-app.ts'), readFileSync(appSrc, 'utf-8'), 'utf-8')
   const entryContent = `import Page from '../src/Page.vue'
 import { mountPlugin } from './plugin-app'
 mountPlugin(Page, '${name}')
