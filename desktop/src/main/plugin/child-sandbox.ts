@@ -10,6 +10,8 @@ export function createChildContext(info: PluginInfo): PluginContext {
   const providers: SearchProvider[] = []
   let pendingResolve: ((value: unknown) => void) | null = null
 
+  process.stdin?.setMaxListeners(100)
+
   function sendToParent(msg: any): void {
     process.stdout!.write(encodeMessage(msg))
   }
