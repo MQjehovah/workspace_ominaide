@@ -16,6 +16,7 @@ const loadingStatus = ref('')
 const starting = ref(false)
 
 let pollTimer: any = null
+let emptyCount = 0
 
 function loadState() {
   const st = props.data?.hostState
@@ -39,8 +40,11 @@ async function loadDevices() {
     const list: any[] = r?.devices || []
     list.forEach(d => d.isLocal = d.device_id === myId)
     if (list.length === 0 && devices.value.length > 0) {
-      ;(window as any).mqbox?.log?.write('remote', 'warn', 'device list went empty')
+      emptyCount++
+      ;(window as any).mqbox?.log?.write('remote', 'warn', `device list empty (${emptyCount}/3)`)
+      if (emptyCount < 3) return
     }
+    emptyCount = 0
     devices.value = list
   } catch (e: any) {
     ;(window as any).mqbox?.log?.write('remote', 'error', `loadDevices error: ${e?.message}`)
