@@ -16,8 +16,6 @@ let pendingIce: any[] = []
 let connectionEnded = false
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
-function vlog(msg: string) { (window as any).mqbox?.log?.write('remote', 'info', msg) }
-function vlogErr(msg: string) { (window as any).mqbox?.log?.write('remote', 'error', msg) }
 
 async function connect(roomId: string) {
   connectionEnded = false
@@ -25,22 +23,16 @@ async function connect(roomId: string) {
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
   }
-  const vErr = (msg: string) => vlog('[ERR] ' + msg)
   status.value = '连接中…'
-  vlog('connect to room: ' + roomId)
   try {
     ws = await openSignal(roomId, onSignal)
-    vlog('WS opened')
-    ws.onclose = () => { vlog('WS closed'); if (!connectionEnded) status.value = '信令断开'; cleanup() }
-    ws.onerror = () => { vErr('WS error'); status.value = '信令错误' }
+    ws.onclose = () => { if (!connectionEnded) status.value = '信令断开'; cleanup() }
+    ws.onerror = () => { status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
-    const iceServers = await getIceServers()
-    vlog('ICE servers: ' + JSON.stringify(iceServers))
-    pc = newPeer(iceServers)
+    pc = newPeer(await getIceServers())
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
-    vErr('connect failed: ' + (e?.message || String(e)))
     status.value = e?.message || String(e)
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
@@ -59,7 +51,6 @@ function determineQuality() {
 
 async function startOffering() {
   if (!pc || !ws) return
-  vlog('offering start')
   dc = pc.createDataChannel('input')
   dc.onopen = () => determineQuality()
   dc.onmessage = (msg) => {
@@ -71,21 +62,12 @@ async function startOffering() {
   }
   pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
+    if (videoRef.value) videoRef.value.srcObject = e.streams[0]
     status.value = '已连接（可控制）'
     connected.value = true
-    if (videoRef.value) {
-      videoRef.value.srcObject = e.streams[0]
-      videoRef.value.play().catch((err: any) => vlogErr('video play: ' + err?.message))
-    } else {
-      vlogErr('ontrack but videoRef is null')
-    }
     setTimeout(() => determineQuality(), 500)
   }
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate }))
-    }
-  }
+  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
@@ -93,65 +75,34 @@ async function startOffering() {
     else if (st === 'disconnected') { if (!connectionEnded) status.value = '连接中断，尝试恢复…' }
     else if (st === 'closed') { connected.value = false }
   }
-  try {
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-    ws.send(JSON.stringify({ type: 'offer', payload: offer }))
-    status.value = '等待画面…'
-  } catch (e: any) {
-    vlogErr('createOffer error: ' + e?.message)
-  }
+  const offer = await pc.createOffer()
+  await pc.setLocalDescription(offer)
+  ws.send(JSON.stringify({ type: 'offer', payload: offer }))
+  status.value = '等待画面…'
 }
 
 async function onSignal(m: any) {
-  const mlog = (msg: string) => (window as any).mqbox?.log?.write('remote', 'info', msg)
-  const mlogErr = (msg: string) => (window as any).mqbox?.log?.write('remote', 'error', msg)
-  mlog('viewer onSignal: ' + m.type)
   if (m.type === 'controlAllowed') {
-    mlog('controlAllowed, starting offer')
     await startOffering()
   } else if (m.type === 'controlDenied') {
-    mlogErr('controlDenied: ' + m.reason)
     connectionEnded = true
     status.value = m.reason === 'busy' ? '被控端忙（已有连接）' : '被控端拒绝'
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
   } else if (m.type === 'revoked') {
-    mlog('revoked by host')
     connectionEnded = true
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
-    mlog('received answer, sdp len=' + (m.payload?.sdp?.length || 0))
     try {
       await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
-      const localUfrag = pc.localDescription?.sdp?.match(/^a=ice-ufrag:(.+)$/m)?.[1] || '?'
-      const remoteUfrag = pc.remoteDescription?.sdp?.match(/^a=ice-ufrag:(.+)$/m)?.[1] || '?'
-      mlog('remote desc set OK, ice=' + pc.iceConnectionState + ' gather=' + pc.iceGatheringState + ' lufrag=' + localUfrag + ' rufrag=' + remoteUfrag)
-      for (const c of pendingIce) { try { pc.addIceCandidate(c) } catch {} }
+      for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
       pendingIce = []
-      const sdpCands = (pc.localDescription?.sdp?.match(/^a=candidate:.+$/gm) || []).length
-      mlog('local candidates in SDP: ' + sdpCands)
-      // Poll: if ICE stuck in new after 2s, force-gather complete by removing ICE servers
-      let pollCount = 0
-      const icePoll = setInterval(() => {
-        if (!pc) { clearInterval(icePoll); return }
-        const st = pc.iceConnectionState
-        if (st === 'connected' || st === 'completed') { clearInterval(icePoll); return }
-        if (st === 'failed') { mlogErr('ICE failed'); clearInterval(icePoll); return }
-        pollCount++
-        if (pollCount === 1 && st === 'new') {
-          mlog('ICE stuck, removing STUN to force gather complete...')
-          pc.setConfiguration({ iceServers: [] }).catch(() => {})
-        }
-        mlog('viewer ICE=' + st + ' gather=' + pc.iceGatheringState)
-      }, 2000)
-    } catch (e: any) { status.value = '连接失败: ' + (e?.message || e); mlogErr('setRemoteDesc error: ' + e?.message) }
+    } catch (e: any) { status.value = '连接失败: ' + (e?.message || e) }
   } else if (m.type === 'ice') {
     if (pc && pc.remoteDescription) { try { await pc.addIceCandidate(m.payload) } catch {} }
     else pendingIce.push(m.payload)
   } else if (m.type === 'error') {
-    mlogErr('error from host: ' + (m.message || '未知'))
     status.value = '被控端错误: ' + (m.message || '未知')
   }
 }

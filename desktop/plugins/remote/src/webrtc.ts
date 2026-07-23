@@ -8,13 +8,12 @@ export async function getServer(): Promise<{ serverUrl: string; token: string }>
 export function openSignal(roomId: string, onMsg: (m: any) => void): Promise<WebSocket> {
   return getServer().then(({ serverUrl, token }) => {
     const wsUrl = serverUrl.replace(/^http/, 'ws') + `/ws/remote/${roomId}?token=${encodeURIComponent(token)}`
-    console.log('[signal] connecting to:', wsUrl)
     const ws = new WebSocket(wsUrl)
     ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)) } catch {} }
     return new Promise<WebSocket>((res, rej) => {
-      ws.onopen = () => { console.log('[signal] WS opened'); res(ws) }
-      ws.onerror = () => { console.log('[signal] WS error'); rej(new Error('信令连接失败')) }
-      ws.onclose = () => { console.log('[signal] WS closed before open'); rej(new Error('信令连接关闭')) }
+      ws.onopen = () => res(ws)
+      ws.onerror = () => rej(new Error('信令连接失败'))
+      ws.onclose = () => rej(new Error('信令连接关闭'))
     })
   })
 }
