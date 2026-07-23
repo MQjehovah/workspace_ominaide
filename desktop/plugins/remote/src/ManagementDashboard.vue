@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void }>()
+const emit = defineEmits<{ controlDevice: [roomId: string] }>()
 
 const hostEnabled = ref(false)
 const hostCode = ref('')
@@ -59,7 +60,7 @@ function toggleAutoAccept() {
 }
 
 function controlDevice(roomId: string) {
-  ;(window as any).mqbox?.window?.openPage('remote', `mode=viewer&room=${roomId}`)
+  emit('controlDevice', roomId)
 }
 
 async function connectByCode() {
