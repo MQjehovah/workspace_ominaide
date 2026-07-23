@@ -90,6 +90,7 @@ export interface PluginContext {
   screenshot: ScreenshotCapability | null
   remote: RemoteCapability | null
   openPage: (pluginId: string, query?: string) => void
+  log: (level: string, message: string) => void
   registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => void
   registerSearchProvider: (provider: SearchProvider) => void
 }

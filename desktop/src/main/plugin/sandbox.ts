@@ -160,6 +160,12 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
         : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}${extra}`
       win.loadURL(url)
     },
+    log: (level: string, message: string) => {
+      const prefix = `[plugin:${pluginInfo.id}]`
+      if (level === 'error') console.error(prefix, message)
+      else if (level === 'warn') console.warn(prefix, message)
+      else console.log(prefix, `[${level}]`, message)
+    },
     registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => {
       commands.set(name, handler)
     },
