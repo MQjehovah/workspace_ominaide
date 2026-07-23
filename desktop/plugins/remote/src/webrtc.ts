@@ -34,10 +34,8 @@ export async function getIceServers(): Promise<any[]> {
   return cachedIce!
 }
 
-export function newPeer(iceServers?: any[], opts?: { relay?: boolean }): RTCPeerConnection {
-  const config: any = { iceServers: iceServers || [{ urls: 'stun:stun.l.google.com:19302' }] }
-  if (opts?.relay) config.iceTransportPolicy = 'relay'
-  return new RTCPeerConnection(config)
+export function newPeer(iceServers?: any[]): RTCPeerConnection {
+  return new RTCPeerConnection({ iceServers: iceServers || [{ urls: 'stun:stun.l.google.com:19302' }] })
 }
 
 export function setCodecPreferencesH264(pc: RTCPeerConnection) {
