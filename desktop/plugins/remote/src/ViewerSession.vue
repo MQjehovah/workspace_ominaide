@@ -133,11 +133,12 @@ async function onSignal(m: any) {
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
-    mlog('received answer')
+    mlog('received answer, sdp len=' + (m.payload?.sdp?.length || 0))
     try {
       const t0 = Date.now()
+      const desc = new RTCSessionDescription({ type: 'answer', sdp: m.payload.sdp })
       await Promise.race([
-        pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp }),
+        pc.setRemoteDescription(desc),
         new Promise((_, reject) => setTimeout(() => reject(new Error('setRemoteDescription timeout after 10s')), 10000))
       ])
       mlog('remote desc set OK in ' + (Date.now() - t0) + 'ms, ICE state=' + pc.iceConnectionState)
