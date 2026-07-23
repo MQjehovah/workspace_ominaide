@@ -284,6 +284,9 @@ export function removePlugin(id: string): boolean {
     proc.stop()
     processManager.stopPlugin(id)
   }
+  // remove from panels array
+  const idx = panels.findIndex(p => p.pluginId === id)
+  if (idx >= 0) panels.splice(idx, 1)
   return plugins.delete(id)
 }
 
