@@ -4,7 +4,7 @@
   "description": "OmniAide Desktop - Plugin-based AI Workbench",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/build-plugins.mjs && node scripts/build-frontends.mjs && vite",
     "build": "node scripts/build-plugins.mjs && node scripts/build-frontends.mjs && vite build && electron-builder",
     "build-frontends": "node scripts/build-frontends.mjs",
     "migrate-plugins": "node scripts/migrate-to-unified.mjs",
