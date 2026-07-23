@@ -91,17 +91,20 @@ async function startOffering() {
   const iceTimeout = setTimeout(() => {
     if (!connected.value) {
       const st = pc?.iceConnectionState || 'unknown'
-      ws!.send(JSON.stringify({ type: 'diag', msg: `viewer ICE timeout 15s, state=${st}` }))
+      vlog('viewer ICE timeout 15s, state=' + st)
     }
   }, 15000)
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
-    ws!.send(JSON.stringify({ type: 'diag', msg: `viewer ICE=${st}` }))
+    vlog('viewer ICE=' + st)
     if (st === 'connected' || st === 'completed') clearTimeout(iceTimeout)
-    if (st === 'failed') { if (!connectionEnded) status.value = '连接失败（ICE）'; connected.value = false; cleanup() }
-    else if (st === 'disconnected') { if (!connectionEnded) status.value = '连接中断，尝试恢复…' }
-    else if (st === 'closed') { connected.value = false }
+    if (st === 'failed') {
+      if (!connectionEnded) { status.value = '连接失败（ICE）'; vlogErr('ICE failed') }
+      connected.value = false; cleanup()
+    } else if (st === 'disconnected') {
+      if (!connectionEnded) status.value = '连接中断，尝试恢复…'
+    } else if (st === 'closed') { connected.value = false }
   }
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
