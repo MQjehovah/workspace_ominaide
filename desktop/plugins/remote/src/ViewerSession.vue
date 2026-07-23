@@ -31,7 +31,9 @@ async function connect(roomId: string) {
     ws.onclose = () => { console.log('[viewer] WS closed'); if (!connectionEnded) status.value = '信令断开'; cleanup() }
     ws.onerror = () => { console.log('[viewer] WS error'); status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
-    pc = newPeer(await getIceServers())
+    const iceServers = await getIceServers()
+    console.error('[remote] viewer ICE servers:', JSON.stringify(iceServers))
+    pc = newPeer(iceServers)
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
@@ -75,10 +77,25 @@ async function startOffering() {
     }
     setTimeout(() => determineQuality(), 500)
   }
-  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate }))
+    } else {
+      // ICE gathering complete
+      ws!.send(JSON.stringify({ type: 'diag', msg: 'viewer ICE gathering complete' }))
+    }
+  }
+  const iceTimeout = setTimeout(() => {
+    if (!connected.value) {
+      const st = pc?.iceConnectionState || 'unknown'
+      ws!.send(JSON.stringify({ type: 'diag', msg: `viewer ICE timeout 15s, state=${st}` }))
+    }
+  }, 15000)
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
+    ws!.send(JSON.stringify({ type: 'diag', msg: `viewer ICE=${st}` }))
+    if (st === 'connected' || st === 'completed') clearTimeout(iceTimeout)
     if (st === 'failed') { if (!connectionEnded) status.value = '连接失败（ICE）'; connected.value = false; cleanup() }
     else if (st === 'disconnected') { if (!connectionEnded) status.value = '连接中断，尝试恢复…' }
     else if (st === 'closed') { connected.value = false }

@@ -147,6 +147,11 @@ export default {
         ;(hostState as any).pendingOffer = msg.payload
         ;(hostState as any).pendingIce = []
         hostState.status = '正在建立连接…'
+        console.error('[remote] offer received, ice candidates pending:', (hostState as any).pendingIce?.length)
+        // Timeout: if no peerConnected within 30s, log it
+        setTimeout(() => {
+          if (!hostState.peerConnected) console.error('[remote] 30s timeout: peer NOT connected')
+        }, 30000)
         if (!hasNotifiedWindow) {
           hasNotifiedWindow = true
           console.error('[remote] sending signal remote:open-connection')
@@ -156,7 +161,10 @@ export default {
         }
       } else if (msg.type === 'ice') {
         const ice = (hostState as any).pendingIce
-        if (ice) ice.push(msg.payload)
+        if (ice) {
+          ice.push(msg.payload)
+          if (ice.length % 5 === 0) console.error('[remote] received', ice.length, 'viewer ICE candidates')
+        }
       } else if (msg.type === 'revoked') {
         hostState.status = '连接已断开'
         hostState.peerConnected = false
@@ -165,6 +173,8 @@ export default {
         delete (hostState as any).pendingIce
       } else if (msg.type === 'error') {
         hostState.status = '错误: ' + (msg.message || '未知')
+      } else if (msg.type === 'diag') {
+        console.error('[remote] viewer diag:', msg.msg)
       }
     }
 
