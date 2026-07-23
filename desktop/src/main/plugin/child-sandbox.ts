@@ -137,6 +137,9 @@ export function createChildContext(info: PluginInfo): PluginContext {
     registerSearchProvider: (provider: SearchProvider) => {
       providers.push({ ...provider, pluginId: info.id })
     },
+    log: (level: string, message: string) => {
+      rpc('log:write', level, message)
+    },
   }
 
   return Object.assign(context, { handleParentRequest, commands, providers })

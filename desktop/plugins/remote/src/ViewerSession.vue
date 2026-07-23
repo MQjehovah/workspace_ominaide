@@ -32,7 +32,7 @@ async function connect(roomId: string) {
     ws.onerror = () => { console.log('[viewer] WS error'); status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
     const iceServers = await getIceServers()
-    console.error('[remote] viewer ICE servers:', JSON.stringify(iceServers))
+    ;(window as any).mqbox?.log?.write('remote', 'info', `viewer ICE servers: ${JSON.stringify(iceServers)}`)
     pc = newPeer(iceServers)
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
@@ -71,9 +71,9 @@ async function startOffering() {
     connected.value = true
     if (videoRef.value) {
       videoRef.value.srcObject = e.streams[0]
-      videoRef.value.play().catch((err: any) => console.error('[remote] video play error:', err?.message))
+      videoRef.value.play().catch((err: any) => (window as any).mqbox?.log?.write('remote', 'error', `video play: ${err?.message}`))
     } else {
-      console.error('[remote] ontrack but videoRef is null')
+      (window as any).mqbox?.log?.write('remote', 'error', 'ontrack but videoRef is null')
     }
     setTimeout(() => determineQuality(), 500)
   }

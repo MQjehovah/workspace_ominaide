@@ -7,6 +7,7 @@ import axios from 'axios'
 import { getConfig, setConfig } from '../config'
 import * as screenshot from '../screenshot'
 import { showEditor } from '../pinWindow'
+import { writeLog } from '../logger'
 import type { PluginInfo, PluginPanel, SearchProvider } from '../../shared/types'
 import { loadPlugins } from './loader'
 import { PluginProcessManager } from './child-process'
@@ -116,6 +117,10 @@ function startClipboardMonitoring() {
 
 function registerBridgeHandlers(proc: import('./child-process').PluginChildProcess): void {
   const store = { db: null as Low<any> | null }
+
+  proc.registerBridgeHandler('log:write', async ([level, message]) => {
+    writeLog(proc.pluginId, level, message)
+  })
 
   proc.registerBridgeHandler('api:get', async ([path]) => {
     const cfg = await getConfig()

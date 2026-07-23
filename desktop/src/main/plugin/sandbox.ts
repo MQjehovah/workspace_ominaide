@@ -167,6 +167,9 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
       searchProviders.push(provider)
     },
     signal: (_method: string, ..._args: any[]) => Promise.resolve(),
+    log: (level: string, message: string) => {
+      console.error(`[plugin:${pluginInfo.id}] [${level.toUpperCase()}] ${message}`)
+    },
   }
 
   return context

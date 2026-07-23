@@ -38,10 +38,12 @@ async function loadDevices() {
     localDeviceId.value = myId || ''
     const list: any[] = r?.devices || []
     list.forEach(d => d.isLocal = d.device_id === myId)
-    if (list.length === 0 && devices.value.length > 0) console.warn('[remote] device list went empty')
+    if (list.length === 0 && devices.value.length > 0) {
+      ;(window as any).mqbox?.log?.write('remote', 'warn', 'device list went empty')
+    }
     devices.value = list
   } catch (e: any) {
-    console.error('[remote] loadDevices error:', e?.message)
+    ;(window as any).mqbox?.log?.write('remote', 'error', `loadDevices error: ${e?.message}`)
   }
 }
 

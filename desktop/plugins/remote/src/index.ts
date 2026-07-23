@@ -33,7 +33,7 @@ export default {
   page: Page,
   async activate(context: any) {
     pluginCtx = context
-    console.error('[remote] activate')
+    context.log('info', 'activate')
     await getDeviceId(context)
     const saved = await context.storage?.get('hostState')
     if (saved) {
@@ -47,10 +47,10 @@ export default {
 
     // Auto-reconnect if was enabled before restart
     if (saved?.enabled) {
-      console.error('[remote] auto-reconnect: saved.enabled was true, re-starting host')
+      context.log('info', 'auto-reconnect: saved.enabled was true, re-starting host')
       hostState.enabled = false // reset so executeStartHostDirectly doesn't skip
       executeStartHostDirectly().catch((e: any) => {
-        console.error('[remote] auto-reconnect failed:', e?.message || e)
+        context.log('error', `auto-reconnect failed: ${e?.message || e}`)
       })
     } else {
       console.error('[remote] no saved host state, host disabled')

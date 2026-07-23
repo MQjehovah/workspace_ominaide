@@ -314,6 +314,11 @@ export function registerIpcHandlers() {
   ipcMain.handle('api:put', async (_, path: string, body?: any) => apiRequest('put', path, body))
   ipcMain.handle('api:delete', async (_, path: string) => apiRequest('delete', path))
 
+  ipcMain.handle('log:write', async (_, pluginId: string, level: string, message: string) => {
+    const { writeLog } = await import('../logger')
+    writeLog(pluginId, level, message)
+  })
+
   // Window
   ipcMain.handle('window:open-search', async () => {
     const cfg = await getConfig()

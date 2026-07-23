@@ -145,6 +145,7 @@ export interface PluginContext {
   registerCommand: (name: string, handler: (args: unknown) => Promise<unknown>) => void
   registerSearchProvider: (provider: SearchProvider) => void
   signal: (method: string, ...args: any[]) => Promise<unknown>
+  log: (level: string, message: string) => void
 }
 
 export interface PluginModule {
@@ -216,6 +217,9 @@ declare global {
         post: (path: string, body?: any) => Promise<any>
         put: (path: string, body?: any) => Promise<any>
         delete: (path: string) => Promise<any>
+      }
+      log: {
+        write: (pluginId: string, level: string, message: string) => void
       }
       remote: {
         getDesktopSources: () => Promise<any[]>
