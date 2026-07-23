@@ -92,6 +92,7 @@ export default {
           ws.on('close', (code: number, reason: Buffer) => {
             console.error('[remote] WS closed:', code, reason?.toString())
             hostWs = null
+            clearInterval(pingTimer)
             if (hostState.enabled) {
               hostState.status = '信令断开，5秒后重连…'
               persistState()
@@ -117,6 +118,16 @@ export default {
         }
 
         hostWs = ws
+
+        // WebSocket keepalive ping every 25s to prevent idle disconnects
+        const pingTimer = setInterval(() => {
+          if (hostWs?.readyState === 1) {
+            try { hostWs.ping() } catch {}
+          } else {
+            clearInterval(pingTimer)
+          }
+        }, 25000)
+
         console.error('[remote] connectWs OK, hostWs assigned')
         return true
       } catch (e: any) {
