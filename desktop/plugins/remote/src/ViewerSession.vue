@@ -36,7 +36,8 @@ async function connect(roomId: string) {
     ws.send(JSON.stringify({ type: 'join' }))
     const iceServers = await getIceServers()
     vlog('ICE servers: ' + JSON.stringify(iceServers))
-    pc = newPeer(iceServers)
+    mlog('testing basic PC without STUN...')
+    pc = new RTCPeerConnection()
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
@@ -130,10 +131,9 @@ async function onSignal(m: any) {
       mlog('remote desc set OK, ice=' + pc.iceConnectionState + ' gather=' + pc.iceGatheringState + ' lufrag=' + localUfrag + ' rufrag=' + remoteUfrag)
       for (const c of pendingIce) { try { pc.addIceCandidate(c) } catch {} }
       pendingIce = []
-      // Log local candidates already in SDP
       const sdpCands = (pc.localDescription?.sdp?.match(/^a=candidate:.+$/gm) || []).length
       mlog('local candidates in SDP: ' + sdpCands)
-      // Poll ICE state
+      // Poll: if ICE stuck in new after 2s, force-gather complete by removing ICE servers
       let pollCount = 0
       const icePoll = setInterval(() => {
         if (!pc) { clearInterval(icePoll); return }
@@ -142,9 +142,8 @@ async function onSignal(m: any) {
         if (st === 'failed') { mlogErr('ICE failed'); clearInterval(icePoll); return }
         pollCount++
         if (pollCount === 1 && st === 'new') {
-          // Force ICE by re-creating offer with same SDP
-          mlog('ICE stuck, re-setting local desc...')
-          pc.setLocalDescription(pc.localDescription!).catch((e: any) => mlogErr('re-setLocal error: ' + e?.message))
+          mlog('ICE stuck, removing STUN to force gather complete...')
+          pc.setConfiguration({ iceServers: [] }).catch(() => {})
         }
         mlog('viewer ICE=' + st + ' gather=' + pc.iceGatheringState)
       }, 2000)
