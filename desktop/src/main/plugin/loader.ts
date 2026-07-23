@@ -4,20 +4,32 @@ import { app } from 'electron'
 import type { PluginManifest, PluginInfo } from '../../shared/types'
 
 function findPluginDirs(): string[] {
-  const searchPaths = [
-    join(__dirname, '../../../plugins'),       // dev
-    join(__dirname, '../../plugins'),          // dev alt
-    join(app.getPath('userData'), 'plugins'),  // marketplace downloads
-    join(process.resourcesPath, 'plugins'),    // production bundled
-  ]
   const dirs: string[] = []
-  for (const base of searchPaths) {
-    if (!existsSync(base)) continue
-    for (const entry of readdirSync(base, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        const pluginDir = join(base, entry.name)
-        if (existsSync(join(pluginDir, 'manifest.json')) || existsSync(join(pluginDir, 'package.json'))) {
-          dirs.push(pluginDir)
+  if (app.isPackaged) {
+    const userPlugins = join(app.getPath('userData'), 'plugins')
+    if (existsSync(userPlugins)) {
+      for (const entry of readdirSync(userPlugins, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const pluginDir = join(userPlugins, entry.name)
+          if (existsSync(join(pluginDir, 'manifest.json')) || existsSync(join(pluginDir, 'package.json'))) {
+            dirs.push(pluginDir)
+          }
+        }
+      }
+    }
+  } else {
+    const devPaths = [
+      join(__dirname, '../../../plugins'),   // dev
+      join(__dirname, '../../plugins'),      // dev alt
+    ]
+    for (const base of devPaths) {
+      if (!existsSync(base)) continue
+      for (const entry of readdirSync(base, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const pluginDir = join(base, entry.name)
+          if (existsSync(join(pluginDir, 'manifest.json')) || existsSync(join(pluginDir, 'package.json'))) {
+            dirs.push(pluginDir)
+          }
         }
       }
     }

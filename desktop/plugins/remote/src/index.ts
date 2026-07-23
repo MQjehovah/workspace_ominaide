@@ -1,3 +1,4 @@
+import WebSocket from 'ws'
 import Panel from './Panel.vue'
 import Page from './Page.vue'
 
@@ -63,7 +64,6 @@ export default {
         return false
       }
       try {
-        const WebSocket = require('ws')
         const wsUrl = `${serverUrl.replace(/^http/, 'ws')}/ws/remote/${roomId}?token=${encodeURIComponent(token)}`
         const ws = new WebSocket(wsUrl)
 

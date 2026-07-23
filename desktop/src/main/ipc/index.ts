@@ -178,36 +178,7 @@ export function registerIpcHandlers() {
       }
       writeFileSync(join(dest, '.installed_from'), `marketplace:${pluginId}`)
 
-      // Notify windows to reload plugins
-      BrowserWindow.getAllWindows().forEach(win => {
-        if (!win.isDestroyed()) win.webContents.send('plugins:updated')
-      })
-
-      return { success: true, pluginId }
-    } catch (e) {
-      return { success: false, error: String(e) }
-    }
-  })
-  ipcMain.handle('plugin:uninstall', async (_, pluginId: string) => {
-    try {
-      const plugin = getPlugins().find(p => p.id === pluginId)
-      if (!plugin) return { success: false, error: '插件不存在' }
-      if (plugin.manifest.builtin !== false) return { success: false, error: '内置插件不能卸载' }
-
-      const { rmSync } = require('fs')
-      rmSync(plugin.path, { recursive: true, force: true })
-      removePlugin(pluginId)
-
-      BrowserWindow.getAllWindows().forEach(win => {
-        if (!win.isDestroyed()) win.webContents.send('plugins:updated')
-      })
-      return { success: true }
-    } catch (e) {
-      return { success: false, error: String(e) }
-    }
-  })
-  ipcMain.handle('plugin:reload', async () => {
-    try {
+      // Load the newly installed plugin into memory
       const started = await reloadNewPlugins()
       return { success: true, started }
     } catch (e) {

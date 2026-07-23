@@ -11,12 +11,7 @@ export default defineConfig({
       formats: ['cjs'],
       fileName: 'index'
     },
-    rollupOptions: {
-      external: ['vue'],
-      output: {
-        globals: { vue: 'Vue' }
-      }
-    },
+
     outDir: 'dist',
     emptyOutDir: true
   }
