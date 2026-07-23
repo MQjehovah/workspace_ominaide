@@ -16,6 +16,8 @@ let pendingIce: any[] = []
 let connectionEnded = false
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
+function vlog(msg: string) { (window as any).mqbox?.log?.write('remote', 'info', msg) }
+function vlogErr(msg: string) { (window as any).mqbox?.log?.write('remote', 'error', msg) }
 
 async function connect(roomId: string) {
   connectionEnded = false
@@ -23,23 +25,22 @@ async function connect(roomId: string) {
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
   }
-  const mlog = (msg: string) => (window as any).mqbox?.log?.write('remote', 'info', msg)
-  const mlogErr = (msg: string) => (window as any).mqbox?.log?.write('remote', 'error', msg)
+  const vErr = (msg: string) => vlog('[ERR] ' + msg)
   status.value = '连接中…'
-  mlog('viewer connect to room: ' + roomId)
+  vlog('connect to room: ' + roomId)
   try {
     ws = await openSignal(roomId, onSignal)
-    mlog('WS opened, join + requestControl')
-    ws.onclose = () => { mlog('WS closed'); if (!connectionEnded) status.value = '信令断开'; cleanup() }
-    ws.onerror = () => { mlog('WS error'); status.value = '信令错误' }
+    vlog('WS opened')
+    ws.onclose = () => { vlog('WS closed'); if (!connectionEnded) status.value = '信令断开'; cleanup() }
+    ws.onerror = () => { vErr('WS error'); status.value = '信令错误' }
     ws.send(JSON.stringify({ type: 'join' }))
     const iceServers = await getIceServers()
-    mlog('viewer ICE servers: ' + JSON.stringify(iceServers))
+    vlog('ICE servers: ' + JSON.stringify(iceServers))
     pc = newPeer(iceServers)
     ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
-    mlogErr('viewer connect failed: ' + (e?.message || String(e)))
+    vErr('connect failed: ' + (e?.message || String(e)))
     status.value = e?.message || String(e)
     cleanup()
     if (ws) { try { ws.close() } catch {} ; ws = null }
