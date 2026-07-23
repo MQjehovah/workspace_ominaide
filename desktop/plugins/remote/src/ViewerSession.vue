@@ -65,9 +65,14 @@ async function startOffering() {
   }
   pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
-    if (videoRef.value) videoRef.value.srcObject = e.streams[0]
     status.value = '已连接（可控制）'
     connected.value = true
+    if (videoRef.value) {
+      videoRef.value.srcObject = e.streams[0]
+      videoRef.value.play().catch((err: any) => console.error('[remote] video play error:', err?.message))
+    } else {
+      console.error('[remote] ontrack but videoRef is null')
+    }
     setTimeout(() => determineQuality(), 500)
   }
   pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
