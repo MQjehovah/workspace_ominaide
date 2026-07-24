@@ -230,12 +230,20 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   })
 
   // Forward remote WS messages from plugin to App.vue (and disconnect)
+  proc.registerBridgeHandler('remote:ws-connect', async ([data]) => {
+    console.log('[host] remote:ws-connect signal received', data?.roomId)
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('remote:ws-connect', data)
+    })
+  })
   proc.registerBridgeHandler('remote:ws-send', async ([data]) => {
+    console.log('[host] remote:ws-send: type=' + (data?.type))
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) win.webContents.send('remote:ws-send', data)
     })
   })
   proc.registerBridgeHandler('remote:ws-disconnect', async () => {
+    console.log('[host] remote:ws-disconnect')
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) win.webContents.send('remote:ws-disconnect')
     })

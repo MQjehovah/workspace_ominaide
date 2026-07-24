@@ -53,71 +53,6 @@ onMounted(async () => {
   } catch (e: any) { error.value = String(e) }
 })
 
-function setupRemoteWs() {
-  window.mqbox.remote.onConnect((data: any) => {
-    remoteWsDisconnect()
-    remoteWsRoomId = data.roomId || ''
-    remoteWsDeviceId = data.deviceId || ''
-    const wsUrl = `${data.serverUrl.replace(/^http/, 'ws')}/ws/remote/${data.roomId}?token=${encodeURIComponent(data.token)}`
-    remoteWs = new WebSocket(wsUrl)
-    remoteWs.onopen = () => {
-      remoteWs!.send(JSON.stringify({ type: 'join' }))
-      window.mqbox.remote.publishStatus('connected')
-    }
-    remoteWs.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data)
-        console.log('[remote] WS msg:', msg.type)
-        window.mqbox.remote.publishSignal(msg)
-      } catch {}
-    }
-    remoteWs.onclose = () => {
-      remoteWs = null
-      window.mqbox.remote.publishStatus('disconnected')
-      if (remoteWsRoomId) {
-        clearTimeout(remoteWsReconnectTimer)
-        remoteWsReconnectTimer = setTimeout(() => {
-          if (remoteWsRoomId) remoteWsReconnect()
-        }, 5000)
-      }
-    }
-    remoteWs.onerror = () => {
-      remoteWs?.close()
-    }
-  })
-  window.mqbox.remote.onSend((data: any) => {
-    if (remoteWs?.readyState === WebSocket.OPEN) {
-      remoteWs.send(JSON.stringify(data))
-    }
-  })
-  window.mqbox.remote.onDisconnect(() => {
-    remoteWsDisconnect()
-  })
-}
-
-function remoteWsDisconnect() {
-  clearTimeout(remoteWsReconnectTimer)
-  if (remoteWs) { remoteWs.onclose = null; remoteWs.close(); remoteWs = null }
-  remoteWsRoomId = ''
-  remoteWsDeviceId = ''
-}
-
-function remoteWsReconnect() {
-  const cfg = window.mqbox?.config
-  if (!cfg || !remoteWsRoomId) return
-  Promise.all([cfg.get('serverUrl'), cfg.get('token')]).then(([serverUrl, token]) => {
-    remoteWs = new WebSocket(`${(serverUrl || 'http://localhost:8000').replace(/^http/, 'ws')}/ws/remote/${remoteWsRoomId}?token=${encodeURIComponent(token || '')}`)
-    remoteWs.onopen = () => {
-      remoteWs!.send(JSON.stringify({ type: 'join' }))
-      window.mqbox.remote.publishStatus('connected')
-    }
-    remoteWs.onmessage = (e) => {
-      try { window.mqbox.remote.publishSignal(JSON.parse(e.data)) } catch {}
-    }
-    remoteWs.onclose = () => { remoteWs = null }
-  }).catch(() => {})
-}
-
 function setupAudioListeners() {
   window.mqbox.player.onControl((detail: any) => {
     const audio = audioRef.value
@@ -175,6 +110,83 @@ function onLoadedMeta() {
       pendingSeek = null
     }
   }
+}
+
+function setupRemoteWs() {
+  window.mqbox.remote.onConnect((data: any) => {
+    console.log('[app] remote:ws-connect received', data?.roomId)
+    remoteWsDisconnect()
+    remoteWsRoomId = data.roomId || ''
+    remoteWsDeviceId = data.deviceId || ''
+    if (!data.serverUrl || !data.roomId) { console.error('[app] remote:ws-connect: missing data'); return }
+    const url = data.serverUrl.replace(/^http/, 'ws') + '/ws/remote/' + data.roomId + '?token=' + encodeURIComponent(data.token)
+    console.log('[app] creating WebSocket')
+    remoteWs = new WebSocket(url)
+    remoteWs.onopen = () => {
+      console.log('[app] WS connected, sending join')
+      remoteWs.send(JSON.stringify({ type: 'join' }))
+      window.mqbox.remote.publishStatus('connected')
+    }
+    remoteWs.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data)
+        console.log('[app] WS msg:', msg.type)
+        window.mqbox.remote.publishSignal(msg)
+      } catch (err) { console.error('[app] WS parse error:', err) }
+    }
+    remoteWs.onclose = () => {
+      console.log('[app] WS closed')
+      remoteWs = null
+      window.mqbox.remote.publishStatus('disconnected')
+      if (remoteWsRoomId) {
+        clearTimeout(remoteWsReconnectTimer)
+        remoteWsReconnectTimer = setTimeout(function() {
+          if (remoteWsRoomId) remoteWsReconnect()
+        }, 5000)
+      }
+    }
+    remoteWs.onerror = function() {
+      console.error('[app] WS error')
+      remoteWs.close()
+    }
+  })
+  window.mqbox.remote.onSend(function(data: any) {
+    console.log('[app] remote:ws-send type=' + (data?.type))
+    if (remoteWs && remoteWs.readyState === WebSocket.OPEN) {
+      remoteWs.send(JSON.stringify(data))
+      console.log('[app] WS send done')
+    } else {
+      console.warn('[app] WS not open')
+    }
+  })
+  window.mqbox.remote.onDisconnect(function() {
+    console.log('[app] remote:ws-disconnect received')
+    remoteWsDisconnect()
+  })
+}
+
+function remoteWsDisconnect() {
+  console.log('[app] remoteWsDisconnect')
+  clearTimeout(remoteWsReconnectTimer)
+  if (remoteWs) { remoteWs.onclose = null; remoteWs.close(); remoteWs = null }
+  remoteWsRoomId = ''
+  remoteWsDeviceId = ''
+}
+
+function remoteWsReconnect() {
+  console.log('[app] remoteWsReconnect')
+  var cfg = window.mqbox && window.mqbox.config
+  if (!cfg || !remoteWsRoomId) { console.log('[app] reconnect: skip'); return }
+  Promise.all([cfg.get('serverUrl'), cfg.get('token')]).then(function(values) {
+    var serverUrl = values[0] || 'http://localhost:8000'
+    var token = values[1] || ''
+    var url = serverUrl.replace(/^http/, 'ws') + '/ws/remote/' + remoteWsRoomId + '?token=' + encodeURIComponent(token)
+    console.log('[app] reconnect WS')
+    remoteWs = new WebSocket(url)
+    remoteWs.onopen = function() { remoteWs.send(JSON.stringify({ type: 'join' })); console.log('[app] reconnect: joined') }
+    remoteWs.onmessage = function(e) { try { window.mqbox.remote.publishSignal(JSON.parse(e.data)) } catch (e) {} }
+    remoteWs.onclose = function() { remoteWs = null }
+  }).catch(function(e) { console.error('[app] reconnect error:', e) })
 }
 
 onUnmounted(() => {

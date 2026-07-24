@@ -58,15 +58,19 @@ export default {
     // --- WebSocket signaling (App.vue manages WS, IPC bridge) ---
 
     async function connectWs(id: string, roomId: string) {
+      context.log('info', `connectWs: id=${id} roomId=${roomId}`)
       const serverUrl = await getServerUrl()
       const token = await getToken()
+      context.log('info', `connectWs: serverUrl=${serverUrl} token=${token ? '***' : 'empty'}`)
       if (!serverUrl || !token) {
         hostState.status = '配置错误: 服务器地址未设置'
         return false
       }
-      // WS created by App.vue after startHost via handleRemoteCommand
+      context.log('info', 'connectWs: sending remote:ws-connect signal')
+      context.signal('remote:ws-connect', { serverUrl, token, roomId, deviceId: id })
       hostState.status = '已在线'
       persistState()
+      context.log('info', 'connectWs: done, returning true')
       return true
     }
 
@@ -188,14 +192,21 @@ export default {
     context.registerCommand('sendSignal', async (args: any) => {
       context.log('info', 'sendSignal: ' + (args?.type))
       if (args) {
+        context.log('info', 'sendSignal: sending via remote:ws-send')
         context.signal('remote:ws-send', args)
       }
       return getState()
     })
 
+    context.registerCommand('handleSignal', async (msg: any) => {
+      context.log('info', 'handleSignal command received: type=' + (msg?.type))
+      handleSignal(msg)
+      return getState()
+    })
 
-
-    // --- State & Data Commands ---
+    context.registerCommand('connectByCode', async (args: any) => {
+      try { return await context.api.get(`/remote/pair/${args?.code}`) } catch { return null }
+    })
 
     context.registerCommand('getPanelData', async () => {
       const st = { ...hostState }
@@ -215,49 +226,35 @@ export default {
         items,
       }
     })
-
     context.registerCommand('getPageData', async () => getState())
     context.registerCommand('open', async () => { context.openPage('remote') })
     context.registerCommand('getDeviceId', async () => deviceId)
     context.registerCommand('getHostName', async () => { const { hostname } = require('os'); return hostname() })
     context.registerCommand('getState', async () => getState())
-
     context.registerCommand('syncHostState', async (args: any) => {
       if (args) {
-        // Don't overwrite pendingOffer from renderer
         const { pendingOffer, pendingIce, ...rest } = args
         Object.assign(hostState, rest)
       }
       await persistState()
       return getState()
     })
-
     context.registerCommand('setAutoAccept', async (args: any) => {
       hostState.autoAccept = !!args?.enabled
       await context.storage?.set('autoAccept', hostState.autoAccept)
       return getState()
     })
-
     context.registerCommand('getDevices', async () => {
       try { return await context.api.get('/remote/devices') } catch (e: any) {
         context.log('error', 'getDevices failed: ' + (e?.code || '') + ' ' + (e?.message?.slice(0, 80) || ''))
         try { return await context.api.get('/remote/devices') } catch { return { devices: [] } }
       }
     })
-
-    context.registerCommand('handleSignal', async (msg: any) => {
-      context.log('info', 'WS signal received: ' + (msg?.type))
-      handleSignal(msg)
-      return getState()
-    })
-
-    context.registerCommand('connectByCode', async (args: any) => {
-      try { return await context.api.get(`/remote/pair/${args?.code}`) } catch { return null }
-    })
   },
   deactivate() {
     context.log('info', 'deactivate')
     clearTimeout(reconnectTimer)
+    context.log('info', 'deactivate: sending remote:ws-disconnect')
     context.signal('remote:ws-disconnect')
     clearInterval(codeTimer)
     clearTimeout(heartbeatTimer)

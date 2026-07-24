@@ -157,23 +157,32 @@ contextBridge.exposeInMainWorld('mqbox', {
     },
     // App.vue 常驻 WS — 接收来自 child process 的信号
     onConnect: (cb: (data: any) => void) => {
-      ipcRenderer.on('remote:ws-connect', (_, data) => cb(data))
+      console.log('[preload] register onConnect listener')
+      ipcRenderer.on('remote:ws-connect', (_, data) => { console.log('[preload] remote:ws-connect received'); cb(data) })
     },
     onSend: (cb: (data: any) => void) => {
-      ipcRenderer.on('remote:ws-send', (_, data) => cb(data))
+      console.log('[preload] register onSend listener')
+      ipcRenderer.on('remote:ws-send', (_, data) => { console.log('[preload] remote:ws-send received, type=' + (data?.type)); cb(data) })
     },
     onDisconnect: (cb: () => void) => {
-      ipcRenderer.on('remote:ws-disconnect', () => cb())
+      console.log('[preload] register onDisconnect listener')
+      ipcRenderer.on('remote:ws-disconnect', () => { console.log('[preload] remote:ws-disconnect received'); cb() })
     },
     // App.vue → 广播给所有窗口
-    publishSignal: (msg: any) => ipcRenderer.invoke('remote:ws-message', msg),
-    publishStatus: (status: string) => ipcRenderer.invoke('remote:ws-status', status),
+    publishSignal: (msg: any) => {
+      console.log('[preload] publishSignal:', msg?.type)
+      return ipcRenderer.invoke('remote:ws-message', msg)
+    },
+    publishStatus: (status: string) => {
+      console.log('[preload] publishStatus:', status)
+      return ipcRenderer.invoke('remote:ws-status', status)
+    },
     // 其他窗口监听 WS 信号
     onSignal: (cb: (msg: any) => void) => {
-      ipcRenderer.on('remote:ws-signal', (_, msg) => cb(msg))
+      ipcRenderer.on('remote:ws-signal', (_, msg) => { console.log('[preload] onSignal:', msg?.type); cb(msg) })
     },
     onStatus: (cb: (status: string) => void) => {
-      ipcRenderer.on('remote:ws-status', (_, status) => cb(status))
+      ipcRenderer.on('remote:ws-status', (_, status) => { console.log('[preload] onStatus:', status); cb(status) })
     },
   },
 })
