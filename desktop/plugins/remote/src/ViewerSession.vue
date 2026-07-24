@@ -55,6 +55,7 @@ function determineQuality() {
 
 async function startOffering() {
   if (!pc) return
+  pc.addTransceiver('video', { direction: 'recvonly' })
   dc = pc.createDataChannel('input')
   dc.onopen = () => determineQuality()
   dc.onmessage = (msg) => {
@@ -66,18 +67,20 @@ async function startOffering() {
   }
   pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
-    console.log('[viewer] ontrack fired', e.track?.kind)
+    console.log('[viewer] ontrack:', e.track?.kind, 'enabled:', e.track?.enabled, 'readyState:', e.track?.readyState)
     const stream = e.streams?.[0] || new MediaStream([e.track])
     if (videoRef.value) {
+      videoRef.value.srcObject = null
       videoRef.value.srcObject = stream
       videoRef.value.muted = true
+      videoRef.value.load()
       setTimeout(() => {
         videoRef.value!.play().then(() => {
-          console.log('[viewer] play ok')
+          console.log('[viewer] play ok, video size:', videoRef.value?.videoWidth, 'x', videoRef.value?.videoHeight)
         }).catch((err) => {
           console.log('[viewer] play err:', err.message)
         })
-      }, 100)
+      }, 500)
     }
     connected.value = true
     setTimeout(() => determineQuality(), 500)

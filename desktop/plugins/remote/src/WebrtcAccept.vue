@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { newPeer, getIceServers } from './webrtc'
+import { newPeer, getIceServers, setCodecPreferences } from './webrtc'
 
 const props = defineProps<{ data?: any; execute?: (a: string, args?: any) => Promise<any> }>()
 const viewerId = new URLSearchParams(window.location.search).get('viewer') || ''
@@ -132,8 +132,9 @@ async function startConnection() {
       }
     }
 
-    stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
     await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
+    stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
+    setCodecPreferences(pc)
     for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
     pendingIce = []
 
