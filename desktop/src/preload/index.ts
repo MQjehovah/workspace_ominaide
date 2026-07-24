@@ -83,6 +83,24 @@ contextBridge.exposeInMainWorld('mqbox', {
     onUpdated: (callback: () => void) => {
       playerListeners.push(callback)
     },
+    // Audio control commands (from Page.vue or any renderer)
+    play: (detail?: any) => ipcRenderer.invoke('player:play', { action: 'play', ...(detail || {}) }),
+    pause: () => ipcRenderer.invoke('player:play', { action: 'pause' }),
+    seek: (time: number) => ipcRenderer.invoke('player:play', { action: 'seek', time }),
+    setVolume: (volume: number) => ipcRenderer.invoke('player:play', { action: 'set-volume', volume }),
+    setSource: (src: string, autoplay?: boolean) => ipcRenderer.invoke('player:play', { action: 'set-source', src, autoplay }),
+    // Listen for control commands from main process (for main window audio)
+    onControl: (callback: (detail: any) => void) => {
+      ipcRenderer.on('player:control', (_, detail) => callback(detail))
+    },
+    // Send audio events back to main process (from main window)
+    sendEvent: (event: string, data: any) => ipcRenderer.invoke('player:event', event, data),
+    // Listen for audio events (for Page.vue and other windows)
+    onAudioEvent: (event: string, callback: (data: any) => void) => {
+      ipcRenderer.on('player:audio-event', (_, evt: string, data: any) => {
+        if (evt === event) callback(data)
+      })
+    },
   },
   todo: {
     onUpdated: (callback: () => void) => {
@@ -136,6 +154,26 @@ contextBridge.exposeInMainWorld('mqbox', {
     injectInput: (event: any) => ipcRenderer.invoke('remote:inject', event),
     onControlRequest: (cb: (info: any) => void) => {
       ipcRenderer.on('remote:control-request', (_e, info) => cb(info))
+    },
+    // App.vue 常驻 WS — 接收来自 child process 的信号
+    onConnect: (cb: (data: any) => void) => {
+      ipcRenderer.on('remote:ws-connect', (_, data) => cb(data))
+    },
+    onSend: (cb: (data: any) => void) => {
+      ipcRenderer.on('remote:ws-send', (_, data) => cb(data))
+    },
+    onDisconnect: (cb: () => void) => {
+      ipcRenderer.on('remote:ws-disconnect', () => cb())
+    },
+    // App.vue → 广播给所有窗口
+    publishSignal: (msg: any) => ipcRenderer.invoke('remote:ws-message', msg),
+    publishStatus: (status: string) => ipcRenderer.invoke('remote:ws-status', status),
+    // 其他窗口监听 WS 信号
+    onSignal: (cb: (msg: any) => void) => {
+      ipcRenderer.on('remote:ws-signal', (_, msg) => cb(msg))
+    },
+    onStatus: (cb: (status: string) => void) => {
+      ipcRenderer.on('remote:ws-status', (_, status) => cb(status))
     },
   },
 })

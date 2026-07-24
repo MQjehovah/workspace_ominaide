@@ -229,6 +229,18 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     win.on('closed', () => win.destroy())
   })
 
+  // Forward remote WS commands to main window's App.vue
+  proc.registerBridgeHandler('remote:ws-connect', async ([data]) => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('remote:ws-connect', data)
+    })
+  })
+  proc.registerBridgeHandler('remote:ws-send', async ([data]) => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('remote:ws-send', data)
+    })
+  })
+
   proc.registerBridgeHandler('openPage', async ([pluginId, query]) => {
     const preloadPath = join(__dirname, '../preload/index.js')
     const win = new BrowserWindow({

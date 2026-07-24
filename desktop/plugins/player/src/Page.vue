@@ -49,7 +49,6 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const audioRef = ref<HTMLAudioElement | null>(null)
 const localCurrentTime = ref(0)
 const localDuration = ref(0)
 const localIsPlaying = ref(false)
@@ -108,77 +107,73 @@ function formatTime(seconds: number) {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
-function onTimeUpdate() {
-  if (!audioRef.value) return
-  localCurrentTime.value = audioRef.value.currentTime
-  localDuration.value = audioRef.value.duration || 0
-  if (localCurrentTime.value > 0) {
-    props.execute('updateProgress', { currentTime: localCurrentTime.value, duration: localDuration.value })
-  }
-}
-
-function onDurationChange() {
-  if (!audioRef.value) return
-  localDuration.value = audioRef.value.duration || 0
-}
+// Audio playback is managed by the main window (App.vue) via IPC
+// This page sends commands and listens for events
 
 watch(() => props.data.currentTrack, async (newTrack, oldTrack) => {
-  if (!audioRef.value) return
-  const newUrl = getAudioUrl(newTrack)
-  if (!newTrack || !newUrl) {
-    audioRef.value.pause()
-    audioRef.value.removeAttribute('src')
+  if (!newTrack) {
+    window.mqbox?.player?.pause()
     localIsPlaying.value = false
     localCurrentTime.value = 0
     localDuration.value = 0
     return
   }
+  const newUrl = getAudioUrl(newTrack)
   const oldUrl = getAudioUrl(oldTrack)
-  if (oldUrl !== newUrl) {
-    audioRef.value.src = newUrl
+  if (oldUrl !== newUrl && newUrl) {
     localCurrentTime.value = 0
     localDuration.value = 0
-    if (props.data.isPlaying) {
-      try { await audioRef.value.play(); localIsPlaying.value = true }
-      catch (e) { console.error('Audio play error:', e) }
-    }
+    window.mqbox?.player?.setSource(newUrl, props.data.isPlaying)
   }
 }, { deep: true })
 
 watch(() => props.data.isPlaying, async (playing) => {
-  if (!audioRef.value || !audioRef.value.src) return
   if (playing) {
-    try { await audioRef.value.play(); localIsPlaying.value = true }
-    catch (e) { console.error('Audio resume error:', e) }
+    window.mqbox?.player?.play({})
   } else {
-    audioRef.value.pause(); localIsPlaying.value = false
+    window.mqbox?.player?.pause()
   }
 })
 
 watch(() => props.data.volume, (vol) => {
-  if (audioRef.value) { audioRef.value.volume = vol / 100 }
+  window.mqbox?.player?.setVolume(vol)
 })
 
 onMounted(async () => {
   await props.execute('reloadCloudPlaylists')
   const cfg = await props.execute('getCloudStreamBaseUrl')
   if (cfg) serverConfig.value = cfg as any
-  if (audioRef.value) { audioRef.value.volume = props.data.volume / 100 }
+  window.mqbox?.player?.setVolume(props.data.volume)
   if (!selectedPlaylistId.value && props.data.currentPlaylistId) {
     selectedPlaylistId.value = props.data.currentPlaylistId
   }
   if (props.data.currentTrack) {
     const url = getAudioUrl(props.data.currentTrack)
-    if (audioRef.value && url) {
-      audioRef.value.src = url
-      if (props.data.isPlaying) { audioRef.value.play().catch(() => {}); localIsPlaying.value = true }
+    if (url) {
+      window.mqbox?.player?.setSource(url, props.data.isPlaying)
     }
   }
   window.mqbox?.player?.onUpdated(() => props.refresh?.())
+  // Listen for audio events from main window
+  window.mqbox?.player?.onAudioEvent('timeupdate', (data: any) => {
+    if (data?.currentTime != null) localCurrentTime.value = data.currentTime
+    if (data?.duration != null) localDuration.value = data.duration
+    if (data?.currentTime != null) {
+      props.execute('updateProgress', { currentTime: data.currentTime, duration: data.duration || localDuration.value })
+    }
+  })
+  window.mqbox?.player?.onAudioEvent('ended', () => {
+    handleNext()
+  })
+  window.mqbox?.player?.onAudioEvent('loadedmetadata', (data: any) => {
+    if (data?.duration != null) localDuration.value = data.duration
+  })
+  // Set initial volume
+  window.mqbox?.player?.setVolume(props.data.volume)
 })
 
 onUnmounted(() => {
-  if (audioRef.value) { audioRef.value.pause(); audioRef.value.removeAttribute('src') }
+  // Don't stop audio - it continues playing in the main window
 })
 
 async function handlePlay(trackId?: string) {
@@ -211,7 +206,7 @@ async function handlePrev() {
 async function handleSeek(e: Event) {
   const target = e.target as HTMLInputElement
   const time = parseFloat(target.value)
-  if (audioRef.value) { audioRef.value.currentTime = time }
+  window.mqbox?.player?.seek(time)
   localCurrentTime.value = time
   await props.execute('seek', { time })
 }
@@ -319,7 +314,6 @@ function refreshUI() { setTimeout(() => props.refresh?.(), 50) }
 
 <template>
   <div class="player-page">
-    <audio ref="audioRef" preload="auto" @ended="handleNext" @timeupdate="onTimeUpdate" @durationchange="onDurationChange" />
 
     <div class="main-area">
       <!-- Sidebar -->

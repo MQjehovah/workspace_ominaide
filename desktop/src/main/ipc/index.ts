@@ -69,8 +69,14 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('plugin:get-page', (_, pluginId: string) => ({ pluginId, hasPage: !!getPluginPage(pluginId) }))
   ipcMain.handle('plugin:execute', async (_, pluginId: string, command: string, args?: unknown) => {
-    try { return await executeCommand(pluginId, command, args) }
-    catch (e) { return { error: (e as Error).message } }
+    try {
+      const result = await executeCommand(pluginId, command, args)
+      // After player audio commands, broadcast control to all windows
+      if (pluginId === 'player') {
+        handlePlayerCommand(command)
+      }
+      return result
+    } catch (e) { return { error: (e as Error).message } }
   })
   ipcMain.handle('plugin:get-panel-data', async (_, pluginId: string) => {
     try {
@@ -494,4 +500,75 @@ export function registerIpcHandlers() {
       return { ok: false, error: e?.message || String(e) }
     }
   })
+
+  // Player background audio
+  function sendToAllWindows(channel: string, ...args: any[]) {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        try { win.webContents.send(channel, ...args) } catch {}
+      }
+    }
+  }
+
+  ipcMain.handle('player:play', async (_, detail: any) => {
+    sendToAllWindows('player:control', detail)
+  })
+  ipcMain.handle('player:event', async (_, event: string, data: any) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        try { win.webContents.send('player:audio-event', event, data) } catch {}
+      }
+    }
+  })
+
+  // Remote WS signaling — App.vue 常驻 WS，消息通过 IPC 转发
+  ipcMain.handle('remote:ws-message', async (_, msg: any) => {
+    // App.vue 收到 WS 消息 → 转发给 child process
+    try { await executeCommand('remote', 'handleSignal', msg) } catch {}
+  })
+  ipcMain.handle('remote:ws-status', async (_, status: string) => {
+    sendToAllWindows('remote:ws-status', status)
+  })
+
+  // After player commands, broadcast audio control to all windows
+  let lastPlayerSrc = ''
+  async function handlePlayerCommand(command: string) {
+    if (command === 'setVolume') {
+      try {
+        const state: any = await executeCommand('player', 'getPageData')
+        sendToAllWindows('player:control', { action: 'set-volume', volume: state.volume })
+      } catch {}
+      return
+    }
+    try {
+      const state: any = await executeCommand('player', 'getPageData')
+      if (!state?.currentTrack) {
+        sendToAllWindows('player:control', { action: 'pause' })
+        lastPlayerSrc = ''
+        return
+      }
+      if (!state.isPlaying) {
+        sendToAllWindows('player:control', { action: 'pause' })
+        return
+      }
+      const cfg = await getConfig()
+      const serverUrl = cfg.serverUrl || 'http://localhost:8000'
+      const token = cfg.token || ''
+      const src = state.currentTrack.source === 'cloud'
+        ? `${serverUrl}/api/files/${state.currentTrack.fileId}/stream?token=${encodeURIComponent(token)}`
+        : state.currentTrack.source === 'url'
+          ? state.currentTrack.path
+          : `local-file:///${state.currentTrack.path?.replace(/\\/g, '/')}`
+
+      if (src === lastPlayerSrc) {
+        sendToAllWindows('player:control', { action: 'play' })
+      } else {
+        lastPlayerSrc = src
+        sendToAllWindows('player:control', {
+          action: 'set-source', src, autoplay: true,
+          currentTime: state.currentTime || 0,
+        })
+      }
+    } catch {}
+  }
 }
