@@ -55,7 +55,7 @@ export default {
       context.log('info', 'no saved host state, host disabled')
     }
 
-    // --- WebSocket signaling (App.vue manages WS via IPC) ---
+    // --- WebSocket signaling (App.vue manages WS, IPC bridge) ---
 
     async function connectWs(id: string, roomId: string) {
       const serverUrl = await getServerUrl()
@@ -64,9 +64,7 @@ export default {
         hostState.status = '配置错误: 服务器地址未设置'
         return false
       }
-      // Delegate to App.vue's persistent WS
-      context.signal('remote:ws-connect', { serverUrl, token, roomId, deviceId: id })
-      if (!hostState.enabled) hostState.enabled = true
+      // WS created by App.vue after startHost via handleRemoteCommand
       hostState.status = '已在线'
       persistState()
       return true

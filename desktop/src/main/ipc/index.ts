@@ -75,6 +75,10 @@ export function registerIpcHandlers() {
       if (pluginId === 'player') {
         handlePlayerCommand(command)
       }
+      // After remote startHost / stopHost, let App.vue handle WS
+      if (pluginId === 'remote') {
+        handleRemoteCommand(command)
+      }
       return result
     } catch (e) { return { error: (e as Error).message } }
   })
@@ -570,5 +574,24 @@ export function registerIpcHandlers() {
         })
       }
     } catch {}
+  }
+
+  // Remote WS signaling — after startHost/stopHost, forward to App.vue
+  async function handleRemoteCommand(command: string) {
+    if (command === 'startHost') {
+      try {
+        const state: any = await executeCommand('remote', 'getPageData')
+        const hostState = state?.hostState
+        if (!hostState?.enabled) return
+        const deviceId = await executeCommand('remote', 'getDeviceId')
+        if (!deviceId) return
+        const cfg = await getConfig()
+        const serverUrl = cfg.serverUrl || 'http://localhost:8000'
+        const token = cfg.token || ''
+        sendToAllWindows('remote:ws-connect', { serverUrl, token, roomId: `u_${deviceId}`, deviceId })
+      } catch {}
+    } else if (command === 'stopHost') {
+      sendToAllWindows('remote:ws-disconnect')
+    }
   }
 }
