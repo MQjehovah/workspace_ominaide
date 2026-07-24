@@ -1,41 +1,48 @@
 <template>
-  <div class="notes-layout">
-    <div class="sidebar-panel">
-      <div class="sidebar-header">
-        <span class="sidebar-title">笔记</span>
-        <el-button size="small" circle :icon="Plus" @click="createNote" />
-      </div>
-      <div v-if="loading" v-loading="true" style="height:100%" />
-      <div v-else class="note-list">
-        <TreeNode
-          v-for="node in tree"
-          :key="node.id"
-          :node="node"
-          :current-id="currentId"
-          :depth="0"
-          @select="openNote"
-          @create-child="createChildNote"
-          @delete="deleteNode"
-        />
-        <el-empty v-if="!tree.length" description="暂无笔记" :image-size="60" />
-      </div>
-    </div>
-    <div class="editor-panel" v-if="currentId">
-      <div class="editor-header">
-        <el-input v-model="noteTitle" placeholder="无标题" class="title-input" @input="autoSave" />
-        <div style="display:flex;gap:8px">
-          <el-button size="small" type="primary" @click="saveNote">保存</el-button>
-          <el-popconfirm title="确定删除？" @confirm="deleteNote">
-            <template #reference>
-              <el-button size="small" type="danger" plain>删除</el-button>
-            </template>
-          </el-popconfirm>
+  <div class="page-wrapper">
+    <div class="page-header"><h2>笔记</h2></div>
+    <div class="page-card">
+      <div class="page-card-body" style="padding:0">
+        <div class="notes-layout">
+          <div class="sidebar-panel">
+            <div class="sidebar-header">
+              <span class="sidebar-title">全部笔记</span>
+              <el-button size="small" circle :icon="Plus" @click="createNote" />
+            </div>
+            <div v-if="loading" v-loading="true" style="height:100%" />
+            <div v-else class="note-list">
+              <TreeNode
+                v-for="node in tree"
+                :key="node.id"
+                :node="node"
+                :current-id="currentId"
+                :depth="0"
+                @select="openNote"
+                @create-child="createChildNote"
+                @delete="deleteNode"
+              />
+              <el-empty v-if="!tree.length" description="暂无笔记" :image-size="60" />
+            </div>
+          </div>
+          <div class="editor-panel" v-if="currentId">
+            <div class="editor-header">
+              <el-input v-model="noteTitle" placeholder="无标题" class="title-input" @input="autoSave" />
+              <div style="display:flex;gap:8px">
+                <el-button size="small" type="primary" @click="saveNote">保存</el-button>
+                <el-popconfirm title="确定删除？" @confirm="deleteNote">
+                  <template #reference>
+                    <el-button size="small" type="danger" plain>删除</el-button>
+                  </template>
+                </el-popconfirm>
+              </div>
+            </div>
+            <TipTapEditor :key="currentId" v-model="noteContent" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
+          </div>
+          <div v-else class="empty-state">
+            <el-empty description="选择或创建一篇笔记" :image-size="80" />
+          </div>
         </div>
       </div>
-      <TipTapEditor :key="currentId" v-model="noteContent" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
-    </div>
-    <div v-else class="empty-state">
-      <el-empty description="选择或创建一篇笔记" :image-size="80" />
     </div>
   </div>
 </template>
@@ -137,13 +144,14 @@ onMounted(loadTree)
 </script>
 
 <style scoped>
-.notes-layout { display: flex; height: calc(100vh - 120px); gap: 16px; }
+.notes-layout { display: flex; height: calc(100vh - 180px); gap: 16px; }
 .sidebar-panel { width: 240px; flex-shrink: 0; border: 1px solid #dcdfe6; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
 .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #dcdfe6; }
 .sidebar-title { font-size: 14px; font-weight: 600; }
 .note-list { flex: 1; overflow-y: auto; }
 .editor-panel { flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .editor-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.title-input :deep(.el-input__inner) { font-size: 24px; font-weight: 700; border: none; padding-left: 0; }
+.title-input :deep(.el-input__inner) { font-size: 24px; font-weight: 700; border: none; padding-left: 0; box-shadow: none; }
+.title-input :deep(.el-input__wrapper) { border: none; box-shadow: none !important; padding: 0; }
 .empty-state { flex: 1; display: flex; align-items: center; justify-content: center; }
 </style>
