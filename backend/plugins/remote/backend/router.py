@@ -7,6 +7,7 @@ from core.auth.dependencies import get_current_user
 from core.auth.jwt import create_access_token, decode_access_token
 from core.config.settings import settings
 from plugins.remote.backend import service as remote_service
+from plugins.remote.backend.service import _log
 
 router = APIRouter(prefix="/api/remote", tags=["remote"])
 ws_router = APIRouter(tags=["remote"])
@@ -109,6 +110,7 @@ async def remote_websocket(websocket: WebSocket):
         while True:
             msg = await websocket.receive_json()
             msg_type = msg.get("type")
+            _log(f"RECV type={msg_type} device_id={device_id} target_id={msg.get('target_id','')}")
 
             if msg_type == "join":
                 token = msg.get("token", "")
@@ -116,6 +118,7 @@ async def remote_websocket(websocket: WebSocket):
                 user_id = int(payload.get("sub", 0)) if payload else 0
                 device_id = msg.get("device_id", "")
                 name = msg.get("name", "")
+                _log(f"join: device_id={device_id} name={name} user_id={user_id}")
                 await remote_service.handle_join(websocket, device_id, name, user_id)
                 # 检查是否有配对请求
                 pwd = msg.get("pair_password", "")
@@ -123,44 +126,54 @@ async def remote_websocket(websocket: WebSocket):
                     code, pw = remote_service.create_pair(device_id, pwd)
                 else:
                     code, pw = remote_service.create_pair(device_id)
+                _log(f"join: pair_code={code} password={pw}")
                 await websocket.send_json({"type": "pair_code", "code": code, "password": pw})
 
             elif msg_type == "pair_lookup":
                 code = msg.get("code", "")
                 password = msg.get("password", "")
+                _log(f"pair_lookup: code={code} password={password}")
                 host_id = remote_service.verify_pair(code, password)
+                _log(f"pair_lookup: verify result host_id={host_id}")
                 if not host_id:
                     await websocket.send_json({"type": "pair_error", "reason": "配对码无效或已过期"})
                     continue
-                # 绑定配对关系
                 viewer_id = f"viewer_{id(websocket)}"
                 remote_service.bind_pairing(code, host_id, viewer_id)
                 host_ws = remote_service.get_host_ws_by_code(code)
+                _log(f"pair_lookup: host_ws={'found' if host_ws else 'NOT FOUND'}")
                 if host_ws:
+                    remote_service.register_pending_viewer(host_id, websocket)
+                    _log(f"pair_lookup: sending requestControl to host, pending registered under {host_id}")
                     await host_ws.send_json({"type": "requestControl", "name": msg.get("name", "浏览器")})
                 await websocket.send_json({
                     "type": "pair_success", "host_id": host_id,
                     "iceServers": _ice_servers(),
                 })
+                _log(f"pair_lookup: pair_success sent to viewer")
 
             elif msg_type in ("requestControl", "offer", "answer", "ice", "controlAllowed", "controlDenied", "revoked"):
                 target_id = msg.get("target_id", "")
+                _log(f"route: type={msg_type} target_id={target_id} device_id={device_id}")
                 if target_id:
-                    # Viewer → Host: 注册 pending 并转发
+                    _log(f"route: Viewer→Host, register pending under {target_id}")
                     remote_service.register_pending_viewer(target_id, websocket)
                     ok = await remote_service.forward_to_device(target_id, msg, websocket)
+                    _log(f"route: forward_to_device={ok}")
                 elif device_id:
-                    # Host → Viewer: 转发给 pending viewers
+                    _log(f"route: Host→Viewer, check pending for {device_id}")
                     ok = await remote_service.forward_to_pending_viewers(device_id, msg, websocket)
+                    _log(f"route: forward_to_pending_viewers={ok}")
                     if not ok:
                         ok = await remote_service.forward(websocket, msg)
-                if not ok:
-                    pass
+                        _log(f"route: forward(paired)={ok}")
+                _log(f"route: done ok={ok}")
 
             elif msg_type == "pair_request":
                 pwd = msg.get("password", "")
                 if device_id:
                     code, pw = remote_service.create_pair(device_id, pwd)
+                    _log(f"pair_request: code={code}")
                     await websocket.send_json({"type": "pair_code", "code": code, "password": pw})
 
     except WebSocketDisconnect:
