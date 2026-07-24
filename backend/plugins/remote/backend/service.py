@@ -57,10 +57,9 @@ def verify_pair(code: str, password: str) -> str | None:
 
 
 def get_own_devices(user_id: int) -> list[dict]:
-    now = time.time()
     return [{"device_id": did, "name": info["name"]}
             for did, info in _devices.items()
-            if info["user_id"] == user_id and now - info["ts"] < 90]
+            if info["user_id"] == user_id]
 
 
 async def forward_to_device(target_device_id: str, message: dict) -> bool:
