@@ -532,7 +532,7 @@ export function registerIpcHandlers() {
     sendToAllWindows('remote:ws-signal', msg)
   })
   ipcMain.handle('remote:ws-connect', async (_, data: any) => {
-    console.log('[main] remote:ws-connect:', data?.roomId)
+    console.log('[main] remote:ws-connect:', data?.deviceId)
     sendToAllWindows('remote:ws-connect', data)
   })
   ipcMain.handle('remote:ws-status', async (_, status: string) => {

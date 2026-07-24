@@ -213,8 +213,8 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     }))
   )
 
-  proc.registerBridgeHandler('remote:open-connection', async ([roomId, viewerId]) => {
-    console.log('[remote] open-connection window:', { roomId, viewerId })
+  proc.registerBridgeHandler('remote:open-connection', async ([hostDeviceId, viewerId]) => {
+    console.log('[remote] open-connection window:', { hostDeviceId, viewerId })
     const preloadPath = join(__dirname, '../preload/index.js')
     const display = screen.getPrimaryDisplay().workArea
     const win = new BrowserWindow({
@@ -223,7 +223,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
       x: display.width - 290, y: display.height - 130,
       webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
     })
-    const query = `mode=webrtc-accept&room=${roomId}${viewerId ? '&viewer=' + viewerId : ''}`
+    const query = `mode=webrtc-accept${viewerId ? '&viewer=' + viewerId : ''}`
     const url = `plugin-app://remote/index.html?${query}`
     win.loadURL(url)
     win.once('ready-to-show', () => win.show())
@@ -232,7 +232,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
   // Forward remote WS messages from plugin to App.vue (and disconnect)
   proc.registerBridgeHandler('remote:ws-connect', async ([data]) => {
-    console.log('[host] remote:ws-connect signal received', data?.roomId)
+    console.log('[host] remote:ws-connect signal received', data?.deviceId)
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) win.webContents.send('remote:ws-connect', data)
     })

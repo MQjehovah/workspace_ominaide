@@ -90,7 +90,7 @@ export default {
       } else if (msg.type === 'pair_success') {
         context.log('info', 'pair_success, host_deviceId=' + msg.host_deviceId)
         // Open viewer page to connect to the target host
-        context.openPage('remote', 'mode=viewer&room=' + msg.host_deviceId)
+        context.openPage('remote', 'mode=viewer&target=' + msg.host_deviceId)
       } else if (msg.type === 'pair_error') {
         context.log('error', 'pair_error: ' + msg.reason)
       } else if (msg.type === 'requestControl') {
