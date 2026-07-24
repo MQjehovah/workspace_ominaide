@@ -34,7 +34,42 @@ def _derive_event_type(method: str, path: str) -> str:
     return f"{entity}.{verb}"
 
 
-SKIP_PATHS = ('/health', '/auth/', '/api/chat', '/api/remote', '/ws/')
+def _make_summary(method: str, path: str, event_type: str) -> str:
+    """Generate human-readable summary from HTTP method and path."""
+    # Strip /api/ prefix
+    p = re.sub(r'^/(?:api/)?(?:plugins/)?', '', path)
+    # Remove IDs
+    p = re.sub(r'/\d+', '/{id}', p).rstrip('/')
+
+    labels = {
+        'post': '创建', 'put': '修改', 'patch': '修改', 'delete': '删除',
+    }
+    verb = labels.get(method.lower(), method)
+
+    parts = p.split('/')
+    if len(parts) >= 1:
+        entity_name = parts[0]
+    else:
+        entity_name = ''
+
+    if 'read' in path.lower():
+        verb = '标记已读'
+
+    return f"{verb} {entity_name}: {p}" if entity_name else f"{verb}"
+
+
+SKIP_PATHS = (
+    '/health', '/auth/', '/api/chat', '/api/remote', '/ws/',
+    '/api/rss/entries/',    # rss read/star markers
+    '/api/notifications/',  # notification read markers
+    '/api/sync/',           # sync operations
+    '/api/files/',          # file operations
+    '/api/plugins/notes/',  # notes plugin records own events
+    '/api/plugins/schedule/',  # schedule plugin records own events
+    '/api/plugins/rss/',    # rss (un)subscribe records own events
+    '/api/plugins/todo/',   # todo plugin records own events
+    '/api/plugins/music/',  # music playlist records own events
+)
 
 
 class ActivityMiddleware(BaseHTTPMiddleware):
@@ -61,6 +96,7 @@ class ActivityMiddleware(BaseHTTPMiddleware):
         # Record activity
         if user_id and response.status_code < 400:
             event_type = _derive_event_type(request.method, path)
+            summary = _make_summary(request.method, path, event_type)
             try:
                 from core.database.session import async_session
                 from core.events.bus import record_event
@@ -70,7 +106,7 @@ class ActivityMiddleware(BaseHTTPMiddleware):
                         user_id=user_id,
                         event_type=event_type,
                         entity_type=path.split('/')[2] if len(path.split('/')) > 2 else None,
-                        summary=f"{request.method} {path}",
+                        summary=summary,
                     )
                     await db.commit()
             except Exception:

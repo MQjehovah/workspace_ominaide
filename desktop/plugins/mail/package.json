@@ -1,0 +1,25 @@
+{
+  "name": "omniaide-mail",
+  "version": "1.0.0",
+  "displayName": "邮件",
+  "description": "聚合多个邮箱，接收和发送邮件",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "omniaide": {
+    "id": "mail",
+    "displayName": "邮件",
+    "icon": "Message",
+    "keywords": ["mail", "email"],
+    "permissions": ["storage", "notification", "shell"],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40",
+    "typescript": "~5.6.0"
+  }
+}

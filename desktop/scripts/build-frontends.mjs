@@ -8,8 +8,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const pluginsDir = resolve(__dirname, '..', 'plugins')
 
 const pagePlugins = [
-  'assistant', 'calculator', 'clipboard-history', 'files', 'notes',
-  'notifications', 'player', 'quick-notes', 'remote', 'rss',
+  'assistant', 'calculator', 'clipboard-history', 'files', 'mail',
+  'notes', 'notifications', 'player', 'quick-notes', 'remote', 'rss',
   'schedule', 'screenshot', 'todo',
 ]
 const noPagePlugins = ['everything']
