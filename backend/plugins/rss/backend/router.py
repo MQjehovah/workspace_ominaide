@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
+from core.events.recorder import record_event
 from plugins.rss.backend.schemas import FeedCreate, FeedResponse, EntryResponse
 from plugins.rss.backend import service
 from plugins.rss.backend.models import Feed, Entry
@@ -18,13 +19,19 @@ async def list_feeds(user=Depends(get_current_user), db: AsyncSession = Depends(
 
 @router.post("/feeds", response_model=FeedResponse, status_code=201)
 async def add_feed(req: FeedCreate, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await service.create_feed(db, user["id"], req.url)
+    feed = await service.create_feed(db, user["id"], req.url)
+    await record_event(db, user["id"], "rss.subscribed", "rss", feed.id, f"订阅: {feed.title or feed.url}")
+    return feed
 
 
 @router.delete("/feeds/{feed_id}")
 async def remove_feed(feed_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    r = await db.execute(select(Feed).where(Feed.id == feed_id, Feed.user_id == user["id"]))
+    feed = r.scalar_one_or_none()
+    title = feed.title or feed.url if feed else "未知"
     if not await service.delete_feed(db, user["id"], feed_id):
         raise HTTPException(404)
+    await record_event(db, user["id"], "rss.unsubscribed", "rss", feed_id, f"取消订阅: {title}")
     return {"message": "Deleted"}
 
 

@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from core.events.middleware import ActivityMiddleware
 
 
 @asynccontextmanager
@@ -41,6 +42,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(ActivityMiddleware)
 
 from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)

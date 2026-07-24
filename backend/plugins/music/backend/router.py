@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
+from core.events.recorder import record_event
 from plugins.music.backend.schemas import (
     PlaylistCreateRequest, PlaylistAddSongRequest,
     PlaylistResponse, PlaylistListResponse,
@@ -37,6 +38,7 @@ async def create_playlist(
     db: AsyncSession = Depends(get_db),
 ):
     pl = await music_service.create_playlist(db, user["id"], req.name)
+    await record_event(db, user["id"], "playlist.created", "playlist", pl.id, f"创建歌单: {pl.name}")
     return PlaylistResponse(id=pl.id, name=pl.name, song_count=0, created_at=pl.created_at, updated_at=pl.updated_at)
 
 
@@ -46,9 +48,12 @@ async def delete_playlist(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    pl = await music_service.get_playlist(db, user["id"], playlist_id)
+    name = pl.name if pl else "未知"
     ok = await music_service.delete_playlist(db, user["id"], playlist_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Playlist not found")
+    await record_event(db, user["id"], "playlist.deleted", "playlist", playlist_id, f"删除歌单: {name}")
     return {"message": "Playlist deleted"}
 
 

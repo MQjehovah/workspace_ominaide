@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
+from core.events.recorder import record_event
 from plugins.notes.backend.schemas import NoteCreate, NoteUpdate, NoteResponse
 from plugins.notes.backend import service as notes_service
 
@@ -44,6 +45,7 @@ async def create_note(
     db: AsyncSession = Depends(get_db),
 ):
     note = await notes_service.create_note(db, user["id"], req)
+    await record_event(db, user["id"], "note.created", "note", note.id, f"创建笔记: {note.title}")
     return NoteResponse.model_validate(note)
 
 
@@ -88,6 +90,7 @@ async def update_note(
 ):
     try:
         note = await notes_service.update_note(db, user["id"], note_id, req)
+        await record_event(db, user["id"], "note.updated", "note", note_id, f"修改笔记: {note.title}")
         return NoteResponse.model_validate(note)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -100,7 +103,10 @@ async def delete_note(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        note = await notes_service.get_note(db, user["id"], note_id)
+        title = note.title if note else "未知"
         await notes_service.delete_note(db, user["id"], note_id)
+        await record_event(db, user["id"], "note.deleted", "note", note_id, f"删除笔记: {title}")
         return {"message": "Note deleted"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
