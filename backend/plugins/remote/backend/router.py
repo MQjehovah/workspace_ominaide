@@ -16,7 +16,7 @@ ws_router = APIRouter(tags=["remote"])
 
 
 VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'><title>OmniAide Remote</title><style>body{margin:0;background:#000;overflow:hidden;touch-action:none;font-family:sans-serif}video{width:100vw;height:100vh;object-fit:contain}#bar{position:fixed;top:8px;left:8px;color:#fff;font:13px sans-serif;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px;z-index:10}#form{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;color:#fff;z-index:20}#form input{margin:6px;padding:10px 14px;border:none;border-radius:8px;font-size:16px;text-align:center;width:200px;outline:none}#form button{margin:8px;padding:10px 30px;border:none;border-radius:8px;background:#0078D4;color:#fff;font-size:16px;cursor:pointer}#form button:disabled{opacity:.5}#form .err{color:#ff4444;font-size:13px;margin:4px}</style></head><body>
-<div id='form'><h2>远程控制</h2><input id='code' placeholder='配对码' maxlength='6' autocomplete='off'/><input id='pw' type='password' placeholder='密码（可选）' maxlength='6' autocomplete='off'/><button id='btn' onclick='connect()'>连接</button><div class='err' id='err'></div></div>
+<div id='form'><h2>远程控制</h2><input id='code' placeholder='配对码' maxlength='6' autocomplete='off'/><input id='pw' type='password' placeholder='密码' maxlength='6' autocomplete='off'/><button id='btn' onclick='connect()'>连接</button><div class='err' id='err'></div></div>
 <div id='bar'>连接中…</div>
 <video id='v' autoplay playsinline style='display:none'></video>
 <script>
@@ -125,8 +125,13 @@ async def remote_websocket(websocket: WebSocket):
                 host_device_id = remote_service.verify_pair(code, password)
                 _log(f"pair_lookup code={code} result={host_device_id}")
                 if not host_device_id:
-                    await websocket.send_json({"type": "pair_error", "reason": "配对码无效或已过期"})
+                    await websocket.send_json({"type": "pair_error", "reason": "配对码或密码错误"})
                     continue
+                # 已认证的同账号设备免密码
+                if not remote_service.is_authenticated_device(device_id) and not password:
+                    await websocket.send_json({"type": "pair_error", "reason": "需要密码"})
+                    continue
+                _log(f"pair_lookup: authenticated viewer={device_id} host={host_device_id}")
                 # 通知 Host 有 Viewer 请求连接
                 remote_service.forward_to_device(host_device_id, {
                     "type": "requestControl",

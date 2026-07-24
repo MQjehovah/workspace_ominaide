@@ -72,3 +72,9 @@ async def forward_to_device(target_device_id: str, message: dict) -> bool:
         return True
     except Exception:
         return False
+
+
+def is_authenticated_device(device_id: str) -> bool:
+    """检查设备是否已通过 token 认证（有 user_id）"""
+    info = _devices.get(device_id)
+    return bool(info and info.get("user_id"))

@@ -153,7 +153,17 @@ function remoteWsReconnect() {
       console.log('[app] reconnect: joined')
     }
     remoteWs.onmessage = function(e) { try { window.mqbox.remote.publishSignal(JSON.parse(e.data)) } catch (e) {} }
-    remoteWs.onclose = function() { remoteWs = null }
+    remoteWs.onclose = function() {
+      remoteWs = null
+      console.log('[app] reconnect: WS closed, retry in 5s')
+      clearTimeout(remoteWsReconnectTimer)
+      remoteWsReconnectTimer = setTimeout(function() {
+        if (remoteWsDeviceId) remoteWsReconnect()
+      }, 5000)
+    }
+    remoteWs.onerror = function() {
+      console.error('[app] reconnect: WS error')
+    }
   }).catch(function(e) { console.error('[app] reconnect error:', e) })
 }
 
