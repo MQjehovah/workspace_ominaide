@@ -7,7 +7,10 @@ from core.auth.dependencies import get_current_user
 from core.auth.jwt import create_access_token, decode_access_token
 from core.config.settings import settings
 from plugins.remote.backend import service as remote_service
-from plugins.remote.backend.service import _log
+
+def _log(msg: str):
+    import sys
+    print(f"[remote] {msg}", flush=True, file=sys.stderr)
 
 router = APIRouter(prefix="/api/remote", tags=["remote"])
 ws_router = APIRouter(tags=["remote"])
@@ -50,9 +53,6 @@ async function connect(){
       pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
       pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate});};
       bar.textContent='等待被控端授权…';
-      wsSend({type:'requestControl',name:navigator.userAgent.includes('Mobile')?'手机':'浏览器'});
-    }else if(m.type==='pair_error'){
-      err.textContent=m.reason||'配对失败';document.getElementById('btn').disabled=false;ws.close();
     }else if(m.type==='controlAllowed'){
       dc=pc.createDataChannel('input');pc.addTransceiver('video',{direction:'recvonly'});
       const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer});

@@ -122,7 +122,7 @@ def get_host_ws_by_code(code: str) -> WebSocket | None:
 def get_own_devices(user_id: int) -> list[dict]:
     """同账号设备列表（排除自己）"""
     now = time.time()
-    return [{"device_id": did, "name": info["name"]}
+    return [{"device_id": did, "name": info["name"], "room_id": did}
             for did, info in _devices.items()
             if info["user_id"] == user_id and now - info["ts"] < 90]
 

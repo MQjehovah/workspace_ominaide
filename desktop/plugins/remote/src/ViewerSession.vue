@@ -190,10 +190,7 @@ function backToMenu() {
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onKeyDown)
-  window.addEventListener('keyup', onKeyUp)
-  window.addEventListener('resize', invalidateNormCache)
-  if (props.room) connect(props.room)
+  if (props.room && props.room !== 'undefined' && props.room !== '') connect(props.room)
 })
 
 onUnmounted(() => {
