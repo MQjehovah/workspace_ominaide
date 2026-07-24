@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { newPeer, getIceServers } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; targetDeviceId?:string }>()
@@ -66,10 +66,22 @@ async function startOffering() {
   }
   pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
-    if (videoRef.value) videoRef.value.srcObject = e.streams[0]
-    status.value = '已连接（可控制）'
+    console.log('[viewer] ontrack fired', e.track?.kind)
+    const stream = e.streams?.[0] || new MediaStream([e.track])
+    if (videoRef.value) {
+      videoRef.value.srcObject = stream
+      videoRef.value.muted = true
+      setTimeout(() => {
+        videoRef.value!.play().then(() => {
+          console.log('[viewer] play ok')
+        }).catch((err) => {
+          console.log('[viewer] play err:', err.message)
+        })
+      }, 100)
+    }
     connected.value = true
     setTimeout(() => determineQuality(), 500)
+    status.value = '已连接（可控制）'
   }
   pc.onicecandidate = (e) => {
     if (e.candidate) {
@@ -188,7 +200,7 @@ onUnmounted(() => {
     <div class="toolbar" v-if="screens.length > 1">
       <button v-for="s in screens" :key="s.id" class="screen-btn" :class="{ active: s.id === activeScreenId }" @click="switchScreen(s.id)">{{ s.name }}</button>
     </div>
-    <video ref="videoRef" autoplay playsinline class="video"
+    <video ref="videoRef" autoplay playsinline muted class="video"
       @mousemove="onMouseMove" @mousedown="onMouseDown" @mouseup="onMouseUp"
       @wheel.prevent="onWheel" @contextmenu.prevent></video>
   </div>
@@ -200,6 +212,6 @@ onUnmounted(() => {
 .screen-btn { padding:4px 10px; border-radius:4px; border:none; background:rgba(255,255,255,.1); color:#fff; font-size:11px; cursor:pointer; }
 .screen-btn.active { background:#e91e63; color:#fff; }
 .screen-btn:hover { background:rgba(255,255,255,.2); }
-.video { flex:1; object-fit:contain; }
+.video { flex:1; object-fit:contain; width:100%; height:100%; background:#000; }
 .status { position:fixed; top:12px; left:50%; transform:translateX(-50%); margin:0; padding:6px 14px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; border-radius:16px; z-index:10; }
 </style>

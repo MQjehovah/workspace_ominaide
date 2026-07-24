@@ -15,7 +15,10 @@ export function openPluginWindow(pluginId: string, query: string = ''): void {
       webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
     })
     win.loadURL(url)
-    win.once('ready-to-show', () => win.show())
+    win.once('ready-to-show', () => {
+      win.show()
+      if (query.includes('mode=viewer')) win.webContents.openDevTools()
+    })
     win.on('closed', () => { /* viewer windows are ephemeral */ })
     return
   }

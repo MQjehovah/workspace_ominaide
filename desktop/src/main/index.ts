@@ -10,7 +10,7 @@ import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
-  { scheme: 'plugin-app', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, standard: true, secure: true } },
+  { scheme: 'plugin-app', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, standard: true, secure: true, media: true } },
 ])
 
 let mainPanel: BrowserWindow | null = null
