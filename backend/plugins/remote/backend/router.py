@@ -50,7 +50,7 @@ document.addEventListener('keyup',e=>{if(e.code&&!ignored(e.code)){e.preventDefa
 let ws;
 function wsSend(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
 fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('code'))).then(d=>{
-  pc=new RTCPeerConnection({iceServers:d.iceServers||[{urls:'stun:stun.l.google.com:19302'}]});
+  pc=new RTCPeerConnection({iceServers:d.iceServers||[{urls:'stun:mqgeek.com:3478'},{urls:'turn:mqgeek.com:3478',username:'guest',credential:'guest'},{urls:'turn:mqgeek.com:3478?transport=tcp',username:'guest',credential:'guest'}]});
   pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
   pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate});};
   const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote/'+d.room_id+'?token='+encodeURIComponent(d.guest_token);
@@ -103,7 +103,7 @@ def _ice_servers() -> list:
     try:
         return json.loads(settings.webrtc_ice_servers)
     except Exception:
-        return [{"urls": "stun:stun.l.google.com:19302"}]
+        return [{"urls": "stun:mqgeek.com:3478"}, {"urls": "turn:mqgeek.com:3478", "username": "guest", "credential": "guest"}, {"urls": "turn:mqgeek.com:3478?transport=tcp", "username": "guest", "credential": "guest"}]
 
 
 @router.get("/ice")

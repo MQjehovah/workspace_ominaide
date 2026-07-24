@@ -1,3 +1,9 @@
+const FALLBACK_ICE = [
+  { urls: 'stun:mqgeek.com:3478' },
+  { urls: 'turn:mqgeek.com:3478', username: 'guest', credential: 'guest' },
+  { urls: 'turn:mqgeek.com:3478?transport=tcp', username: 'guest', credential: 'guest' },
+]
+
 export async function getServer(): Promise<{ serverUrl: string; token: string }> {
   const w = window as any
   const serverUrl = (await w.mqbox.config.get('serverUrl')) || 'http://localhost:8000'
@@ -26,15 +32,15 @@ export async function getIceServers(): Promise<any[]> {
     const { serverUrl } = await getServer()
     const headers = await getAuthHeaders()
     const r = await fetch(`${serverUrl}/api/remote/ice`, { headers }).then(r => r.json())
-    cachedIce = (r && r.iceServers) || [{ urls: 'stun:stun.l.google.com:19302' }]
+    cachedIce = (r && r.iceServers) || FALLBACK_ICE
   } catch {
-    cachedIce = [{ urls: 'stun:stun.l.google.com:19302' }]
+    cachedIce = FALLBACK_ICE
   }
   return cachedIce!
 }
 
 export function newPeer(iceServers?: any[]): RTCPeerConnection {
-  return new RTCPeerConnection({ iceServers: iceServers || [{ urls: 'stun:stun.l.google.com:19302' }] })
+  return new RTCPeerConnection({ iceServers: iceServers || FALLBACK_ICE })
 }
 
 export function setCodecPreferencesH264(pc: RTCPeerConnection) {

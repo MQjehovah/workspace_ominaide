@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     intelligence_layer_enabled: bool = False
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    webrtc_ice_servers: str = '[{"urls":"stun:stun.l.google.com:19302"}]'
+    webrtc_ice_servers: str = '[{"urls":"stun:mqgeek.com:3478"},{"urls":"turn:mqgeek.com:3478","username":"guest","credential":"guest"},{"urls":"turn:mqgeek.com:3478?transport=tcp","username":"guest","credential":"guest"}]'
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
