@@ -44,18 +44,13 @@ let volume = 80
 let playMode: 'sequence' | 'loop' | 'shuffle' = 'sequence'
 let pluginCtx: any = null
 
-function getServerConfig(): { serverUrl: string; token: string } {
+async function getServerConfig(): Promise<{ serverUrl: string; token: string }> {
   try {
-    const { join } = require('path')
-    const { readFileSync, existsSync } = require('fs')
-    const { app } = require('electron')
-    const configPath = join(app.getPath('userData'), 'omniaide-config', 'config.json')
     let serverUrl = 'http://localhost:8000'
     let token = ''
-    if (existsSync(configPath)) {
-      const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
-      serverUrl = cfg.serverUrl || serverUrl
-      token = cfg.token || ''
+    if (pluginCtx?.config) {
+      serverUrl = (await pluginCtx.config.get('serverUrl')) || serverUrl
+      token = (await pluginCtx.config.get('token')) || ''
     }
     return { serverUrl, token }
   } catch {
@@ -129,14 +124,18 @@ export default {
       try {
         const res = await api.get('/music/playlists')
         const cloudList = res?.playlists || []
+        const existingCloud = new Map(
+          playlists.filter(p => p.source === 'cloud').map(p => [p.serverId, p])
+        )
         playlists = playlists.filter(p => p.source !== 'cloud')
         for (const cpl of cloudList) {
+          const existing = existingCloud.get(cpl.id)
           playlists.push({
             id: `cloud_${cpl.id}`,
             name: cpl.name,
             source: 'cloud',
             serverId: cpl.id,
-            trackIds: [],
+            trackIds: existing?.trackIds || [],
           })
         }
       } catch (e) {

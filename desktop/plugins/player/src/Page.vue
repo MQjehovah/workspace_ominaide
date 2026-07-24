@@ -83,7 +83,7 @@ const progressPercent = computed(() => {
 })
 
 const activePlaylist = computed(() => {
-  return props.data.playlists.find(p => p.id === selectedPlaylistId.value) || null
+  return (props.data.playlists || []).find(p => p.id === selectedPlaylistId.value) || null
 })
 
 const activeTracks = computed(() => {
@@ -182,8 +182,13 @@ onUnmounted(() => {
 })
 
 async function handlePlay(trackId?: string) {
-  if (trackId) { await props.execute('play', { trackId }) }
-  else { await props.execute('play', {}) }
+  if (trackId) {
+    console.log('[player] handlePlay trackId:', trackId)
+    await props.execute('play', { trackId })
+  } else {
+    await props.execute('play', {})
+  }
+  refreshUI()
 }
 
 async function handlePause() {
@@ -330,8 +335,8 @@ function refreshUI() { setTimeout(() => props.refresh?.(), 50) }
 
         <div class="sidebar-list">
           <div class="group-label">本地歌单</div>
-          <div v-if="data.playlists.filter(p => p.source === 'local').length === 0" class="empty-hint">暂无本地歌单</div>
-          <div v-for="pl in data.playlists.filter(p => p.source === 'local')" :key="pl.id" class="playlist-item" :class="{ active: selectedPlaylistId === pl.id }" @click="selectPlaylist(pl.id)">
+          <div v-if="(data.playlists || []).filter(p => p.source === 'local').length === 0" class="empty-hint">暂无本地歌单</div>
+          <div v-for="pl in (data.playlists || []).filter(p => p.source === 'local')" :key="pl.id" class="playlist-item" :class="{ active: selectedPlaylistId === pl.id }" @click="selectPlaylist(pl.id)">
             <svg class="icon-sm shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm14 0v6l5-3z"/></svg>
             <div class="flex-1 min-w-0">
               <div v-if="renamingPlaylistId === pl.id">
@@ -349,8 +354,8 @@ function refreshUI() { setTimeout(() => props.refresh?.(), 50) }
           </div>
 
           <div class="group-label" style="margin-top:12px;">云端歌单</div>
-          <div v-if="data.playlists.filter(p => p.source === 'cloud').length === 0" class="empty-hint">暂无云端歌单</div>
-          <div v-for="pl in data.playlists.filter(p => p.source === 'cloud')" :key="pl.id" class="playlist-item" :class="{ active: selectedPlaylistId === pl.id }" @click="selectPlaylist(pl.id)">
+          <div v-if="(data.playlists || []).filter(p => p.source === 'cloud').length === 0" class="empty-hint">暂无云端歌单</div>
+          <div v-for="pl in (data.playlists || []).filter(p => p.source === 'cloud')" :key="pl.id" class="playlist-item" :class="{ active: selectedPlaylistId === pl.id }" @click="selectPlaylist(pl.id)">
             <svg class="icon-sm shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
             <div class="flex-1 min-w-0">
               <div v-if="renamingPlaylistId === pl.id">
