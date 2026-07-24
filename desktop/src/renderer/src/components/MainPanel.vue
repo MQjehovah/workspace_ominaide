@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { PluginInfo, PluginPanel, PanelData, PanelItem } from '../../shared/types'
+import PanelCard from './PanelCard.vue'
 
 const pluginList = ref<PluginInfo[]>([])
 const panels = ref<PluginPanel[]>([])
@@ -55,17 +56,6 @@ async function executeCommand(pluginId: string, command: string, args?: unknown)
   await loadPanelData(pluginId)
 }
 
-function handleItemClick(pluginId: string, item: PanelItem) {
-  if (item.action) {
-    executeCommand(pluginId, item.action, item.actionArgs)
-  }
-}
-
-async function handleSwitch(pluginId: string, sw: any, newVal: boolean) {
-  await executeCommand(pluginId, sw.command, sw.commandArgs)
-  await loadPanelData(pluginId)
-}
-
 async function fetchNotifs() {
   try { const r = await window.mqbox?.api.get('/notifications?unread=true&limit=5'); notifs.value = r || [] } catch {}
 }
@@ -106,7 +96,7 @@ onMounted(() => {
   notifTimer = setInterval(fetchNotifCount, 15000)
   window.mqbox?.plugin?.onUpdated(() => loadPlugins())
   window.mqbox?.clipboard?.onUpdated(() => loadPlugins())
-  window.mqbox?.player?.onUpdated(() => loadPlugins())
+  window.mqbox?.player?.onUpdated(() => loadPanelData('player'))
   window.mqbox?.todo?.onUpdated(() => loadPlugins())
 })
 
@@ -180,37 +170,14 @@ onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
         <div v-if="isLoading" class="loading-state">加载中...</div>
         <div v-else class="panels-list">
           <template v-for="panel in panels" :key="panel.id">
-            <div v-if="panelDataMap[panel.pluginId]" class="panel-card">
-              <div class="panel-hd">
-                <span class="panel-icon">{{ defaultIcon[panel.pluginId] || '🔌' }}</span>
-                <div class="panel-hd-text">
-                  <span class="panel-title">{{ panelDataMap[panel.pluginId].title }}</span>
-                  <span v-if="panelDataMap[panel.pluginId].subtitle" class="panel-subtitle">{{ panelDataMap[panel.pluginId].subtitle }}</span>
-                </div>
-                <button v-if="panel.hasPage" class="panel-arrow" @click.stop="openPluginPage(panel.pluginId)">›</button>
-              </div>
-              <div v-if="panelDataMap[panel.pluginId].description" class="panel-desc">
-                {{ panelDataMap[panel.pluginId].description }}
-              </div>
-              <div v-if="panelDataMap[panel.pluginId].items?.length" class="panel-items">
-                <div v-for="(item, idx) in panelDataMap[panel.pluginId].items!" :key="idx" class="panel-item" :class="{ clickable: !!item.action }" @click="handleItemClick(panel.pluginId, item)">
-                  <span class="pi-title">{{ item.title }}</span>
-                  <span v-if="item.subtitle" class="pi-subtitle">{{ item.subtitle }}</span>
-                </div>
-              </div>
-              <div v-if="panelDataMap[panel.pluginId].switches?.length" class="panel-switches">
-                <div v-for="(sw, idx) in panelDataMap[panel.pluginId].switches!" :key="idx" class="panel-switch-row">
-                  <span class="ps-label">{{ sw.label }}</span>
-                  <label class="switch-toggle">
-                    <input type="checkbox" :checked="sw.value" @change="handleSwitch(panel.pluginId, sw, ($event.target as HTMLInputElement).checked)">
-                    <span class="switch-slider"></span>
-                  </label>
-                </div>
-              </div>
-              <div v-if="panelDataMap[panel.pluginId].buttons?.length" class="panel-buttons">
-                <button v-for="(btn, idx) in panelDataMap[panel.pluginId].buttons!" :key="idx" class="panel-btn" @click.stop="executeCommand(panel.pluginId, btn.command)">{{ btn.label }}</button>
-              </div>
-            </div>
+            <PanelCard
+              v-if="panelDataMap[panel.pluginId]"
+              :plugin-id="panel.pluginId"
+              :data="panelDataMap[panel.pluginId]!"
+              :has-page="!!panel.hasPage"
+              @execute="(cmd: string, args?: unknown) => executeCommand(panel.pluginId, cmd, args)"
+              @open-page="openPluginPage(panel.pluginId)"
+            />
           </template>
         </div>
       </template>
