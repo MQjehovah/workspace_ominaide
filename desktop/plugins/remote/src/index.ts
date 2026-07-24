@@ -94,8 +94,8 @@ export default {
       } else if (msg.type === 'pair_error') {
         context.log('error', 'pair_error: ' + msg.reason)
       } else if (msg.type === 'requestControl') {
-        currentViewerId = msg.viewer_deviceId || ''
-        context.log('info', 'requestControl from viewer=' + currentViewerId)
+        currentViewerId = msg.source_deviceId || ''
+        context.log('info', 'requestControl from=' + currentViewerId)
         hasNotifiedWindow = false
         delete (hostState as any).pendingOffer
         delete (hostState as any).pendingIce
@@ -108,7 +108,7 @@ export default {
         }
       } else if (msg.type === 'offer') {
         // Extract viewer ID from offer message if present
-        if (msg.viewer_deviceId) currentViewerId = msg.viewer_deviceId
+        if (msg.source_deviceId) currentViewerId = msg.source_deviceId
         ;(hostState as any).pendingOffer = msg.payload
         ;(hostState as any).pendingIce = []
         hostState.status = '正在建立连接…'

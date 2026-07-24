@@ -150,6 +150,8 @@ async def remote_websocket(websocket: WebSocket):
                 # 所有其他消息必须带 target_deviceId
                 target = msg.get("target_deviceId", "")
                 if target:
+                    # 自动添加发送者 device_id
+                    msg["source_deviceId"] = device_id
                     ok = await remote_service.forward_to_device(target, msg)
                     _log(f"route: {msg_type} → {target} ok={ok}")
                 else:
