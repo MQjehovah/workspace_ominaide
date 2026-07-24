@@ -247,6 +247,12 @@ export default {
       }
     })
 
+    context.registerCommand('handleSignal', async (msg: any) => {
+      context.log('info', 'WS signal received: ' + (msg?.type))
+      handleSignal(msg)
+      return getState()
+    })
+
     context.registerCommand('connectByCode', async (args: any) => {
       try { return await context.api.get(`/remote/pair/${args?.code}`) } catch { return null }
     })

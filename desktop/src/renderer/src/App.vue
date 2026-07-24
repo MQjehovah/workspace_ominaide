@@ -67,6 +67,7 @@ function setupRemoteWs() {
     remoteWs.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data)
+        console.log('[remote] WS msg:', msg.type)
         window.mqbox.remote.publishSignal(msg)
       } catch {}
     }

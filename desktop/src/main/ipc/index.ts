@@ -523,8 +523,8 @@ export function registerIpcHandlers() {
 
   // Remote WS signaling — App.vue 常驻 WS，消息通过 IPC 转发
   ipcMain.handle('remote:ws-message', async (_, msg: any) => {
-    // App.vue 收到 WS 消息 → 转发给 child process
-    try { await executeCommand('remote', 'handleSignal', msg) } catch {}
+    console.log('[main] remote:ws-message:', msg?.type)
+    try { await executeCommand('remote', 'handleSignal', msg) } catch (e) { console.error('[main] remote ws msg error:', e) }
   })
   ipcMain.handle('remote:ws-status', async (_, status: string) => {
     sendToAllWindows('remote:ws-status', status)
