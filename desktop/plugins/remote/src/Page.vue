@@ -140,7 +140,7 @@ onUnmounted(() => {
     <div class="section">
       <div class="section-title">在线设备（同账号）</div>
       <div v-if="devices.length === 0" class="empty">暂无在线设备</div>
-      <button v-for="d in devices" :key="d.device_id" class="device" :class="{ local: d.isLocal }" @click="controlDevice(d.room_id)">
+      <button v-for="d in devices" :key="d.device_id" class="device" :class="{ local: d.isLocal }" @click="controlDevice(d.device_id)">
         <span class="dev-icon">🖥</span>
         <span class="dev-name">{{ d.name }}</span>
         <span class="dev-badge" v-if="d.isLocal">本机</span>
