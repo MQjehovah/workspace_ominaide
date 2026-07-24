@@ -33,8 +33,11 @@ async function connect(hostDeviceId: string) {
     })
     cleanupSignal = typeof rm === 'function' ? rm : null
 
-    console.log('[viewer] sending requestControl to:', targetId)
-    props.execute?.('sendSignal', { type: 'requestControl', target_deviceId: targetId, name: 'OmniAide 桌面端' })
+    // Get my own device_id so host can reply
+    const myId = props.execute ? await props.execute('getDeviceId').catch(() => '') : ''
+
+    console.log('[viewer] sending requestControl target:', targetId, 'myId:', myId)
+    props.execute?.('sendSignal', { type: 'requestControl', target_deviceId: targetId, viewer_deviceId: myId, name: 'OmniAide 桌面端' })
     status.value = '等待被控端授权…'
   } catch (e: any) {
     console.error('[viewer] connect error:', e)
