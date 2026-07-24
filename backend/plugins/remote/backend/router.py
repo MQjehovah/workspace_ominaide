@@ -144,10 +144,16 @@ async def remote_websocket(websocket: WebSocket):
                 })
 
             elif msg_type in ("requestControl", "offer", "answer", "ice", "controlAllowed", "controlDenied", "revoked"):
-                ok = await remote_service.forward(websocket, msg)
-                if not ok and device_id:
-                    # 按 device_id 转发（Viewer → Host 场景）
-                    ok = await remote_service.forward_to_device(device_id, msg, websocket)
+                target_id = msg.get("target_id", "")
+                if target_id:
+                    # Viewer → Host: 注册 pending 并转发
+                    remote_service.register_pending_viewer(target_id, websocket)
+                    ok = await remote_service.forward_to_device(target_id, msg, websocket)
+                elif device_id:
+                    # Host → Viewer: 转发给 pending viewers
+                    ok = await remote_service.forward_to_pending_viewers(device_id, msg, websocket)
+                    if not ok:
+                        ok = await remote_service.forward(websocket, msg)
                 if not ok:
                     pass
 

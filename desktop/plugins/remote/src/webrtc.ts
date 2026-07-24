@@ -18,8 +18,9 @@ export function openSignal(roomId: string, onMsg: (m: any) => void): Promise<Web
     ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)) } catch {} }
     return new Promise<WebSocket>((res, rej) => {
       ws.onopen = () => {
-        // Send join first, then identify with roomId
-        ws.send(JSON.stringify({ type: 'join', device_id: roomId, name: '', token }))
+        // Use unique viewer ID to avoid overwriting host's connection
+        const viewerId = 'viewer_' + Date.now().toString(36) + '_' + roomId
+        ws.send(JSON.stringify({ type: 'join', device_id: viewerId, name: '', token }))
         res(ws)
       }
       ws.onerror = () => rej(new Error('信令连接失败'))

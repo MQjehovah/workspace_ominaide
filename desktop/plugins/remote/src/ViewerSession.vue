@@ -28,9 +28,8 @@ async function connect(roomId: string) {
     ws = await openSignal(roomId, onSignal)
     ws.onclose = () => { if (!connectionEnded) status.value = '信令断开'; cleanup() }
     ws.onerror = () => { status.value = '信令错误' }
-    ws.send(JSON.stringify({ type: 'join' }))
     pc = newPeer(await getIceServers())
-    ws.send(JSON.stringify({ type: 'requestControl', name: 'OmniAide 桌面端' }))
+    ws.send(JSON.stringify({ type: 'requestControl', target_id: roomId, name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
     status.value = e?.message || String(e)

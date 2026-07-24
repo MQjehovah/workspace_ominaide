@@ -15,6 +15,9 @@ _pairs: dict[str, dict] = {}
 # 配对关系: pair_code → { host_id, viewer_id, connected }  (viewer 查配对码后建立)
 _pairings: dict[str, dict] = {}
 
+# 待定 Viewer 连接: target_id → list[WebSocket]  (Host 回复时转发用)
+_pending_viewers: dict[str, list[WebSocket]] = {}
+
 
 def _log(msg: str):
     print(f"[remote] {msg}", flush=True, file=sys.stderr)
@@ -30,6 +33,7 @@ async def connect(ws: WebSocket):
 async def disconnect(ws: WebSocket):
     """设备断开连接 → 清理在线状态和配对"""
     dead = [did for did, w in _connections.items() if w is ws]
+    clean_pending_viewer(ws)
     for did in dead:
         _log(f"disconnect device={did}")
         _connections.pop(did, None)
@@ -121,6 +125,37 @@ def get_own_devices(user_id: int) -> list[dict]:
     return [{"device_id": did, "name": info["name"]}
             for did, info in _devices.items()
             if info["user_id"] == user_id and now - info["ts"] < 90]
+
+
+# ─── Viewer 临时路由 ───
+
+def register_pending_viewer(target_id: str, viewer_ws: WebSocket):
+    """注册 Viewer 连接，Host 回复时转发用"""
+    _pending_viewers.setdefault(target_id, []).append(viewer_ws)
+    _log(f"register pending viewer target={target_id}")
+
+
+def clean_pending_viewer(ws: WebSocket):
+    """清理 Viewer 连接"""
+    for tid, viewers in list(_pending_viewers.items()):
+        _pending_viewers[tid] = [v for v in viewers if v is not ws]
+        if not _pending_viewers[tid]:
+            del _pending_viewers[tid]
+
+
+async def forward_to_pending_viewers(target_id: str, message: dict, exclude_ws: WebSocket | None = None) -> bool:
+    """转发消息给所有待定 Viewer"""
+    viewers = _pending_viewers.get(target_id, [])
+    sent = False
+    for viewer_ws in viewers:
+        if viewer_ws is exclude_ws:
+            continue
+        try:
+            await viewer_ws.send_json(message)
+            sent = True
+        except Exception:
+            pass
+    return sent
 
 
 # ─── 消息转发 ───
