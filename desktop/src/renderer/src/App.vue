@@ -88,6 +88,8 @@ function setupRemoteWs() {
     remoteWs.onopen = () => {
       console.log('[app] WS connected, sending join')
       remoteWs.send(JSON.stringify({ type: 'join', device_id: data.deviceId, name: data.name || '', token: data.token }))
+      // Request pair code for host mode
+      remoteWs.send(JSON.stringify({ type: 'pair_request' }))
       window.mqbox.remote.publishStatus('connected')
     }
     remoteWs.onmessage = (e) => {
@@ -147,6 +149,7 @@ function remoteWsReconnect() {
     remoteWs = new WebSocket(url)
     remoteWs.onopen = function() {
       remoteWs.send(JSON.stringify({ type: 'join', device_id: remoteWsDeviceId, name: name, token: token }))
+      remoteWs.send(JSON.stringify({ type: 'pair_request' }))
       console.log('[app] reconnect: joined')
     }
     remoteWs.onmessage = function(e) { try { window.mqbox.remote.publishSignal(JSON.parse(e.data)) } catch (e) {} }

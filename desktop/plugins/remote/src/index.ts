@@ -47,8 +47,16 @@ export default {
 
     // Auto-reconnect if was enabled before restart — App.vue handles WS directly
     if (saved?.enabled) {
-      context.log('info', 'auto-reconnect: saved.enabled was true, WS will be handled by App.vue')
-      // Don't run full startHost flow here — App.vue connects WS directly
+      context.log('info', 'auto-reconnect: saved.enabled was true, requesting pair code')
+      hostState.enabled = true
+      hostState.status = '允许控制中（等待主控连接）'
+      // Request pair code via App.vue WS
+      context.signal('remote:ws-send', { type: 'pair_request' })
+      // Set up refresh timer
+      clearInterval(codeTimer)
+      codeTimer = setInterval(() => {
+        context.signal('remote:ws-send', { type: 'pair_request' })
+      }, 240000)
     } else {
       context.log('info', 'no saved host state, host disabled')
     }
