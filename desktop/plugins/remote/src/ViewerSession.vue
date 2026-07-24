@@ -1,38 +1,45 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { openSignal, newPeer, getServer, getAuthHeaders, getIceServers } from './webrtc'
+import { newPeer, getIceServers } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; room?:string }>()
 const videoRef = ref<HTMLVideoElement|null>(null)
-const status = ref('')
+const status = ref('准备连接…')
 const connected = ref(false)
 const screens = ref<any[]>([])
 const activeScreenId = ref('')
 
-let ws: WebSocket | null = null
 let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
 let pendingIce: any[] = []
 let connectionEnded = false
 let targetId = ''
+let cleanupSignal: (() => void) | null = null
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
 
 async function connect(hostDeviceId: string) {
+  console.log('[viewer] connect to:', hostDeviceId)
   connectionEnded = false
   targetId = hostDeviceId
   status.value = '连接中…'
   try {
-    ws = await openSignal(targetId, onSignal)
-    ws.onclose = () => { if (!connectionEnded) status.value = '信令断开'; cleanup() }
-    ws.onerror = () => { status.value = '信令错误' }
     pc = newPeer(await getIceServers())
-    ws.send(JSON.stringify({ type: 'requestControl', target_deviceId: targetId, name: 'OmniAide 桌面端' }))
+
+    // Listen for signals via App.vue WS
+    const rm = window.mqbox?.remote?.onSignal?.(function(m: any) {
+      console.log('[viewer] onSignal:', m.type)
+      onSignal(m)
+    })
+    cleanupSignal = typeof rm === 'function' ? rm : null
+
+    console.log('[viewer] sending requestControl to:', targetId)
+    props.execute?.('sendSignal', { type: 'requestControl', target_deviceId: targetId, name: 'OmniAide 桌面端' })
     status.value = '等待被控端授权…'
   } catch (e: any) {
+    console.error('[viewer] connect error:', e)
     status.value = e?.message || String(e)
     cleanup()
-    if (ws) { try { ws.close() } catch {} ; ws = null }
   }
 }
 
@@ -47,7 +54,7 @@ function determineQuality() {
 }
 
 async function startOffering() {
-  if (!pc || !ws) return
+  if (!pc) return
   dc = pc.createDataChannel('input')
   dc.onopen = () => determineQuality()
   dc.onmessage = (msg) => {
@@ -64,7 +71,11 @@ async function startOffering() {
     connected.value = true
     setTimeout(() => determineQuality(), 500)
   }
-  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', target_deviceId: targetId, payload: e.candidate })) }
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      props.execute?.('sendSignal', { type: 'ice', target_deviceId: targetId, payload: e.candidate })
+    }
+  }
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
@@ -74,30 +85,29 @@ async function startOffering() {
   }
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
-  ws.send(JSON.stringify({ type: 'offer', target_deviceId: targetId, payload: offer }))
+  props.execute?.('sendSignal', { type: 'offer', target_deviceId: targetId, payload: offer })
   status.value = '等待画面…'
 }
 
-async function onSignal(m: any) {
+function onSignal(m: any) {
   if (m.type === 'controlAllowed') {
-    await startOffering()
+    startOffering()
   } else if (m.type === 'controlDenied') {
     connectionEnded = true
     status.value = m.reason === 'busy' ? '被控端忙（已有连接）' : '被控端拒绝'
     cleanup()
-    if (ws) { try { ws.close() } catch {} ; ws = null }
   } else if (m.type === 'revoked') {
     connectionEnded = true
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
     try {
-      await pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
-      for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
+      pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
+      for (const c of pendingIce) { try { pc.addIceCandidate(c) } catch {} }
       pendingIce = []
     } catch (e: any) { status.value = '连接失败: ' + (e?.message || e) }
   } else if (m.type === 'ice') {
-    if (pc && pc.remoteDescription) { try { await pc.addIceCandidate(m.payload) } catch {} }
+    if (pc && pc.remoteDescription) { try { pc.addIceCandidate(m.payload) } catch {} }
     else pendingIce.push(m.payload)
   } else if (m.type === 'error') {
     status.value = '被控端错误: ' + (m.message || '未知')
@@ -132,45 +142,13 @@ function normVideo(e: MouseEvent) {
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
 }
 
-function onMouseMove(e: MouseEvent) {
-  const { x, y } = normVideo(e)
-  sendInput({ type: 'mouseMove', x, y })
-}
-
-function onMouseDown(e: MouseEvent) {
-  const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'
-  sendInput({ type: 'mouseDown', button })
-}
-
-function onMouseUp(e: MouseEvent) {
-  const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'
-  sendInput({ type: 'mouseUp', button })
-}
-
-function onWheel(e: WheelEvent) {
-  e.preventDefault()
-  sendInput({ type: 'wheel', deltaY: e.deltaY })
-}
-
-function isIgnoredKey(code: string): boolean {
-  return code === 'F5' || code === 'F11' || code === 'F12'
-}
-
-function onKeyDown(e: KeyboardEvent) {
-  if (!connected.value) return
-  if (e.code && !isIgnoredKey(e.code)) {
-    e.preventDefault()
-    sendInput({ type: 'keyDown', code: e.code })
-  }
-}
-
-function onKeyUp(e: KeyboardEvent) {
-  if (!connected.value) return
-  if (e.code && !isIgnoredKey(e.code)) {
-    e.preventDefault()
-    sendInput({ type: 'keyUp', code: e.code })
-  }
-}
+function onMouseMove(e: MouseEvent) { const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
+function onMouseDown(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseDown', button }) }
+function onMouseUp(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseUp', button }) }
+function onWheel(e: WheelEvent) { e.preventDefault(); sendInput({ type: 'wheel', deltaY: e.deltaY }) }
+function isIgnoredKey(code: string): boolean { return code === 'F5' || code === 'F11' || code === 'F12' }
+function onKeyDown(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyDown', code: e.code }) }
+function onKeyUp(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyUp', code: e.code }) }
 
 function cleanup() {
   connected.value = false
@@ -178,16 +156,15 @@ function cleanup() {
   if (pc) { try { pc.close() } catch {} ; pc = null }
   pendingIce = []
   if (videoRef.value) videoRef.value.srcObject = null
+  if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
 }
 
-function backToMenu() {
-  connectionEnded = false
-  cleanup()
-  if (ws) { try { ws.close() } catch {} ; ws = null }
-  props.close?.()
-}
+function backToMenu() { connectionEnded = false; cleanup(); props.close?.() }
 
 onMounted(() => {
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('resize', invalidateNormCache)
   if (props.room && props.room !== 'undefined' && props.room !== '') connect(props.room)
 })
 
@@ -196,19 +173,18 @@ onUnmounted(() => {
   window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('resize', invalidateNormCache)
   cleanup()
-  if (ws) { try { ws.close() } catch {} ; ws = null }
 })
 </script>
 
 <template>
   <div class="viewer" tabindex="0">
+    <p class="status">{{ status }}</p>
     <div class="toolbar" v-if="screens.length > 1">
       <button v-for="s in screens" :key="s.id" class="screen-btn" :class="{ active: s.id === activeScreenId }" @click="switchScreen(s.id)">{{ s.name }}</button>
     </div>
     <video ref="videoRef" autoplay playsinline class="video"
       @mousemove="onMouseMove" @mousedown="onMouseDown" @mouseup="onMouseUp"
       @wheel.prevent="onWheel" @contextmenu.prevent></video>
-    <p v-if="status" class="status">{{ status }}</p>
   </div>
 </template>
 

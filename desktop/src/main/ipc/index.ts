@@ -530,9 +530,10 @@ export function registerIpcHandlers() {
     console.log('[main] remote:ws-message:', msg?.type)
     try {
       await executeCommand('remote', 'handleSignal', msg)
-      // Notify UI to refresh after state change
       sendToAllWindows('plugins:updated')
     } catch (e) { console.error('[main] remote ws msg error:', e) }
+    // 广播给所有窗口（Viewer 等监听）
+    sendToAllWindows('remote:ws-signal', msg)
   })
   ipcMain.handle('remote:ws-connect', async (_, data: any) => {
     console.log('[main] remote:ws-connect:', data?.roomId)

@@ -185,7 +185,9 @@ contextBridge.exposeInMainWorld('mqbox', {
     },
     // 其他窗口监听 WS 信号
     onSignal: (cb: (msg: any) => void) => {
-      ipcRenderer.on('remote:ws-signal', (_, msg) => { console.log('[preload] onSignal:', msg?.type); cb(msg) })
+      const handler = (_: any, msg: any) => { console.log('[preload] onSignal:', msg?.type); cb(msg) }
+      ipcRenderer.on('remote:ws-signal', handler)
+      return () => ipcRenderer.removeListener('remote:ws-signal', handler)
     },
     onStatus: (cb: (status: string) => void) => {
       ipcRenderer.on('remote:ws-status', (_, status) => { console.log('[preload] onStatus:', status); cb(status) })
