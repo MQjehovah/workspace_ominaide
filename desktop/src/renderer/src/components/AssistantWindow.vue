@@ -27,24 +27,70 @@ async function serverUrl(): Promise<string> {
   return localStorage.getItem('server_url') || 'http://localhost:8000'
 }
 
-async function sendMessage(message: string, history: {role:string;content:string}[]): Promise<string> {
+function appendAssistantMsg(text: string) {
+  const last = msgs.value[msgs.value.length - 1]
+  if (last?.role === 'assistant') last.text += text
+}
+
+async function streamMessage(message: string, history: {role:string;content:string}[]): Promise<void> {
   const cfg = config.value
   if (cfg.mode === 'backend') {
     const su = await serverUrl()
     const tk = (await (window as any).mqbox?.config?.get('token')) || localStorage.getItem('token') || ''
-    const r = await fetch(`${su}/api/chat`, {
+    const r = await fetch(`${su}/api/chat/stream`, {
       method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer '+tk},
       body: JSON.stringify({message, history}),
-    }).then(r=>{if(!r.ok)throw new Error(r.statusText);return r.json()})
-    return r.reply || '(no response)'
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    const reader = r.body?.getReader()
+    if (!reader) throw new Error('No stream')
+    const decoder = new TextDecoder()
+    let buf = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.type === 'token') appendAssistantMsg(data.content)
+            else if (data.type === 'error') appendAssistantMsg(`\n\n[Error: ${data.content}]`)
+          } catch {}
+        }
+      }
+    }
   } else {
     const messages = [...history, {role:'user',content:message}]
     const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
       method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer '+cfg.apiKey},
-      body: JSON.stringify({model:cfg.model, messages, temperature:0.7}),
-    }).then(r=>{if(!r.ok)throw new Error(r.statusText);return r.json()})
-    if (r.error) throw new Error(r.error.message || JSON.stringify(r.error))
-    return r.choices?.[0]?.message?.content || '(no response)'
+      body: JSON.stringify({model:cfg.model, messages, temperature:0.7, stream:true}),
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    const reader = r.body?.getReader()
+    if (!reader) throw new Error('No stream')
+    const decoder = new TextDecoder()
+    let buf = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const payload = line.slice(6)
+          if (payload === '[DONE]') return
+          try {
+            const chunk = JSON.parse(payload)
+            const content = chunk.choices?.[0]?.delta?.content
+            if (content) appendAssistantMsg(content)
+          } catch {}
+        }
+      }
+    }
   }
 }
 
@@ -53,12 +99,15 @@ async function send() {
   msgs.value.push({role:'user',text:msg}); input.value = ''
   loading.value = true
   const actionResult = await executeAction(msg)
-  if (actionResult) { msgs.value.push({role:'assistant',text:actionResult}); loading.value = false; return }
+  if (actionResult) { msgs.value.push({role:'assistant',text:actionResult}); loading.value = false; nextTick(()=>scroll()); return }
+  msgs.value.push({role:'assistant',text:''})
   try {
     const history = msgs.value.slice(0,-1).map(m => ({role:m.role,content:m.text}))
-    const reply = await sendMessage(msg, history)
-    msgs.value.push({role:'assistant',text:reply})
-  } catch(e:any){ msgs.value.push({role:'assistant',text:'Error: '+(e?.message||e)}) }
+    await streamMessage(msg, history)
+  } catch(e:any){
+    const last = msgs.value[msgs.value.length - 1]
+    if (last?.role === 'assistant') last.text = 'Error: '+(e?.message||e)
+  }
   finally { loading.value=false; nextTick(()=>scroll()) }
 }
 
