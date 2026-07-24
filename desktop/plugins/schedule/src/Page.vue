@@ -17,18 +17,29 @@ const firstDay = computed(() => new Date(currentMonth.value.getFullYear(), curre
 
 async function loadEvents() {
   const s = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth(), 1)
-  const e = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth()+1, 0)
-  try { const r = await api.get(`/schedule?start=${s.toISOString()}&end=${e.toISOString()}`); events.value = r || [] } catch { events.value = [] }
+  const e = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth()+1, 1)
+  try { const r = await api.get(`/schedule?start=${toLocalISO(s)}&end=${toLocalISO(e)}`); events.value = r || [] } catch { events.value = [] }
 }
-function getDayEvents(day: number) { const ds = `${monthStr.value}-${String(day).padStart(2,'0')}`; return events.value.filter((e:any) => new Date(e.start_time).toISOString().slice(0,10) === ds) }
+function getDayEvents(day: number) {
+  return events.value.filter((e:any) => {
+    const d = new Date(e.start_time)
+    return d.getUTCFullYear() === currentMonth.value.getFullYear() && d.getUTCMonth() === currentMonth.value.getMonth() && d.getUTCDate() === day
+  })
+}
 function clickDay(day: number) { selectedDate.value = `${monthStr.value}-${String(day).padStart(2,'0')}`; dayEvents.value = getDayEvents(day); showDialog.value = false }
 function prevMonth() { currentMonth.value = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth()-1, 1); loadEvents() }
 function nextMonth() { currentMonth.value = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth()+1, 1); loadEvents() }
 function openAdd() { editing.value = null; form.value = { title:'', start_time:`${selectedDate.value}T10:00`, end_time:'', notes:'', color:'#409EFF', remind_before:0 }; showDialog.value = true }
 function openEdit(e: any) { editing.value = e; form.value = { title:e.title, start_time:e.start_time.slice(0,16), end_time:e.end_time?.slice(0,16)||'', notes:e.notes||'', color:e.color||'#409EFF', remind_before:e.remind_before||0 }; showDialog.value = true }
+function toLocalISO(d: Date) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString() }
+
 async function save() {
   if (!form.value.title.trim()) return; saving.value = true
-  const body = { ...form.value, start_time: new Date(form.value.start_time).toISOString(), end_time: form.value.end_time ? new Date(form.value.end_time).toISOString() : null }
+  const body = {
+    ...form.value,
+    start_time: form.value.start_time ? toLocalISO(new Date(form.value.start_time)) : null,
+    end_time: form.value.end_time ? toLocalISO(new Date(form.value.end_time)) : null,
+  }
   try {
     if (editing.value) { await api.put(`/schedule/${editing.value.id}`, body) }
     else { await api.post('/schedule', body) }

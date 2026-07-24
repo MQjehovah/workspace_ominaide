@@ -5,18 +5,19 @@ const today = new Date()
 const events = ref<any[]>([])
 const loading = ref(true)
 let timer: any = null
+function toLocalISO(d: Date) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString() }
 async function load() {
   const s = new Date(today.getFullYear(), today.getMonth(), 1)
-  const e = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+  const e = new Date(today.getFullYear(), today.getMonth() + 1, 1)
   try {
-    const r = await (window as any).mqbox.api.get(`/schedule?start=${s.toISOString()}&end=${e.toISOString()}`)
+    const r = await (window as any).mqbox.api.get(`/schedule?start=${toLocalISO(s)}&end=${toLocalISO(e)}`)
     events.value = r || []
   } catch { events.value = [] }
   finally { loading.value = false }
 }
 onMounted(() => { load(); timer = setInterval(load, 60000) })
 onUnmounted(() => { if (timer) clearInterval(timer) })
-function todayEvents() { return events.value.filter((e:any) => { const d = new Date(e.start_time); return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear() }) }
+function todayEvents() { return events.value.filter((e:any) => { const d = new Date(e.start_time); return d.getUTCDate() === today.getDate() && d.getUTCMonth() === today.getMonth() && d.getUTCFullYear() === today.getFullYear() }) }
 </script>
 <template>
   <div class="panel">

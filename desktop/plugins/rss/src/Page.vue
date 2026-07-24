@@ -205,24 +205,9 @@ watch(searchQuery, (val) => {
 
       <!-- Right Main -->
       <div class="main">
-        <!-- Entry List -->
-        <div class="entry-list" :class="{ collapsed: selectedEntry }">
-          <div v-if="loadingEntries" class="loading-text" style="padding:40px;text-align:center">加载中…</div>
-          <template v-else>
-            <div v-for="e in entries" :key="e.id" :class="['entry-item', { active: selectedEntry?.id === e.id, unread: !e.read }]" @click="selectEntry(e)">
-              <div class="entry-title">{{ e.title }}</div>
-              <div class="entry-meta">
-                <span class="entry-feed">{{ e.feed_title }}</span>
-                <span class="entry-date">{{ formatDate(e.pub_date || e.created_at) }}</span>
-                <button :class="['star-btn', { starred: e.starred }]" @click.stop="toggleStar(e)">★</button>
-              </div>
-            </div>
-            <div v-if="entries.length === 0" class="loading-text" style="padding:40px;text-align:center">暂无文章</div>
-          </template>
-        </div>
-
-        <!-- Reader -->
+        <!-- Reader (full when selected) -->
         <div v-if="selectedEntry" class="reader">
+          <button class="reader-back" @click="selectedEntry = null">← 返回</button>
           <div class="reader-header">
             <h3 class="reader-title">{{ selectedEntry.title }}</h3>
             <div class="reader-meta">
@@ -233,19 +218,35 @@ watch(searchQuery, (val) => {
           </div>
           <div class="reader-content" v-html="selectedEntry.content || selectedEntry.description || ''"></div>
         </div>
-        <div v-else-if="!loadingEntries && entries.length > 0" class="reader-empty">
-          选择一篇文章阅读
-        </div>
 
-        <!-- Pagination -->
-        <div v-if="totalPages > 1" class="pagination">
-          <button :disabled="page === 1" class="page-btn" @click="goPage(page - 1)">‹</button>
-          <template v-for="p in paginationPages" :key="p">
-            <span v-if="p === '...'" class="page-dots">…</span>
-            <button v-else :class="['page-btn', { active: p === page }]" @click="goPage(p)">{{ p }}</button>
-          </template>
-          <button :disabled="page === totalPages" class="page-btn" @click="goPage(page + 1)">›</button>
-        </div>
+        <!-- Entry List (full when no reader) -->
+        <template v-else>
+          <div class="entry-list">
+            <div v-if="loadingEntries" class="loading-text" style="padding:40px;text-align:center">加载中…</div>
+            <template v-else>
+              <div v-for="e in entries" :key="e.id" :class="['entry-item', { active: selectedEntry?.id === e.id, unread: !e.read }]" @click="selectEntry(e)">
+                <div class="entry-title">{{ e.title }}</div>
+                <div class="entry-meta">
+                  <span class="entry-feed">{{ e.feed_title }}</span>
+                  <span class="entry-date">{{ formatDate(e.pub_date || e.created_at) }}</span>
+                  <button :class="['star-btn', { starred: e.starred }]" @click.stop="toggleStar(e)">★</button>
+                </div>
+              </div>
+              <div v-if="entries.length === 0" class="loading-text" style="padding:40px;text-align:center">暂无文章</div>
+            </template>
+          </div>
+          <div v-if="!loadingEntries && entries.length > 0" class="reader-empty">选择一篇文章阅读</div>
+
+          <!-- Pagination -->
+          <div v-if="totalPages > 1" class="pagination">
+            <button :disabled="page === 1" class="page-btn" @click="goPage(page - 1)">‹</button>
+            <template v-for="p in paginationPages" :key="p">
+              <span v-if="p === '...'" class="page-dots">…</span>
+              <button v-else :class="['page-btn', { active: p === page }]" @click="goPage(p)">{{ p }}</button>
+            </template>
+            <button :disabled="page === totalPages" class="page-btn" @click="goPage(page + 1)">›</button>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -308,7 +309,6 @@ watch(searchQuery, (val) => {
 /* Main area */
 .main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
 .entry-list { flex:1; overflow-y:auto; }
-.entry-list.collapsed { flex:0 0 auto; max-height:280px; border-bottom:1px solid #e9ecef; }
 .entry-item { padding:10px 16px; cursor:pointer; border-bottom:1px solid #f5f5f5; }
 .entry-item:hover { background:#f8f9fa; }
 .entry-item.active { background:#fce4ec; }
@@ -321,7 +321,9 @@ watch(searchQuery, (val) => {
 .star-btn.starred { color:#f59f00; }
 
 /* Reader */
-.reader { flex:1; overflow-y:auto; padding:20px 24px; min-height:0; }
+.reader { flex:1; overflow-y:auto; padding:20px 24px; display:flex; flex-direction:column; }
+.reader-back { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:none; border-radius:6px; background:#f1f3f5; color:#555; font-size:12px; cursor:pointer; margin-bottom:12px; align-self:flex-start; }
+.reader-back:hover { background:#e9ecef; color:#333; }
 .reader-empty { flex:0 0 auto; display:flex; align-items:center; justify-content:center; padding:24px; color:#909399; font-size:13px; }
 .reader-header { margin-bottom:16px; }
 .reader-title { margin:0 0 8px; font-size:18px; font-weight:600; color:#1a1a1a; line-height:1.4; }
