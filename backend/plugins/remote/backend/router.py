@@ -164,9 +164,15 @@ async def remote_websocket(websocket: WebSocket):
                     _log(f"route: Host→Viewer, check pending for {device_id}")
                     ok = await remote_service.forward_to_pending_viewers(device_id, msg, websocket)
                     _log(f"route: forward_to_pending_viewers={ok}")
-                    if not ok:
-                        ok = await remote_service.forward(websocket, msg)
-                        _log(f"route: forward(paired)={ok}")
+                else:
+                    # Viewer 没有 target_id 也没有 device_id → 查映射表
+                    host_id = remote_service.get_viewer_host(websocket)
+                    _log(f"route: Viewer no target_id, lookup host={host_id}")
+                    if host_id:
+                        ok = await remote_service.forward_to_device(host_id, msg, websocket)
+                    else:
+                        ok = False
+                    _log(f"route: forward_to_device(host)={ok}")
                 _log(f"route: done ok={ok}")
 
             elif msg_type == "pair_request":

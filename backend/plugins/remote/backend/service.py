@@ -18,6 +18,9 @@ _pairings: dict[str, dict] = {}
 # 待定 Viewer 连接: target_id → list[WebSocket]  (Host 回复时转发用)
 _pending_viewers: dict[str, list[WebSocket]] = {}
 
+# Viewer → Host 映射: WebSocket id → host_id  (offer/ice 等需要路由到 Host)
+_viewer_host_map: dict[int, str] = {}
+
 
 def _log(msg: str):
     print(f"[remote] {msg}", flush=True, file=sys.stderr)
@@ -133,10 +136,18 @@ def register_pending_viewer(target_id: str, viewer_ws: WebSocket):
     """注册 Viewer 连接，Host 回复时转发用"""
     _pending_viewers.setdefault(target_id, []).append(viewer_ws)
     _log(f"register pending viewer target={target_id}")
+    # 同时记录 viewer → host 映射
+    _viewer_host_map[id(viewer_ws)] = target_id
+
+
+def get_viewer_host(ws: WebSocket) -> str | None:
+    """获取 Viewer 所连接的 Host ID"""
+    return _viewer_host_map.get(id(ws))
 
 
 def clean_pending_viewer(ws: WebSocket):
     """清理 Viewer 连接"""
+    _viewer_host_map.pop(id(ws), None)
     for tid, viewers in list(_pending_viewers.items()):
         _pending_viewers[tid] = [v for v in viewers if v is not ws]
         if not _pending_viewers[tid]:
