@@ -13,11 +13,15 @@ export async function getServer(): Promise<{ serverUrl: string; token: string }>
 
 export function openSignal(roomId: string, onMsg: (m: any) => void): Promise<WebSocket> {
   return getServer().then(({ serverUrl, token }) => {
-    const wsUrl = serverUrl.replace(/^http/, 'ws') + `/ws/remote/${roomId}?token=${encodeURIComponent(token)}`
+    const wsUrl = serverUrl.replace(/^http/, 'ws') + '/ws/remote'
     const ws = new WebSocket(wsUrl)
     ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)) } catch {} }
     return new Promise<WebSocket>((res, rej) => {
-      ws.onopen = () => res(ws)
+      ws.onopen = () => {
+        // Send join first, then identify with roomId
+        ws.send(JSON.stringify({ type: 'join', device_id: roomId, name: '', token }))
+        res(ws)
+      }
       ws.onerror = () => rej(new Error('信令连接失败'))
       ws.onclose = () => rej(new Error('信令连接关闭'))
     })

@@ -135,3 +135,15 @@ async def forward(ws: WebSocket, message: dict) -> bool:
         return True
     except Exception:
         return False
+
+
+async def forward_to_device(device_id: str, message: dict, exclude_ws: WebSocket | None = None) -> bool:
+    """按设备 ID 转发消息（用于 Viewer → Host 场景）"""
+    peer_ws = _connections.get(device_id)
+    if not peer_ws or peer_ws is exclude_ws:
+        return False
+    try:
+        await peer_ws.send_json(message)
+        return True
+    except Exception:
+        return False

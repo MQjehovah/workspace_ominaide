@@ -145,8 +145,10 @@ async def remote_websocket(websocket: WebSocket):
 
             elif msg_type in ("requestControl", "offer", "answer", "ice", "controlAllowed", "controlDenied", "revoked"):
                 ok = await remote_service.forward(websocket, msg)
+                if not ok and device_id:
+                    # 按 device_id 转发（Viewer → Host 场景）
+                    ok = await remote_service.forward_to_device(device_id, msg, websocket)
                 if not ok:
-                    # 广播场景：requestControl/controlAllowed 可能还没有配对
                     pass
 
             elif msg_type == "pair_request":
