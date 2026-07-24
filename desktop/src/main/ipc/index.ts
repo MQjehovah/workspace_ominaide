@@ -530,6 +530,10 @@ export function registerIpcHandlers() {
     console.log('[main] remote:ws-message:', msg?.type)
     try { await executeCommand('remote', 'handleSignal', msg) } catch (e) { console.error('[main] remote ws msg error:', e) }
   })
+  ipcMain.handle('remote:ws-connect', async (_, data: any) => {
+    console.log('[main] remote:ws-connect:', data?.roomId)
+    sendToAllWindows('remote:ws-connect', data)
+  })
   ipcMain.handle('remote:ws-status', async (_, status: string) => {
     sendToAllWindows('remote:ws-status', status)
   })

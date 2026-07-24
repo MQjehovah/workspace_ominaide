@@ -160,6 +160,12 @@ contextBridge.exposeInMainWorld('mqbox', {
       console.log('[preload] register onConnect listener')
       ipcRenderer.on('remote:ws-connect', (_, data) => { console.log('[preload] remote:ws-connect received'); cb(data) })
     },
+    // App.vue 直接连接 WS（启动时自动重连）
+    connectDirectly: (data: any) => {
+      console.log('[preload] connectDirectly')
+      // 通过 IPC 发送到主进程，主进程广播给 App.vue
+      ipcRenderer.invoke('remote:ws-connect', data)
+    },
     onSend: (cb: (data: any) => void) => {
       console.log('[preload] register onSend listener')
       ipcRenderer.on('remote:ws-send', (_, data) => { console.log('[preload] remote:ws-send received, type=' + (data?.type)); cb(data) })

@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Response
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from core.auth.dependencies import get_current_user
@@ -12,30 +12,16 @@ router = APIRouter(prefix="/api/remote", tags=["remote"])
 ws_router = APIRouter(tags=["remote"])
 
 
-class OnlineRequest(BaseModel):
-    device_id: str
-    name: str
-    room_id: str
-
-
-class PairRequest(BaseModel):
-    device_id: str
-    room_id: str
-
-
-class HeartbeatRequest(BaseModel):
-    device_id: str
-    name: str | None = None
-    room_id: str | None = None
-
-
-VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'><title>OmniAide Remote</title><style>body{margin:0;background:#000;overflow:hidden;touch-action:none}video{width:100vw;height:100vh;object-fit:contain}#bar{position:fixed;top:8px;left:8px;color:#fff;font:13px sans-serif;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px;z-index:10}</style></head><body><div id='bar'>连接中…</div><video id='v' autoplay playsinline></video><script>
-const params=new URLSearchParams(location.search);const code=params.get('code');
-const v=document.getElementById('v'),bar=document.getElementById('bar');
-let pc=null;let dc=null;let ended=false;
-function send(ev){if(dc&&dc.readyState==='open'){try{dc.send(JSON.stringify(ev));}catch(e){}}}
+VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'><title>OmniAide Remote</title><style>body{margin:0;background:#000;overflow:hidden;touch-action:none;font-family:sans-serif}video{width:100vw;height:100vh;object-fit:contain}#bar{position:fixed;top:8px;left:8px;color:#fff;font:13px sans-serif;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:6px;z-index:10}#form{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;color:#fff;z-index:20}#form input{margin:6px;padding:10px 14px;border:none;border-radius:8px;font-size:16px;text-align:center;width:200px;outline:none}#form button{margin:8px;padding:10px 30px;border:none;border-radius:8px;background:#0078D4;color:#fff;font-size:16px;cursor:pointer}#form button:disabled{opacity:.5}#form .err{color:#ff4444;font-size:13px;margin:4px}</style></head><body>
+<div id='form'><h2>远程控制</h2><input id='code' placeholder='配对码' maxlength='6' autocomplete='off'/><input id='pw' type='password' placeholder='密码（可选）' maxlength='6' autocomplete='off'/><button id='btn' onclick='connect()'>连接</button><div class='err' id='err'></div></div>
+<div id='bar' style='display:none'>连接中…</div>
+<video id='v' autoplay playsinline style='display:none'></video>
+<script>
+const v=document.getElementById('v'),bar=document.getElementById('bar'),form=document.getElementById('form'),err=document.getElementById('err');
+let pc=null,dc=null,ended=false,ws=null;
+function send(ev){if(dc&&dc.readyState==='open'){try{dc.send(JSON.stringify(ev))}catch(e){}}}
 function btn(b){return b===2?'right':b===1?'middle':'left';}
-function normAt(cx,cy){const r=v.getBoundingClientRect();const vw=v.videoWidth||r.width,vh=v.videoHeight||r.height;const sc=Math.min(r.width/vw,r.height/vh);const rw=vw*sc,rh=vh*sc;const ox=r.left+(r.width-rw)/2,oy=r.top+(r.height-rh)/2;return {x:rw>0?Math.max(0,Math.min(1,(cx-ox)/rw)):0,y:rh>0?Math.max(0,Math.min(1,(cy-oy)/rh)):0};}
+function normAt(cx,cy){const r=v.getBoundingClientRect();const vw=v.videoWidth||r.width,vh=v.videoHeight||r.height;const sc=Math.min(r.width/vw,r.height/vh);const rw=vw*sc,rh=vh*sc;const ox=r.left+(r.width-rw)/2,oy=r.top+(r.height-rh)/2;return{x:rw>0?Math.max(0,Math.min(1,(cx-ox)/rw)):0,y:rh>0?Math.max(0,Math.min(1,(cy-oy)/rh)):0};}
 v.addEventListener('mousemove',e=>{const p=normAt(e.clientX,e.clientY);send({type:'mouseMove',x:p.x,y:p.y});});
 v.addEventListener('mousedown',e=>{e.preventDefault();send({type:'mouseDown',button:btn(e.button)});});
 v.addEventListener('mouseup',e=>send({type:'mouseUp',button:btn(e.button)}));
@@ -47,55 +33,37 @@ v.addEventListener('touchend',e=>{e.preventDefault();send({type:'mouseUp',button
 function ignored(c){return c==='F5'||c==='F11'||c==='F12';}
 document.addEventListener('keydown',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyDown',code:e.code});}});
 document.addEventListener('keyup',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyUp',code:e.code});}});
-let ws;
 function wsSend(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
-fetch('/api/remote/pair/'+code).then(r=>r.ok?r.json():Promise.reject(new Error('code'))).then(d=>{
-  pc=new RTCPeerConnection({iceServers:d.iceServers||[{urls:'stun:mqgeek.com:3478'},{urls:'turn:mqgeek.com:3478',username:'guest',credential:'guest'},{urls:'turn:mqgeek.com:3478?transport=tcp',username:'guest',credential:'guest'}]});
-  pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
-  pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate});};
-  const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote/'+d.room_id+'?token='+encodeURIComponent(d.guest_token);
+async function connect(){
+  const code=document.getElementById('code').value.trim();
+  const pw=document.getElementById('pw').value.trim();
+  if(!code){err.textContent='请输入配对码';return}
+  document.getElementById('btn').disabled=true;err.textContent='';
+  const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote';
   ws=new WebSocket(wsUrl);
-  ws.onopen=()=>{bar.textContent='等待被控端授权…';wsSend({type:'requestControl',name:navigator.userAgent.includes('Mobile')?'手机':'浏览器'});};
+  ws.onopen=()=>{bar.textContent='验证配对码…';wsSend({type:'pair_lookup',code:code,password:pw});};
   ws.onmessage=async ev=>{const m=JSON.parse(ev.data);
-    if(m.type==='controlAllowed'){dc=pc.createDataChannel('input');pc.addTransceiver('video',{direction:'recvonly'});const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer});bar.textContent='等待画面…';}
-    else if(m.type==='controlDenied'){ended=true;bar.textContent=m.reason==='busy'?'被控端忙':'被控端拒绝';}
+    if(m.type==='pair_success'){
+      form.style.display='none';bar.style.display='block';v.style.display='';
+      pc=new RTCPeerConnection({iceServers:m.iceServers||[{urls:'stun:mqgeek.com:3478'},{urls:'turn:mqgeek.com:3478',username:'guest',credential:'guest'},{urls:'turn:mqgeek.com:3478?transport=tcp',username:'guest',credential:'guest'}]});
+      pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
+      pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate});};
+      bar.textContent='等待被控端授权…';
+      wsSend({type:'requestControl',name:navigator.userAgent.includes('Mobile')?'手机':'浏览器'});
+    }else if(m.type==='pair_error'){
+      err.textContent=m.reason||'配对失败';document.getElementById('btn').disabled=false;ws.close();
+    }else if(m.type==='controlAllowed'){
+      dc=pc.createDataChannel('input');pc.addTransceiver('video',{direction:'recvonly'});
+      const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer});
+      bar.textContent='等待画面…';
+    }else if(m.type==='controlDenied'){ended=true;bar.textContent=m.reason==='busy'?'被控端忙':'被控端拒绝';}
     else if(m.type==='revoked'){ended=true;bar.textContent='被控端断开了控制';}
     else if(m.type==='answer'){await pc.setRemoteDescription({type:'answer',sdp:m.payload.sdp});}
     else if(m.type==='ice'){try{await pc.addIceCandidate(m.payload);}catch(e){}}
   };
-  ws.onclose=()=>{if(!ended)bar.textContent='连接已断开';};
-}).catch(()=>{bar.textContent='配对码无效或已过期';});
+  ws.onclose=()=>{if(!ended&&form.style.display!=='none'){err.textContent='连接失败';document.getElementById('btn').disabled=false;}};
+}
 </script></body></html>"""
-
-
-@router.post("/online")
-async def online(req: OnlineRequest, user: dict = Depends(get_current_user), response: Response = None):
-    import logging
-    logging.getLogger("uvicorn").info(f"[remote] POST /online device={req.device_id} name={req.name} user={user['id']}")
-    if response: response.headers["Connection"] = "close"
-    remote_service.register_device(user["id"], req.device_id, req.name, req.room_id)
-    return {"ok": True}
-
-
-@router.delete("/online")
-async def offline(device_id: str, user: dict = Depends(get_current_user), response: Response = None):
-    import logging
-    logging.getLogger("uvicorn").info(f"[remote] DELETE /online device={device_id} user={user['id']}")
-    if response: response.headers["Connection"] = "close"
-    remote_service.clear_user_devices(user["id"], device_id)
-    return {"ok": True}
-
-
-@router.get("/devices")
-async def devices(user: dict = Depends(get_current_user), response: Response = None):
-    result = remote_service.list_devices(user["id"])
-    if response: response.headers["Connection"] = "close"
-    return {"devices": result}
-
-
-@router.get("/debug")
-async def debug(user: dict = Depends(get_current_user)):
-    return remote_service.debug_state()
 
 
 def _ice_servers() -> list:
@@ -103,61 +71,94 @@ def _ice_servers() -> list:
     try:
         return json.loads(settings.webrtc_ice_servers)
     except Exception:
-        return [{"urls": "stun:mqgeek.com:3478"}, {"urls": "turn:mqgeek.com:3478", "username": "guest", "credential": "guest"}, {"urls": "turn:mqgeek.com:3478?transport=tcp", "username": "guest", "credential": "guest"}]
+        return [{"urls": "stun:mqgeek.com:3478"}, {"urls": "turn:mqgeek.com:3478", "username": "guest", "credential": "guest"},
+                {"urls": "turn:mqgeek.com:3478?transport=tcp", "username": "guest", "credential": "guest"}]
+
+
+# ─── HTTP API（仅保留设备列表和 ICE 配置） ───
+
+@router.get("/devices")
+async def devices(user: dict = Depends(get_current_user)):
+    return {"devices": remote_service.get_own_devices(user["id"])}
 
 
 @router.get("/ice")
-async def ice_config(user: dict = Depends(get_current_user)):
+async def ice_config():
     return {"iceServers": _ice_servers()}
 
 
-@router.post("/heartbeat")
-async def heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
-    remote_service.heartbeat(req.device_id, user["id"], req.name, req.room_id)
-    import logging
-    logging.getLogger("uvicorn").info(f"[remote] heartbeat device={req.device_id} user={user['id']} name={req.name}")
-    return {"ok": True}
-
-
-@router.post("/pair")
-async def create_pair(req: PairRequest, user: dict = Depends(get_current_user)):
-    code = remote_service.create_pair(user["id"], req.device_id, req.room_id)
-    return {"code": code}
-
-
-@router.get("/pair/{code}")
-async def consume_pair(code: str):
-    room_id = remote_service.consume_pair(code)
-    if not room_id:
-        raise HTTPException(status_code=410, detail="Pair code invalid or expired")
-    guest_token = create_access_token({"sub": 0, "guest_room": room_id}, timedelta(minutes=30))
-    return {"room_id": room_id, "guest_token": guest_token, "iceServers": _ice_servers()}
-
-
 @router.get("/viewer", response_class=HTMLResponse)
-async def viewer(code: str):
+async def viewer(code: str = "", password: str = ""):
+    """返回独立远控页面"""
     return VIEWER_HTML
 
 
-@ws_router.websocket("/ws/remote/{room_id}")
-async def remote_websocket(websocket: WebSocket, room_id: str):
-    token = websocket.query_params.get("token")
-    payload = decode_access_token(token) if token else None
-    if not payload:
-        await websocket.close(code=4001)
-        return
-    guest_room = payload.get("guest_room")
-    if guest_room and guest_room != room_id:
-        await websocket.close(code=4003)
-        return
+# ─── WebSocket ───
 
-    await websocket.accept()
-    await remote_service.room_join(room_id, websocket)
+@ws_router.websocket("/ws/remote")
+async def remote_websocket(websocket: WebSocket):
+    """统一 WS 信令入口。消息按 type 路由：
+       join{device_id, name, token} — 设备上线
+       pair_request{password?} — Host 请求配对码
+       pair_lookup{code, password} — Viewer 查找 Host
+       requestControl / offer / answer / ice — 配对间转发
+    """
+    await remote_service.connect(websocket)
+    device_id = None
     try:
         while True:
-            message = await websocket.receive_json()
-            await remote_service.room_broadcast(room_id, websocket, message)
+            msg = await websocket.receive_json()
+            msg_type = msg.get("type")
+
+            if msg_type == "join":
+                token = msg.get("token", "")
+                payload = decode_access_token(token) if token else None
+                user_id = int(payload.get("sub", 0)) if payload else 0
+                device_id = msg.get("device_id", "")
+                name = msg.get("name", "")
+                await remote_service.handle_join(websocket, device_id, name, user_id)
+                # 检查是否有配对请求
+                pwd = msg.get("pair_password", "")
+                if pwd:
+                    code, pw = remote_service.create_pair(device_id, pwd)
+                else:
+                    code, pw = remote_service.create_pair(device_id)
+                await websocket.send_json({"type": "pair_code", "code": code, "password": pw})
+
+            elif msg_type == "pair_lookup":
+                code = msg.get("code", "")
+                password = msg.get("password", "")
+                host_id = remote_service.verify_pair(code, password)
+                if not host_id:
+                    await websocket.send_json({"type": "pair_error", "reason": "配对码无效或已过期"})
+                    continue
+                # 绑定配对关系
+                viewer_id = f"viewer_{id(websocket)}"
+                remote_service.bind_pairing(code, host_id, viewer_id)
+                host_ws = remote_service.get_host_ws_by_code(code)
+                if host_ws:
+                    await host_ws.send_json({"type": "requestControl", "name": msg.get("name", "浏览器")})
+                await websocket.send_json({
+                    "type": "pair_success", "host_id": host_id,
+                    "iceServers": _ice_servers(),
+                })
+
+            elif msg_type in ("requestControl", "offer", "answer", "ice", "controlAllowed", "controlDenied", "revoked"):
+                ok = await remote_service.forward(websocket, msg)
+                if not ok:
+                    # 广播场景：requestControl/controlAllowed 可能还没有配对
+                    pass
+
+            elif msg_type == "pair_request":
+                pwd = msg.get("password", "")
+                if device_id:
+                    code, pw = remote_service.create_pair(device_id, pwd)
+                    await websocket.send_json({"type": "pair_code", "code": code, "password": pw})
+
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        import logging
+        logging.getLogger("uvicorn").error(f"[remote] ws error: {e}")
     finally:
-        await remote_service.room_leave(room_id, websocket)
+        await remote_service.disconnect(websocket)

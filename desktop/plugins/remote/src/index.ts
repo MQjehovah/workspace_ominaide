@@ -3,7 +3,7 @@ import Page from './Page.vue'
 
 let pluginCtx: any = null
 let deviceId: string | null = null
-let hostState = { enabled: false, code: '', status: '', peerConnected: false, autoAccept: false }
+let hostState: any = { enabled: false, code: '', password: '', status: '', peerConnected: false, autoAccept: false }
 let codeTimer: any = null
 let heartbeatTimer: any = null
 let reconnectTimer: any = null
@@ -44,40 +44,41 @@ export default {
     hostState.autoAccept = !!(await context.storage?.get('autoAccept'))
     if (saved?.autoAccept != null) hostState.autoAccept = saved.autoAccept
 
-    // Auto-reconnect if was enabled before restart
+    // Auto-reconnect if was enabled before restart — App.vue handles WS directly
     if (saved?.enabled) {
-      context.log('info', 'auto-reconnect: saved.enabled was true, re-starting host')
-      hostState.enabled = false // reset so executeStartHostDirectly doesn't skip
-      executeStartHostDirectly().catch((e: any) => {
-        context.log('error', `auto-reconnect failed: ${e?.message || e}`)
-      })
+      context.log('info', 'auto-reconnect: saved.enabled was true, WS will be handled by App.vue')
+      // Don't run full startHost flow here — App.vue connects WS directly
     } else {
       context.log('info', 'no saved host state, host disabled')
     }
 
-    // --- WebSocket signaling (App.vue manages WS, IPC bridge) ---
+    // --- WebSocket signaling (App.vue manages WS) ---
 
-    async function connectWs(id: string, roomId: string) {
-      context.log('info', `connectWs: id=${id} roomId=${roomId}`)
+    async function connectWs(id: string) {
+      context.log('info', `connectWs: id=${id}`)
       const serverUrl = await getServerUrl()
       const token = await getToken()
-      context.log('info', `connectWs: serverUrl=${serverUrl} token=${token ? '***' : 'empty'}`)
       if (!serverUrl || !token) {
         hostState.status = '配置错误: 服务器地址未设置'
         return false
       }
-      context.log('info', 'connectWs: sending remote:ws-connect signal')
-      context.signal('remote:ws-connect', { serverUrl, token, roomId, deviceId: id })
+      context.log('info', 'connectWs: signaling App.vue to connect WS')
+      const name = require('os').hostname()
+      context.signal('remote:ws-connect', { serverUrl, token, deviceId: id, name })
       hostState.status = '已在线'
       persistState()
-      context.log('info', 'connectWs: done, returning true')
       return true
     }
 
     let hasNotifiedWindow = false
 
     function handleSignal(msg: any) {
-      if (msg.type === 'requestControl') {
+      if (msg.type === 'pair_code') {
+        context.log('info', 'received pair_code: ' + msg.code)
+        hostState.code = msg.code || ''
+        if (msg.password) hostState.password = msg.password
+        persistState()
+      } else if (msg.type === 'requestControl') {
         hasNotifiedWindow = false
         delete (hostState as any).pendingOffer
         delete (hostState as any).pendingIce
@@ -132,40 +133,12 @@ export default {
         context.log('info', 'startHost begin')
         hostState.status = '启动中…'
         const id = deviceId!
-        const roomId = `u_${id}`
-        const hostname = require('os').hostname()
-
-        context.log('info', 'POST /remote/online')
-        await context.api.post('/remote/online', { device_id: id, name: hostname, room_id: roomId })
-
-        const pairData = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
-        hostState.code = pairData?.code || ''
 
         hostState.enabled = true
         hostState.status = '允许控制中（等待主控连接）'
         await persistState()
 
-        await connectWs(id, roomId)
-
-        clearInterval(codeTimer)
-        codeTimer = setInterval(async () => {
-          try {
-            const d = await context.api.post('/remote/pair', { device_id: id, room_id: roomId })
-            if (d?.code) { hostState.code = d.code; persistState() }
-          } catch {}
-        }, 240000)
-
-    async function doHeartbeat() {
-      try {
-        await context.api.post('/remote/heartbeat', { device_id: id, name: require('os').hostname(), room_id: roomId })
-        context.log('info', 'heartbeat OK')
-      } catch (e: any) {
-        context.log('error', 'heartbeat FAIL: ' + (e?.message || String(e)))
-      }
-      heartbeatTimer = setTimeout(doHeartbeat, 30000)
-    }
-        clearTimeout(heartbeatTimer)
-        heartbeatTimer = setTimeout(doHeartbeat, 30000)
+        await connectWs(id)
 
       } catch (e: any) {
         hostState.status = '启动失败: ' + (e?.message || e)
@@ -179,7 +152,6 @@ export default {
 
     context.registerCommand('stopHost', async () => {
       clearTimeout(reconnectTimer)
-      try { await context.api.delete('/remote/online', { params: { device_id: deviceId } }) } catch {}
       context.signal('remote:ws-disconnect')
       clearInterval(codeTimer)
       clearTimeout(heartbeatTimer)
@@ -212,7 +184,7 @@ export default {
       const st = { ...hostState }
       const items: any[] = []
       if (st.enabled && st.code) {
-        items.push({ title: `配对码 ${st.code}`, subtitle: st.status || '等待连接' })
+        items.push({ title: `配对码 ${st.code}${st.password ? ` 密码 ${st.password}` : ''}`, subtitle: st.status || '等待连接' })
       }
       if (st.peerConnected) {
         items.push({ title: '主控已连接', subtitle: '远程控制中' })

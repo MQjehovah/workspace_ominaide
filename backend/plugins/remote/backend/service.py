@@ -3,110 +3,135 @@ import time
 import sys
 from fastapi import WebSocket
 
-_online: dict[str, dict] = {}
+# 已连接的设备: device_id → WebSocket
+_connections: dict[str, WebSocket] = {}
+
+# 设备信息: device_id → { user_id, name, ts }
+_devices: dict[str, dict] = {}
+
+# 配对码: code → { device_id, password, expire_ts }
 _pairs: dict[str, dict] = {}
-_rooms: dict[str, set] = {}
+
+# 配对关系: pair_code → { host_id, viewer_id, connected }  (viewer 查配对码后建立)
+_pairings: dict[str, dict] = {}
 
 
 def _log(msg: str):
     print(f"[remote] {msg}", flush=True, file=sys.stderr)
 
 
-def register_device(user_id: int, device_id: str, name: str, room_id: str):
-    _online[device_id] = {"user_id": user_id, "room_id": room_id, "name": name, "ts": time.time()}
-    _log(f"register device={device_id} name={name} user={user_id} room={room_id}")
+# ─── 连接管理 ───
+
+async def connect(ws: WebSocket):
+    """接受 WS 连接，等待后续 join 消息"""
+    await ws.accept()
 
 
-def unregister_device(device_id: str):
-    _online.pop(device_id, None)
-    _log(f"unregister device={device_id}")
+async def disconnect(ws: WebSocket):
+    """设备断开连接 → 清理在线状态和配对"""
+    dead = [did for did, w in _connections.items() if w is ws]
+    for did in dead:
+        _log(f"disconnect device={did}")
+        _connections.pop(did, None)
+        _devices.pop(did, None)
+        # 清理相关配对
+        for code, p in list(_pairs.items()):
+            if p["device_id"] == did:
+                _pairs.pop(code, None)
+        for code, pr in list(_pairings.items()):
+            if pr["host_id"] == did or pr.get("viewer_id") == did:
+                _pairings.pop(code, None)
 
 
-def _sweep_stale():
-    now = time.time()
-    stale = [d for d, v in _online.items() if now - v["ts"] >= 90]
-    for d in stale:
-        _log(f"sweep stale device={d} age={now - _online[d]['ts']:.0f}s")
-        _online.pop(d, None)
+async def handle_join(ws: WebSocket, device_id: str, name: str, user_id: int):
+    """设备注册在线"""
+    _connections[device_id] = ws
+    _devices[device_id] = {"user_id": user_id, "name": name, "ts": time.time()}
+    _log(f"join device={device_id} name={name} user={user_id}")
 
 
-def heartbeat(device_id: str, user_id: int | None = None, name: str | None = None, room_id: str | None = None):
-    if device_id in _online:
-        _online[device_id]['ts'] = time.time()
-        _log(f"heartbeat device={device_id} ts={_online[device_id]['ts']:.0f}")
-    elif user_id and name and room_id:
-        _online[device_id] = {"user_id": user_id, "room_id": room_id, "name": name, "ts": time.time()}
-        _log(f"heartbeat re-register device={device_id} name={name} user={user_id}")
-    else:
-        _log(f"heartbeat MISS device={device_id} (not found, no re-register data)")
+def get_online_device(device_id: str) -> WebSocket | None:
+    """获取设备连接"""
+    return _connections.get(device_id)
 
 
-def list_devices(user_id: int):
-    _sweep_stale()
-    now = time.time()
-    result = [{"device_id": d, "name": v["name"], "room_id": v["room_id"]}
-              for d, v in _online.items() if v["user_id"] == user_id and now - v["ts"] < 90]
-    _log(f"list_devices user={user_id} count={len(result)} online_keys={list(_online.keys())}")
-    return result
+def get_own_device_ws(user_id: int, device_id: str) -> WebSocket | None:
+    """获取同账号下指定设备的连接"""
+    info = _devices.get(device_id)
+    if info and info["user_id"] == user_id:
+        return _connections.get(device_id)
+    return None
 
 
-def debug_state() -> dict:
-    """Return copy of _online state for debugging."""
-    return {k: {kk: vv for kk, vv in v.items() if kk != "ts"} | {"ts_age": time.time() - v["ts"]}
-            for k, v in _online.items()}
+# ─── 配对管理 ───
 
-
-def clear_user_devices(user_id: int, device_id: str | None = None):
-    if device_id:
-        _log(f"clear_user_devices device={device_id} user={user_id}")
-        _online.pop(device_id, None)
-    else:
-        removed = [d for d, v in _online.items() if v["user_id"] == user_id]
-        _log(f"clear_user_devices ALL user={user_id} devices={removed}")
-        for d in removed:
-            _online.pop(d, None)
-
-
-def create_pair(user_id: int, device_id: str, room_id: str, ttl: int = 300):
+def create_pair(device_id: str, password: str = "") -> tuple[str, str]:
+    """生成配对码 + 密码"""
     while True:
         code = ''.join(secrets.choice('0123456789') for _ in range(6))
         if code not in _pairs:
             break
-    _pairs[code] = {"room_id": room_id, "user_id": user_id, "device_id": device_id, "expire_ts": time.time() + ttl}
-    return code
+    pw = password or ''.join(secrets.choice('0123456789') for _ in range(6))
+    _pairs[code] = {"device_id": device_id, "password": pw, "expire_ts": time.time() + 300}
+    _log(f"pair created code={code} device={device_id}")
+    return code, pw
 
 
-def consume_pair(code: str):
-    v = _pairs.get(code)
-    if not v:
+def verify_pair(code: str, password: str) -> str | None:
+    """验证配对码 + 密码，返回 host device_id"""
+    p = _pairs.get(code)
+    if not p:
         return None
-    if time.time() > v["expire_ts"]:
+    if time.time() > p["expire_ts"]:
         _pairs.pop(code, None)
         return None
-    room_id = v["room_id"]
-    _pairs.pop(code, None)
-    return room_id
+    if p["password"] and p["password"] != password:
+        return None
+    return p["device_id"]
 
 
-async def room_join(room_id: str, ws: WebSocket):
-    _rooms.setdefault(room_id, set()).add(ws)
+def bind_pairing(code: str, host_id: str, viewer_id: str):
+    """建立配对关系"""
+    _pairings[code] = {"host_id": host_id, "viewer_id": viewer_id}
+    _pairs.pop(code, None)  # 配对码用完即销毁
+    _log(f"pairing bound code={code} host={host_id} viewer={viewer_id}")
 
 
-async def room_leave(room_id: str, ws: WebSocket):
-    if room_id in _rooms:
-        _rooms[room_id].discard(ws)
-        if not _rooms[room_id]:
-            del _rooms[room_id]
+def get_peer(ws: WebSocket) -> WebSocket | None:
+    """找到配对的对方的连接"""
+    for code, pr in _pairings.items():
+        if _connections.get(pr["host_id"]) is ws:
+            return _connections.get(pr["viewer_id"])
+        if _connections.get(pr["viewer_id"]) is ws:
+            return _connections.get(pr["host_id"])
+    return None
 
 
-async def room_broadcast(room_id: str, ws: WebSocket, message: dict):
-    dead = []
-    for peer in list(_rooms.get(room_id, ())):
-        if peer is ws:
-            continue
-        try:
-            await peer.send_json(message)
-        except Exception:
-            dead.append(peer)
-    for peer in dead:
-        _rooms.get(room_id, set()).discard(peer)
+def get_host_ws_by_code(code: str) -> WebSocket | None:
+    """通过配对码找到 Host 连接（供配对前转发消息用）"""
+    p = _pairs.get(code)
+    if not p:
+        return None
+    return _connections.get(p["device_id"])
+
+
+def get_own_devices(user_id: int) -> list[dict]:
+    """同账号设备列表（排除自己）"""
+    now = time.time()
+    return [{"device_id": did, "name": info["name"]}
+            for did, info in _devices.items()
+            if info["user_id"] == user_id and now - info["ts"] < 90]
+
+
+# ─── 消息转发 ───
+
+async def forward(ws: WebSocket, message: dict) -> bool:
+    """转发消息给配对的对方。返回是否成功"""
+    peer = get_peer(ws)
+    if not peer:
+        return False
+    try:
+        await peer.send_json(message)
+        return True
+    except Exception:
+        return False
