@@ -346,7 +346,8 @@ function mdToHTML(md: string): string {
   try {
     const doc = defaultMarkdownParser.parse(md)
     if (!doc) return ''
-    return renderToHTMLString({ content: doc.toJSON(), extensions: editorExtensions })
+    const mapped = mapNodeNames(doc.toJSON())
+    return renderToHTMLString({ content: mapped, extensions: editorExtensions })
   } catch { return '' }
 }
 
