@@ -14,22 +14,20 @@ let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
 let pendingIce: any[] = []
 let connectionEnded = false
+let targetId = ''
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
 
-async function connect(roomId: string) {
+async function connect(hostDeviceId: string) {
   connectionEnded = false
-  if (ws || pc) {
-    cleanup()
-    if (ws) { try { ws.close() } catch {} ; ws = null }
-  }
+  targetId = hostDeviceId
   status.value = '连接中…'
   try {
-    ws = await openSignal(roomId, onSignal)
+    ws = await openSignal(targetId, onSignal)
     ws.onclose = () => { if (!connectionEnded) status.value = '信令断开'; cleanup() }
     ws.onerror = () => { status.value = '信令错误' }
     pc = newPeer(await getIceServers())
-    ws.send(JSON.stringify({ type: 'requestControl', target_id: roomId, name: 'OmniAide 桌面端' }))
+    ws.send(JSON.stringify({ type: 'requestControl', target_deviceId: targetId, name: 'OmniAide 桌面端' }))
     status.value = '等待被控端授权…'
   } catch (e: any) {
     status.value = e?.message || String(e)
@@ -66,7 +64,7 @@ async function startOffering() {
     connected.value = true
     setTimeout(() => determineQuality(), 500)
   }
-  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', payload: e.candidate })) }
+  pc.onicecandidate = (e) => { if (e.candidate) ws!.send(JSON.stringify({ type: 'ice', target_deviceId: targetId, payload: e.candidate })) }
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
@@ -76,7 +74,7 @@ async function startOffering() {
   }
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
-  ws.send(JSON.stringify({ type: 'offer', payload: offer }))
+  ws.send(JSON.stringify({ type: 'offer', target_deviceId: targetId, payload: offer }))
   status.value = '等待画面…'
 }
 

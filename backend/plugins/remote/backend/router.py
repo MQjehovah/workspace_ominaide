@@ -1,16 +1,15 @@
-from datetime import timedelta
-
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from core.auth.dependencies import get_current_user
-from core.auth.jwt import create_access_token, decode_access_token
+from core.auth.jwt import decode_access_token
 from core.config.settings import settings
 from plugins.remote.backend import service as remote_service
+
 
 def _log(msg: str):
     import sys
     print(f"[remote] {msg}", flush=True, file=sys.stderr)
+
 
 router = APIRouter(prefix="/api/remote", tags=["remote"])
 ws_router = APIRouter(tags=["remote"])
@@ -22,7 +21,7 @@ VIEWER_HTML = """<!doctype html><html><head><meta charset='utf-8'><meta name='vi
 <video id='v' autoplay playsinline style='display:none'></video>
 <script>
 const v=document.getElementById('v'),bar=document.getElementById('bar'),form=document.getElementById('form'),err=document.getElementById('err');
-let pc=null,dc=null,ended=false,ws=null;
+let pc=null,dc=null,ended=false,ws=null,hostDeviceId='';
 function send(ev){if(dc&&dc.readyState==='open'){try{dc.send(JSON.stringify(ev))}catch(e){}}}
 function btn(b){return b===2?'right':b===1?'middle':'left';}
 function normAt(cx,cy){const r=v.getBoundingClientRect();const vw=v.videoWidth||r.width,vh=v.videoHeight||r.height;const sc=Math.min(r.width/vw,r.height/vh);const rw=vw*sc,rh=vh*sc;const ox=r.left+(r.width-rw)/2,oy=r.top+(r.height-rh)/2;return{x:rw>0?Math.max(0,Math.min(1,(cx-ox)/rw)):0,y:rh>0?Math.max(0,Math.min(1,(cy-oy)/rh)):0};}
@@ -43,19 +42,21 @@ async function connect(){
   const pw=document.getElementById('pw').value.trim();
   if(!code){err.textContent='请输入配对码';return}
   document.getElementById('btn').disabled=true;err.textContent='';
+  const viewerId='web_'+(Date.now().toString(36));
   const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/remote';
   ws=new WebSocket(wsUrl);
-  ws.onopen=()=>{bar.textContent='验证配对码…';wsSend({type:'pair_lookup',code:code,password:pw});};
+  ws.onopen=()=>{wsSend({type:'join',device_id:viewerId});wsSend({type:'pair_lookup',code:code,password:pw});};
   ws.onmessage=async ev=>{const m=JSON.parse(ev.data);
     if(m.type==='pair_success'){
       form.style.display='none';bar.style.display='block';v.style.display='';
+      hostDeviceId=m.host_deviceId;
       pc=new RTCPeerConnection({iceServers:m.iceServers||[{urls:'stun:mqgeek.com:3478'},{urls:'turn:mqgeek.com:3478',username:'guest',credential:'guest'},{urls:'turn:mqgeek.com:3478?transport=tcp',username:'guest',credential:'guest'}]});
       pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
-      pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',payload:e.candidate});};
-      bar.textContent='等待被控端授权…';
+      pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',target_deviceId:hostDeviceId,payload:e.candidate});};
+      bar.textContent='已连接';
     }else if(m.type==='controlAllowed'){
       dc=pc.createDataChannel('input');pc.addTransceiver('video',{direction:'recvonly'});
-      const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',payload:offer});
+      const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',target_deviceId:hostDeviceId,payload:offer});
       bar.textContent='等待画面…';
     }else if(m.type==='controlDenied'){ended=true;bar.textContent=m.reason==='busy'?'被控端忙':'被控端拒绝';}
     else if(m.type==='revoked'){ended=true;bar.textContent='被控端断开了控制';}
@@ -76,8 +77,6 @@ def _ice_servers() -> list:
                 {"urls": "turn:mqgeek.com:3478?transport=tcp", "username": "guest", "credential": "guest"}]
 
 
-# ─── HTTP API（仅保留设备列表和 ICE 配置） ───
-
 @router.get("/devices")
 async def devices(user: dict = Depends(get_current_user)):
     return {"devices": remote_service.get_own_devices(user["id"])}
@@ -90,27 +89,18 @@ async def ice_config():
 
 @router.get("/viewer", response_class=HTMLResponse)
 async def viewer(code: str = "", password: str = ""):
-    """返回独立远控页面"""
     return VIEWER_HTML
 
 
-# ─── WebSocket ───
-
 @ws_router.websocket("/ws/remote")
 async def remote_websocket(websocket: WebSocket):
-    """统一 WS 信令入口。消息按 type 路由：
-       join{device_id, name, token} — 设备上线
-       pair_request{password?} — Host 请求配对码
-       pair_lookup{code, password} — Viewer 查找 Host
-       requestControl / offer / answer / ice — 配对间转发
-    """
     await remote_service.connect(websocket)
     device_id = None
     try:
         while True:
             msg = await websocket.receive_json()
             msg_type = msg.get("type")
-            _log(f"RECV type={msg_type} device_id={device_id} target_id={msg.get('target_id','')}")
+            _log(f"RECV type={msg_type} device_id={device_id}")
 
             if msg_type == "join":
                 token = msg.get("token", "")
@@ -118,69 +108,45 @@ async def remote_websocket(websocket: WebSocket):
                 user_id = int(payload.get("sub", 0)) if payload else 0
                 device_id = msg.get("device_id", "")
                 name = msg.get("name", "")
-                _log(f"join: device_id={device_id} name={name} user_id={user_id}")
                 await remote_service.handle_join(websocket, device_id, name, user_id)
-                # 检查是否有配对请求
-                pwd = msg.get("pair_password", "")
-                if pwd:
+
+            elif msg_type == "pair_request":
+                if device_id:
+                    pwd = msg.get("password", "")
                     code, pw = remote_service.create_pair(device_id, pwd)
-                else:
-                    code, pw = remote_service.create_pair(device_id)
-                _log(f"join: pair_code={code} password={pw}")
-                await websocket.send_json({"type": "pair_code", "code": code, "password": pw})
+                    await websocket.send_json({"type": "pair_code", "code": code, "password": pw})
+                    _log(f"pair_request code={code} device={device_id}")
 
             elif msg_type == "pair_lookup":
                 code = msg.get("code", "")
                 password = msg.get("password", "")
-                _log(f"pair_lookup: code={code} password={password}")
-                host_id = remote_service.verify_pair(code, password)
-                _log(f"pair_lookup: verify result host_id={host_id}")
-                if not host_id:
+                host_device_id = remote_service.verify_pair(code, password)
+                _log(f"pair_lookup code={code} result={host_device_id}")
+                if not host_device_id:
                     await websocket.send_json({"type": "pair_error", "reason": "配对码无效或已过期"})
                     continue
-                viewer_id = f"viewer_{id(websocket)}"
-                remote_service.bind_pairing(code, host_id, viewer_id)
-                host_ws = remote_service.get_host_ws_by_code(code)
-                _log(f"pair_lookup: host_ws={'found' if host_ws else 'NOT FOUND'}")
-                if host_ws:
-                    remote_service.register_pending_viewer(host_id, websocket)
-                    _log(f"pair_lookup: sending requestControl to host, pending registered under {host_id}")
-                    await host_ws.send_json({"type": "requestControl", "name": msg.get("name", "浏览器")})
+                # 通知 Host 有 Viewer 请求连接
+                remote_service.forward_to_device(host_device_id, {
+                    "type": "requestControl",
+                    "viewer_deviceId": device_id,
+                    "name": msg.get("name", "浏览器"),
+                })
+                # 返回 Host 信息给 Viewer
                 await websocket.send_json({
-                    "type": "pair_success", "host_id": host_id,
+                    "type": "pair_success",
+                    "host_deviceId": host_device_id,
                     "iceServers": _ice_servers(),
                 })
-                _log(f"pair_lookup: pair_success sent to viewer")
+                _log(f"pair_lookup ok host={host_device_id} viewer={device_id}")
 
-            elif msg_type in ("requestControl", "offer", "answer", "ice", "controlAllowed", "controlDenied", "revoked"):
-                target_id = msg.get("target_id", "")
-                _log(f"route: type={msg_type} target_id={target_id} device_id={device_id}")
-                if target_id:
-                    _log(f"route: Viewer→Host, register pending under {target_id}")
-                    remote_service.register_pending_viewer(target_id, websocket)
-                    ok = await remote_service.forward_to_device(target_id, msg, websocket)
-                    _log(f"route: forward_to_device={ok}")
-                elif device_id:
-                    _log(f"route: Host→Viewer, check pending for {device_id}")
-                    ok = await remote_service.forward_to_pending_viewers(device_id, msg, websocket)
-                    _log(f"route: forward_to_pending_viewers={ok}")
+            else:
+                # 所有其他消息必须带 target_deviceId
+                target = msg.get("target_deviceId", "")
+                if target:
+                    ok = await remote_service.forward_to_device(target, msg)
+                    _log(f"route: {msg_type} → {target} ok={ok}")
                 else:
-                    # Viewer 没有 target_id 也没有 device_id → 查映射表
-                    host_id = remote_service.get_viewer_host(websocket)
-                    _log(f"route: Viewer no target_id, lookup host={host_id}")
-                    if host_id:
-                        ok = await remote_service.forward_to_device(host_id, msg, websocket)
-                    else:
-                        ok = False
-                    _log(f"route: forward_to_device(host)={ok}")
-                _log(f"route: done ok={ok}")
-
-            elif msg_type == "pair_request":
-                pwd = msg.get("password", "")
-                if device_id:
-                    code, pw = remote_service.create_pair(device_id, pwd)
-                    _log(f"pair_request: code={code}")
-                    await websocket.send_json({"type": "pair_code", "code": code, "password": pw})
+                    _log(f"route: {msg_type} dropped (no target_deviceId)")
 
     except WebSocketDisconnect:
         pass

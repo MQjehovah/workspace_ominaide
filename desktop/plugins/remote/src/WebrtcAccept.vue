@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { newPeer, getIceServers } from './webrtc'
 
 const props = defineProps<{ data?: any; execute?: (a: string, args?: any) => Promise<any> }>()
+const viewerId = new URLSearchParams(window.location.search).get('viewer') || ''
 
 const collapsed = ref(true)
 const status = ref('连接中…')
@@ -41,7 +42,9 @@ function matchDisplay(src: any, displays: any[]) {
 }
 
 function sendToChild(type: string, payload: any) {
-  props.execute?.('sendSignal', { type, payload })
+  const msg: any = { type, payload }
+  if (viewerId) msg.target_deviceId = viewerId
+  props.execute?.('sendSignal', msg)
 }
 
 function cleanup() {

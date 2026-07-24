@@ -80,17 +80,10 @@ function controlDevice(roomId: string) {
 
 async function connectByCode() {
   if (!pairInput.value.trim()) return
-  try {
-    const r = await props.execute?.('connectByCode', { code: pairInput.value.trim() })
-    if (r?.room_id) {
-      controlDevice(r.room_id)
-      pairInput.value = ''
-    } else {
-      loadingStatus.value = '配对码无效或已过期'
-    }
-  } catch (e: any) {
-    loadingStatus.value = e?.message || '连接失败'
-  }
+  // Send pair_lookup via WS
+  await props.execute?.('sendSignal', { type: 'pair_lookup', code: pairInput.value.trim(), password: '', name: 'OmniAide 桌面端' })
+  loadingStatus.value = '连接请求已发送，等待被控端响应…'
+  pairInput.value = ''
 }
 
 async function refreshAll() {

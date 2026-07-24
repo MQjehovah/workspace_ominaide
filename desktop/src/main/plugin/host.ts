@@ -213,8 +213,8 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     }))
   )
 
-  proc.registerBridgeHandler('remote:open-connection', async ([roomId]) => {
-    console.log('[remote] open-connection window for room:', roomId)
+  proc.registerBridgeHandler('remote:open-connection', async ([roomId, viewerId]) => {
+    console.log('[remote] open-connection window:', { roomId, viewerId })
     const preloadPath = join(__dirname, '../preload/index.js')
     const display = screen.getPrimaryDisplay().workArea
     const win = new BrowserWindow({
@@ -223,7 +223,8 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
       x: display.width - 290, y: display.height - 130,
       webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
     })
-    const url = `plugin-app://remote/index.html?mode=webrtc-accept&room=${roomId}`
+    const query = `mode=webrtc-accept&room=${roomId}${viewerId ? '&viewer=' + viewerId : ''}`
+    const url = `plugin-app://remote/index.html?${query}`
     win.loadURL(url)
     win.once('ready-to-show', () => win.show())
     win.on('closed', () => win.destroy())

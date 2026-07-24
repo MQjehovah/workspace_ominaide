@@ -7,6 +7,7 @@ let hostState: any = { enabled: false, code: '', password: '', status: '', peerC
 let codeTimer: any = null
 let heartbeatTimer: any = null
 let reconnectTimer: any = null
+let currentViewerId = ''
 
 async function getDeviceId(context: any): Promise<string> {
   if (deviceId) return deviceId
@@ -78,30 +79,39 @@ export default {
         hostState.code = msg.code || ''
         if (msg.password) hostState.password = msg.password
         persistState()
+      } else if (msg.type === 'pair_success') {
+        context.log('info', 'pair_success, host_deviceId=' + msg.host_deviceId)
+        // Open viewer page to connect to the target host
+        context.openPage('remote', 'mode=viewer&room=' + msg.host_deviceId)
+      } else if (msg.type === 'pair_error') {
+        context.log('error', 'pair_error: ' + msg.reason)
       } else if (msg.type === 'requestControl') {
+        currentViewerId = msg.viewer_deviceId || ''
+        context.log('info', 'requestControl from viewer=' + currentViewerId)
         hasNotifiedWindow = false
         delete (hostState as any).pendingOffer
         delete (hostState as any).pendingIce
         if (hostState.autoAccept) {
-          context.signal('remote:ws-send', { type: 'controlAllowed' })
+          context.signal('remote:ws-send', { type: 'controlAllowed', target_deviceId: currentViewerId })
           hostState.status = '已自动授权'
         } else {
-          context.signal('remote:ws-send', { type: 'controlDenied' })
+          context.signal('remote:ws-send', { type: 'controlDenied', target_deviceId: currentViewerId })
           hostState.status = '已拒绝（未开启自动接受）'
         }
       } else if (msg.type === 'offer') {
+        // Extract viewer ID from offer message if present
+        if (msg.viewer_deviceId) currentViewerId = msg.viewer_deviceId
         ;(hostState as any).pendingOffer = msg.payload
         ;(hostState as any).pendingIce = []
         hostState.status = '正在建立连接…'
-        context.log('info', 'offer received, ice candidates pending: ' + ((hostState as any).pendingIce?.length))
-        // Timeout: if no peerConnected within 30s, log it
+        context.log('info', 'offer received, pending viewer=' + currentViewerId)
         setTimeout(() => {
           if (!hostState.peerConnected) context.log('warn', '30s timeout: peer NOT connected')
         }, 30000)
         if (!hasNotifiedWindow) {
           hasNotifiedWindow = true
           context.log('info', 'sending signal remote:open-connection')
-          context.signal('remote:open-connection', `u_${deviceId}`).catch((e: any) => {
+          context.signal('remote:open-connection', `u_${deviceId}`, currentViewerId).catch((e: any) => {
             context.log('error', 'signal failed: ' + String(e))
           })
         }
@@ -140,6 +150,15 @@ export default {
 
         await connectWs(id)
 
+        // Request initial pair code
+        context.signal('remote:ws-send', { type: 'pair_request' })
+
+        // Refresh pair code every 4 minutes
+        clearInterval(codeTimer)
+        codeTimer = setInterval(() => {
+          context.signal('remote:ws-send', { type: 'pair_request' })
+        }, 240000)
+
       } catch (e: any) {
         hostState.status = '启动失败: ' + (e?.message || e)
       }
@@ -164,6 +183,10 @@ export default {
     context.registerCommand('sendSignal', async (args: any) => {
       context.log('info', 'sendSignal: ' + (args?.type))
       if (args) {
+        // Auto-add target_deviceId if not present
+        if (!args.target_deviceId && currentViewerId) {
+          args.target_deviceId = currentViewerId
+        }
         context.log('info', 'sendSignal: sending via remote:ws-send')
         context.signal('remote:ws-send', args)
       }
@@ -174,10 +197,6 @@ export default {
       context.log('info', 'handleSignal command received: type=' + (msg?.type))
       handleSignal(msg)
       return getState()
-    })
-
-    context.registerCommand('connectByCode', async (args: any) => {
-      try { return await context.api.get(`/remote/pair/${args?.code}`) } catch { return null }
     })
 
     context.registerCommand('getPanelData', async () => {
