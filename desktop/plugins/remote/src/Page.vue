@@ -8,7 +8,7 @@ const params = new URLSearchParams(window.location.search)
 const mode = params.get('mode') || ''
 const isViewer = mode === 'viewer'
 const isWebrtcAccept = mode === 'webrtc-accept'
-const roomId = params.get('room') || ''
+const targetId = params.get('target') || ''
 
 const hostEnabled = ref(false)
 const hostCode = ref('')
@@ -74,8 +74,8 @@ function toggleAutoAccept() {
   autoAccept.value = newVal
 }
 
-function controlDevice(roomId: string) {
-  ;(window as any).mqbox?.window?.openPage('remote', `mode=viewer&room=${roomId}`)
+function controlDevice(deviceId: string) {
+  ;(window as any).mqbox?.window?.openPage('remote', `mode=viewer&target=${deviceId}`)
 }
 
 async function connectByCode() {
@@ -104,7 +104,7 @@ onUnmounted(() => {
 
 <template>
   <WebrtcAccept v-if="isWebrtcAccept" v-bind="$props" />
-  <ViewerSession v-else-if="isViewer" v-bind="$props" :room="roomId" />
+  <ViewerSession v-else-if="isViewer" v-bind="$props" :target-device-id="targetId" />
   <div v-else class="dashboard">
     <div class="header">
       <h2>远程控制</h2>

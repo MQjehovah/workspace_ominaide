@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { newPeer, getIceServers } from './webrtc'
 
-const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; room?:string }>()
+const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; targetDeviceId?:string }>()
 const videoRef = ref<HTMLVideoElement|null>(null)
 const status = ref('准备连接…')
 const connected = ref(false)
@@ -165,7 +165,13 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('resize', invalidateNormCache)
-  if (props.room && props.room !== 'undefined' && props.room !== '') connect(props.room)
+  console.log('[viewer] mounted, target=', props.targetDeviceId, 'typeof=', typeof props.targetDeviceId)
+  if (props.targetDeviceId && props.targetDeviceId !== 'undefined' && props.targetDeviceId !== '') {
+    console.log('[viewer] calling connect with:', props.targetDeviceId)
+    connect(props.targetDeviceId)
+  } else {
+    console.log('[viewer] skipped connect, target is empty or undefined')
+  }
 })
 
 onUnmounted(() => {

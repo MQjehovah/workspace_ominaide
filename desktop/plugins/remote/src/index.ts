@@ -51,11 +51,11 @@ export default {
       hostState.enabled = true
       hostState.status = '允许控制中（等待主控连接）'
       // Request pair code via App.vue WS
-      context.signal('remote:ws-send', { type: 'pair_request' })
+      context.signal('remote:ws-send', { type: 'pair_request' }).catch(() => {})
       // Set up refresh timer
       clearInterval(codeTimer)
       codeTimer = setInterval(() => {
-        context.signal('remote:ws-send', { type: 'pair_request' })
+        context.signal('remote:ws-send', { type: 'pair_request' }).catch(() => {})
       }, 240000)
     } else {
       context.log('info', 'no saved host state, host disabled')
