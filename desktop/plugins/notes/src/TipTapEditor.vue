@@ -81,7 +81,6 @@ import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
-import { renderToHTMLString } from '@tiptap/static-renderer/pm/html-string'
 import { defaultMarkdownParser, defaultMarkdownSerializer } from 'prosemirror-markdown'
 
 const props = defineProps<{ modelValue: string }>()
@@ -329,32 +328,31 @@ function applyToEditor(text: string) {
     }
   }
 
-  // Fallback: HTML route
-  const html = mdToHTML(clean)
-  if (html) {
-    log('info', `applyToEditor: html fallback "${html.slice(0, 100)}"`)
-    const { from: f, to: t } = editor.value.state.selection
-    editor.value.commands.insertContentAt({ from: f, to: t }, html)
-  } else {
-    log('warn', 'applyToEditor: plain text fallback')
-    const { from: f, to: t } = editor.value.state.selection
-    editor.value.commands.insertContentAt({ from: f, to: t }, clean)
-  }
+  // Fallback: plain text
+  log('warn', 'applyToEditor: plain text fallback')
+  editor.value.commands.insertContentAt({ from, to }, clean)
 }
 
-function mdToHTML(md: string): string {
+function setContentFromMarkdown(md: string) {
+  if (!editor.value) return
   try {
-    const doc = defaultMarkdownParser.parse(md)
-    if (!doc) return ''
-    const mapped = mapNodeNames(doc.toJSON())
-    return renderToHTMLString({ content: mapped, extensions: editorExtensions })
-  } catch { return '' }
+    const pmDoc = defaultMarkdownParser.parse(md)
+    if (!pmDoc || pmDoc.content.size === 0) return
+    const mapped = mapNodeNames(pmDoc.toJSON())
+    const node = editor.value.schema.nodeFromJSON(mapped)
+    if (node.content.size === 0) return
+    const tr = editor.value.state.tr.replaceWith(0, editor.value.state.doc.content.size, node.content)
+    editor.value.view.dispatch(tr)
+  } catch (e) {
+    console.warn('[notes] setContentFromMarkdown error:', e)
+  }
 }
 
 const editor = useEditor({
   content: '',
   extensions: editorExtensions,
   editorProps: {
+    attributes: { spellcheck: 'false' },
     handlePaste: (view, event) => {
       const items = event.clipboardData?.items
       if (!items) return
@@ -385,6 +383,11 @@ const editor = useEditor({
       emit('update:modelValue', md || '')
     } catch {}
   },
+  onCreate: ({ editor }) => {
+    if (props.modelValue) {
+      setContentFromMarkdown(props.modelValue)
+    }
+  },
 })
 
 watch(() => props.modelValue, (val) => {
@@ -397,12 +400,7 @@ watch(() => props.modelValue, (val) => {
     const currentMd = defaultMarkdownSerializer.serialize(editor.value.state.doc)
     if (currentMd === val) return
   } catch {}
-  try {
-    editor.value.commands.setContent(JSON.parse(val))
-  } catch {
-    const html = mdToHTML(val)
-    if (html) editor.value.commands.setContent(html)
-  }
+  setContentFromMarkdown(val)
 }, { immediate: true })
 
 async function uploadFileViaApi(file: File): Promise<string | null> {

@@ -1,4 +1,5 @@
 FROM python:3.12-slim
+ENV TZ=Asia/Shanghai
 WORKDIR /app
 COPY requirements.txt .
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \

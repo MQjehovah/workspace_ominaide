@@ -10,7 +10,7 @@ export default {
 
   async activate(context: PluginContext) {
     context.registerCommand('getPanelData', async () => {
-      const history = context.screenshot?.getHistory() || []
+      const history = await context.screenshot?.getHistory() || []
       return {
         title: '截图',
         subtitle: `${history.length} 张截图`,
@@ -22,12 +22,13 @@ export default {
     })
 
     context.registerCommand('getPageData', async () => {
-      const history = context.screenshot?.getHistory() || []
+      const history = await context.screenshot?.getHistory() || []
       return { captures: history }
     })
 
     context.registerCommand('region', async () => {
       await context.screenshot?.start()
+      context.signal('panel:updated')
       return { success: true }
     })
 
@@ -36,6 +37,7 @@ export default {
       if (dataUrl) {
         context.notification.show('截图完成', '全屏截图已复制到剪贴板')
       }
+      context.signal('panel:updated')
       return { success: !!dataUrl }
     })
 
@@ -43,11 +45,13 @@ export default {
       if (args?.dataUrl) {
         await context.screenshot?.showEditor(args.dataUrl)
       }
+      context.signal('panel:updated')
       return { success: true }
     })
 
     context.registerCommand('clear', async () => {
       context.screenshot?.clearHistory()
+      context.signal('panel:updated')
       return { success: true }
     })
 
@@ -55,6 +59,7 @@ export default {
       if (args?.id) {
         context.screenshot?.deleteHistory(args.id)
       }
+      context.signal('panel:updated')
       return { success: true }
     })
 

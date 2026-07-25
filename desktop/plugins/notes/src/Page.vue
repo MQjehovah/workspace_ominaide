@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import TipTapEditor from './TipTapEditor.vue'
 import TreeNode from './TreeNode.vue'
 
@@ -47,6 +47,45 @@ const title = ref('')
 const content = ref('')
 const saveStatus = ref('')
 let saveTimer: any = null
+let hideSaveTimer: any = null
+
+function showSaved() {
+  saveStatus.value = '已保存'
+  if (hideSaveTimer) clearTimeout(hideSaveTimer)
+  hideSaveTimer = setTimeout(() => { saveStatus.value = '' }, 2000)
+}
+
+async function doSave() {
+  if (!currentId.value) return
+  try {
+    await window.mqbox?.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: content.value })
+    showSaved()
+    await loadTree()
+  } catch (e) {
+    console.error('[notes] save failed:', e)
+    saveStatus.value = '保存失败'
+    setTimeout(async () => {
+      try {
+        await window.mqbox?.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: content.value })
+        showSaved()
+      } catch {}
+    }, 2000)
+  }
+}
+
+function scheduleSave() {
+  saveStatus.value = '未保存'
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(doSave, 800)
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault()
+    if (saveTimer) clearTimeout(saveTimer)
+    doSave()
+  }
+}
 
 async function loadTree() {
   try {
@@ -165,20 +204,12 @@ function findSiblings(nodes: any[], parentId: number | null): any[] | null {
   return null
 }
 
-function scheduleSave() {
-  saveStatus.value = '未保存'
+window.addEventListener('beforeunload', () => {
   if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(doSave, 1500)
-}
-
-async function doSave() {
-  if (!currentId.value) return
-  try {
-    await window.mqbox?.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: content.value })
-    saveStatus.value = '已保存'
-    await loadTree()
-  } catch { saveStatus.value = '保存失败' }
-}
+  if (currentId.value) {
+    window.mqbox?.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: content.value })
+  }
+})
 
 async function deleteNote() {
   if (!currentId.value || !confirm('确定删除？')) return
@@ -198,7 +229,14 @@ async function deleteNode(id: number) {
   } catch {}
 }
 
-onMounted(loadTree)
+onMounted(() => {
+  loadTree()
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <style scoped>
@@ -213,7 +251,7 @@ onMounted(loadTree)
 .editor-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:12px; }
 .title-input { flex:1; font-size:22px; font-weight:700; border:none; outline:none; padding:4px 0; }
 .header-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
-.save-status { font-size:11px; color:#999; }
+.save-status { font-size:11px; color:#67c23a; transition:opacity 0.3s; }
 .del-btn { padding:4px 12px; border-radius:6px; border:1px solid #f56c6c; background:#fff; color:#f56c6c; cursor:pointer; font-size:12px; }
 .del-btn:hover { background:#fef0f0; }
 .empty-area { flex:1; display:flex; align-items:center; justify-content:center; color:#ccc; font-size:14px; }

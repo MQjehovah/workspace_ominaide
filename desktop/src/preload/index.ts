@@ -4,6 +4,12 @@ const clipboardListeners: (() => void)[] = []
 const playerListeners: (() => void)[] = []
 const todoListeners: (() => void)[] = []
 const pluginListeners: (() => void)[] = []
+const panelListeners = new Map<string, () => void>()
+
+ipcRenderer.on('panel:updated', (_event, pluginId: string) => {
+  const cb = panelListeners.get(pluginId)
+  if (cb) cb()
+})
 
 ipcRenderer.on('clipboard:updated', () => {
   clipboardListeners.forEach(fn => fn())
@@ -45,6 +51,9 @@ contextBridge.exposeInMainWorld('mqbox', {
       ipcRenderer.invoke('plugin:reload'),
     onUpdated: (callback: () => void) => {
       pluginListeners.push(callback)
+    },
+    onPanelUpdated: (pluginId: string, callback: () => void) => {
+      panelListeners.set(pluginId, callback)
     },
   },
   search: {

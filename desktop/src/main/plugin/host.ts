@@ -302,6 +302,11 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   proc.registerBridgeHandler('shell:showItemInFolder', async ([path]) => {
     shell.showItemInFolder(path)
   })
+  proc.registerBridgeHandler('panel:updated', async () => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('panel:updated', proc.pluginId)
+    })
+  })
 }
 
 export function removePlugin(id: string): boolean {

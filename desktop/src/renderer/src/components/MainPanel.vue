@@ -94,10 +94,15 @@ onMounted(() => {
   loadPlugins()
   fetchNotifCount()
   notifTimer = setInterval(fetchNotifCount, 15000)
-  window.mqbox?.plugin?.onUpdated(() => loadPlugins())
-  window.mqbox?.clipboard?.onUpdated(() => loadPlugins())
+  window.mqbox?.plugin?.onUpdated(() => loadPanelData('clipboard-history'))
+  window.mqbox?.clipboard?.onUpdated(() => loadPanelData('clipboard-history'))
   window.mqbox?.player?.onUpdated(() => loadPanelData('player'))
-  window.mqbox?.todo?.onUpdated(() => loadPlugins())
+  window.mqbox?.todo?.onUpdated(() => loadPanelData('todo'))
+  // Listen for per-plugin panel updates
+  const panelsToWatch = panels.value.map(p => p.pluginId)
+  panelsToWatch.forEach(id => {
+    window.mqbox?.plugin?.onPanelUpdated?.(id, () => loadPanelData(id))
+  })
 })
 
 onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
