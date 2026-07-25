@@ -34,8 +34,8 @@ v.addEventListener('touchstart',e=>{e.preventDefault();const p=normAt(e.touches[
 v.addEventListener('touchmove',e=>{e.preventDefault();const p=normAt(e.touches[0].clientX,e.touches[0].clientY);send({type:'mouseMove',x:p.x,y:p.y});},{passive:false});
 v.addEventListener('touchend',e=>{e.preventDefault();send({type:'mouseUp',button:'left'});},{passive:false});
 function ignored(c){return c==='F5'||c==='F11'||c==='F12';}
-document.addEventListener('keydown',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyDown',code:e.code});}});
-document.addEventListener('keyup',e=>{if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyUp',code:e.code});}});
+document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyDown',code:e.code});}});
+document.addEventListener('keyup',e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;if(e.code&&!ignored(e.code)){e.preventDefault();send({type:'keyUp',code:e.code});}});
 function wsSend(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));}
 async function connect(){
   const code=document.getElementById('code').value.trim();
@@ -52,8 +52,8 @@ async function connect(){
       bar.textContent='已连接，等待被控端授权…';
       hostDeviceId=m.host_deviceId;
       pc=new RTCPeerConnection({iceServers:m.iceServers||[{urls:'stun:mqgeek.com:3478'},{urls:'turn:mqgeek.com:3478',username:'guest',credential:'guest'},{urls:'turn:mqgeek.com:3478?transport=tcp',username:'guest',credential:'guest'}]});
-      pc.ontrack=e=>{v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
-      pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',target_deviceId:hostDeviceId,payload:e.candidate});};
+      pc.ontrack=e=>{v.style.display='block';v.srcObject=e.streams[0];bar.textContent='已连接（可控制）';setTimeout(()=>v.focus(),200);};
+      pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'ice',target_deviceId:hostDeviceId,payload:e.candidate.toJSON()});};
     }else if(m.type==='controlAllowed'){
       dc=pc.createDataChannel('input');pc.addTransceiver('video',{direction:'recvonly'});
       const offer=await pc.createOffer();await pc.setLocalDescription(offer);wsSend({type:'offer',target_deviceId:hostDeviceId,payload:offer});
@@ -133,8 +133,9 @@ async def remote_websocket(websocket: WebSocket):
                     continue
                 _log(f"pair_lookup: authenticated viewer={device_id} host={host_device_id}")
                 # 通知 Host 有 Viewer 请求连接
-                remote_service.forward_to_device(host_device_id, {
+                await remote_service.forward_to_device(host_device_id, {
                     "type": "requestControl",
+                    "source_deviceId": device_id,
                     "viewer_deviceId": device_id,
                     "name": msg.get("name", "浏览器"),
                 })
