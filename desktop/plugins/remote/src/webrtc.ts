@@ -48,18 +48,15 @@ export function newPeer(iceServers?: any[]): RTCPeerConnection {
   return new RTCPeerConnection({ iceServers: iceServers || FALLBACK_ICE })
 }
 
-export function setCodecPreferences(pc: RTCPeerConnection, kind: 'send' | 'recv' = 'send') {
+export function setCodecPreferences(pc: RTCPeerConnection) {
   try {
-    const caps = kind === 'send'
-      ? (RTCRtpSender as any).getCapabilities?.('video')
-      : (RTCRtpReceiver as any).getCapabilities?.('video')
+    const caps = (RTCRtpSender as any).getCapabilities?.('video')
     if (!caps?.codecs) return
-    const transceivers = pc.getTransceivers?.()
-    if (!transceivers) return
-    const videoTransceiver = transceivers.find(t => t.kind === 'video')
-    if (videoTransceiver?.setCodecPreferences) {
-      videoTransceiver.setCodecPreferences(caps.codecs)
-    }
+    const h264 = caps.codecs.filter((c: any) => c.mimeType.includes('H264'))
+    const other = caps.codecs.filter((c: any) => !c.mimeType.includes('H264'))
+    const preferred = [...h264, ...other]
+    const tr = pc.getTransceivers?.()?.find((t: any) => t.kind === 'video')
+    if (tr?.setCodecPreferences) tr.setCodecPreferences(preferred)
   } catch {}
 }
 

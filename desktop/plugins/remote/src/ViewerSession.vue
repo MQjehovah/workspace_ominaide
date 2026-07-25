@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { newPeer, getIceServers } from './webrtc'
+import { newPeer, getIceServers, setCodecPreferences } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; targetDeviceId?:string }>()
 const videoRef = ref<HTMLVideoElement|null>(null)
@@ -8,6 +8,7 @@ const status = ref('准备连接…')
 const connected = ref(false)
 const screens = ref<any[]>([])
 const activeScreenId = ref('')
+const diag = ref({ rtt: 0, fps: 0, bitrate: 0, loss: 0, jitter: 0, resolution: '' })
 
 let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
@@ -19,7 +20,9 @@ let keepaliveTimer: any = null
 let lastPong = 0
 let reconnectTimer: any = null
 let adaptTimer: any = null
-let currentQuality = { maxWidth: 1920, maxHeight: 1080, maxFrameRate: 30 }
+let statsTimer: any = null
+let prevStats: any = null
+let currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
 let qualityGoodSince = 0
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
@@ -31,9 +34,11 @@ async function connect(hostDeviceId: string) {
   status.value = '连接中…'
   stopKeepalive()
   stopAdaptiveQuality()
+  stopStatsMonitor()
   cancelReconnect()
   try {
     pc = newPeer(await getIceServers())
+    setCodecPreferences(pc)
 
     // Listen for signals via App.vue WS
     const rm = window.mqbox?.remote?.onSignal?.(function(m: any) {
@@ -56,9 +61,9 @@ function determineQuality() {
   const el = videoRef.value
   if (!el) return
   const w = el.clientWidth, h = el.clientHeight
-  let maxWidth = 1920, maxHeight = 1080, maxFrameRate = 30
-  if (w <= 800 || h <= 600) { maxWidth = 800; maxHeight = 600; maxFrameRate = 15 }
-  else if (w <= 1280 || h <= 720) { maxWidth = 1280; maxHeight = 720; maxFrameRate = 24 }
+  let maxWidth = 1280, maxHeight = 720, maxFrameRate = 24
+  if (w <= 800 || h <= 600) { maxWidth = 640; maxHeight = 480; maxFrameRate = 15 }
+  else if (w <= 1024 || h <= 768) { maxWidth = 1024; maxHeight = 768; maxFrameRate = 20 }
   sendInput({ type: 'setQuality', maxWidth, maxHeight, maxFrameRate })
   currentQuality = { maxWidth, maxHeight, maxFrameRate }
   qualityGoodSince = 0
@@ -114,6 +119,7 @@ async function startOffering() {
     nextTick(() => attachAndPlay())
     setTimeout(() => determineQuality(), 500)
     startAdaptiveQuality()
+    startStatsMonitor()
   }
   pc.onicecandidate = (e) => {
     if (e.candidate) {
@@ -142,31 +148,77 @@ function startAdaptiveQuality() {
     if (!pc || pc.iceConnectionState !== 'connected') return
     try {
       const stats = await pc.getStats()
-      let totalLost = 0, totalReceived = 0
+      let totalLost = 0, totalReceived = 0, rtt = 0
       stats.forEach((r: any) => {
         if (r.type === 'inbound-rtp' && r.kind === 'video') {
           totalLost += r.packetsLost || 0
           totalReceived += r.packetsReceived || 0
         }
+        if (r.type === 'candidate-pair' && r.state === 'succeeded') {
+          rtt = r.currentRoundTripTime || 0
+        }
       })
-      const lossRate = totalReceived > 0 ? totalLost / totalReceived : 0
+      const lossRate = totalReceived > 0 ? totalLost / (totalLost + totalReceived) : 0
+      const highLatency = rtt > 0.3
       const current = currentQuality
-      if (lossRate > 0.05 && current.maxWidth > 800) {
-        currentQuality = { maxWidth: 800, maxHeight: 600, maxFrameRate: 15 }
-        sendInput({ type: 'setQuality', ...currentQuality })
-        qualityGoodSince = 0
-      } else if (lossRate < 0.01 && current.maxWidth < 1920) {
+      if (lossRate > 0.03 || highLatency) {
+        if (current.maxWidth > 800) {
+          currentQuality = { maxWidth: 800, maxHeight: 600, maxFrameRate: 15 }
+          sendInput({ type: 'setQuality', ...currentQuality })
+          qualityGoodSince = 0
+        }
+      } else if (lossRate < 0.005 && !highLatency && current.maxWidth < 1280) {
         if (qualityGoodSince === 0) qualityGoodSince = Date.now()
-        else if (Date.now() - qualityGoodSince > 30000) {
-          currentQuality = { maxWidth: 1920, maxHeight: 1080, maxFrameRate: 30 }
+        else if (Date.now() - qualityGoodSince > 20000) {
+          currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
           sendInput({ type: 'setQuality', ...currentQuality })
         }
       } else { qualityGoodSince = 0 }
     } catch {}
-  }, 15000)
+  }, 10000)
 }
 
 function stopAdaptiveQuality() { clearInterval(adaptTimer); adaptTimer = null }
+
+function startStatsMonitor() {
+  clearInterval(statsTimer)
+  prevStats = null
+  statsTimer = setInterval(async () => {
+    if (!pc || pc.iceConnectionState !== 'connected') return
+    try {
+      const stats = await pc.getStats()
+      let rtt = 0, fps = 0, bitrate = 0, lossRate = 0, jitter = 0, w = 0, h = 0
+      let bytesNow = 0, framesNow = 0, lostNow = 0
+      stats.forEach((r: any) => {
+        if (r.type === 'candidate-pair' && r.state === 'succeeded') rtt = Math.round((r.currentRoundTripTime || 0) * 1000)
+        if (r.type === 'inbound-rtp' && r.kind === 'video') {
+          bytesNow = r.bytesReceived || 0
+          framesNow = r.framesDecoded || 0
+          lostNow = r.packetsLost || 0
+          jitter = Math.round((r.jitter || 0) * 1000)
+          const m = r.codecId || ''
+        }
+        if (r.type === 'media-source' || (r.type === 'outbound-rtp' && r.kind === 'video')) {
+          if (r.width) { w = r.width; h = r.height }
+        }
+      })
+      if (prevStats) {
+        const dt = (stats as any).entries ? 2 : 2
+        const dBytes = bytesNow - (prevStats.bytes || 0)
+        const dFrames = framesNow - (prevStats.frames || 0)
+        const dLost = lostNow - (prevStats.lost || 0)
+        bitrate = Math.round(dBytes * 8 / 2 / 1000)
+        fps = Math.round(dFrames / 2)
+        const total = dFrames + dLost
+        lossRate = total > 0 ? Math.round(dLost / total * 100) : 0
+      }
+      prevStats = { bytes: bytesNow, frames: framesNow, lost: lostNow }
+      diag.value = { rtt, fps, bitrate, loss: lossRate, jitter, resolution: w && h ? `${w}×${h}` : '' }
+    } catch {}
+  }, 2000)
+}
+
+function stopStatsMonitor() { clearInterval(statsTimer); statsTimer = null; prevStats = null }
 
 function onSignal(m: any) {
   if (m.type === 'controlAllowed') {
@@ -226,7 +278,8 @@ function normVideo(e: MouseEvent) {
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
 }
 
-function onMouseMove(e: MouseEvent) { const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
+let lastMoveTime = 0
+function onMouseMove(e: MouseEvent) { const now = Date.now(); if (now - lastMoveTime < 16) return; lastMoveTime = now; const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
 function onMouseDown(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseDown', button }) }
 function onMouseUp(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseUp', button }) }
 function onWheel(e: WheelEvent) { e.preventDefault(); sendInput({ type: 'wheel', deltaY: e.deltaY }) }
@@ -246,6 +299,7 @@ function cleanup(silent = false) {
   if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
   stopKeepalive()
   stopAdaptiveQuality()
+  stopStatsMonitor()
   cancelReconnect()
 }
 
@@ -290,6 +344,14 @@ function sendRevokedOnUnload() {
 <template>
   <div class="viewer" tabindex="0">
     <p class="status">{{ status }}</p>
+    <div v-if="connected" class="diag-card">
+      <div class="diag-row"><span class="diag-label">延迟</span><span class="diag-val">{{ diag.rtt }}ms</span></div>
+      <div class="diag-row"><span class="diag-label">帧率</span><span class="diag-val">{{ diag.fps }}fps</span></div>
+      <div class="diag-row"><span class="diag-label">网速</span><span class="diag-val">{{ diag.bitrate }}kbps</span></div>
+      <div class="diag-row"><span class="diag-label">丢包</span><span class="diag-val">{{ diag.loss }}%</span></div>
+      <div class="diag-row"><span class="diag-label">抖动</span><span class="diag-val">{{ diag.jitter }}ms</span></div>
+      <div class="diag-row" v-if="diag.resolution"><span class="diag-label">分辨率</span><span class="diag-val">{{ diag.resolution }}</span></div>
+    </div>
     <div class="toolbar" v-if="screens.length > 1">
       <button v-for="s in screens" :key="s.id" class="screen-btn" :class="{ active: s.id === activeScreenId }" @click="switchScreen(s.id)">{{ s.name }}</button>
     </div>
@@ -307,4 +369,8 @@ function sendRevokedOnUnload() {
 .screen-btn:hover { background:rgba(255,255,255,.2); }
 .video { flex:1; object-fit:contain; width:100%; height:100%; background:#000; }
 .status { position:fixed; top:12px; left:50%; transform:translateX(-50%); margin:0; padding:6px 14px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; border-radius:16px; z-index:10; }
+.diag-card { position:fixed; top:12px; left:12px; background:rgba(0,0,0,.7); border-radius:8px; padding:8px 12px; z-index:10; font-size:11px; line-height:1.6; min-width:120px; backdrop-filter:blur(4px); }
+.diag-row { display:flex; justify-content:space-between; gap:12px; }
+.diag-label { color:#999; }
+.diag-val { color:#eee; font-family:'SF Mono',Consolas,monospace; font-variant-numeric:tabular-nums; }
 </style>

@@ -22,7 +22,7 @@ let currentSourceId = ''
 let currentDataChannel: any = null
 let cleanupSignal: (() => void) | null = null
 
-const qualityConfig = { maxWidth: 1920, maxHeight: 1080, maxFrameRate: 30 }
+const qualityConfig = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
 let cachedSources: any[] | null = null
 let cachedDisplays: any[] | null = null
 let cacheTime = 0
@@ -116,9 +116,14 @@ async function startConnection() {
     })
 
     pc = newPeer(await getIceServers())
+    setCodecPreferences(pc)
 
     pc.ondatachannel = (e) => {
       currentDataChannel = e.channel
+      e.channel.onopen = () => {
+        const { sources } = cachedSources ? { sources: cachedSources } : { sources: [] }
+        e.channel.send(JSON.stringify({ type: 'screens', list: sources.map((s: any) => ({ id: s.id, name: s.name })) }))
+      }
       e.channel.onmessage = async (msg) => {
         try {
           const ev = JSON.parse(msg.data)
