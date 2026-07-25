@@ -89,7 +89,7 @@ function cancelReconnect() { clearTimeout(reconnectTimer); reconnectTimer = null
 
 async function startOffering() {
   if (!pc) return
-  dc = pc.createDataChannel('input')
+  dc = pc.createDataChannel('input', { ordered: false, maxRetransmits: 0 })
   dc.onopen = () => { determineQuality(); startKeepalive() }
   dc.onmessage = (msg) => {
     try {
