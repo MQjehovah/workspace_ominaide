@@ -10,6 +10,34 @@ import * as screenshot from '../screenshot'
 import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins } from '../pinWindow'
 import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
 
+let nutLoader: any = null
+function getNut(): any {
+  if (nutLoader) return nutLoader
+  nutLoader = require('@nut-tree-fork/nut-js')
+  return nutLoader
+}
+
+const buttonMap: Record<string, string> = { left: 'LEFT', right: 'RIGHT', middle: 'MIDDLE' }
+
+const keyMap: Record<string, string> = {
+  Escape: 'ESCAPE', Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Digit5: '5',
+  Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9', Digit0: '0', Minus: 'MINUS',
+  Equal: 'EQUAL', Backspace: 'BACK_SPACE', Tab: 'TAB', KeyQ: 'Q', KeyW: 'W',
+  KeyE: 'E', KeyR: 'R', KeyT: 'T', KeyY: 'Y', KeyU: 'U', KeyI: 'I', KeyO: 'O',
+  KeyP: 'P', BracketLeft: 'LEFT_BRACKET', BracketRight: 'RIGHT_BRACKET', Enter: 'RETURN',
+  KeyA: 'A', KeyS: 'S', KeyD: 'D', KeyF: 'F', KeyG: 'G', KeyH: 'H', KeyJ: 'J',
+  KeyK: 'K', KeyL: 'L', Semicolon: 'SEMICOLON', Quote: 'QUOTE', Backquote: 'BACK_QUOTE',
+  ShiftLeft: 'LEFT_SHIFT', Backslash: 'BACK_SLASH', KeyZ: 'Z', KeyX: 'X', KeyC: 'C',
+  KeyV: 'V', KeyB: 'B', KeyN: 'N', KeyM: 'M', Comma: 'COMMA', Period: 'PERIOD',
+  Slash: 'SLASH', ShiftRight: 'RIGHT_SHIFT', ControlLeft: 'LEFT_CONTROL',
+  AltLeft: 'LEFT_ALT', Space: 'SPACE', CapsLock: 'CAPS_LOCK',
+  ArrowLeft: 'LEFT', ArrowUp: 'UP', ArrowRight: 'RIGHT', ArrowDown: 'DOWN',
+  Delete: 'DELETE', End: 'END', PageDown: 'PAGE_DOWN', PageUp: 'PAGE_UP',
+  Home: 'HOME', Insert: 'INSERT', NumLock: 'NUM_LOCK', ScrollLock: 'SCROLL_LOCK',
+  F1: 'F1', F2: 'F2', F3: 'F3', F4: 'F4', F5: 'F5', F6: 'F6', F7: 'F7',
+  F8: 'F8', F9: 'F9', F10: 'F10', F11: 'F11', F12: 'F12',
+}
+
 
 let nutLoader: any = null
 function getNut(): any {
@@ -470,6 +498,33 @@ export function registerIpcHandlers() {
       }))
     } catch {
       return []
+    }
+  })
+
+  ipcMain.on('remote:inject', async (_event, ev: any) => {
+    try {
+      const nut = getNut()
+      if (ev.type === 'mouseMove') {
+        await nut.mouse.setPosition(new nut.Point(Math.round(ev.x), Math.round(ev.y)))
+      } else if (ev.type === 'mouseDown') {
+        const b = buttonMap[ev.button]
+        if (b && nut.Button[b] !== undefined) await nut.mouse.pressButton(nut.Button[b])
+      } else if (ev.type === 'mouseUp') {
+        const b = buttonMap[ev.button]
+        if (b && nut.Button[b] !== undefined) await nut.mouse.releaseButton(nut.Button[b])
+      } else if (ev.type === 'wheel') {
+        const amt = Math.max(1, Math.min(10, Math.round(Math.abs(ev.deltaY) / 100) || 1))
+        if (ev.deltaY > 0) await nut.mouse.scrollDown(amt)
+        else await nut.mouse.scrollUp(amt)
+      } else if (ev.type === 'keyDown') {
+        const k = keyMap[ev.code]
+        if (k && nut.Key[k] !== undefined) await nut.keyboard.pressKey(nut.Key[k])
+      } else if (ev.type === 'keyUp') {
+        const k = keyMap[ev.code]
+        if (k && nut.Key[k] !== undefined) await nut.keyboard.releaseKey(nut.Key[k])
+      }
+    } catch (e: any) {
+      console.error('[remote:inject] error:', e?.message)
     }
   })
 
