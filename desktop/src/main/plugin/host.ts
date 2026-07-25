@@ -103,7 +103,7 @@ function startClipboardMonitoring() {
         lastClipboardText = text
 
         BrowserWindow.getAllWindows().forEach(win => {
-          if (!win.isDestroyed()) win.webContents.send('clipboard:updated')
+          if (!win.isDestroyed()) win.webContents.send('panel:updated', 'clipboard-history')
         })
 
         const proc = processManager.getProcess('clipboard-history')
@@ -349,21 +349,21 @@ export async function executeCommand(pluginId: string, command: string, args?: u
 
   if (pluginId === 'clipboard-history' && command === 'copy') {
     BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) win.webContents.send('clipboard:updated')
+      if (!win.isDestroyed()) win.webContents.send('panel:updated', 'clipboard-history')
     })
   }
 
   const playerReadonlyCommands = ['getPanelData', 'getPageData', 'cloudGetStreamUrl', 'cloudListPlaylists', 'cloudListSongs', 'cloudListAudioFiles']
   if (pluginId === 'player' && !playerReadonlyCommands.includes(command)) {
     BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) win.webContents.send('player:updated')
+      if (!win.isDestroyed()) win.webContents.send('panel:updated', 'player')
     })
   }
 
   const todoReadonlyCommands = ['getPanelData', 'getPageData']
   if (pluginId === 'todo' && !todoReadonlyCommands.includes(command)) {
     BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) win.webContents.send('todo:updated')
+      if (!win.isDestroyed()) win.webContents.send('panel:updated', 'todo')
     })
   }
 

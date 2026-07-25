@@ -22,6 +22,10 @@ async function loadPlugins() {
     for (const panel of panels.value) {
       await loadPanelData(panel.pluginId)
     }
+    // Register per-plugin panel update listeners
+    panels.value.forEach(p => {
+      window.mqbox?.plugin?.onPanelUpdated?.(p.pluginId, () => loadPanelData(p.pluginId))
+    })
   } catch {}
   isLoading.value = false
 }
@@ -94,15 +98,6 @@ onMounted(() => {
   loadPlugins()
   fetchNotifCount()
   notifTimer = setInterval(fetchNotifCount, 15000)
-  window.mqbox?.plugin?.onUpdated(() => loadPanelData('clipboard-history'))
-  window.mqbox?.clipboard?.onUpdated(() => loadPanelData('clipboard-history'))
-  window.mqbox?.player?.onUpdated(() => loadPanelData('player'))
-  window.mqbox?.todo?.onUpdated(() => loadPanelData('todo'))
-  // Listen for per-plugin panel updates
-  const panelsToWatch = panels.value.map(p => p.pluginId)
-  panelsToWatch.forEach(id => {
-    window.mqbox?.plugin?.onPanelUpdated?.(id, () => loadPanelData(id))
-  })
 })
 
 onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })

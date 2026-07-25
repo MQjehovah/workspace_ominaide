@@ -1,26 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-const clipboardListeners: (() => void)[] = []
-const playerListeners: (() => void)[] = []
-const todoListeners: (() => void)[] = []
 const pluginListeners: (() => void)[] = []
 const panelListeners = new Map<string, () => void>()
 
 ipcRenderer.on('panel:updated', (_event, pluginId: string) => {
   const cb = panelListeners.get(pluginId)
   if (cb) cb()
-})
-
-ipcRenderer.on('clipboard:updated', () => {
-  clipboardListeners.forEach(fn => fn())
-})
-
-ipcRenderer.on('player:updated', () => {
-  playerListeners.forEach(fn => fn())
-})
-
-ipcRenderer.on('todo:updated', () => {
-  todoListeners.forEach(fn => fn())
 })
 
 ipcRenderer.on('plugins:updated', () => {
@@ -85,15 +70,9 @@ contextBridge.exposeInMainWorld('mqbox', {
     setBounds: (bounds: { x: number; y: number }) => ipcRenderer.invoke('window:set-bounds', bounds),
   },
   clipboard: {
-    onUpdated: (callback: () => void) => {
-      clipboardListeners.push(callback)
-    },
     writeImage: (dataUrl: string) => ipcRenderer.invoke('clipboard:write-image', dataUrl),
   },
   player: {
-    onUpdated: (callback: () => void) => {
-      playerListeners.push(callback)
-    },
     // Audio control commands (from Page.vue or any renderer)
     play: (detail?: any) => ipcRenderer.invoke('player:play', { action: 'play', ...(detail || {}) }),
     pause: () => ipcRenderer.invoke('player:play', { action: 'pause' }),
@@ -114,9 +93,6 @@ contextBridge.exposeInMainWorld('mqbox', {
     },
   },
   todo: {
-    onUpdated: (callback: () => void) => {
-      todoListeners.push(callback)
-    },
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
