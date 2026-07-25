@@ -145,7 +145,6 @@ export default {
     async function executeStartHostDirectly() {
       if (hostState.enabled) { context.log('warn', 'startHost skipped (already enabled)'); return }
       try {
-        context.log('info', 'startHost begin')
         hostState.status = '启动中…'
         const id = deviceId!
 
@@ -186,20 +185,16 @@ export default {
 
     // Renderer calls this to send WebRTC answer/ICE via WS
     context.registerCommand('sendSignal', async (args: any) => {
-      context.log('info', 'sendSignal: ' + (args?.type))
       if (args) {
-        // Auto-add target_deviceId if not present
         if (!args.target_deviceId && currentViewerId) {
           args.target_deviceId = currentViewerId
         }
-        context.log('info', 'sendSignal: sending via remote:ws-send')
         context.signal('remote:ws-send', args)
       }
       return getState()
     })
 
     context.registerCommand('handleSignal', async (msg: any) => {
-      context.log('info', 'handleSignal command received: type=' + (msg?.type))
       handleSignal(msg)
       return getState()
     })

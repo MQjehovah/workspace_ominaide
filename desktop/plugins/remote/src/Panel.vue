@@ -46,7 +46,7 @@ onMounted(() => {
     } catch {}
   }
   refreshUI()
-  uiTimer = setInterval(refreshUI, 3000)
+  uiTimer = setInterval(refreshUI, 5000)
 })
 
 onUnmounted(() => {

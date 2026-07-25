@@ -15,6 +15,12 @@ let pendingIce: any[] = []
 let connectionEnded = false
 let targetId = ''
 let cleanupSignal: (() => void) | null = null
+let keepaliveTimer: any = null
+let lastPong = 0
+let reconnectTimer: any = null
+let adaptTimer: any = null
+let currentQuality = { maxWidth: 1920, maxHeight: 1080, maxFrameRate: 30 }
+let qualityGoodSince = 0
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
 
@@ -23,6 +29,9 @@ async function connect(hostDeviceId: string) {
   connectionEnded = false
   targetId = hostDeviceId
   status.value = '连接中…'
+  stopKeepalive()
+  stopAdaptiveQuality()
+  cancelReconnect()
   try {
     pc = newPeer(await getIceServers())
 
@@ -51,101 +60,125 @@ function determineQuality() {
   if (w <= 800 || h <= 600) { maxWidth = 800; maxHeight = 600; maxFrameRate = 15 }
   else if (w <= 1280 || h <= 720) { maxWidth = 1280; maxHeight = 720; maxFrameRate = 24 }
   sendInput({ type: 'setQuality', maxWidth, maxHeight, maxFrameRate })
+  currentQuality = { maxWidth, maxHeight, maxFrameRate }
+  qualityGoodSince = 0
 }
+
+function startKeepalive() {
+  lastPong = Date.now()
+  clearInterval(keepaliveTimer)
+  keepaliveTimer = setInterval(() => {
+    if (dc?.readyState === 'open') {
+      try { dc.send(JSON.stringify({ type: 'ping' })) } catch {}
+      if (Date.now() - lastPong > 30000) {
+        console.log('[viewer] keepalive timeout')
+        status.value = '连接超时，重连中…'
+        scheduleReconnect()
+      }
+    }
+  }, 10000)
+}
+
+function stopKeepalive() { clearInterval(keepaliveTimer); keepaliveTimer = null }
+
+function scheduleReconnect() {
+  if (connectionEnded) return
+  clearTimeout(reconnectTimer)
+  reconnectTimer = setTimeout(() => {
+    if (connectionEnded) return
+    console.log('[viewer] reconnecting...')
+    cleanup()
+    if (targetId) connect(targetId)
+  }, 3000)
+}
+
+function cancelReconnect() { clearTimeout(reconnectTimer); reconnectTimer = null }
 
 async function startOffering() {
   if (!pc) return
   dc = pc.createDataChannel('input')
-  dc.onopen = () => determineQuality()
+  dc.onopen = () => { determineQuality(); startKeepalive() }
   dc.onmessage = (msg) => {
     try {
       const ev = JSON.parse(msg.data)
+      if (ev.type === 'pong') { lastPong = Date.now(); return }
       if (ev.type === 'screens') { screens.value = ev.list || []; return }
       if (ev.type === 'activeScreen') { activeScreenId.value = ev.id; return }
-    } catch {}
+    } catch { console.warn('[viewer] dc message parse error') }
   }
   pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
-    console.log('[viewer] ontrack:', e.track?.kind, 'enabled:', e.track?.enabled, 'readyState:', e.track?.readyState, 'muted:', e.track?.muted, 'streams:', e.streams?.length)
+    console.log('[viewer] ontrack:', e.track?.kind, 'readyState:', e.track?.readyState)
     connected.value = true
     status.value = '已连接（可控制）'
+    cancelReconnect()
     const stream = e.streams?.[0]
-    if (!stream) { console.log('[viewer] ERROR: no stream in ontrack!'); return }
-    console.log('[viewer] stream tracks:', stream.getTracks().map(t => `${t.kind}:${t.readyState}:${t.enabled}:${t.muted}`).join(','))
-
+    if (!stream) return
     const attachAndPlay = (retryCount = 0) => {
       const el = videoRef.value
-      if (!el) {
-        console.log('[viewer] videoRef null, retry', retryCount)
-        if (retryCount < 50) setTimeout(() => attachAndPlay(retryCount + 1), 100)
-        return
-      }
+      if (!el) { if (retryCount < 50) setTimeout(() => attachAndPlay(retryCount + 1), 100); return }
       el.srcObject = null
       el.srcObject = stream
       el.muted = true
       el.autoplay = true
-      console.log('[viewer] video dimensions:', el.clientWidth, 'x', el.clientHeight, 'readyState:', el.readyState, 'networkState:', el.networkState, 'paused:', el.paused)
-
-      el.onloadeddata = () => console.log('[viewer] video loadeddata, videoWidth:', el.videoWidth, 'x', el.videoHeight)
-      el.onerror = (ev) => console.log('[viewer] video error:', (ev as any).message || 'unknown')
-
-      el.play().then(() => {
-        console.log('[viewer] play ok, video size:', el.videoWidth, 'x', el.videoHeight)
-      }).catch((err) => {
-        console.log('[viewer] play err:', err.message, '- retrying in 500ms')
-        setTimeout(() => attachAndPlay(retryCount), 500)
-      })
-
-      setTimeout(() => {
-        console.log('[viewer] play timeout check - readyState:', el.readyState, 'networkState:', el.networkState, 'videoWidth:', el.videoWidth, 'paused:', el.paused, 'currentTime:', el.currentTime, 'srcObject:', el.srcObject !== null)
-        // Diagnostic stats
-        if (pc) {
-          pc.getStats().then((stats: any) => {
-            let reports: any[] = []
-            stats.forEach((report: any) => {
-              if (report.type === 'candidate-pair' || report.type === 'inbound-rtp' || report.type === 'transport' || report.type === 'dtls-transport') {
-                reports.push(JSON.parse(JSON.stringify(report)))
-              }
-            })
-            console.log('[viewer] stats at 3s:', JSON.stringify(reports, null, 0).substring(0, 2000))
-          }).catch((e: any) => console.log('[viewer] stats error:', e.message))
-        }
-      }, 3000)
+      el.play().catch(() => setTimeout(() => attachAndPlay(retryCount), 500))
     }
     nextTick(() => attachAndPlay())
     setTimeout(() => determineQuality(), 500)
+    startAdaptiveQuality()
   }
   pc.onicecandidate = (e) => {
     if (e.candidate) {
-      console.log('[viewer] sending ICE:', e.candidate.candidate?.substring(0, 60))
       props.execute?.('sendSignal', { type: 'ice', target_deviceId: targetId, payload: e.candidate.toJSON() })
-    } else {
-      console.log('[viewer] ICE gathering complete (null candidate)')
     }
   }
-  console.log('[viewer] initial iceConnectionState:', pc.iceConnectionState, 'iceGatheringState:', pc.iceGatheringState, 'signalingState:', pc.signalingState)
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
-    console.log('[viewer] ICE state:', st, 'gathering:', pc.iceGatheringState, 'signaling:', pc.signalingState, 'connectionState:', pc.connectionState)
-    if (st === 'failed') { if (!connectionEnded) status.value = '连接失败（ICE）'; connected.value = false; cleanup() }
-    else if (st === 'disconnected') { if (!connectionEnded) status.value = '连接中断，尝试恢复…' }
+    console.log('[viewer] ICE state:', st)
+    if (st === 'connected') cancelReconnect()
+    else if (st === 'disconnected' && !connectionEnded) { status.value = '连接中断，10秒后重连…'; scheduleReconnect() }
+    else if (st === 'failed' && !connectionEnded) { status.value = '连接失败，重连中…'; connected.value = false; scheduleReconnect() }
     else if (st === 'closed') { connected.value = false }
   }
-  pc.onicegatheringstatechange = () => {
-    if (!pc) return
-    console.log('[viewer] ICE gathering:', pc.iceGatheringState)
-  }
-  pc.onconnectionstatechange = () => {
-    if (!pc) return
-    console.log('[viewer] connectionState:', pc.connectionState)
-  }
+  pc.onconnectionstatechange = () => {}
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
-  console.log('[viewer] offer SDP lines:', offer.sdp?.split('\n').filter(l => l.startsWith('m=')).join(', '))
   props.execute?.('sendSignal', { type: 'offer', target_deviceId: targetId, payload: offer })
   status.value = '等待画面…'
 }
+
+function startAdaptiveQuality() {
+  clearInterval(adaptTimer)
+  adaptTimer = setInterval(async () => {
+    if (!pc || pc.iceConnectionState !== 'connected') return
+    try {
+      const stats = await pc.getStats()
+      let totalLost = 0, totalReceived = 0
+      stats.forEach((r: any) => {
+        if (r.type === 'inbound-rtp' && r.kind === 'video') {
+          totalLost += r.packetsLost || 0
+          totalReceived += r.packetsReceived || 0
+        }
+      })
+      const lossRate = totalReceived > 0 ? totalLost / totalReceived : 0
+      const current = currentQuality
+      if (lossRate > 0.05 && current.maxWidth > 800) {
+        currentQuality = { maxWidth: 800, maxHeight: 600, maxFrameRate: 15 }
+        sendInput({ type: 'setQuality', ...currentQuality })
+        qualityGoodSince = 0
+      } else if (lossRate < 0.01 && current.maxWidth < 1920) {
+        if (qualityGoodSince === 0) qualityGoodSince = Date.now()
+        else if (Date.now() - qualityGoodSince > 30000) {
+          currentQuality = { maxWidth: 1920, maxHeight: 1080, maxFrameRate: 30 }
+          sendInput({ type: 'setQuality', ...currentQuality })
+        }
+      } else { qualityGoodSince = 0 }
+    } catch {}
+  }, 15000)
+}
+
+function stopAdaptiveQuality() { clearInterval(adaptTimer); adaptTimer = null }
 
 function onSignal(m: any) {
   if (m.type === 'controlAllowed') {
@@ -162,17 +195,15 @@ function onSignal(m: any) {
     (async () => {
       try {
         await pc!.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
-        for (const c of pendingIce) { try { await pc!.addIceCandidate(c) } catch {} }
+        for (const c of pendingIce) { try { await pc!.addIceCandidate(c) } catch { console.warn('[viewer] addIce error') } }
         pendingIce = []
-        console.log('[viewer] answer set, signaling:', pc!.signalingState, 'iceState:', pc!.iceConnectionState)
+        console.log('[viewer] answer set, iceState:', pc!.iceConnectionState)
       } catch (e: any) { console.log('[viewer] answer error:', e.message) }
     })()
   } else if (m.type === 'ice') {
-    // Filter out self-echoed ICE candidates (same machine broadcast issue)
     const localUfrag = pc?.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
     if (m.payload?.usernameFragment && m.payload.usernameFragment === localUfrag) {
-      // Skip self-echoed candidate
-    } else if (pc && pc.remoteDescription) { try { pc.addIceCandidate(m.payload) } catch (e: any) { console.log('[viewer] addIce error:', e.message) } }
+    } else if (pc && pc.remoteDescription) { try { pc.addIceCandidate(m.payload) } catch { console.warn('[viewer] addIce error') } }
     else if (pc && !pc.remoteDescription) pendingIce.push(m.payload)
   } else if (m.type === 'error') {
     status.value = '被控端错误: ' + (m.message || '未知')
@@ -180,12 +211,12 @@ function onSignal(m: any) {
 }
 
 function switchScreen(sourceId: string) {
-  if (dc && dc.readyState === 'open') { try { dc.send(JSON.stringify({type:'switchScreen',sourceId})) } catch {} }
+  if (dc && dc.readyState === 'open') { try { dc.send(JSON.stringify({type:'switchScreen',sourceId})) } catch { console.warn('[viewer] switchScreen send error') } }
 }
 
 function sendInput(ev: any) {
   if (dc && dc.readyState === 'open') {
-    try { dc.send(JSON.stringify(ev)) } catch {}
+    try { dc.send(JSON.stringify(ev)) } catch { console.warn('[viewer] sendInput error') }
   }
 }
 
@@ -222,6 +253,9 @@ function cleanup() {
   pendingIce = []
   if (videoRef.value) videoRef.value.srcObject = null
   if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
+  stopKeepalive()
+  stopAdaptiveQuality()
+  cancelReconnect()
 }
 
 function backToMenu() { connectionEnded = false; cleanup(); props.close?.() }
@@ -230,12 +264,8 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('resize', invalidateNormCache)
-  console.log('[viewer] mounted, target=', props.targetDeviceId, 'typeof=', typeof props.targetDeviceId)
   if (props.targetDeviceId && props.targetDeviceId !== 'undefined' && props.targetDeviceId !== '') {
-    console.log('[viewer] calling connect with:', props.targetDeviceId)
     connect(props.targetDeviceId)
-  } else {
-    console.log('[viewer] skipped connect, target is empty or undefined')
   }
 })
 
