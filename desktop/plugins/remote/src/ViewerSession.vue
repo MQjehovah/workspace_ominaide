@@ -278,7 +278,8 @@ function normVideo(e: MouseEvent) {
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
 }
 
-function onMouseMove(e: MouseEvent) { const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
+let lastMoveTime = 0
+function onMouseMove(e: MouseEvent) { const now = Date.now(); if (now - lastMoveTime < 16) return; lastMoveTime = now; const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
 function onMouseDown(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseDown', button }) }
 function onMouseUp(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseUp', button }) }
 function onWheel(e: WheelEvent) { sendInput({ type: 'wheel', deltaY: e.deltaY }) }

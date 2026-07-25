@@ -60,15 +60,11 @@ function cleanup() {
 }
 
 let injectQueue = Promise.resolve()
-let lastHostMoveTime = 0
 
 function handleInput(ev: any) {
   try {
     if (ev.type === 'mouseMove') {
       if (!currentDisplay) return
-      const now = Date.now()
-      if (now - lastHostMoveTime < 16) return
-      lastHostMoveTime = now
       const d = currentDisplay
       const sf = d.scaleFactor || 1
       const x = Math.round((d.bounds.x + (Number(ev.x) || 0) * d.bounds.width) * sf)
