@@ -22,7 +22,7 @@ let reconnectTimer: any = null
 let adaptTimer: any = null
 let statsTimer: any = null
 let prevStats: any = null
-let currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
+let currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 15 }
 let qualityGoodSince = 0
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
@@ -170,7 +170,7 @@ function startAdaptiveQuality() {
       } else if (lossRate < 0.005 && !highLatency && current.maxWidth < 1280) {
         if (qualityGoodSince === 0) qualityGoodSince = Date.now()
         else if (Date.now() - qualityGoodSince > 20000) {
-          currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
+          currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 15 }
           sendInput({ type: 'setQuality', ...currentQuality })
         }
       } else { qualityGoodSince = 0 }
@@ -278,8 +278,7 @@ function normVideo(e: MouseEvent) {
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
 }
 
-let lastMoveTime = 0
-function onMouseMove(e: MouseEvent) { const now = Date.now(); if (now - lastMoveTime < 16) return; lastMoveTime = now; const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
+function onMouseMove(e: MouseEvent) { const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
 function onMouseDown(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseDown', button }) }
 function onMouseUp(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseUp', button }) }
 function onWheel(e: WheelEvent) { sendInput({ type: 'wheel', deltaY: e.deltaY }) }

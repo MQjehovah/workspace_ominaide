@@ -10,6 +10,7 @@ import * as screenshot from '../screenshot'
 import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins } from '../pinWindow'
 import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
 
+
 let nutLoader: any = null
 function getNut(): any {
   if (nutLoader) return nutLoader
@@ -469,35 +470,6 @@ export function registerIpcHandlers() {
       }))
     } catch {
       return []
-    }
-  })
-
-  ipcMain.handle('remote:inject', async (_e, event: any) => {
-    try {
-      const nut = getNut()
-      const ev = event || {}
-      if (ev.type === 'mouseMove') {
-        await nut.mouse.setPosition(new nut.Point(Math.round(ev.x), Math.round(ev.y)))
-      } else if (ev.type === 'mouseDown') {
-        const b = buttonMap[ev.button]
-        if (b && nut.Button[b] !== undefined) await nut.mouse.pressButton(nut.Button[b])
-      } else if (ev.type === 'mouseUp') {
-        const b = buttonMap[ev.button]
-        if (b && nut.Button[b] !== undefined) await nut.mouse.releaseButton(nut.Button[b])
-      } else if (ev.type === 'wheel') {
-        const amt = Math.max(1, Math.min(10, Math.round(Math.abs(ev.deltaY) / 100) || 1))
-        if (ev.deltaY > 0) await nut.mouse.scrollDown(amt)
-        else await nut.mouse.scrollUp(amt)
-      } else if (ev.type === 'keyDown') {
-        const k = keyMap[ev.code]
-        if (k && nut.Key[k] !== undefined) await nut.keyboard.pressKey(nut.Key[k])
-      } else if (ev.type === 'keyUp') {
-        const k = keyMap[ev.code]
-        if (k && nut.Key[k] !== undefined) await nut.keyboard.releaseKey(nut.Key[k])
-      }
-      return { ok: true }
-    } catch (e: any) {
-      return { ok: false, error: e?.message || String(e) }
     }
   })
 
