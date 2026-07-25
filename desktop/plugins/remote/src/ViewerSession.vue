@@ -357,7 +357,7 @@ function sendRevokedOnUnload() {
     </div>
     <video ref="videoRef" autoplay playsinline muted class="video"
       @mousemove="onMouseMove" @mousedown="onMouseDown" @mouseup="onMouseUp"
-      @wheel.prevent="onWheel" @contextmenu.prevent></video>
+      @wheel="onWheel" @contextmenu.prevent></video>
   </div>
 </template>
 

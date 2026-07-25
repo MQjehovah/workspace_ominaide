@@ -59,6 +59,8 @@ function cleanup() {
   currentDataChannel = null
 }
 
+let lastWheelPromise = Promise.resolve()
+
 function handleInput(ev: any) {
   try {
     if (ev.type === 'mouseMove') {
@@ -68,6 +70,8 @@ function handleInput(ev: any) {
       const x = Math.round((d.bounds.x + (Number(ev.x) || 0) * d.bounds.width) * sf)
       const y = Math.round((d.bounds.y + (Number(ev.y) || 0) * d.bounds.height) * sf)
       win.mqbox.remote.injectInput({ type: 'mouseMove', x, y }).catch(() => {})
+    } else if (ev.type === 'wheel') {
+      lastWheelPromise = lastWheelPromise.then(() => win.mqbox.remote.injectInput(ev)).catch(() => {})
     } else {
       win.mqbox.remote.injectInput(ev).catch(() => {})
     }
