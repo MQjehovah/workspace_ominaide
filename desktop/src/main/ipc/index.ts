@@ -501,9 +501,10 @@ export function registerIpcHandlers() {
     }
   })
 
-  ipcMain.on('remote:inject', async (_event, ev: any) => {
+  ipcMain.handle('remote:inject', async (_e, event: any) => {
     try {
       const nut = getNut()
+      const ev = event || {}
       if (ev.type === 'mouseMove') {
         await nut.mouse.setPosition(new nut.Point(Math.round(ev.x), Math.round(ev.y)))
       } else if (ev.type === 'mouseDown') {
@@ -523,8 +524,9 @@ export function registerIpcHandlers() {
         const k = keyMap[ev.code]
         if (k && nut.Key[k] !== undefined) await nut.keyboard.releaseKey(nut.Key[k])
       }
+      return { ok: true }
     } catch (e: any) {
-      console.error('[remote:inject] error:', e?.message)
+      return { ok: false, error: e?.message || String(e) }
     }
   })
 
