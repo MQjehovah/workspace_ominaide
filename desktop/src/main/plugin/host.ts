@@ -132,10 +132,14 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
   proc.registerBridgeHandler('api:post', async ([path, body]) => {
     const cfg = await getConfig()
-    const res = await axios.post(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
-      headers: { Authorization: 'Bearer ' + (cfg.token || ''), 'Content-Type': 'application/json' }
-    })
-    return res.data
+    try {
+      const res = await axios.post(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
+        headers: { Authorization: 'Bearer ' + (cfg.token || ''), 'Content-Type': 'application/json' }
+      })
+      return res.data
+    } catch (e: any) {
+      throw new Error(e.response?.data?.detail || e.response?.data || e.message)
+    }
   })
 
   proc.registerBridgeHandler('api:put', async ([path, body]) => {

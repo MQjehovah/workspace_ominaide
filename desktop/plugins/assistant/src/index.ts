@@ -42,7 +42,21 @@ export default {
       description: 'Ctrl+Shift+A 快速呼出 · 语音对话 · 自然语言操作',
     }))
     context.registerCommand('getPageData', async () => ({}))
-    context.registerCommand('open', async () => { context.openPage('assistant') })
+    context.registerCommand('open', async (args: any) => {
+      if (args?.message) {
+        try {
+          const res = await context.api.post('/chat', {
+            message: args.message,
+            history: args.history || [],
+          })
+          const reply = res?.reply || res?.response || ''
+          return reply ? { subtitle: reply } : undefined
+        } catch (e) {
+          return { subtitle: `[请求失败] ${(e as Error).message}` }
+        }
+      }
+      context.openPage('assistant')
+    })
     context.registerCommand('toggleAssistant', async () => { showAssistant() })
 
     context.registerSearchProvider({

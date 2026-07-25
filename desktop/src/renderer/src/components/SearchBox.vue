@@ -6,7 +6,6 @@ const results = ref<any[]>([])
 const selectedIndex = ref(0)
 const isLoading = ref(false)
 const providers = ref<{ keyword: string; name: string }[]>([])
-const focused = ref(false)
 
 let debounceTimer: number | null = null
 const inputRef = ref<HTMLInputElement>()
@@ -57,14 +56,23 @@ function doAction(pluginId: string, action: string, actionArgs: any) {
 function selectIndex(i: number) {
   selectedIndex.value = i
   const r = results.value[i]
-  if (r?.action && r.pluginId) {
-    const action = r.action.includes(':') ? r.action.split(':').slice(1).join(':') : r.action
-    const p = doAction(r.pluginId, action, r.actionArgs)
-    if (p?.then) {
-      p.then(() => window.mqbox?.window.hide())
-      return
-    }
+  if (!r?.action || !r.pluginId) { window.mqbox?.window.hide(); return }
+  const action = r.action.includes(':') ? r.action.split(':').slice(1).join(':') : r.action
+  r._loading = true
+  const p = doAction(r.pluginId, action, r.actionArgs)
+  if (p?.then) {
+    p.then((result: any) => {
+      r._loading = false
+      if (result && typeof result === 'object' && 'subtitle' in result) {
+        if (result.title) r.title = result.title
+        r.subtitle = result.subtitle
+      } else {
+        window.mqbox?.window.hide()
+      }
+    })
+    return
   }
+  r._loading = false
   window.mqbox?.window.hide()
 }
 
@@ -95,7 +103,7 @@ onUnmounted(() => { if (debounceTimer) clearTimeout(debounceTimer) })
         <svg v-else class="s-icon spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
         </svg>
-        <input ref="inputRef" v-model="query" type="text" placeholder="搜索..." @input="handleInput" @keydown="handleKeydown" @focus="focused=true" @blur="focused=false" />
+        <input ref="inputRef" v-model="query" type="text" placeholder="搜索..." @input="handleInput" @keydown="handleKeydown" />
         <button v-if="query" class="clear-btn" @click="clearSearch">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
@@ -104,7 +112,8 @@ onUnmounted(() => { if (debounceTimer) clearTimeout(debounceTimer) })
     <div v-if="results.length > 0" class="results-panel">
         <div v-for="(r, i) in results" :key="i" :class="['result-item', { active: i === selectedIndex }]" @click="selectIndex(i)" @mouseenter="selectedIndex = i">
         <div class="r-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z"/></svg>
+          <svg v-if="!r._loading" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z"/></svg>
+          <svg v-else class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
         </div>
         <div class="r-body">
           <div class="r-title">{{ r.title }}</div>

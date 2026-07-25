@@ -19,7 +19,7 @@ export function createChildContext(info: PluginInfo): PluginContext {
   let respBuffer = ''
 
   function waitForResponse(id: string): Promise<unknown> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       pendingResolve = resolve
       const cleanup = (chunk: Buffer) => {
         respBuffer += chunk.toString()
@@ -34,7 +34,11 @@ export function createChildContext(info: PluginInfo): PluginContext {
               pendingResolve = null
               respBuffer = ''
               process.stdin?.removeListener('data', cleanup)
-              resolve((msg as any).data)
+              if ((msg as any).type === 'error') {
+                reject(new Error((msg as any).error || 'RPC error'))
+              } else {
+                resolve((msg as any).data)
+              }
               return
             }
           } catch {}
