@@ -13,6 +13,8 @@ const hasPeer = ref(false)
 let pc: RTCPeerConnection | null = null
 let stream: MediaStream | null = null
 let pendingIce: any[] = []
+let iceProcessedCount = 0
+let iceTimer: any = null
 let moveScheduled = false
 let pendingMove: any = null
 let currentDisplay: any = null
@@ -52,6 +54,8 @@ function cleanup() {
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   stream = null
   pendingIce = []
+  iceProcessedCount = 0
+  if (iceTimer) { clearInterval(iceTimer); iceTimer = null }
   currentDataChannel = null
 }
 
@@ -89,6 +93,7 @@ async function startConnection() {
     const offer = st?.hostState?.pendingOffer
     if (!offer) { status.value = '无连接请求'; return }
     pendingIce = st.hostState.pendingIce || []
+    iceProcessedCount = 0
 
     const { sources: srcList, displays: allDisplays } = await getCachedSources()
     if (!srcList.length) { status.value = '无屏幕源'; return }
@@ -132,23 +137,88 @@ async function startConnection() {
       }
     }
 
-    await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
-    stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
-    setCodecPreferences(pc)
-    for (const c of pendingIce) { try { await pc.addIceCandidate(c) } catch {} }
-    pendingIce = []
-
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    sendToChild('answer', answer)
-
+    // Standard WebRTC flow: setRemoteDescription → createAnswer → setLocalDescription → addIceCandidate
+    // Set ICE candidate handler BEFORE any SDP operations to avoid losing candidates
     pc.onicecandidate = (e) => {
-      if (e.candidate) sendToChild('ice', e.candidate)
+      if (e.candidate) {
+        console.log('[host] local ICE candidate:', e.candidate.candidate?.substring(0, 80), 'component:', e.candidate.component, 'protocol:', e.candidate.protocol)
+        sendToChild('ice', e.candidate.toJSON())
+      } else {
+        console.log('[host] ICE gathering complete (null candidate)')
+      }
     }
 
+    await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
+
+    // Use addTrack to properly associate the track with a stream
+    stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
+    console.log('[host] added tracks via addTrack')
+    console.log('[host] stream tracks:', stream.getTracks().map(t => `${t.kind}:${t.readyState}:${t.enabled}`).join(', '))
+    console.log('[host] transceivers:', pc.getTransceivers().map(t => `${t.kind}:${t.direction}:${t.currentDirection}:${t.mid}:senderTrack=${t.sender?.track?.kind ?? 'null'}`).join(', '))
+
+    // Create and set answer BEFORE adding ICE candidates
+    // Adding candidates before setLocalDescription causes ICE to associate with wrong credentials
+    const answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+    console.log('[host] answer SDP lines:', answer.sdp?.split('\n').filter(l => l.startsWith('m=')).join(', '))
+    console.log('[host] after answer transceivers:', pc.getTransceivers().map(t => `${t.kind}:${t.direction}:${t.currentDirection}:${t.mid}`).join(', '))
+    sendToChild('answer', answer)
+
+    // NOW add viewer ICE candidates (after both local and remote descriptions are set)
+    // Filter out self-echoed ICE candidates (same machine broadcast issue)
+    const localUfrag = pc.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
+    let addedCount = 0
+    let skippedSelf = 0
+    console.log('[host] initial pendingIce count:', pendingIce.length, 'localUfrag:', localUfrag)
+    for (let i = 0; i < pendingIce.length; i++) {
+      const ufrag = pendingIce[i]?.usernameFragment
+      if (ufrag && ufrag === localUfrag) {
+        skippedSelf++
+        continue // Skip self-echoed candidate
+      }
+      try { await pc.addIceCandidate(pendingIce[i]); addedCount++ }
+      catch (e: any) { console.log('[host] FAILED to add viewer ICE:', e.message) }
+    }
+    console.log('[host] added', addedCount, 'viewer ICE, skipped', skippedSelf, 'self-echoed, iceState:', pc.iceConnectionState)
+    iceProcessedCount = pendingIce.length
+    // Periodically check for new ICE candidates from hostState
+    iceTimer = setInterval(async () => {
+      if (!pc || pc.iceConnectionState === 'closed') return
+      const st = await props.execute?.('getState')
+      const newPending = st?.hostState?.pendingIce
+      if (newPending && newPending.length > iceProcessedCount) {
+        const localUfrag = pc.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
+        let added = 0, skipped = 0
+        for (let i = iceProcessedCount; i < newPending.length; i++) {
+          if (newPending[i]?.usernameFragment && newPending[i].usernameFragment === localUfrag) { skipped++; continue }
+          try { await pc.addIceCandidate(newPending[i]); added++ }
+          catch (e: any) { console.log('[host] polling FAILED:', e.message) }
+        }
+        iceProcessedCount = newPending.length
+        if (added > 0 || skipped > 0) console.log('[host] polling: added', added, 'skipped', skipped, 'total:', iceProcessedCount, 'iceState:', pc.iceConnectionState)
+      }
+    }, 200)
+
+    // Diagnostic: check stats after 3s
+    setTimeout(async () => {
+      if (!pc) return
+      try {
+        const stats = await pc.getStats()
+        let reports: any[] = []
+        stats.forEach((report: any) => {
+          if (report.type === 'candidate-pair' || report.type === 'inbound-rtp' || report.type === 'outbound-rtp' || report.type === 'transport' || report.type === 'dtls-transport') {
+            reports.push(JSON.parse(JSON.stringify(report)))
+          }
+        })
+        console.log('[host] stats at 3s:', JSON.stringify(reports, null, 0).substring(0, 2000))
+      } catch (e: any) { console.log('[host] stats error:', e.message) }
+    }, 3000)
+
+    console.log('[host] initial iceConnectionState:', pc.iceConnectionState, 'iceGatheringState:', pc.iceGatheringState, 'signalingState:', pc.signalingState)
     pc.oniceconnectionstatechange = () => {
       if (!pc) return
       const st = pc.iceConnectionState
+      console.log('[host] ICE state:', st, 'gathering:', pc.iceGatheringState, 'signaling:', pc.signalingState)
       if (st === 'connected' || st === 'completed') {
         connected.value = true
         status.value = '推流中'
@@ -160,6 +230,14 @@ async function startConnection() {
         cleanup()
         setTimeout(() => window.close(), 2000)
       }
+    }
+    pc.onicegatheringstatechange = () => {
+      if (!pc) return
+      console.log('[host] ICE gathering:', pc.iceGatheringState)
+    }
+    pc.onconnectionstatechange = () => {
+      if (!pc) return
+      console.log('[host] connectionState:', pc.connectionState)
     }
 
     status.value = '推流中'
@@ -188,6 +266,7 @@ async function switchScreen(sourceId: string) {
 }
 
 function disconnect() {
+  if (iceTimer) { clearInterval(iceTimer); iceTimer = null }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   stream = null

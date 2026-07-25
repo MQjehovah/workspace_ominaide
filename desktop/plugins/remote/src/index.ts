@@ -125,10 +125,7 @@ export default {
         }
       } else if (msg.type === 'ice') {
         const ice = (hostState as any).pendingIce
-        if (ice) {
-          ice.push(msg.payload)
-          if (ice.length % 5 === 0) context.log('info', 'received ' + ice.length + ' viewer ICE candidates')
-        }
+        if (ice) ice.push(msg.payload)
       } else if (msg.type === 'revoked') {
         hostState.status = '连接已断开'
         hostState.peerConnected = false

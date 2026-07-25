@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { newPeer, getIceServers } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; targetDeviceId?:string }>()
@@ -55,7 +55,6 @@ function determineQuality() {
 
 async function startOffering() {
   if (!pc) return
-  pc.addTransceiver('video', { direction: 'recvonly' })
   dc = pc.createDataChannel('input')
   dc.onopen = () => determineQuality()
   dc.onmessage = (msg) => {
@@ -67,39 +66,83 @@ async function startOffering() {
   }
   pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
-    console.log('[viewer] ontrack:', e.track?.kind, 'enabled:', e.track?.enabled, 'readyState:', e.track?.readyState)
-    const stream = e.streams?.[0] || new MediaStream([e.track])
-    if (videoRef.value) {
-      videoRef.value.srcObject = null
-      videoRef.value.srcObject = stream
-      videoRef.value.muted = true
-      videoRef.value.load()
-      setTimeout(() => {
-        videoRef.value!.play().then(() => {
-          console.log('[viewer] play ok, video size:', videoRef.value?.videoWidth, 'x', videoRef.value?.videoHeight)
-        }).catch((err) => {
-          console.log('[viewer] play err:', err.message)
-        })
-      }, 500)
-    }
+    console.log('[viewer] ontrack:', e.track?.kind, 'enabled:', e.track?.enabled, 'readyState:', e.track?.readyState, 'muted:', e.track?.muted, 'streams:', e.streams?.length)
     connected.value = true
-    setTimeout(() => determineQuality(), 500)
     status.value = '已连接（可控制）'
+    const stream = e.streams?.[0]
+    if (!stream) { console.log('[viewer] ERROR: no stream in ontrack!'); return }
+    console.log('[viewer] stream tracks:', stream.getTracks().map(t => `${t.kind}:${t.readyState}:${t.enabled}:${t.muted}`).join(','))
+
+    const attachAndPlay = (retryCount = 0) => {
+      const el = videoRef.value
+      if (!el) {
+        console.log('[viewer] videoRef null, retry', retryCount)
+        if (retryCount < 50) setTimeout(() => attachAndPlay(retryCount + 1), 100)
+        return
+      }
+      el.srcObject = null
+      el.srcObject = stream
+      el.muted = true
+      el.autoplay = true
+      console.log('[viewer] video dimensions:', el.clientWidth, 'x', el.clientHeight, 'readyState:', el.readyState, 'networkState:', el.networkState, 'paused:', el.paused)
+
+      el.onloadeddata = () => console.log('[viewer] video loadeddata, videoWidth:', el.videoWidth, 'x', el.videoHeight)
+      el.onerror = (ev) => console.log('[viewer] video error:', (ev as any).message || 'unknown')
+
+      el.play().then(() => {
+        console.log('[viewer] play ok, video size:', el.videoWidth, 'x', el.videoHeight)
+      }).catch((err) => {
+        console.log('[viewer] play err:', err.message, '- retrying in 500ms')
+        setTimeout(() => attachAndPlay(retryCount), 500)
+      })
+
+      setTimeout(() => {
+        console.log('[viewer] play timeout check - readyState:', el.readyState, 'networkState:', el.networkState, 'videoWidth:', el.videoWidth, 'paused:', el.paused, 'currentTime:', el.currentTime, 'srcObject:', el.srcObject !== null)
+        // Diagnostic stats
+        if (pc) {
+          pc.getStats().then((stats: any) => {
+            let reports: any[] = []
+            stats.forEach((report: any) => {
+              if (report.type === 'candidate-pair' || report.type === 'inbound-rtp' || report.type === 'transport' || report.type === 'dtls-transport') {
+                reports.push(JSON.parse(JSON.stringify(report)))
+              }
+            })
+            console.log('[viewer] stats at 3s:', JSON.stringify(reports, null, 0).substring(0, 2000))
+          }).catch((e: any) => console.log('[viewer] stats error:', e.message))
+        }
+      }, 3000)
+    }
+    nextTick(() => attachAndPlay())
+    setTimeout(() => determineQuality(), 500)
   }
   pc.onicecandidate = (e) => {
     if (e.candidate) {
-      props.execute?.('sendSignal', { type: 'ice', target_deviceId: targetId, payload: e.candidate })
+      console.log('[viewer] sending ICE:', e.candidate.candidate?.substring(0, 60))
+      props.execute?.('sendSignal', { type: 'ice', target_deviceId: targetId, payload: e.candidate.toJSON() })
+    } else {
+      console.log('[viewer] ICE gathering complete (null candidate)')
     }
   }
+  console.log('[viewer] initial iceConnectionState:', pc.iceConnectionState, 'iceGatheringState:', pc.iceGatheringState, 'signalingState:', pc.signalingState)
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
+    console.log('[viewer] ICE state:', st, 'gathering:', pc.iceGatheringState, 'signaling:', pc.signalingState, 'connectionState:', pc.connectionState)
     if (st === 'failed') { if (!connectionEnded) status.value = '连接失败（ICE）'; connected.value = false; cleanup() }
     else if (st === 'disconnected') { if (!connectionEnded) status.value = '连接中断，尝试恢复…' }
     else if (st === 'closed') { connected.value = false }
   }
+  pc.onicegatheringstatechange = () => {
+    if (!pc) return
+    console.log('[viewer] ICE gathering:', pc.iceGatheringState)
+  }
+  pc.onconnectionstatechange = () => {
+    if (!pc) return
+    console.log('[viewer] connectionState:', pc.connectionState)
+  }
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
+  console.log('[viewer] offer SDP lines:', offer.sdp?.split('\n').filter(l => l.startsWith('m=')).join(', '))
   props.execute?.('sendSignal', { type: 'offer', target_deviceId: targetId, payload: offer })
   status.value = '等待画面…'
 }
@@ -116,14 +159,21 @@ function onSignal(m: any) {
     status.value = '被控端断开了控制'
     cleanup()
   } else if (m.type === 'answer' && pc) {
-    try {
-      pc.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
-      for (const c of pendingIce) { try { pc.addIceCandidate(c) } catch {} }
-      pendingIce = []
-    } catch (e: any) { status.value = '连接失败: ' + (e?.message || e) }
+    (async () => {
+      try {
+        await pc!.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
+        for (const c of pendingIce) { try { await pc!.addIceCandidate(c) } catch {} }
+        pendingIce = []
+        console.log('[viewer] answer set, signaling:', pc!.signalingState, 'iceState:', pc!.iceConnectionState)
+      } catch (e: any) { console.log('[viewer] answer error:', e.message) }
+    })()
   } else if (m.type === 'ice') {
-    if (pc && pc.remoteDescription) { try { pc.addIceCandidate(m.payload) } catch {} }
-    else pendingIce.push(m.payload)
+    // Filter out self-echoed ICE candidates (same machine broadcast issue)
+    const localUfrag = pc?.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
+    if (m.payload?.usernameFragment && m.payload.usernameFragment === localUfrag) {
+      // Skip self-echoed candidate
+    } else if (pc && pc.remoteDescription) { try { pc.addIceCandidate(m.payload) } catch (e: any) { console.log('[viewer] addIce error:', e.message) } }
+    else if (pc && !pc.remoteDescription) pendingIce.push(m.payload)
   } else if (m.type === 'error') {
     status.value = '被控端错误: ' + (m.message || '未知')
   }
