@@ -124,23 +124,13 @@ async function startConnection() {
         const { sources } = cachedSources ? { sources: cachedSources } : { sources: [] }
         e.channel.send(JSON.stringify({ type: 'screens', list: sources.map((s: any) => ({ id: s.id, name: s.name })) }))
       }
-      e.channel.onmessage = async (msg) => {
+      e.channel.onmessage = (msg) => {
         try {
           const ev = JSON.parse(msg.data)
           if (ev.type === 'ping') { try { e.channel.send(JSON.stringify({ type: 'pong' })) } catch {}; return }
-          if (ev.type === 'switchScreen') { await switchScreen(ev.sourceId); return }
-          if (ev.type === 'setQuality') {
-            Object.assign(qualityConfig, ev)
-            const ns = await navigator.mediaDevices.getUserMedia({
-              audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: currentSourceId, maxFrameRate: qualityConfig.maxFrameRate, maxWidth: qualityConfig.maxWidth, maxHeight: qualityConfig.maxHeight } } as any,
-            })
-            const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
-            if (sender && pc) await sender.replaceTrack(ns.getVideoTracks()[0])
-            if (stream) stream.getTracks().forEach(t => t.stop())
-            stream = ns
-            return
-          }
-          await handleInput(ev)
+          if (ev.type === 'switchScreen') { switchScreen(ev.sourceId); return }
+          if (ev.type === 'setQuality') { Object.assign(qualityConfig, ev); applyQualityChange(); return }
+          handleInput(ev)
         } catch (e: any) { console.warn('[host] dc message error:', e.message) }
       }
     }
@@ -227,6 +217,17 @@ async function switchScreen(sourceId: string) {
     currentDisplay = matchDisplay(srcs.find((s: any) => s.id === sourceId), allDisplays)
     currentDataChannel?.send(JSON.stringify({ type: 'activeScreen', id: sourceId }))
   } catch (e: any) { console.warn('[host] switchScreen error:', e.message) }
+}
+
+function applyQualityChange() {
+  navigator.mediaDevices.getUserMedia({
+    audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: currentSourceId, maxFrameRate: qualityConfig.maxFrameRate, maxWidth: qualityConfig.maxWidth, maxHeight: qualityConfig.maxHeight } } as any,
+  }).then(ns => {
+    const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+    if (sender && pc) sender.replaceTrack(ns.getVideoTracks()[0])
+    if (stream) stream.getTracks().forEach(t => t.stop())
+    stream = ns
+  }).catch(() => {})
 }
 
 function disconnect() {

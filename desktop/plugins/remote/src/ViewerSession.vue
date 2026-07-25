@@ -279,7 +279,7 @@ function normVideo(e: MouseEvent) {
 }
 
 let lastMoveTime = 0
-function onMouseMove(e: MouseEvent) { const now = Date.now(); if (now - lastMoveTime < 16) return; lastMoveTime = now; const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
+function onMouseMove(e: MouseEvent) { const now = Date.now(); if (now - lastMoveTime < 33) return; lastMoveTime = now; const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
 function onMouseDown(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseDown', button }) }
 function onMouseUp(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseUp', button }) }
 function onWheel(e: WheelEvent) { e.preventDefault(); sendInput({ type: 'wheel', deltaY: e.deltaY }) }
@@ -367,7 +367,7 @@ function sendRevokedOnUnload() {
 .screen-btn { padding:4px 10px; border-radius:4px; border:none; background:rgba(255,255,255,.1); color:#fff; font-size:11px; cursor:pointer; }
 .screen-btn.active { background:#e91e63; color:#fff; }
 .screen-btn:hover { background:rgba(255,255,255,.2); }
-.video { flex:1; object-fit:contain; width:100%; height:100%; background:#000; }
+.video { flex:1; object-fit:contain; width:100%; height:100%; background:#000; cursor:none; }
 .status { position:fixed; top:12px; left:50%; transform:translateX(-50%); margin:0; padding:6px 14px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; border-radius:16px; z-index:10; }
 .diag-card { position:fixed; top:12px; left:12px; background:rgba(0,0,0,.7); border-radius:8px; padding:8px 12px; z-index:10; font-size:11px; line-height:1.6; min-width:120px; backdrop-filter:blur(4px); }
 .diag-row { display:flex; justify-content:space-between; gap:12px; }
