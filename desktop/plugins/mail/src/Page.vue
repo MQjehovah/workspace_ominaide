@@ -12,6 +12,7 @@
         <span class="acc-dot" :style="{ background: getColor(a.id) }"></span>
         <span class="acc-name">{{ a.name || a.email }}</span>
         <span class="acc-email">{{ a.email }}</span>
+        <button class="edit-btn" title="编辑" @click.stop="editAccount(a)">✎</button>
         <button class="del-btn" title="删除" @click.stop="removeAccount(a.id)">✕</button>
       </div>
 
@@ -54,9 +55,9 @@
     </div>
 
     <!-- Account Form Dialog -->
-    <div v-if="showAccountForm" class="overlay" @click.self="showAccountForm = false">
+    <div v-if="showAccountForm" class="overlay" @click.self="closeAccountForm">
       <div class="dialog">
-        <div class="dialog-hd">添加邮箱</div>
+        <div class="dialog-hd">{{ editAccountId ? '编辑邮箱' : '添加邮箱' }}</div>
         <div class="dialog-body">
           <input v-model="form.name" placeholder="显示名称（如：工作邮箱）" />
           <input v-model="form.email" placeholder="邮箱地址" />
@@ -84,7 +85,7 @@
           <div v-if="formError" class="error">{{ formError }}</div>
         </div>
         <div class="dialog-ft">
-          <button class="btn" @click="showAccountForm = false">取消</button>
+          <button class="btn" @click="closeAccountForm">取消</button>
           <button class="btn primary" @click="saveAccount">保存</button>
         </div>
       </div>
@@ -127,6 +128,7 @@ const selectedEmail = ref<any>(null)
 
 // Account form
 const showAccountForm = ref(false)
+const editAccountId = ref('')
 const formError = ref('')
 const form = ref<any>({
   name: '', email: '', username: '', password: '',
@@ -181,17 +183,40 @@ async function saveAccount() {
     return
   }
   try {
-    const result = await props.execute('addAccount', JSON.parse(JSON.stringify(form.value)))
+    const cmd = editAccountId.value ? 'updateAccount' : 'addAccount'
+    const args = editAccountId.value ? { id: editAccountId.value, ...form.value } : form.value
+    const result = await props.execute(cmd, JSON.parse(JSON.stringify(args)))
     if (result?.success) {
       showAccountForm.value = false
+      editAccountId.value = ''
       form.value = { name: '', email: '', username: '', password: '', imapHost: '', imapPort: 993, imapTls: true, smtpHost: '', smtpPort: 465, smtpTls: true }
       await load()
     } else {
-      formError.value = result?.error || '添加失败'
+      formError.value = result?.error || '操作失败'
     }
-  } catch (e: any) {
-    formError.value = e?.message || '保存出错'
+  } catch (e: any) { formError.value = e?.message || '保存出错' }
+}
+
+function editAccount(account: any) {
+  editAccountId.value = account.id
+  form.value = {
+    name: account.name || '',
+    email: account.email || '',
+    username: account.username || account.email || '',
+    password: account.password || '',
+    imapHost: account.imapHost || '',
+    imapPort: account.imapPort ?? 993,
+    imapTls: account.imapTls !== false,
+    smtpHost: account.smtpHost || '',
+    smtpPort: account.smtpPort ?? 465,
+    smtpTls: account.smtpTls !== false,
   }
+  showAccountForm.value = true
+}
+
+function closeAccountForm() {
+  showAccountForm.value = false
+  editAccountId.value = ''
 }
 
 async function removeAccount(id: string) {
@@ -253,7 +278,9 @@ onMounted(() => { load() })
 .acc-name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .acc-email { font-size: 11px; color: #999; display: none; }
 .del-btn { border: none; background: transparent; color: #DC3545; cursor: pointer; font-size: 12px; opacity: 0; padding: 2px; }
+.edit-btn { border: none; background: transparent; color: #409EFF; cursor: pointer; font-size: 14px; opacity: 0; padding: 2px; }
 .account-item:hover .del-btn { opacity: 1; }
+.account-item:hover .edit-btn { opacity: 1; }
 .add-btn, .action-btn { width: 100%; padding: 8px; border: 1px dashed #d0d0d0; border-radius: 6px; background: transparent; cursor: pointer; font-size: 12px; color: #999; margin-top: 4px; }
 .add-btn:hover, .action-btn:hover { border-color: #0078D4; color: #0078D4; }
 .email-list { width: 360px; border-right: 1px solid #e8e8e8; overflow-y: auto; }

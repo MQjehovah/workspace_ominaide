@@ -29,6 +29,10 @@ interface EmailSummary {
 const accountsKey = 'mail_accounts'
 let pluginCtx: any = null
 
+// In-memory email cache per account (key=accountId, value={emails, time})
+const emailCache = new Map<string, { emails: EmailSummary[]; time: number }>()
+const CACHE_TTL = 60000 // 60 seconds
+
 export default {
   panel: Panel,
   page: Page,
@@ -38,14 +42,11 @@ export default {
     context.registerCommand('getPanelData', async () => {
       const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
       const allEmails: EmailSummary[] = []
-
       for (const acc of accounts) {
-        const emails = await fetchInbox(acc)
+        const emails = await getCachedOrFetch(acc)
         allEmails.push(...emails.slice(0, 5).map(e => ({ ...e, accountId: acc.id })))
       }
-
       allEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-
       return {
         title: '邮件',
         subtitle: `${accounts.length} 个邮箱 · ${allEmails.length} 封最新`,
@@ -93,11 +94,33 @@ export default {
       return { success: true }
     })
 
+    context.registerCommand('updateAccount', async (args: any) => {
+      const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
+      const idx = accounts.findIndex(a => a.id === args?.id)
+      if (idx === -1) return { success: false, error: 'Account not found' }
+      accounts[idx] = {
+        ...accounts[idx],
+        name: args.name ?? accounts[idx].name,
+        email: args.email ?? accounts[idx].email,
+        imapHost: args.imapHost ?? accounts[idx].imapHost,
+        imapPort: args.imapPort ?? accounts[idx].imapPort,
+        imapTls: args.imapTls !== undefined ? args.imapTls : accounts[idx].imapTls,
+        smtpHost: args.smtpHost ?? accounts[idx].smtpHost,
+        smtpPort: args.smtpPort ?? accounts[idx].smtpPort,
+        smtpTls: args.smtpTls !== undefined ? args.smtpTls : accounts[idx].smtpTls,
+        username: args.username ?? accounts[idx].username,
+        password: args.password ?? accounts[idx].password,
+      }
+      await context.storage?.set(accountsKey, accounts)
+      emailCache.delete(args.id)
+      return { success: true, account: accounts[idx] }
+    })
+
     context.registerCommand('fetchEmails', async (args: any) => {
       const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
       const acc = accounts.find(a => a.id === args?.accountId)
       if (!acc) return { success: false, error: 'Account not found' }
-      const emails = await fetchInbox(acc)
+      const emails = await getCachedOrFetch(acc, true)
       return { success: true, emails: emails.slice(0, 50) }
     })
 
@@ -130,6 +153,17 @@ export default {
     })
   },
   deactivate() {},
+}
+
+async function getCachedOrFetch(acc: MailAccount, force = false): Promise<EmailSummary[]> {
+  const cached = emailCache.get(acc.id)
+  const now = Date.now()
+  if (!force && cached && now - cached.time < CACHE_TTL) {
+    return cached.emails
+  }
+  const emails = await fetchInbox(acc)
+  emailCache.set(acc.id, { emails, time: now })
+  return emails
 }
 
 async function fetchInbox(acc: MailAccount): Promise<EmailSummary[]> {

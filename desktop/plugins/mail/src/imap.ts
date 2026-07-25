@@ -31,6 +31,7 @@ export class ImapClient extends EventEmitter {
   private pending: Map<string, { resolve: (lines: string[]) => void; reject: (err: Error) => void }> = new Map()
   private selectedMailbox = ''
   private authenticated = false
+  private responseLines: string[] = []
 
   constructor(config: ImapConfig) {
     super()
@@ -116,7 +117,7 @@ export class ImapClient extends EventEmitter {
     if (uids.length === 0) return []
     const tag = this.nextTag()
     const uidStr = uids.join(',')
-    const cmd = `${tag} UID FETCH ${uidStr} (FLAGS BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE TO)] BODY.PEEK[TEXT])`
+    const cmd = `${tag} UID FETCH ${uidStr} (FLAGS BODY.PEEK[HEADER] BODY.PEEK[TEXT])`
     const lines = await this.sendCommand(cmd)
     return this.parseFetchResponse(lines)
   }
@@ -124,55 +125,97 @@ export class ImapClient extends EventEmitter {
   private parseFetchResponse(lines: string[]): ImapMessage[] {
     const messages: ImapMessage[] = []
     let current: Partial<ImapMessage> | null = null
-    let readingText = false
+    let section = ''
+    let headerLines: string[] = []
     let textBuffer = ''
 
     for (const line of lines) {
       if (line.startsWith('* ')) {
         if (current && current.uid) {
-          current.text = textBuffer.trim()
+          this.applyHeaders(headerLines, current)
+          current.text = this.extractText(textBuffer.trim())
           messages.push(current as ImapMessage)
         }
-        current = {
-          uid: 0, seq: 0, flags: [], date: new Date(),
-          subject: '', from: [], to: [], text: '', html: '', attachments: []
-        }
-        readingText = false
+        current = { uid: 0, seq: 0, flags: [], date: new Date(), subject: '', from: [], to: [], text: '', html: '', attachments: [] }
+        section = ''
+        headerLines = []
         textBuffer = ''
 
         const fm = line.match(/^\* (\d+) FETCH/)
         if (fm) current.seq = parseInt(fm[1])
-
         const um = line.match(/UID (\d+)/)
         if (um) current.uid = parseInt(um[1])
-
         const flags = line.match(/FLAGS \(([^)]*)\)/)
         if (flags) current.flags = flags[1].split(' ').filter(Boolean)
 
-        const subj = line.match(/SUBJECT\s+(?:\?=\?)?([^\n]*)/i)
-        if (subj) current.subject = this.decodeMime(subj[1].trim())
-
-        const from = line.match(/FROM\s+([^\n]+)/i)
-        if (from) current.from = this.parseAddresses(from[1])
-
-        const to = line.match(/TO\s+([^\n]+)/i)
-        if (to) current.to = this.parseAddresses(to[1])
-      } else if (readingText) {
-        if (line === ')') {
-          readingText = false
-        } else {
-          textBuffer += line + '\n'
+        if (/BODY\[HEADER/i.test(line)) section = 'header'
+      } else if (line === ')') {
+        if (current && current.uid) {
+          this.applyHeaders(headerLines, current)
+          current.text = this.extractText(textBuffer.trim())
+          messages.push(current as ImapMessage)
         }
-      } else if (line.includes('BODY[TEXT]')) {
-        readingText = true
-        textBuffer = ''
+        current = null; section = ''; headerLines = []; textBuffer = ''
+      } else if (section === 'header') {
+        if (/BODY\[TEXT\]/i.test(line)) { section = 'text'; textBuffer = '' }
+        else headerLines.push(line)
+      } else if (section === 'text') {
+        textBuffer += line + '\n'
       }
     }
     if (current && current.uid) {
-      current.text = textBuffer.trim()
+      this.applyHeaders(headerLines, current)
+      current.text = this.extractText(textBuffer.trim())
       messages.push(current as ImapMessage)
     }
     return messages
+  }
+
+  private applyHeaders(lines: string[], msg: Partial<ImapMessage>): void {
+    let subject = '', from = '', date = '', to = ''
+    for (const line of lines) {
+      const lower = line.toLowerCase()
+      if (lower.startsWith('subject:')) subject = line.slice(8).trim()
+      else if (lower.startsWith('from:')) from = line.slice(5).trim()
+      else if (lower.startsWith('date:')) date = line.slice(5).trim()
+      else if (lower.startsWith('to:')) to = line.slice(3).trim()
+    }
+    msg.subject = this.decodeMime(subject)
+    if (date) msg.date = new Date(date)
+    if (from) msg.from = this.parseAddresses(from)
+    if (to) msg.to = this.parseAddresses(to)
+  }
+
+  private extractText(raw: string): string {
+    let text = raw
+    text = text.replace(/^[ \t]*--=+[^\n]*\n?/gm, '')
+    text = text.replace(/^[ \t]*=_Part[^\n]*\n?/gm, '')
+    text = text.replace(/^[ \t]*Content-[^\n]*\n?/gm, '')
+    text = text.replace(/^[ \t]*--[^\n]*--\s*\n?/gm, '')
+    text = text.replace(/^[ \t]*MIME-Version:[^\n]*\n?/gm, '')
+    text = text.replace(/^[ \t]*boundary="[^"]*"\s*\n?/gm, '')
+    text = text.replace(/^[ \t]*charset="?[^"\n]+"?\s*\n?/gm, '')
+    text = text.replace(/^[ \t]*Content-Transfer-Encoding:[^\n]*\n?/gm, '')
+    text = text.replace(/^[ \t]*multipart\/[^\n]*\n?/gm, '')
+    text = text.replace(/--=_NextPart[^\n]*/g, '')
+    // Soft line breaks
+    text = text.replace(/=\r?\n/g, '')
+    // Quoted-printable: =XX → byte, then reinterpret as UTF-8
+    text = text.replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    text = Buffer.from(text, 'latin1').toString('utf-8')
+    text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    text = text.replace(/<[^>]+>/g, '')
+    text = text.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    text = text.split('\n').map(line => {
+      const t = line.trim()
+      if (t.length > 40 && /^[A-Za-z0-9+/=]+$/.test(t)) {
+        try { return Buffer.from(t, 'base64').toString('utf-8') } catch {}
+      }
+      return line
+    }).join('\n')
+    text = text.replace(/\n{3,}/g, '\n\n').trim()
+    return text
   }
 
   async logout(): Promise<void> {
@@ -205,13 +248,15 @@ export class ImapClient extends EventEmitter {
 
     for (const line of lines) {
       if (!line.trim()) continue
-      const tag = line.split(' ')[0]
-      const pending = this.pending.get(tag)
+      const firstWord = line.split(' ')[0]
+      const pending = this.pending.get(firstWord)
       if (pending) {
-        // Collect all lines for this tagged response
-        const allLines = [line]
-        pending.resolve(allLines)
-        this.pending.delete(tag)
+        this.responseLines.push(line)
+        pending.resolve(this.responseLines.slice())
+        this.pending.delete(firstWord)
+        this.responseLines = []
+      } else {
+        this.responseLines.push(line)
       }
     }
   }
