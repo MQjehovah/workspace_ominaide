@@ -69,7 +69,7 @@ function handleInput(ev: any) {
       const sf = d.scaleFactor || 1
       const x = Math.round((d.bounds.x + (Number(ev.x) || 0) * d.bounds.width) * sf)
       const y = Math.round((d.bounds.y + (Number(ev.y) || 0) * d.bounds.height) * sf)
-      injectQueue = injectQueue.then(() => win.mqbox.remote.injectInput({ type: 'mouseMove', x, y })).catch(() => {})
+      win.mqbox.remote.injectInput({ type: 'mouseMove', x, y }).catch(() => {})
     } else {
       injectQueue = injectQueue.then(() => win.mqbox.remote.injectInput(ev)).catch(() => {})
     }
