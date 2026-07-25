@@ -17,7 +17,6 @@ export function openPluginWindow(pluginId: string, query: string = ''): void {
     win.loadURL(url)
     win.once('ready-to-show', () => {
       win.show()
-      if (query.includes('mode=viewer')) win.webContents.openDevTools()
     })
     win.on('closed', () => { /* viewer windows are ephemeral */ })
     return

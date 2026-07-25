@@ -218,9 +218,9 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     const preloadPath = join(__dirname, '../preload/index.js')
     const display = screen.getPrimaryDisplay().workArea
     const win = new BrowserWindow({
-      width: 280, height: 120, show: false, frame: false, resizable: false,
+      width: 280, height: 40, show: false, frame: false, resizable: false,
       alwaysOnTop: true, skipTaskbar: true,
-      x: display.width - 290, y: display.height - 130,
+      x: display.width - 290, y: display.height - 50,
       webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
     })
     const query = `mode=webrtc-accept${viewerId ? '&viewer=' + viewerId : ''}`

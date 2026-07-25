@@ -160,12 +160,23 @@ ipcMain.handle('window:open-plugin-window', async (_, pluginId: string, query: s
 
 ipcMain.handle('window:move-relative', (event, dx: number, dy: number) => {
   const win = BrowserWindow.fromWebContents(event.sender)
-  if (win) { const [x, y] = win.getPosition(); win.setPosition(x + dx, y + dy) }
+  if (win) { const [x, y] = win.getPosition(); const [w, h] = win.getSize(); win.setBounds({ x: x + dx, y: y + dy, width: w, height: h }) }
+})
+
+ipcMain.handle('window:get-bounds', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) return win.getBounds()
+  return null
+})
+
+ipcMain.handle('window:set-bounds', (event, bounds: { x: number; y: number }) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) { const [w, h] = win.getSize(); win.setBounds({ x: bounds.x, y: bounds.y, width: w, height: h }) }
 })
 
 ipcMain.handle('window:resize', (event, w: number, h: number) => {
   const win = BrowserWindow.fromWebContents(event.sender)
-  if (win) win.setSize(w, h)
+  if (win) { const [x, y] = win.getPosition(); win.setBounds({ x, y, width: w, height: h }) }
 })
 
 ipcMain.handle('shell:open', (_, url: string) => shell.openExternal(url))

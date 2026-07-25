@@ -72,6 +72,8 @@ contextBridge.exposeInMainWorld('mqbox', {
     quit: () => ipcRenderer.invoke('window:quit'),
     move: (dx: number, dy: number) => ipcRenderer.invoke('window:move-relative', dx, dy),
     resize: (w: number, h: number) => ipcRenderer.invoke('window:resize', w, h),
+    getBounds: () => ipcRenderer.invoke('window:get-bounds'),
+    setBounds: (bounds: { x: number; y: number }) => ipcRenderer.invoke('window:set-bounds', bounds),
   },
   clipboard: {
     onUpdated: (callback: () => void) => {

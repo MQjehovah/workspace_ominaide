@@ -266,6 +266,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('resize', invalidateNormCache)
+  window.addEventListener('beforeunload', sendRevokedOnUnload)
   if (props.targetDeviceId && props.targetDeviceId !== 'undefined' && props.targetDeviceId !== '') {
     connect(props.targetDeviceId)
   }
@@ -275,8 +276,15 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('resize', invalidateNormCache)
+  window.removeEventListener('beforeunload', sendRevokedOnUnload)
   cleanup()
 })
+
+function sendRevokedOnUnload() {
+  if (!connectionEnded && targetId) {
+    props.execute?.('sendSignal', { type: 'revoked', target_deviceId: targetId })
+  }
+}
 </script>
 
 <template>

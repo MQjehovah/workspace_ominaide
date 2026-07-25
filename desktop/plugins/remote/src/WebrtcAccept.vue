@@ -225,6 +225,7 @@ async function switchScreen(sourceId: string) {
 }
 
 function disconnect() {
+  sendToChild('revoked', {})
   if (iceTimer) { clearInterval(iceTimer); iceTimer = null }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
@@ -236,39 +237,12 @@ function disconnect() {
   setTimeout(() => window.close(), 500)
 }
 
-// --- Window drag + collapse ---
-let dragStartX = 0, dragStartY = 0, dragMoved = false
-
-function onBarMouseDown(e: MouseEvent) {
-  if ((e.target as HTMLElement)?.closest?.('.close-btn, .btn-icon, .disconnect-btn')) return
-  dragStartX = e.screenX
-  dragStartY = e.screenY
-  dragMoved = false
-  window.addEventListener('mousemove', onDragMove)
-  window.addEventListener('mouseup', onDragEnd)
-}
-
-function onDragMove(e: MouseEvent) {
-  const dx = e.screenX - dragStartX
-  const dy = e.screenY - dragStartY
-  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
-    dragMoved = true
-    win.mqbox?.window.move(dx, dy)
-    dragStartX = e.screenX
-    dragStartY = e.screenY
-  }
-}
-
-function onDragEnd() {
-  window.removeEventListener('mousemove', onDragMove)
-  window.removeEventListener('mouseup', onDragEnd)
-  if (!dragMoved) toggleCollapse()
-}
+// --- Window collapse ---
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value
   const h = collapsed.value ? 40 : 130
-  win.mqbox?.window.resize(280, h)
+  win.mqbox?.window?.resize(280, h)
 }
 
 function closeWindow(e: MouseEvent) {
@@ -277,8 +251,9 @@ function closeWindow(e: MouseEvent) {
 }
 
 onMounted(() => {
+  win.mqbox?.window?.resize(280, 40)
   startConnection()
-  const win = window as any
+  window.addEventListener('beforeunload', () => { if (pc) sendToChild('revoked', {}) })
   const rm = win.mqbox?.remote?.onSignal?.(function(m: any) {
     if (m.type === 'revoked' || m.type === 'error') {
       if (iceTimer) { clearInterval(iceTimer); iceTimer = null }
@@ -297,16 +272,17 @@ onUnmounted(() => {
 
 <template>
   <div class="container">
-    <div v-if="collapsed" class="bar" @mousedown="onBarMouseDown">
-      <span class="dot" :class="{ active: connected }"></span>
+    <div v-if="collapsed" class="bar">
+      <span class="dot" :class="{ active: connected }" @click="toggleCollapse"></span>
       <span class="bar-text">远程控制中</span>
       <button class="close-btn" @click="closeWindow">×</button>
     </div>
 
     <div v-else class="panel">
-      <div class="panel-hd" @mousedown="onBarMouseDown">
-        <span class="panel-title">远程控制</span>
-        <button class="btn-icon" @click.stop="toggleCollapse">−</button>
+      <div class="panel-hd">
+        <span class="dot" :class="{ active: connected }"></span>
+        <span class="panel-title" @click="toggleCollapse">远程控制中</span>
+        <button class="btn-icon" @click="toggleCollapse">−</button>
       </div>
       <div class="body">
         <div class="row"><span class="label">状态</span><span class="val" :class="{ ok: connected }">{{ status }}</span></div>
@@ -322,27 +298,27 @@ onUnmounted(() => {
 body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#1a1a1a; overflow:hidden; }
 
 .bar {
-  display:flex; align-items:center; gap:6px; padding:8px 12px;
-  background:#1a1a1a; cursor:pointer; user-select:none;
+  display:flex; align-items:center; gap:6px; padding:0 12px;
+  background:#1a1a1a; cursor:pointer; user-select:none; height:40px; -webkit-app-region:drag;
 }
-.dot { width:8px;height:8px;border-radius:50%;background:#666;flex-shrink:0; }
+.dot { width:8px;height:8px;border-radius:50%;background:#666;flex-shrink:0; -webkit-app-region:no-drag; cursor:pointer; }
 .dot.active { background:#28a745; }
-.bar-text { flex:1; font-size:12px; color:#ccc; white-space:nowrap; }
-.close-btn { width:18px;height:18px;border:none;border-radius:4px;background:transparent;color:#666;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+.bar-text { flex:1; font-size:12px; color:#ccc; white-space:nowrap; line-height:1; }
+.close-btn { width:18px;height:18px;border:none;border-radius:4px;background:transparent;color:#666;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0; -webkit-app-region:no-drag; }
 .close-btn:hover { background:#333;color:#fff; }
 
-.panel { background:#1a1a1a; padding:10px; user-select:none; }
-.panel-hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; cursor:pointer; }
-.panel-title { font-size:12px; font-weight:600; color:#eee; }
-.btn-icon { width:20px;height:20px;border:none;border-radius:4px;background:transparent;color:#999;cursor:pointer;font-size:14px;line-height:1; }
+.panel { background:#1a1a1a; user-select:none; -webkit-app-region:drag; }
+.panel-hd { display:flex; align-items:center; gap:6px; padding:0 12px; height:40px; }
+.panel-title { flex:1; font-size:12px; font-weight:600; color:#ccc; line-height:1; -webkit-app-region:no-drag; cursor:pointer; }
+.btn-icon { width:20px;height:20px;border:none;border-radius:4px;background:transparent;color:#999;cursor:pointer;font-size:14px;line-height:1; -webkit-app-region:no-drag; }
 .btn-icon:hover { background:#333;color:#fff; }
 
-.body { display:flex; flex-direction:column; gap:4px; margin-bottom:6px; }
+.body { padding:0 12px 8px; display:flex; flex-direction:column; gap:4px; -webkit-app-region:no-drag; }
 .row { display:flex; justify-content:space-between; font-size:11px; }
 .label { color:#888; }
 .val { color:#ccc; }
 .val.ok { color:#28a745; }
 
-.disconnect-btn { width:100%; padding:5px; border:none;border-radius:6px;background:#c62828;color:#fff;font-size:11px;cursor:pointer; }
+.disconnect-btn { margin:0 12px 8px; width:calc(100% - 24px); padding:5px; border:none;border-radius:6px;background:#c62828;color:#fff;font-size:11px;cursor:pointer; -webkit-app-region:no-drag; }
 .disconnect-btn:hover { background:#e53935; }
 </style>
