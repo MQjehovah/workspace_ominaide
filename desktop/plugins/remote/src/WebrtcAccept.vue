@@ -15,8 +15,6 @@ let stream: MediaStream | null = null
 let pendingIce: any[] = []
 let iceProcessedCount = 0
 let iceTimer: any = null
-let moveScheduled = false
-let pendingMove: any = null
 let currentDisplay: any = null
 let currentSourceId = ''
 let currentDataChannel: any = null
@@ -61,30 +59,17 @@ function cleanup() {
   currentDataChannel = null
 }
 
-async function flushMove() {
-  if (!pendingMove || !currentDisplay) return
-  const m = pendingMove
-  pendingMove = null
-  const d = currentDisplay
-  const sf = d.scaleFactor || 1
-  const x = Math.round((d.bounds.x + (Number(m.x) || 0) * d.bounds.width) * sf)
-  const y = Math.round((d.bounds.y + (Number(m.y) || 0) * d.bounds.height) * sf)
-  await win.mqbox.remote.injectInput({ type: 'mouseMove', x, y })
-}
-
-async function handleInput(ev: any) {
+function handleInput(ev: any) {
   try {
     if (ev.type === 'mouseMove') {
-      pendingMove = ev
-      if (!moveScheduled) {
-        moveScheduled = true
-        requestAnimationFrame(async () => {
-          moveScheduled = false
-          await flushMove()
-        })
-      }
-    } else if (ev.type === 'mouseDown' || ev.type === 'mouseUp' || ev.type === 'wheel' || ev.type === 'keyDown' || ev.type === 'keyUp') {
-      await win.mqbox.remote.injectInput(ev)
+      if (!currentDisplay) return
+      const d = currentDisplay
+      const sf = d.scaleFactor || 1
+      const x = Math.round((d.bounds.x + (Number(ev.x) || 0) * d.bounds.width) * sf)
+      const y = Math.round((d.bounds.y + (Number(ev.y) || 0) * d.bounds.height) * sf)
+      win.mqbox.remote.injectInput({ type: 'mouseMove', x, y }).catch(() => {})
+    } else {
+      win.mqbox.remote.injectInput(ev).catch(() => {})
     }
   } catch (e: any) { console.warn('[host] handleInput error:', e.message) }
 }
