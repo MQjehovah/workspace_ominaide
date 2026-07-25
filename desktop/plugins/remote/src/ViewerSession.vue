@@ -279,10 +279,10 @@ function normVideo(e: MouseEvent) {
 }
 
 let lastMoveTime = 0
-function onMouseMove(e: MouseEvent) { const now = Date.now(); if (now - lastMoveTime < 33) return; lastMoveTime = now; const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
+function onMouseMove(e: MouseEvent) { const now = Date.now(); if (now - lastMoveTime < 16) return; lastMoveTime = now; const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
 function onMouseDown(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseDown', button }) }
 function onMouseUp(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseUp', button }) }
-function onWheel(e: WheelEvent) { e.preventDefault(); sendInput({ type: 'wheel', deltaY: e.deltaY }) }
+function onWheel(e: WheelEvent) { sendInput({ type: 'wheel', deltaY: e.deltaY }) }
 function isIgnoredKey(code: string): boolean { return code === 'F5' || code === 'F11' || code === 'F12' }
 function onKeyDown(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyDown', code: e.code }) }
 function onKeyUp(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyUp', code: e.code }) }
