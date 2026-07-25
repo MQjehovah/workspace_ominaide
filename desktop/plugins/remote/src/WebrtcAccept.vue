@@ -20,6 +20,7 @@ let pendingMove: any = null
 let currentDisplay: any = null
 let currentSourceId = ''
 let currentDataChannel: any = null
+let cleanupSignal: (() => void) | null = null
 
 const qualityConfig = { maxWidth: 1920, maxHeight: 1080, maxFrameRate: 30 }
 let cachedSources: any[] | null = null
@@ -50,6 +51,7 @@ function sendToChild(type: string, payload: any) {
 }
 
 function cleanup() {
+  if (pc) { try { sendToChild('revoked', {}) } catch {} }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   stream = null
@@ -276,9 +278,19 @@ function closeWindow(e: MouseEvent) {
 
 onMounted(() => {
   startConnection()
+  const win = window as any
+  const rm = win.mqbox?.remote?.onSignal?.(function(m: any) {
+    if (m.type === 'revoked' || m.type === 'error') {
+      if (iceTimer) { clearInterval(iceTimer); iceTimer = null }
+      cleanup()
+      window.close()
+    }
+  })
+  cleanupSignal = typeof rm === 'function' ? rm : null
 })
 
 onUnmounted(() => {
+  if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
   cleanup()
 })
 </script>

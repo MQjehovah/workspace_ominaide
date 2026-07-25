@@ -70,27 +70,15 @@ function startKeepalive() {
   keepaliveTimer = setInterval(() => {
     if (dc?.readyState === 'open') {
       try { dc.send(JSON.stringify({ type: 'ping' })) } catch {}
-      if (Date.now() - lastPong > 30000) {
+      if (Date.now() - lastPong > 45000) {
         console.log('[viewer] keepalive timeout')
-        status.value = '连接超时，重连中…'
-        scheduleReconnect()
+        status.value = '控制通道无响应'
       }
     }
   }, 10000)
 }
 
 function stopKeepalive() { clearInterval(keepaliveTimer); keepaliveTimer = null }
-
-function scheduleReconnect() {
-  if (connectionEnded) return
-  clearTimeout(reconnectTimer)
-  reconnectTimer = setTimeout(() => {
-    if (connectionEnded) return
-    console.log('[viewer] reconnecting...')
-    cleanup()
-    if (targetId) connect(targetId)
-  }, 3000)
-}
 
 function cancelReconnect() { clearTimeout(reconnectTimer); reconnectTimer = null }
 
@@ -136,8 +124,8 @@ async function startOffering() {
     if (!pc) return
     const st = pc.iceConnectionState
     console.log('[viewer] ICE state:', st)
-    if (st === 'connected') cancelReconnect()
-    else if (st === 'disconnected' && !connectionEnded) { status.value = '连接中断，10秒后重连…'; scheduleReconnect() }
+    if (st === 'connected') { cancelReconnect(); status.value = '已连接（可控制）' }
+    else if (st === 'disconnected' && !connectionEnded) { status.value = '连接中断，等待恢复…' }
     else if (st === 'failed' && !connectionEnded) { status.value = '连接失败，重连中…'; connected.value = false; scheduleReconnect() }
     else if (st === 'closed') { connected.value = false }
   }
@@ -246,8 +234,11 @@ function isIgnoredKey(code: string): boolean { return code === 'F5' || code === 
 function onKeyDown(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyDown', code: e.code }) }
 function onKeyUp(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyUp', code: e.code }) }
 
-function cleanup() {
+function cleanup(silent = false) {
   connected.value = false
+  if (!silent && !connectionEnded && targetId && pc) {
+    props.execute?.('sendSignal', { type: 'revoked', target_deviceId: targetId })
+  }
   if (dc) { try { dc.close() } catch {} ; dc = null }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   pendingIce = []
@@ -256,6 +247,17 @@ function cleanup() {
   stopKeepalive()
   stopAdaptiveQuality()
   cancelReconnect()
+}
+
+function scheduleReconnect() {
+  if (connectionEnded) return
+  clearTimeout(reconnectTimer)
+  reconnectTimer = setTimeout(() => {
+    if (connectionEnded) return
+    console.log('[viewer] reconnecting...')
+    cleanup(true)
+    if (targetId) connect(targetId)
+  }, 3000)
 }
 
 function backToMenu() { connectionEnded = false; cleanup(); props.close?.() }
