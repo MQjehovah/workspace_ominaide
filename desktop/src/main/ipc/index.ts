@@ -38,38 +38,6 @@ const keyMap: Record<string, string> = {
   F8: 'F8', F9: 'F9', F10: 'F10', F11: 'F11', F12: 'F12',
 }
 
-
-let nutLoader: any = null
-function getNut(): any {
-  if (nutLoader) return nutLoader
-  nutLoader = require('@nut-tree-fork/nut-js')
-  return nutLoader
-}
-
-const buttonMap: Record<string, string> = { left: 'LEFT', right: 'RIGHT', middle: 'MIDDLE' }
-
-const keyMap: Record<string, string> = {
-  KeyA: 'A', KeyB: 'B', KeyC: 'C', KeyD: 'D', KeyE: 'E', KeyF: 'F', KeyG: 'G', KeyH: 'H', KeyI: 'I', KeyJ: 'J',
-  KeyK: 'K', KeyL: 'L', KeyM: 'M', KeyN: 'N', KeyO: 'O', KeyP: 'P', KeyQ: 'Q', KeyR: 'R', KeyS: 'S', KeyT: 'T',
-  KeyU: 'U', KeyV: 'V', KeyW: 'W', KeyX: 'X', KeyY: 'Y', KeyZ: 'Z',
-  Digit0: 'Num0', Digit1: 'Num1', Digit2: 'Num2', Digit3: 'Num3', Digit4: 'Num4',
-  Digit5: 'Num5', Digit6: 'Num6', Digit7: 'Num7', Digit8: 'Num8', Digit9: 'Num9',
-  Enter: 'Enter', Space: 'Space', Backspace: 'Backspace', Tab: 'Tab', Escape: 'Escape',
-  ShiftLeft: 'LeftShift', ShiftRight: 'RightShift',
-  ControlLeft: 'LeftControl', ControlRight: 'RightControl',
-  AltLeft: 'LeftAlt', AltRight: 'RightAlt',
-  ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
-  Semicolon: 'Semicolon', Quote: 'Quote', Comma: 'Comma', Period: 'Period', Slash: 'Slash', Backquote: 'Grave', Backslash: 'Backslash', Minus: 'Minus', Equal: 'Equal',
-  BracketLeft: 'LeftBracket', BracketRight: 'RightBracket',
-  CapsLock: 'CapsLock',
-  MetaLeft: 'LeftSuper', MetaRight: 'RightSuper',
-  Numpad0: 'NumPad0', Numpad1: 'NumPad1', Numpad2: 'NumPad2', Numpad3: 'NumPad3', Numpad4: 'NumPad4',
-  Numpad5: 'NumPad5', Numpad6: 'NumPad6', Numpad7: 'NumPad7', Numpad8: 'NumPad8', Numpad9: 'NumPad9',
-  NumpadEnter: 'Enter', NumpadAdd: 'Add', NumpadSubtract: 'Subtract', NumpadMultiply: 'Multiply', NumpadDivide: 'Divide', NumpadDecimal: 'Decimal',
-  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert', Delete: 'Delete',
-  F1: 'F1', F2: 'F2', F3: 'F3', F4: 'F4', F6: 'F6', F7: 'F7', F8: 'F8', F9: 'F9', F10: 'F10',
-}
-
 export function registerIpcHandlers() {
   // Config
   ipcMain.handle('config:get', async (_, key: string) => (await getConfig())?.[key])
