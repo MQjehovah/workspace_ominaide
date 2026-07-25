@@ -59,7 +59,7 @@ function cleanup() {
   currentDataChannel = null
 }
 
-let injectQueue = Promise.resolve()
+let lastWheelPromise = Promise.resolve()
 
 function handleInput(ev: any) {
   try {
@@ -70,8 +70,10 @@ function handleInput(ev: any) {
       const x = Math.round((d.bounds.x + (Number(ev.x) || 0) * d.bounds.width) * sf)
       const y = Math.round((d.bounds.y + (Number(ev.y) || 0) * d.bounds.height) * sf)
       win.mqbox.remote.injectInput({ type: 'mouseMove', x, y }).catch(() => {})
+    } else if (ev.type === 'wheel') {
+      lastWheelPromise = lastWheelPromise.then(() => win.mqbox.remote.injectInput(ev)).catch(() => {})
     } else {
-      injectQueue = injectQueue.then(() => win.mqbox.remote.injectInput(ev)).catch(() => {})
+      win.mqbox.remote.injectInput(ev).catch(() => {})
     }
   } catch (e: any) { console.warn('[host] handleInput error:', e.message) }
 }
@@ -294,7 +296,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; backg
   display:flex; align-items:center; gap:6px; padding:0 12px;
   background:#1a1a1a; cursor:pointer; user-select:none; height:40px; -webkit-app-region:drag;
 }
-.dot { width:8px;height:8px;border-radius:50%;background:#666;flex-shrink:0; cursor:pointer; }
+.dot { width:8px;height:8px;border-radius:50%;background:#666;flex-shrink:0; -webkit-app-region:no-drag; cursor:pointer; }
 .dot.active { background:#28a745; }
 .bar-text { flex:1; font-size:12px; color:#ccc; white-space:nowrap; line-height:1; }
 .close-btn { width:18px;height:18px;border:none;border-radius:4px;background:transparent;color:#666;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0; -webkit-app-region:no-drag; }

@@ -22,7 +22,7 @@ let reconnectTimer: any = null
 let adaptTimer: any = null
 let statsTimer: any = null
 let prevStats: any = null
-let currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 15 }
+let currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
 let qualityGoodSince = 0
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
@@ -170,7 +170,7 @@ function startAdaptiveQuality() {
       } else if (lossRate < 0.005 && !highLatency && current.maxWidth < 1280) {
         if (qualityGoodSince === 0) qualityGoodSince = Date.now()
         else if (Date.now() - qualityGoodSince > 20000) {
-          currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 15 }
+          currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
           sendInput({ type: 'setQuality', ...currentQuality })
         }
       } else { qualityGoodSince = 0 }
