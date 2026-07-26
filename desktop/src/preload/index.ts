@@ -96,7 +96,7 @@ contextBridge.exposeInMainWorld('mqbox', {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
-    openUrl: (url: string, name: string) => ipcRenderer.invoke('file:open-url', url, name),
+    moveToTrash: (filePath: string) => ipcRenderer.invoke('file:move-to-trash', filePath),
   },
   dialog: {
     selectFolder: () => ipcRenderer.invoke('dialog:select-folder'),
@@ -129,6 +129,9 @@ contextBridge.exposeInMainWorld('mqbox', {
     post: (path: string, body?: any) => ipcRenderer.invoke('api:post', path, body),
     put: (path: string, body?: any) => ipcRenderer.invoke('api:put', path, body),
     delete: (path: string) => ipcRenderer.invoke('api:delete', path),
+  },
+  mouse: {
+    getPosition: () => ipcRenderer.invoke('mouse:get-position'),
   },
   log: {
     write: (pluginId: string, level: string, message: string) =>

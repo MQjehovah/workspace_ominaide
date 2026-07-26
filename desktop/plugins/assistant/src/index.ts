@@ -8,6 +8,7 @@ export default {
     const { BrowserWindow, globalShortcut } = require('electron') as any
     const { join } = require('path') as any
     let assistantWin: any = null
+    let petWin: any = null
 
     async function showAssistant() {
       if (assistantWin && !assistantWin.isDestroyed()) {
@@ -16,12 +17,8 @@ export default {
       }
       const preloadPath = join(__dirname, '../../../dist-electron/preload/index.js')
       assistantWin = new BrowserWindow({
-        width: 420,
-        height: 620,
-        frame: false,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        resizable: true,
+        width: 420, height: 620, frame: false,
+        alwaysOnTop: true, skipTaskbar: true, resizable: true,
         webPreferences: { preload: preloadPath, contextIsolation: true },
       })
       const url = process.env.VITE_DEV_SERVER_URL
@@ -34,14 +31,48 @@ export default {
       assistantWin.on('closed', () => { assistantWin = null })
     }
 
+    async function togglePet() {
+      if (petWin && !petWin.isDestroyed()) {
+        if (petWin.isVisible()) { petWin.hide(); return }
+        petWin.show(); petWin.focus(); return
+      }
+      // Position at right edge of primary display
+      let winX = 1600, winY = 200
+      try {
+        const display: any = await context.signal('getPrimaryDisplay')
+        if (display) { winX = display.x + display.width - 300; winY = display.y + display.height - 400 }
+      } catch {}
+      const preloadPath = join(__dirname, '../../../dist-electron/preload/index.js')
+      petWin = new BrowserWindow({
+        width: 280, height: 340, x: winX, y: winY,
+        frame: false, transparent: true,
+        alwaysOnTop: true, skipTaskbar: true,
+        resizable: false,
+        webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
+      })
+      const url = process.env.VITE_DEV_SERVER_URL
+        ? `${process.env.VITE_DEV_SERVER_URL}?view=pet`
+        : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=pet`
+      petWin.loadURL(url)
+      setTimeout(() => {
+        if (petWin && !petWin.isDestroyed()) {
+          petWin.setIgnoreMouseEvents(true, { forward: true })
+        }
+      }, 500)
+      petWin.on('closed', () => { petWin = null })
+    }
+
     globalShortcut.register('CommandOrControl+Shift+A', () => { showAssistant() })
+    globalShortcut.register('CommandOrControl+Shift+P', () => { togglePet() })
 
     context.registerCommand('getPanelData', async () => ({
       title: 'AI 助理',
       subtitle: '语音对话 · 自然语言操作',
-      description: 'Ctrl+Shift+A 快速呼出 · 语音对话 · 自然语言操作',
+      description: 'Ctrl+Shift+A 呼出助理 · Ctrl+Shift+P 切换桌宠',
+      buttons: [{ label: '🐾 桌宠', command: 'togglePet' }],
     }))
     context.registerCommand('getPageData', async () => ({}))
+    context.registerCommand('togglePet', async () => { togglePet() })
     context.registerCommand('open', async (args: any) => {
       if (args?.message) {
         try {

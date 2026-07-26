@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AI 桌宠</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:'Segoe UI',sans-serif}
+body{-webkit-app-region:drag}
+canvas{display:block;cursor:pointer;-webkit-app-region:no-drag}
+#dragHandle{position:absolute;bottom:0;left:0;right:0;height:20px;-webkit-app-region:drag;z-index:20}
+
+#bubble{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.95);color:#333;padding:8px 14px;border-radius:12px;font-size:12px;line-height:1.4;max-width:220px;white-space:pre-wrap;word-break:break-word;box-shadow:0 2px 12px rgba(0,0,0,0.12);opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:10;text-align:center;display:none;-webkit-app-region:no-drag}
+#bubble::after{content:'';position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:rgba(255,255,255,0.95)}
+#bubble.show{opacity:1;display:block}
+#emotion{position:absolute;top:48px;left:50%;transform:translateX(-50%);font-size:28px;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:11;display:none;-webkit-app-region:no-drag}
+#emotion.show{opacity:1;display:block}
+#menu{position:fixed;background:rgba(255,255,255,0.96);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.18);padding:4px;z-index:100;min-width:140px;display:none;backdrop-filter:blur(8px);-webkit-app-region:no-drag}
+#menu .item{padding:7px 14px;font-size:12px;color:#333;cursor:pointer;border-radius:6px;display:flex;align-items:center;gap:8px}
+#menu .item:hover{background:#f0f4ff}
+#menu .sep{height:1px;background:#eee;margin:3px 6px}
+#feedZone{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);background:rgba(255,200,200,0.2);border:1px dashed rgba(255,100,100,0.3);border-radius:8px;padding:4px 12px;font-size:10px;color:#c66;opacity:0;transition:opacity 0.3s;z-index:5;pointer-events:none;display:none;-webkit-app-region:no-drag}
+#workBadge{position:absolute;top:60px;right:10px;background:rgba(0,200,100,0.9);color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;z-index:12;display:none;pointer-events:none;-webkit-app-region:no-drag}
+#notifBadge{position:absolute;top:10px;right:10px;background:#ff4757;color:#fff;width:18px;height:18px;border-radius:50%;font-size:10px;display:none;align-items:center;justify-content:center;z-index:12;pointer-events:none;box-shadow:0 2px 6px rgba(255,71,87,0.4);-webkit-app-region:no-drag}
+</style>
+</head>
+<body>
+
+<div id="bubble"></div>
+<div id="emotion"></div>
+<div id="menu">
+  <div class="item" data-action="pet"><span>✋</span> 摸头</div>
+  <div class="item" data-action="feed"><span>🍎</span> 喂食</div>
+  <div class="item" data-action="chat"><span>💬</span> 聊天</div>
+  <div class="item" data-action="work"><span>💻</span> 工作/休息</div>
+  <div class="sep"></div>
+  <div class="item" data-action="model"><span>🎨</span> 换皮肤</div>
+  <div class="item" data-action="accessory"><span>🎀</span> 换饰品</div>
+  <div class="item" data-action="mood"><span>😊</span> 换心情</div>
+  <div class="sep"></div>
+  <div class="item" data-action="close"><span>✕</span> 隐藏</div>
+</div>
+<div id="feedZone">🫘 拖入食物</div>
+<div id="workBadge">💻 工作中</div>
+<div id="notifBadge">🔔</div>
+<div id="dragHandle"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const state = { mood:'happy', hunger:100, working:false, accessory:'', model:0, notifCount:0, isHappy:false, happyT:0, time:0, mx:0, my:0, rotY:0, blinkT:0 }
+
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth/window.innerHeight, 0.1, 100)
+camera.position.set(0,1.2,5); camera.lookAt(0,0.6,0)
+
+const renderer = new THREE.WebGLRenderer({ alpha:true, antialias:true })
+renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2))
+renderer.setClearColor(0,0); renderer.shadowMap.enabled=true
+document.body.prepend(renderer.domElement)
+
+const ambient = new THREE.AmbientLight(0xffffff,0.5); scene.add(ambient)
+const key=new THREE.DirectionalLight(0xffffff,1.0); key.position.set(3,5,4); scene.add(key)
+const fill=new THREE.DirectionalLight(0x8888ff,0.3); fill.position.set(-2,1,-3); scene.add(fill)
+const rim=new THREE.DirectionalLight(0xccddff,0.3); rim.position.set(-1,2,-5); scene.add(rim)
+
+const shadow=new THREE.Mesh(new THREE.CircleGeometry(0.9,32),new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:0.1,depthWrite:false}))
+shadow.rotation.x=-Math.PI/2; shadow.position.y=-0.05; scene.add(shadow)
+
+const COLORS=[{body:0x6C63FF,ear:0x5A52D4,foot:0x4A42CC,core:0x8888FF},{body:0x4488FF,ear:0x3377DD,foot:0x2266CC,core:0x66AAFF},{body:0xFF6B9D,ear:0xE85A8A,foot:0xCC4477,core:0xFF88B0},{body:0x44DD88,ear:0x33CC77,foot:0x22BB66,core:0x66EE99}]
+
+const pet=new THREE.Group()
+function buildPet(mi){
+  while(pet.children.length)pet.remove(pet.children[0])
+  const c=COLORS[mi]||COLORS[0]
+  const body=new THREE.Mesh(new THREE.SphereGeometry(0.65,32,32),new THREE.MeshStandardMaterial({color:c.body,roughness:0.25,metalness:0.05}))
+  body.position.y=0.7;body.scale.set(1,0.92,0.88);body.castShadow=true;body.name='body';pet.add(body)
+  const belly=new THREE.Mesh(new THREE.SphereGeometry(0.4,24,24),new THREE.MeshStandardMaterial({color:(c.body+0x33333)&0xFFFFFF,roughness:0.35}))
+  belly.position.set(0,0.55,0.55);belly.scale.set(0.85,0.7,0.25);pet.add(belly)
+  const eyes=new THREE.Group();eyes.position.set(0,1.05,0.62);eyes.name='eyes'
+  ;[-0.18,0.18].forEach(x=>{
+    const w=new THREE.Mesh(new THREE.SphereGeometry(0.17,24,24),new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.1}))
+    w.position.set(x,0,0);w.scale.set(1,0.85,0.35);eyes.add(w)
+    const p=new THREE.Mesh(new THREE.SphereGeometry(0.09,16,16),new THREE.MeshStandardMaterial({color:0x1a1a2e,roughness:0}))
+    p.position.set(x,-0.02,0.08);p.scale.set(1,0.9,0.5);eyes.add(p)
+    const h=new THREE.Mesh(new THREE.SphereGeometry(0.03,8,8),new THREE.MeshBasicMaterial({color:0xffffff}))
+    h.position.set(x+0.04,0.03,0.1);eyes.add(h)
+  })
+  pet.add(eyes)
+  ;[-0.35,0.35].forEach(x=>{const m=new THREE.Mesh(new THREE.SphereGeometry(0.09,12,12),new THREE.MeshBasicMaterial({color:0xFFB0A0,transparent:true,opacity:0.3}));m.position.set(x,0.82,0.6);m.scale.set(1.3,0.55,0.15);pet.add(m)})
+  const mp=[];for(let i=-0.1;i<=0.1;i+=0.015)mp.push(new THREE.Vector3(i,0.76+Math.sin(i*18)*0.02,0.68))
+  pet.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(mp),new THREE.LineBasicMaterial({color:0x4a4a6a})))
+  ;[-0.3,0.3].forEach((x,i)=>{const zr=i===0?0.25:-0.25;const g=new THREE.Group();g.add(new THREE.Mesh(new THREE.ConeGeometry(0.13,0.22,8),new THREE.MeshStandardMaterial({color:c.ear,roughness:0.35})));const inn=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.1,6),new THREE.MeshBasicMaterial({color:0xFFB8B8}));inn.position.y=-0.04;g.add(inn);g.position.set(x,1.3,0);g.rotation.z=zr;g.name='ear';pet.add(g)})
+  ;[-1,1].forEach(x=>{const m=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,10),new THREE.MeshStandardMaterial({color:c.body,roughness:0.3}));m.position.set(x*0.82,0.65,0.45);m.scale.set(0.55,0.75,0.55);m.name='arm';pet.add(m)})
+  ;[-1,1].forEach(x=>{const m=new THREE.Mesh(new THREE.SphereGeometry(0.1,10,10),new THREE.MeshStandardMaterial({color:c.foot,roughness:0.5}));m.position.set(x*0.25,0.05,0);m.scale.set(0.8,0.4,0.65);pet.add(m)})
+  const core=new THREE.Mesh(new THREE.SphereGeometry(0.08,12,12),new THREE.MeshBasicMaterial({color:c.core}));core.position.set(0,0.65,0.55);core.name='core';pet.add(core)
+}
+buildPet(0)
+
+function addAccessory(t){removeAccessory()
+  if(t==='hat'){const h=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.15,8),new THREE.MeshStandardMaterial({color:0xFF6B6B,roughness:0.3}));h.position.set(0,1.45,0);h.name='accessory';pet.add(h);const b=new THREE.Mesh(new THREE.RingGeometry(0.15,0.28,16),new THREE.MeshStandardMaterial({color:0xDD5555,roughness:0.3,side:THREE.DoubleSide}));b.position.set(0,1.37,0);b.name='accessory';pet.add(b)}
+  else if(t==='bow'){;[-1,1].forEach(i=>{const b=new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8),new THREE.MeshStandardMaterial({color:0xFF8AC4,roughness:0.2}));b.position.set(i*0.1,1.28,0.1);b.scale.set(1,0.6,0.4);b.name='accessory';pet.add(b)});const c=new THREE.Mesh(new THREE.SphereGeometry(0.04,6,6),new THREE.MeshStandardMaterial({color:0xFF69B4}));c.position.set(0,1.28,0.11);c.name='accessory';pet.add(c)}
+  else if(t==='glasses'){;[-0.18,0.18].forEach(x=>{const r=new THREE.Mesh(new THREE.RingGeometry(0.08,0.1,16),new THREE.MeshBasicMaterial({color:0x333333,side:THREE.DoubleSide}));r.position.set(x,1.03,0.65);r.name='accessory';pet.add(r)});const b=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.01,0.01),new THREE.MeshBasicMaterial({color:0x333333}));b.position.set(0,1.03,0.65);b.name='accessory';pet.add(b)}
+}
+function removeAccessory(){pet.children.filter(c=>c.name==='accessory').forEach(c=>pet.remove(c))}
+scene.add(pet)
+
+// Sparkles
+const sl=new THREE.Group();const sM=new THREE.MeshBasicMaterial({color:0x9999ff,transparent:true,opacity:0.4})
+for(let i=0;i<25;i++){const s=new THREE.Mesh(new THREE.SphereGeometry(0.015,6,6),sM);s.position.set((Math.random()-0.5)*3,Math.random()*2.5+0.2,(Math.random()-0.5)*2-0.5);s.userData={speed:0.002+Math.random()*0.004,phase:Math.random()*6};sl.add(s)}
+scene.add(sl)
+
+// UI
+let bubbleTimer,bubbleEl=document.getElementById('bubble'),emoEl=document.getElementById('emotion')
+function showBubble(t,d){bubbleEl.textContent=t;bubbleEl.classList.add('show');clearTimeout(bubbleTimer);if(d)bubbleTimer=setTimeout(()=>bubbleEl.classList.remove('show'),d)}
+function showEmoji(e,d){emoEl.textContent=e;emoEl.classList.add('show');clearTimeout(emoEl._t);if(d)emoEl._t=setTimeout(()=>emoEl.classList.remove('show'),d)}
+
+function burstHearts(){for(let i=0;i<8;i++){const h=new THREE.Mesh(new THREE.SphereGeometry(0.03,6,6),new THREE.MeshBasicMaterial({color:0xFF4080}));h.position.set((Math.random()-0.5)*0.3,0.8+Math.random()*0.3,(Math.random()-0.5)*0.2);const dx=(Math.random()-0.5)*0.04,dy=0.02+Math.random()*0.04,dz=(Math.random()-0.5)*0.04;let a=0;(function an(){a+=0.02;if(a>1){pet.remove(h);return}h.position.x+=dx;h.position.y+=dy;h.position.z+=dz;h.scale.setScalar(1-a*0.7);requestAnimationFrame(an)})();pet.add(h)}}
+
+function setMood(m){state.mood=m;showEmoji({happy:'😊',sad:'😢',sleepy:'💤',excited:'✨'}[m]||'😊',2000)}
+
+// Interactions
+let ww=window.innerWidth,wh=window.innerHeight
+let activeTimer=0,nextActive=5+Math.random()*8
+
+renderer.domElement.addEventListener('contextmenu',e=>{e.preventDefault();showMenu(e.clientX,e.clientY)})
+renderer.domElement.addEventListener('click',()=>{if(!state.isHappy){state.isHappy=true;state.happyT=0;burstHearts();showEmoji('❤️',1200)}})
+
+function showMenu(x,y){const el=document.getElementById('menu');el.style.left=x+'px';el.style.top=y+'px';el.style.display='block'}
+document.addEventListener('click',e=>{const m=document.getElementById('menu');if(m.style.display==='block'&&!m.contains(e.target))m.style.display='none'})
+document.getElementById('menu').addEventListener('click',e=>{const a=e.target.dataset.action;if(!a)return;document.getElementById('menu').style.display='none'
+  if(a==='feed')showBubble('🍎 好吃！',2000)
+  else if(a==='pet'){state.isHappy=true;state.happyT=0;burstHearts();showEmoji('😊',1500)}
+  else if(a==='work'){state.working=!state.working;document.getElementById('workBadge').style.display=state.working?'block':'none';showBubble(state.working?'开始工作':'休息一下',1500)}
+  else if(a==='chat'){doChat()}
+  else if(a==='model'){state.model=(state.model+1)%COLORS.length;buildPet(state.model)}
+  else if(a==='accessory'){const t=['','hat','bow','glasses'];const i=t.indexOf(state.accessory);state.accessory=t[(i+1)%t.length];if(state.accessory)addAccessory(state.accessory);else removeAccessory()}
+  else if(a==='mood')setMood(['happy','sad','sleepy','excited'][Math.floor(Math.random()*4)])
+  else if(a==='close')window.mqbox?.window?.hide()
+})
+
+async function doChat(){showBubble('让我想想...')
+  try{const cfg=JSON.parse(localStorage.getItem('ai_chat_config')||'{}');const msg=['今天心情怎么样？','讲个笑话吧','你在干什么？','有什么建议吗？'][Math.floor(Math.random()*4)]
+    let reply
+    if(cfg.mode==='backend'){const token=await window.mqbox?.config?.get('token')||'';const su=await window.mqbox?.config?.get('serverUrl')||'http://localhost:8000';const r=await fetch(`${su}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({message:msg,history:[]})});const d=await r.json();reply=d.reply||d.response||`我说: ${msg}`}
+    else reply=`喵~ ${msg}`
+    showBubble(reply,5000)
+    if(reply.includes('笑')||reply.includes('开心'))setMood('happy')
+  }catch(e){showBubble('网络不太好...',2000)}
+}
+
+async function checkNotifs(){try{const r=await window.mqbox?.api?.get('/notifications?unread=true&limit=1')||[];if(Array.isArray(r)&&r.length>0&&r[0].id!==state._lastN){state._lastN=r[0].id;document.getElementById('notifBadge').style.display='flex';showBubble('你有新消息',4000)}}catch{}}
+
+window.addEventListener('resize',()=>{ww=window.innerWidth;wh=window.innerHeight;camera.aspect=ww/wh;camera.updateProjectionMatrix();renderer.setSize(ww,wh)})
+
+// Animation
+;(function animate(){requestAnimationFrame(animate);state.time+=0.016
+  const speed=state.mood==='sleepy'?0.3:1;const bob=Math.sin(state.time*1.3*speed)*0.025
+  pet.position.y=0.7+bob
+  if(state.isHappy){state.happyT+=0.025;const t=Math.sin(state.happyT*Math.PI*5)*0.2*Math.max(0,1-state.happyT*1.2);pet.position.y=0.7+bob+t;if(state.happyT>1.2){state.isHappy=false;state.happyT=0}}
+  state.rotY+=(state.mx*0.2-state.rotY)*0.05;pet.rotation.y=state.rotY
+  const eyes=pet.getObjectByName('eyes');if(eyes)eyes.position.x=state.mx*0.008
+  state.blinkT=(state.blinkT+0.025*speed)%5;const blink=state.blinkT>4.7?(state.blinkT-4.7)*6:0
+  if(eyes)eyes.children.forEach((c,i)=>{if(i%3===0)c.scale.y=1-blink*0.85})
+  pet.children.filter(c=>c.name==='ear').forEach((e,i)=>{e.rotation.z=(i===0?0.25:-0.25)+Math.sin(state.time*(i===0?2:2.3))*(state.mood==='sleepy'?0.01:0.03)})
+  const arms=pet.children.filter(c=>c.name==='arm')
+  if(arms[0]){if(state.working)arms[0].rotation.z=Math.sin(state.time*8)*0.1;else arms[0].rotation.z=Math.sin(state.time*1.1)*0.05}
+  if(arms[1]){if(state.working)arms[1].rotation.z=Math.sin(state.time*8+0.5)*0.1;else arms[1].rotation.z=-Math.sin(state.time*1.1+0.5)*0.05}
+  const core=pet.getObjectByName('core');if(core)core.scale.setScalar(0.7+Math.sin(state.time*3)*0.15)
+  sl.children.forEach(s=>{const u=s.userData;s.position.y+=u.speed;s.position.x+=Math.sin(state.time*0.5+u.phase)*0.001;s.material.opacity=0.2+Math.sin(state.time*2+u.phase)*0.15;if(s.position.y>2.8){s.position.y=0;s.position.x=(Math.random()-0.5)*3}})
+  const shY=pet.position.y-0.7;shadow.material.opacity=0.1-shY*0.3;shadow.scale.setScalar(1+shY*0.6)
+  activeTimer+=0.016
+  if(activeTimer>nextActive&&state.mood!=='sleepy'){activeTimer=0;nextActive=8+Math.random()*12;const acts=[()=>showEmoji(['😊','❤️','✨','😋'][Math.floor(Math.random()*4)],2000),()=>showBubble(['今天天气不错~','喵~','继续加油！','在想什么呢？'][Math.floor(Math.random()*4)],3000),()=>{state.isHappy=true;state.happyT=0;burstHearts()}];acts[Math.floor(Math.random()*acts.length)]()}
+  renderer.render(scene,camera)
+})()
+
+setTimeout(()=>{showBubble('你好！我是你的AI桌宠',3000);showEmoji('😊',2000)},500)
+if(window.mqbox?.api){checkNotifs();setInterval(checkNotifs,15000)}
+console.log('[pet] loaded')
+</script>
+</body>
+</html>

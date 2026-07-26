@@ -160,7 +160,7 @@ ipcMain.handle('window:open-plugin-window', async (_, pluginId: string, query: s
 
 ipcMain.handle('window:move-relative', (event, dx: number, dy: number) => {
   const win = BrowserWindow.fromWebContents(event.sender)
-  if (win) { const [x, y] = win.getPosition(); const [w, h] = win.getSize(); win.setBounds({ x: x + dx, y: y + dy, width: w, height: h }) }
+  if (win) { const [x, y] = win.getPosition(); win.setPosition(x + dx, y + dy) }
 })
 
 ipcMain.handle('window:get-bounds', (event) => {

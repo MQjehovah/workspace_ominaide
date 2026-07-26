@@ -356,9 +356,21 @@ export function registerIpcHandlers() {
     BrowserWindow.getFocusedWindow()?.hide()
   })
 
+  ipcMain.handle('mouse:get-position', () => {
+    const { screen } = require('electron')
+    const p = screen.getCursorScreenPoint()
+    return { x: p.x, y: p.y }
+  })
+
   ipcMain.handle('shell:open-external', (_, url: string) => {
     const { shell } = require('electron')
     shell.openExternal(url)
+  })
+
+  ipcMain.handle('file:move-to-trash', async (_, filePath: string) => {
+    const { shell } = require('electron')
+    try { await shell.trashItem(filePath); return { success: true } }
+    catch (e: any) { return { success: false, error: e.message } }
   })
 
   ipcMain.handle('file:open-url', async (_, url: string, name: string) => {

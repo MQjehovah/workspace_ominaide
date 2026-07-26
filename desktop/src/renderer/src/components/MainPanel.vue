@@ -19,10 +19,7 @@ async function loadPlugins() {
   try {
     pluginList.value = await window.mqbox?.plugin.list() || []
     panels.value = await window.mqbox?.plugin.getPanels() || []
-    for (const panel of panels.value) {
-      await loadPanelData(panel.pluginId)
-    }
-    // Register per-plugin panel update listeners
+    await Promise.all(panels.value.map(p => loadPanelData(p.pluginId)))
     panels.value.forEach(p => {
       window.mqbox?.plugin?.onPanelUpdated?.(p.pluginId, () => loadPanelData(p.pluginId))
     })

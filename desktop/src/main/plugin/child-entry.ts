@@ -12,6 +12,9 @@ import type { PluginModule } from '../../shared/types'
 const pluginId = process.env.OMNIAIDE_PLUGIN_ID || ''
 const pluginPath = process.env.OMNIAIDE_PLUGIN_PATH || ''
 
+// Store global shortcut callbacks per accelerator
+const shortcutCallbacks = new Map<string, Function>()
+
 if (!pluginId || !pluginPath) {
   process.stderr.write('Missing OMNIAIDE_PLUGIN_ID or OMNIAIDE_PLUGIN_PATH\n')
   process.exit(1)
@@ -69,10 +72,13 @@ function createElectronProxy() {
       close() { this._destroyed = true; windows.delete(this); rpc('BrowserWindow:close').catch(() => {}) }
       setAlwaysOnTop(v: boolean) { rpc('BrowserWindow:setAlwaysOnTop', v).catch(() => {}) }
       setSkipTaskbar(v: boolean) { rpc('BrowserWindow:setSkipTaskbar', v).catch(() => {}) }
+      openDevTools() { rpc('BrowserWindow:openDevTools').catch(() => {}) }
+      setIgnoreMouseEvents(v: boolean, opts?: any) { rpc('BrowserWindow:setIgnoreMouseEvents', v, opts).catch(() => {}) }
       onDidDispose() { return this }
     },
     globalShortcut: {
       register: (accelerator: string, callback: Function) => {
+        shortcutCallbacks.set(accelerator, callback)
         rpc('globalShortcut:register', accelerator).catch(() => {})
       },
       unregister: (accelerator: string) => { rpc('globalShortcut:unregister', accelerator).catch(() => {}) },
@@ -233,6 +239,11 @@ async function main() {
       if (!trimmed) continue
       try {
         const msg = JSON.parse(trimmed)
+        if (msg.type === 'globalShortcut') {
+          const cb = shortcutCallbacks.get(msg.accelerator)
+          if (cb) cb()
+          continue
+        }
         if (!(ctx as any).handleParentRequest(msg)) {
           process.stdout!.write(encodeMessage({ id: msg.id || 'unknown', type: 'error', error: 'Unknown request' }))
         }

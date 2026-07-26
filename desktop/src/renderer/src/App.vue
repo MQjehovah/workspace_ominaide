@@ -5,6 +5,7 @@
     <SearchBox v-else-if="view === 'search'" />
     <PluginPage v-else-if="view === 'plugin-page'" />
     <AssistantWindow v-else-if="view === 'assistant'" />
+    <PetView v-else-if="view === 'pet'" />
     <ScreenshotPanel v-else-if="view === 'screenshot'" />
     <ScreenshotEditor v-else-if="view === 'screenshot-editor'" />
     <PluginManager v-else-if="view === 'plugin-manager'" />
@@ -23,6 +24,7 @@ import PluginManager from './components/PluginManager.vue'
 import LoginPage from './components/LoginPage.vue'
 import ScreenshotPanel from './components/ScreenshotPanel.vue'
 import AssistantWindow from './components/AssistantWindow.vue'
+import PetView from './components/PetView.vue'
 import ScreenshotEditor from './components/ScreenshotEditor.vue'
 
 const ready = ref(false)

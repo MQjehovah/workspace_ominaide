@@ -131,6 +131,12 @@ export class PluginChildProcess extends EventEmitter {
     }
   }
 
+  sendRaw(data: string): void {
+    if (this.proc?.stdin?.writable) {
+      this.proc.stdin.write(data)
+    }
+  }
+
   private handleOutgoing(chunk: string): void {
     this.rpcBuffer += chunk
     const lines = this.rpcBuffer.split('\n')

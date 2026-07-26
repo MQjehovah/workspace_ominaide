@@ -161,9 +161,12 @@ async function getCachedOrFetch(acc: MailAccount, force = false): Promise<EmailS
   if (!force && cached && now - cached.time < CACHE_TTL) {
     return cached.emails
   }
-  const emails = await fetchInbox(acc)
-  emailCache.set(acc.id, { emails, time: now })
-  return emails
+  const result = await Promise.race([
+    fetchInbox(acc),
+    new Promise<EmailSummary[]>((_, reject) => setTimeout(() => reject(new Error('IMAP timeout')), 8000)),
+  ])
+  emailCache.set(acc.id, { emails: result, time: now })
+  return result
 }
 
 async function fetchInbox(acc: MailAccount): Promise<EmailSummary[]> {

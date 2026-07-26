@@ -268,28 +268,66 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   })
 
   // Electron proxy handlers (child process require('electron') bridge)
-  const winMap = new Map<string, BrowserWindow>()
+  const childWindows: BrowserWindow[] = []
 
   proc.registerBridgeHandler('BrowserWindow:create', async ([opts]) => {
-    // Create window but don't return it to child (child has stub)
     const preloadPath = join(__dirname, '../preload/index.js')
     const win = new BrowserWindow({
       ...opts,
       webPreferences: { ...opts.webPreferences, preload: preloadPath, contextIsolation: true },
     })
-    return null // child doesn't use return value
+    childWindows.push(win)
+    win.on('closed', () => {
+      const idx = childWindows.indexOf(win)
+      if (idx !== -1) childWindows.splice(idx, 1)
+    })
+    return null
   })
-  proc.registerBridgeHandler('BrowserWindow:loadURL', async ([url]) => {})
-  proc.registerBridgeHandler('BrowserWindow:show', async () => {})
-  proc.registerBridgeHandler('BrowserWindow:focus', async () => {})
-  proc.registerBridgeHandler('BrowserWindow:hide', async () => {})
-  proc.registerBridgeHandler('BrowserWindow:close', async () => {})
-  proc.registerBridgeHandler('BrowserWindow:setAlwaysOnTop', async () => {})
-  proc.registerBridgeHandler('BrowserWindow:setSkipTaskbar', async () => {})
+  proc.registerBridgeHandler('BrowserWindow:loadURL', async ([url]) => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.loadURL(url)
+  })
+  proc.registerBridgeHandler('BrowserWindow:show', async () => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.show()
+  })
+  proc.registerBridgeHandler('BrowserWindow:focus', async () => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.focus()
+  })
+  proc.registerBridgeHandler('BrowserWindow:hide', async () => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.hide()
+  })
+  proc.registerBridgeHandler('BrowserWindow:close', async () => {
+    const win = childWindows.pop()
+    if (win && !win.isDestroyed()) win.close()
+  })
+  proc.registerBridgeHandler('BrowserWindow:setAlwaysOnTop', async ([v]) => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.setAlwaysOnTop(v)
+  })
+  proc.registerBridgeHandler('BrowserWindow:setSkipTaskbar', async ([v]) => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.setSkipTaskbar(v)
+  })
+  proc.registerBridgeHandler('BrowserWindow:openDevTools', async () => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.webContents.openDevTools()
+  })
+  proc.registerBridgeHandler('BrowserWindow:setIgnoreMouseEvents', async ([v, opts]) => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(v, opts || {})
+  })
+  proc.registerBridgeHandler('getPrimaryDisplay', async () => {
+    const { screen } = require('electron')
+    const d = screen.getPrimaryDisplay()
+    return { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height, scaleFactor: d.scaleFactor }
+  })
   proc.registerBridgeHandler('globalShortcut:register', async ([accelerator]) => {
     const { globalShortcut } = require('electron')
     globalShortcut.register(accelerator, () => {
-      proc.executeCommand('toggleAssistant').catch(() => {})
+      proc.sendRaw(JSON.stringify({ type: 'globalShortcut', accelerator }) + '\n')
     })
   })
   proc.registerBridgeHandler('globalShortcut:unregister', async ([accelerator]) => {
