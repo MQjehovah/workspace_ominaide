@@ -26,6 +26,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { Raycaster, Vector2 } from 'three'
 
 const container = ref<HTMLDivElement>()
 const dropActive = ref(false)
@@ -36,6 +37,10 @@ let scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRe
 let clock = new THREE.Clock(), animId = 0, time = 0
 let modelRoot: THREE.Object3D | null = null
 let shadow: THREE.Mesh
+let raycaster: Raycaster
+let pointer: Vector2
+let hitTestMeshes: THREE.Mesh[] = []
+let cleanPetListeners: (() => void) | null = null
 let bubbleEl: HTMLElement, emotionEl: HTMLElement
 
 // === State ===
@@ -77,6 +82,9 @@ async function init() {
   renderer.toneMappingExposure = 0.7
   el.prepend(renderer.domElement)
 
+  raycaster = new Raycaster()
+  pointer = new Vector2()
+
   // Lights
   scene.add(new THREE.HemisphereLight(0x8888ff, 0x444422, 0.4))
   const sun = new THREE.DirectionalLight(0xffeedd, 0.8)
@@ -98,6 +106,7 @@ async function init() {
   scene.add(shadow)
 
   // Load model
+  hitTestMeshes.length = 0
   const loader = new GLTFLoader()
   for (const url of MODEL_URLS) {
     try {
@@ -105,7 +114,9 @@ async function init() {
         loader.load(url, resolve, undefined, () => reject(new Error('fail'))))
       const m = gltf.scene
       m.scale.set(0.5, 0.5, 0.5); m.position.y = 0
-      m.traverse(c => { if (c instanceof THREE.Mesh) { c.castShadow = true; c.receiveShadow = true } })
+      m.traverse(c => {
+        if (c instanceof THREE.Mesh) { c.castShadow = true; c.receiveShadow = true; hitTestMeshes.push(c) }
+      })
       scene.add(m); modelRoot = m
       if (gltf.animations?.length) {
         const mixer = new THREE.AnimationMixer(m)
@@ -157,6 +168,21 @@ async function init() {
 
   // Welcome
   setTimeout(() => { showBubble('鼠标靠近我 🐾', 3000); showEmoji('😊', 2000) }, 300)
+
+  // === Precise mouse passthrough via raycaster hit-test ===
+  if (mqbox?.pet?.onCursorPos) {
+    cleanPetListeners = mqbox.pet.onCursorPos((localX: number, localY: number) => {
+      if (!renderer || !camera || hitTestMeshes.length === 0) return
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.x = ((localX - rect.left) / rect.width) * 2 - 1
+      pointer.y = -((localY - rect.top) / rect.height) * 2 + 1
+      raycaster.setFromCamera(pointer, camera)
+      const intersects = raycaster.intersectObjects(hitTestMeshes, false)
+      const isOverPet = intersects.length > 0
+      mqbox.pet.setHitTest(isOverPet)
+      renderer.domElement.style.cursor = isOverPet ? 'pointer' : 'default'
+    })
+  }
 
   // === Render loop ===
   const loop = () => {
@@ -307,11 +333,16 @@ function buildProcedural(): THREE.Group {
     const p = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), new THREE.MeshStandardMaterial({ color: 0x1a1a2e }))
     p.position.set(x, 0.595, 0.25); g.add(p)
   })
+  g.traverse(c => { if (c instanceof THREE.Mesh) hitTestMeshes.push(c) })
   return g
 }
 
 onMounted(() => init())
-onUnmounted(() => { cancelAnimationFrame(animId); renderer?.dispose() })
+onUnmounted(() => {
+  cancelAnimationFrame(animId)
+  renderer?.dispose()
+  if (cleanPetListeners) { cleanPetListeners(); cleanPetListeners = null }
+})
 </script>
 
 <style>

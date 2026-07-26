@@ -133,6 +133,16 @@ contextBridge.exposeInMainWorld('mqbox', {
   mouse: {
     getPosition: () => ipcRenderer.invoke('mouse:get-position'),
   },
+  pet: {
+    onCursorPos: (callback: (x: number, y: number) => void) => {
+      const handler = (_: any, x: number, y: number) => callback(x, y)
+      ipcRenderer.on('pet:cursor-pos', handler)
+      return () => ipcRenderer.removeListener('pet:cursor-pos', handler)
+    },
+    setHitTest: (isOverPet: boolean) => {
+      ipcRenderer.send('pet:hit-test', isOverPet)
+    },
+  },
   log: {
     write: (pluginId: string, level: string, message: string) =>
       ipcRenderer.invoke('log:write', pluginId, level, message),
