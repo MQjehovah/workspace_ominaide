@@ -53,6 +53,10 @@ export class AnimationSystem {
     this.mixer.update(dt)
   }
 
+  setTimeScale(speed: number) {
+    if (this.currentAction) this.currentAction.setEffectiveTimeScale(speed)
+  }
+
   getMixer() { return this.mixer }
   getClip(name: string) { return this.clips.get(name) }
   getAction(name: string) { return this.actions.get(name) }

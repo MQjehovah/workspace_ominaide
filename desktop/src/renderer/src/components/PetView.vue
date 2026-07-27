@@ -57,7 +57,12 @@ async function init() {
 
 function showContextMenu(e: MouseEvent) {
   if (engine) engine.hitTestLocked = true
-  contextMenu.value = { show: true, x: e.clientX, y: e.clientY }
+  const menuW = 160, menuH = 230
+  const pad = 8
+  let x = e.clientX, y = e.clientY
+  if (x + menuW + pad > window.innerWidth) x = window.innerWidth - menuW - pad
+  if (y + menuH + pad > window.innerHeight) y = window.innerHeight - menuH - pad
+  contextMenu.value = { show: true, x, y }
 }
 
 function closeMenu() {

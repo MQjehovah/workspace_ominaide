@@ -25,7 +25,7 @@ export class InteractionSystem {
   dragTargets: THREE.Object3D[] = []
 
   onMenu?: (x: number, y: number) => void
-  onClick?: () => void
+  onClick?: (x: number, y: number) => void
   onDragStart?: () => void
   onDragMove?: (worldX: number, worldZ: number) => void
   onDragEnd?: () => void
@@ -102,7 +102,7 @@ export class InteractionSystem {
 
   private onPointerDown(e: PointerEvent) {
     if (e.button === 2) return
-    this.onClick?.()
+    this.onClick?.(e.clientX, e.clientY)
 
     this.raycaster.setFromCamera(this.pointer, this.camera)
 

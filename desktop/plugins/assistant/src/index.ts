@@ -40,10 +40,9 @@ export default {
       petWin = new BrowserWindow({
         frame: false, transparent: true,
         alwaysOnTop: true, skipTaskbar: true,
-        resizable: false,
         webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
       })
-      // Fullscreen transparent overlay
+      // Cover entire screen except taskbar
       try {
         const display: any = await context.signal('getPrimaryDisplay')
         if (display) petWin.setBounds({ x: display.x, y: display.y, width: display.width, height: display.height })
@@ -54,23 +53,14 @@ export default {
         ? `${process.env.VITE_DEV_SERVER_URL}?view=pet`
         : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=pet`
       petWin.loadURL(url)
-      // Start in passthrough mode; main process IPC (pet:hit-test) toggles dynamically
+      // Click-through by default; hit-test toggles based on mouse Y
       setTimeout(() => {
         if (petWin && !petWin.isDestroyed()) {
           petWin.setIgnoreMouseEvents(true, { forward: true })
-          // Windows: SetWindowLong used by setIgnoreMouseEvents can reset WS_EX_TOPMOST
-          petWin.setAlwaysOnTop(true, 'pop-up-menu')
-          petWin.moveTop()
-          // Periodically re-assert topmost (Windows often drops it)
-          const guard = setInterval(() => {
-            if (petWin && !petWin.isDestroyed()) {
-              petWin.setAlwaysOnTop(true, 'pop-up-menu')
-            } else {
-              clearInterval(guard)
-            }
-          }, 2000)
+          petWin.setAlwaysOnTop(true)
         }
       }, 500)
+      petWin.on('closed', () => { petWin = null })
       petWin.on('closed', () => { petWin = null })
     }
 

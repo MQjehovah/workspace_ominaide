@@ -322,7 +322,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   proc.registerBridgeHandler('getPrimaryDisplay', async () => {
     const { screen } = require('electron')
     const d = screen.getPrimaryDisplay()
-    return { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height, scaleFactor: d.scaleFactor }
+    return { x: d.workArea.x, y: d.workArea.y, width: d.workArea.width, height: d.workArea.height, scaleFactor: d.scaleFactor }
   })
   proc.registerBridgeHandler('BrowserWindow:setBounds', async ([bounds]) => {
     const win = childWindows[childWindows.length - 1]

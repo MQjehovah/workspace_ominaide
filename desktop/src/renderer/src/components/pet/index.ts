@@ -50,7 +50,6 @@ export class PetEngine {
     this.character = new Character()
     this.fsm = new StateMachine()
     this.vfx = new VFXSystem(this.engine.scene)
-    this.hud = new HUDSystem({ target: this.character.group, offset: new THREE.Vector3(0, 1.8, 0) })
     this.physics = new PhysicsSystem()
     this.behavior = new BehaviorSystem()
     this.room = new Room()
@@ -76,6 +75,8 @@ export class PetEngine {
     // compute lowest vertex Y once (idle pose) for ground alignment
     const box = new THREE.Box3().setFromObject(this.character.group)
     this.lowestY = box.min.y
+    // adjust HUD offset based on model height
+    this.hud = new HUDSystem({ target: this.character.group, offset: new THREE.Vector3(0, (box.max.y - box.min.y) * 0.8, 0) })
 
     // Setup states AFTER model is loaded (to map actual clip names)
     this.setupStatesWithClips()
@@ -129,7 +130,7 @@ export class PetEngine {
     }
     const states: PetState[] = [
       { id: 'idle', name: 'Idle', animation: c(['Idle', 'idle', 'IDLE', 'stand', 'Stand', 'neutral']), blendIn: 0.3, blendOut: 0.3, loop: true, speed: 1 },
-      { id: 'walk', name: 'Walk', animation: c(['Walking', 'Walk', 'walk', 'Run', 'run']), blendIn: 0.2, blendOut: 0.3, loop: true, speed: 1.2 },
+      { id: 'walk', name: 'Walk', animation: c(['Walking', 'Walk', 'walk', 'Run', 'run']), blendIn: 0.2, blendOut: 0.3, loop: true, speed: 0.8 },
       { id: 'happy', name: 'Happy', animation: c(['Dance', 'dance', 'Jump', 'jump', 'Happy', 'happy']), blendIn: 0.15, blendOut: 0.2, loop: false, speed: 1.2 },
       { id: 'sad', name: 'Sad', animation: c(['Sit', 'sit', 'Sad', 'sad', 'Death', 'death']), blendIn: 0.3, blendOut: 0.4, loop: false, speed: 0.8 },
       { id: 'sleep', name: 'Sleep', animation: c(['Sit', 'sit', 'Sleep', 'sleep', 'Idle', 'idle']), blendIn: 0.5, blendOut: 0.5, loop: true, speed: 0.3 },
@@ -155,8 +156,8 @@ export class PetEngine {
     this.physicsBody = this.physics.createBody(new THREE.Vector3(0, -0.5, 0), 0.3, 1)
     this.physics.attachSpring(this.physicsBody, {
       position: new THREE.Vector3(0, -0.5, 0),
-      stiffness: 3,
-      damping: 1.2,
+      stiffness: 1.2,
+      damping: 1.5,
     })
   }
 
@@ -206,8 +207,8 @@ export class PetEngine {
   private dragActive = false
   private wanderTimer = 0
   private nextWanderTime = 3 + Math.random() * 5
-  private lowestY = 0  // model's lowest vertex Y (world space, after scale), computed from bounding box
-  hitTestLocked = false  // set true when UI overlay (context menu, etc.) is visible
+  private lowestY = 0
+  hitTestLocked = false
 
   private setupInteraction() {
     this.interaction = new InteractionSystem(
@@ -248,48 +249,25 @@ export class PetEngine {
       this.dragActive = false
     }
 
-    // Polling-based raycaster hit test for precise mouse passthrough
+    // Polling-based raycaster hit test for mouse passthrough
     const mqbox = (window as any).mqbox
     if (mqbox?.mouse?.getPosition && mqbox?.pet?.setHitTest) {
-      let lastSent = false
-      let bounds = { x: 0, y: 0, w: 9999, h: 9999 }
-
-      // eagerly get real bounds
-      mqbox.window.getBounds().then((b: any) => {
-        if (b) bounds = { x: b.x, y: b.y, w: b.width, h: b.height }
-      }).catch(() => {})
-
-      this.petBoundsInterval = setInterval(async () => {
-        try {
-          const b = await mqbox.window.getBounds()
-          if (b) bounds = { x: b.x, y: b.y, w: b.width, h: b.height }
-        } catch {}
-      }, 3000)
-
+      let lastHit = false
       this.petHitTestInterval = setInterval(async () => {
         try {
           const p = await mqbox.mouse.getPosition()
           if (!p) return
-          const localX = p.x - bounds.x
-          const localY = p.y - bounds.y
-          const inside = localX >= 0 && localX < bounds.w && localY >= 0 && localY < bounds.h
-          if (!inside) {
-            if (this.hitTestLocked) return
-            if (lastSent) { lastSent = false; mqbox.pet.setHitTest(false) }
-            return
-          }
           const rect = this.engine.renderer.domElement.getBoundingClientRect()
-          this.engine.pointer.x = ((localX - rect.left) / rect.width) * 2 - 1
-          this.engine.pointer.y = -((localY - rect.top) / rect.height) * 2 + 1
+          this.engine.pointer.x = ((p.x - rect.left) / rect.width) * 2 - 1
+          this.engine.pointer.y = -((p.y - rect.top) / rect.height) * 2 + 1
           this.engine.raycaster.setFromCamera(this.engine.pointer, this.engine.camera)
           const meshes = this.character.getMeshes()
           const intersects = this.engine.raycaster.intersectObjects(meshes, false)
-          const hit = intersects.length > 0
-          // Keep mouse events enabled during drag or when UI overlay is shown
+          const onMesh = intersects.length > 0
           if (this.hitTestLocked) {
-            if (!lastSent) { lastSent = true; mqbox.pet.setHitTest(true) }
-          } else if (!this.dragActive && hit !== lastSent) { lastSent = hit; mqbox.pet.setHitTest(hit) }
-          this.engine.renderer.domElement.style.cursor = hit ? 'grab' : 'default'
+            if (!lastHit) { lastHit = true; mqbox.pet.setHitTest(true) }
+          } else if (onMesh !== lastHit) { lastHit = onMesh; mqbox.pet.setHitTest(onMesh) }
+          this.engine.renderer.domElement.style.cursor = onMesh ? 'grab' : 'default'
         } catch {}
       }, 50)
     }
@@ -357,6 +335,9 @@ export class PetEngine {
         this.character.group.position.x = body.position.x
         this.character.group.position.y = body.position.y - body.radius - this.lowestY
         this.character.group.position.z = 0
+        // sync animation speed with actual movement velocity
+        const animSpeed = Math.max(0.3, Math.min(Math.abs(body.velocity.x) * 1.0, 2))
+        this.character.animator?.setTimeScale(animSpeed)
         this.character.updateProcedural(dt, this.time, this.fsm.current, this.currentMoveTarget, body.velocity.x)
       }
     } else {
