@@ -76,6 +76,7 @@ function createElectronProxy() {
       setIgnoreMouseEvents(v: boolean, opts?: any) { rpc('BrowserWindow:setIgnoreMouseEvents', v, opts).catch(() => {}) }
       setBounds(bounds: any) { rpc('BrowserWindow:setBounds', bounds).catch(() => {}) }
       maximize() { rpc('BrowserWindow:maximize').catch(() => {}) }
+      moveTop() { rpc('BrowserWindow:moveTop').catch(() => {}) }
       onDidDispose() { return this }
     },
     globalShortcut: {

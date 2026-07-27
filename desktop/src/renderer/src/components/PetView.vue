@@ -31,7 +31,7 @@ let engine: PetEngine | null = null
 async function init() {
   const el = container.value!
   engine = new PetEngine(el, {
-    modelUrl: 'https://threejs.org/examples/models/gltf/Xbot.glb',
+    modelUrl: '/models/wolf/Wolf-Blender-2.82a.gltf',
     useDog: false,
     environment: 'none',
     enablePhysics: true,
@@ -52,14 +52,17 @@ async function init() {
   })
 
   await engine.init()
+  ;(window as any).__petEngine = engine
 }
 
 function showContextMenu(e: MouseEvent) {
+  if (engine) engine.hitTestLocked = true
   contextMenu.value = { show: true, x: e.clientX, y: e.clientY }
 }
 
 function closeMenu() {
   contextMenu.value.show = false
+  if (engine) engine.hitTestLocked = false
 }
 
 async function doChat() {
@@ -132,6 +135,7 @@ function onDrop(e: DragEvent) {
 document.addEventListener('click', (e) => {
   if (contextMenu.value.show && !(e.target as HTMLElement)?.closest('.context-menu')) {
     contextMenu.value.show = false
+    if (engine) engine.hitTestLocked = false
   }
 })
 

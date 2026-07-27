@@ -303,9 +303,9 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     const win = childWindows.pop()
     if (win && !win.isDestroyed()) win.close()
   })
-  proc.registerBridgeHandler('BrowserWindow:setAlwaysOnTop', async ([v]) => {
+  proc.registerBridgeHandler('BrowserWindow:setAlwaysOnTop', async ([v, level]) => {
     const win = childWindows[childWindows.length - 1]
-    if (win && !win.isDestroyed()) win.setAlwaysOnTop(v)
+    if (win && !win.isDestroyed()) win.setAlwaysOnTop(v, level)
   })
   proc.registerBridgeHandler('BrowserWindow:setSkipTaskbar', async ([v]) => {
     const win = childWindows[childWindows.length - 1]
@@ -331,6 +331,10 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   proc.registerBridgeHandler('BrowserWindow:maximize', async () => {
     const win = childWindows[childWindows.length - 1]
     if (win && !win.isDestroyed()) win.maximize()
+  })
+  proc.registerBridgeHandler('BrowserWindow:moveTop', async () => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.moveTop()
   })
   proc.registerBridgeHandler('globalShortcut:register', async ([accelerator]) => {
     const { globalShortcut } = require('electron')

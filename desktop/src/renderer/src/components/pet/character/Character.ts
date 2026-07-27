@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { AnimationSystem } from '../core/AnimationSystem'
 
 export class Character {
@@ -19,6 +20,9 @@ export class Character {
   async loadFromUrl(url: string): Promise<boolean> {
     return new Promise(resolve => {
       const loader = new GLTFLoader()
+      const draco = new DRACOLoader()
+      draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/')
+      loader.setDRACOLoader(draco)
       loader.load(url, gltf => {
         const model = gltf.scene
         model.scale.set(0.8, 0.8, 0.8)
@@ -30,6 +34,9 @@ export class Character {
             this.meshes.push(child)
           }
         })
+        // remove pedestal base (named "Circle" in this model)
+        const base = model.getObjectByName('Circle')
+        if (base) { base.visible = false }
         this.group.add(model)
         this.modelRoot = model
 

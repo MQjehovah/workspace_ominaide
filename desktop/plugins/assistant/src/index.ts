@@ -58,6 +58,17 @@ export default {
       setTimeout(() => {
         if (petWin && !petWin.isDestroyed()) {
           petWin.setIgnoreMouseEvents(true, { forward: true })
+          // Windows: SetWindowLong used by setIgnoreMouseEvents can reset WS_EX_TOPMOST
+          petWin.setAlwaysOnTop(true, 'pop-up-menu')
+          petWin.moveTop()
+          // Periodically re-assert topmost (Windows often drops it)
+          const guard = setInterval(() => {
+            if (petWin && !petWin.isDestroyed()) {
+              petWin.setAlwaysOnTop(true, 'pop-up-menu')
+            } else {
+              clearInterval(guard)
+            }
+          }, 2000)
         }
       }, 500)
       petWin.on('closed', () => { petWin = null })

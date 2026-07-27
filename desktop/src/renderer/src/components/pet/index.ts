@@ -72,8 +72,10 @@ export class PetEngine {
     }
 
     this.character.group.scale.set(0.5, 0.5, 0.5)
-    this.character.group.position.y = -0.8
     this.engine.scene.add(this.character.group)
+    // compute lowest vertex Y once (idle pose) for ground alignment
+    const box = new THREE.Box3().setFromObject(this.character.group)
+    this.lowestY = box.min.y
 
     // Setup states AFTER model is loaded (to map actual clip names)
     this.setupStatesWithClips()
@@ -204,7 +206,8 @@ export class PetEngine {
   private dragActive = false
   private wanderTimer = 0
   private nextWanderTime = 3 + Math.random() * 5
-  private readonly feetToGroupOffset = 0.015  // character feet local Y * scale 0.5
+  private lowestY = 0  // model's lowest vertex Y (world space, after scale), computed from bounding box
+  hitTestLocked = false  // set true when UI overlay (context menu, etc.) is visible
 
   private setupInteraction() {
     this.interaction = new InteractionSystem(
@@ -249,14 +252,19 @@ export class PetEngine {
     const mqbox = (window as any).mqbox
     if (mqbox?.mouse?.getPosition && mqbox?.pet?.setHitTest) {
       let lastSent = false
-      let bounds = { x: 0, y: 0, w: 280, h: 340 }
+      let bounds = { x: 0, y: 0, w: 9999, h: 9999 }
+
+      // eagerly get real bounds
+      mqbox.window.getBounds().then((b: any) => {
+        if (b) bounds = { x: b.x, y: b.y, w: b.width, h: b.height }
+      }).catch(() => {})
 
       this.petBoundsInterval = setInterval(async () => {
         try {
           const b = await mqbox.window.getBounds()
           if (b) bounds = { x: b.x, y: b.y, w: b.width, h: b.height }
         } catch {}
-      }, 1000)
+      }, 3000)
 
       this.petHitTestInterval = setInterval(async () => {
         try {
@@ -266,6 +274,7 @@ export class PetEngine {
           const localY = p.y - bounds.y
           const inside = localX >= 0 && localX < bounds.w && localY >= 0 && localY < bounds.h
           if (!inside) {
+            if (this.hitTestLocked) return
             if (lastSent) { lastSent = false; mqbox.pet.setHitTest(false) }
             return
           }
@@ -276,8 +285,10 @@ export class PetEngine {
           const meshes = this.character.getMeshes()
           const intersects = this.engine.raycaster.intersectObjects(meshes, false)
           const hit = intersects.length > 0
-          // Keep mouse events enabled during drag
-          if (!this.dragActive && hit !== lastSent) { lastSent = hit; mqbox.pet.setHitTest(hit) }
+          // Keep mouse events enabled during drag or when UI overlay is shown
+          if (this.hitTestLocked) {
+            if (!lastSent) { lastSent = true; mqbox.pet.setHitTest(true) }
+          } else if (!this.dragActive && hit !== lastSent) { lastSent = hit; mqbox.pet.setHitTest(hit) }
           this.engine.renderer.domElement.style.cursor = hit ? 'grab' : 'default'
         } catch {}
       }, 50)
@@ -286,18 +297,21 @@ export class PetEngine {
 
   private addLights() {
     const scene = this.engine.scene
-    scene.add(new THREE.HemisphereLight(0x8888ff, 0x444422, 0.6))
-    const sun = new THREE.DirectionalLight(0xffeedd, 1.2)
-    sun.position.set(2, 4, 3)
+    scene.add(new THREE.HemisphereLight(0xaaccff, 0x554433, 1.2))
+    const sun = new THREE.DirectionalLight(0xffeedd, 2.5)
+    sun.position.set(2, 3, 4)
     sun.castShadow = true
     sun.shadow.mapSize.set(1024, 1024)
     scene.add(sun)
-    const fill = new THREE.DirectionalLight(0x88aaff, 0.4)
-    fill.position.set(-2, 0.5, 2)
+    const fill = new THREE.DirectionalLight(0x88bbff, 1.0)
+    fill.position.set(-2, 1, 3)
     scene.add(fill)
-    const rim = new THREE.DirectionalLight(0xccddff, 0.3)
+    const rim = new THREE.DirectionalLight(0xccddff, 0.6)
     rim.position.set(0, 1, -4)
     scene.add(rim)
+    const top = new THREE.DirectionalLight(0xffffff, 0.8)
+    top.position.set(0, 5, 0)
+    scene.add(top)
     // subtle ground shadow
     const shadowGeo = new THREE.CircleGeometry(0.6, 32)
     const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.08, depthWrite: false })
@@ -341,7 +355,7 @@ export class PetEngine {
       const body = this.physics.getBody(0)
       if (body) {
         this.character.group.position.x = body.position.x
-        this.character.group.position.y = body.position.y - (body.radius + this.feetToGroupOffset)
+        this.character.group.position.y = body.position.y - body.radius - this.lowestY
         this.character.group.position.z = 0
         this.character.updateProcedural(dt, this.time, this.fsm.current, this.currentMoveTarget, body.velocity.x)
       }
