@@ -150,6 +150,19 @@ npm run dev
 │   │   ├── rss/        # 资讯
 │   │   └── ...
 │   └── src/           # Electron 主进程 + 渲染进程
+## 桌宠鼠标事件方案
+
+桌面宠物窗口（`plugins/assistant/`）的鼠标交互采用 **hit-test 轮询 + 动态穿透开关**方案：
+
+1. **默认穿透**：`setIgnoreMouseEvents(true, { forward: true })` — 桌面操作不受影响
+2. **50ms 轮询**：`mqbox.mouse.getPosition()` 获取鼠标屏幕坐标，raycaster 检测是否在 3D 网格上
+3. **网格命中** → `setIgnoreMouseEvents(false)` → DOM 接收事件 → `InteractionSystem.onClick` → 摸头/交互
+4. **离开网格** → `setIgnoreMouseEvents(true)` → 恢复穿透
+5. **右键菜单**：`@contextmenu.prevent` + 位置自适应（靠右/靠底时翻转）
+6. **置顶**：构造时 `alwaysOnTop: true`，`setIgnoreMouseEvents` 后重新 `setAlwaysOnTop(true)` + `moveTop()`
+
+---
+
 ├── frontend/          # Web 管理后台（Vue 3）
 ├── mobile/            # Flutter 移动端
 └── docker/            # Docker Compose 配置
