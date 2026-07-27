@@ -18,7 +18,6 @@ function openInNewWindow() {
 }
 
 onMounted(() => {
-  // Auto-navigate to the plugin window
   if (pluginId.value) {
     window.mqbox?.window.openPluginWindow(pluginId.value, getExtraQuery())
     window.close()

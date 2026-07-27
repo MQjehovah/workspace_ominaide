@@ -1,0 +1,12 @@
+{
+  "id": "vibecoding-proxy",
+  "name": "omniaide-vibecoding-proxy",
+  "displayName": "VibeCoding Proxy",
+  "description": "项目管理 · 终端集成 · 飞书机器人 · opencode 代理",
+  "version": "1.0.0",
+  "icon": "FolderOpened",
+  "keywords": ["vibecoding", "project", "terminal", "opencode", "claude", "飞书", "feishu", "proxy"],
+  "permissions": ["storage", "notification", "shell"],
+  "builtin": false,
+  "main": "dist/index.js"
+}

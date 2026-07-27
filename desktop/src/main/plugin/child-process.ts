@@ -10,7 +10,7 @@ interface PendingRequest {
   timer: NodeJS.Timeout
 }
 
-const COMMAND_TIMEOUT = 30000
+const COMMAND_TIMEOUT = 300000 // 5 minutes (opencode run can take long)
 
 export class PluginChildProcess extends EventEmitter {
   public readonly pluginId: string

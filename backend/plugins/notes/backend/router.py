@@ -7,7 +7,7 @@ from core.events.recorder import record_event
 from plugins.notes.backend.schemas import NoteCreate, NoteUpdate, NoteResponse
 from plugins.notes.backend import service as notes_service
 
-router = APIRouter(tags=["notes-plugin"])
+router = APIRouter(prefix="/api/notes", tags=["notes-plugin"])
 
 
 class MoveNoteRequest(BaseModel):

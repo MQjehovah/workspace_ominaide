@@ -312,6 +312,54 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
       if (!win.isDestroyed()) win.webContents.send('panel:updated', proc.pluginId)
     })
   })
+
+  // PTY (pseudo-terminal) for interactive AI sessions
+  const ptySessions = new Map<string, any>()
+  let ptyCounter = 0
+
+  proc.registerBridgeHandler('pty:create', async ([cmd, cmdArgs, cwd]) => {
+    try {
+      const { execSync } = require('child_process')
+      const isWin = process.platform === 'win32'
+      const pty = require('node-pty')
+      const id = `pty_${proc.pluginId}_${++ptyCounter}`
+      const rows = 30, cols = 120
+
+      // On Windows, wrap in cmd.exe to resolve .cmd/.bat scripts correctly
+      const spawnCmd = isWin ? 'cmd.exe' : cmd
+      const spawnArgs = isWin ? ['/c', cmd, ...(cmdArgs || [])] : (cmdArgs || [])
+
+      const term = pty.spawn(spawnCmd, spawnArgs, {
+        name: 'xterm-color', cols, rows, cwd: cwd || process.cwd(),
+        env: { ...process.env, TERM: 'xterm-256color' },
+      })
+      let output = ''
+      term.onData((data: string) => { output += data })
+      ptySessions.set(id, { term, read: () => { const o = output; output = ''; return o } })
+      term.onExit(() => { output = ''; ptySessions.delete(id) })
+      return { id, rows, cols }
+    } catch (e: any) {
+      return { error: e.message || String(e) }
+    }
+  })
+
+  proc.registerBridgeHandler('pty:write', async ([id, data]) => {
+    const s = ptySessions.get(id)
+    if (!s) return { error: 'no session' }
+    s.term.write(data)
+    return { success: true }
+  })
+
+  proc.registerBridgeHandler('pty:read', async ([id]) => {
+    const s = ptySessions.get(id)
+    if (!s) return { output: '', done: true }
+    return { output: s.read(), done: false }
+  })
+
+  proc.registerBridgeHandler('pty:kill', async ([id]) => {
+    const s = ptySessions.get(id)
+    if (s) { s.term.kill(); ptySessions.delete(id) }
+  })
 }
 
 export function removePlugin(id: string): boolean {

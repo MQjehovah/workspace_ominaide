@@ -12,7 +12,7 @@
     <!-- Projects Tab -->
     <div v-if="tab === 'projects'" class="content">
       <div class="toolbar">
-        <button class="btn primary" @click="scanProjects">🔍 扫描项目</button>
+        <button class="btn primary" @click="pickAndScan">📂 选择目录并扫描</button>
         <input v-model="projectFilter" class="search-input" placeholder="过滤项目..." />
       </div>
       <div class="project-grid">
@@ -43,11 +43,10 @@
 
     <!-- Terminal Tab -->
     <div v-if="tab === 'terminal'" class="content">
-      <div class="settings-card">
-        <h3>终端启动</h3>
+      <div class="session-bar">
         <div class="form-row">
           <label>项目路径</label>
-          <input v-model="termProjectPath" class="input" placeholder="选择或输入项目路径..." />
+          <input v-model="termProjectPath" class="input" placeholder="选择项目目录..." />
           <button class="btn sm" @click="pickProject">选择</button>
         </div>
         <div class="form-row">
@@ -57,16 +56,30 @@
             <option value="claude">claude</option>
           </select>
         </div>
-        <div class="form-row">
-          <label>提示词 (可选)</label>
-          <textarea v-model="termPrompt" class="input" rows="2" placeholder="输入初始提示词..."></textarea>
-        </div>
-        <button class="btn primary" @click="doLaunchTerminal">🚀 启动终端</button>
+        <button v-if="!sessionActive" class="btn primary" @click="startAiSession">▶ 连接 {{ termTool }}</button>
+        <button v-else class="btn danger" @click="stopAiSession">■ 断开</button>
+        <span v-if="sessionActive" class="session-badge">● 已连接 (opencode -p)</span>
+      </div>
 
-        <div v-if="aiResult" class="result-box">
-          <h4>AI 响应</h4>
-          <pre>{{ aiResult }}</pre>
+      <div class="terminal-output" ref="terminalRef">
+        <div v-for="(line, i) in sessionLog" :key="i" class="term-line" :class="line.role">
+          <span class="term-prompt">{{ line.role === 'user' ? '>>>' : '🤖' }}</span>
+          <span class="term-text">{{ line.text }}</span>
         </div>
+        <div v-if="sessionActive && waitingResponse" class="term-line thinking">
+          <span class="term-prompt">🤖</span>
+          <span class="term-text">思考中...</span>
+        </div>
+      </div>
+
+      <div v-if="sessionActive" class="session-input-bar">
+        <input v-model="sessionInput" class="input" placeholder="输入消息，回车发送..." @keyup.enter="sendSessionInput" :disabled="waitingResponse" />
+        <button class="btn primary" @click="sendSessionInput" :disabled="waitingResponse || !sessionInput.trim()">发送</button>
+      </div>
+
+      <div v-if="aiResult" class="result-box">
+        <h4>上次 AI 响应</h4>
+        <pre>{{ aiResult }}</pre>
       </div>
     </div>
 
@@ -74,13 +87,14 @@
     <div v-if="tab === 'feishu'" class="content">
       <div class="settings-card">
         <h3>飞书机器人配置</h3>
+        <p class="card-hint">直连飞书 WebSocket，无需公网地址</p>
         <div class="form-row">
-          <label>Webhook URL</label>
-          <input v-model="feishuCfg.webhookUrl" class="input" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." />
+          <label>App ID</label>
+          <input v-model="feishuCfg.appId" class="input" placeholder="飞书开放平台 App ID" />
         </div>
         <div class="form-row">
-          <label>签名密钥 (可选)</label>
-          <input v-model="feishuCfg.secret" class="input" type="password" placeholder="HMAC-SHA256 签名密钥" />
+          <label>App Secret</label>
+          <input v-model="feishuCfg.appSecret" class="input" type="password" placeholder="飞书开放平台 App Secret" />
         </div>
         <div class="form-row">
           <label>启用</label>
@@ -89,7 +103,12 @@
             <span class="slider"></span>
           </label>
         </div>
-        <button class="btn primary" @click="saveFeishuConfig">💾 保存配置</button>
+        <div class="form-row">
+          <label>状态</label>
+          <span :class="['feishu-state', feishuConnStatus]">{{ feishuConnLabel }}</span>
+        </div>
+        <button class="btn primary" @click="saveFeishuConfig">💾 保存并连接</button>
+        <button v-if="feishuConnStatus === 'connected'" class="btn danger" @click="disconnectFeishu">■ 断开</button>
         <button class="btn" @click="testFeishu">📨 发送测试消息</button>
         <div v-if="feishuStatus" class="status-msg" :class="feishuStatus.ok ? 'ok' : 'err'">{{ feishuStatus.msg }}</div>
       </div>
@@ -100,7 +119,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 
-defineProps<{ data: any; execute: Function; close: Function }>()
+const { execute } = defineProps<{ data: any; execute: Function; close: Function }>()
 
 const tab = ref('projects')
 const projects = ref<any[]>([])
@@ -109,8 +128,18 @@ const termProjectPath = ref('')
 const termTool = ref('opencode')
 const termPrompt = ref('')
 const aiResult = ref('')
-const feishuCfg = ref({ webhookUrl: '', secret: '', enabled: false })
+const sessionActive = ref(false)
+const sessionInput = ref('')
+const sessionLog = ref<Array<{ role: string; text: string }>>([])
+const waitingResponse = ref(false)
+const terminalRef = ref<HTMLElement | null>(null)
+const feishuCfg = ref({ appId: '', appSecret: '', enabled: false, webhookUrl: '', secret: '' })
 const feishuStatus = ref<{ ok: boolean; msg: string } | null>(null)
+const feishuConnStatus = ref('stopped')
+const feishuConnLabel = computed(() => {
+  const map: Record<string, string> = { connected: '✅ 已连接', connecting: '⏳ 连接中...', reconnecting: '🔄 重连中...', stopped: '⏹ 未连接', disconnected: '⏹ 已断开' }
+  return map[feishuConnStatus.value] || feishuConnStatus.value
+})
 
 const filteredProjects = computed(() => {
   if (!projectFilter.value) return projects.value
@@ -132,13 +161,28 @@ function typeIcon(type: string) {
   return map[type] || '📁'
 }
 
-async function scanProjects() {
-  const proj = await execute('scanProjects')
+async function pickAndScan() {
+  const win = window as any
+  let dir = ''
+  if (win.mqbox?.dialog?.selectFolder) {
+    dir = await win.mqbox.dialog.selectFolder()
+  } else {
+    dir = await execute('pickProject')
+  }
+  if (!dir) return
+  const proj = await execute('scanDir', { dir })
   if (proj) projects.value = proj
 }
 
-function pickProject() {
-  execute('pickProject').then((path: string) => { if (path) termProjectPath.value = path })
+async function pickProject() {
+  const win = window as any
+  let dir = ''
+  if (win.mqbox?.dialog?.selectFolder) {
+    dir = await win.mqbox.dialog.selectFolder()
+  } else {
+    dir = await execute('pickProject')
+  }
+  if (dir) termProjectPath.value = dir
 }
 
 function openTerminal(path: string, tool: string) {
@@ -157,16 +201,94 @@ function doLaunchTerminal() {
   execute('launchTerminal', { path: termProjectPath.value, tool: termTool.value, prompt: termPrompt.value })
 }
 
+async function startAiSession() {
+  if (!termProjectPath.value) return
+  sessionLog.value = []
+  // Reset session on new connection (first run won't use -c)
+  await execute('resetSession')
+  sessionActive.value = true
+  sessionLog.value.push({ role: 'system', text: `已连接 ${termTool.value}（opencode run -c），输入消息后回车` })
+}
+
+async function stopAiSession() {
+  sessionActive.value = false
+  waitingResponse.value = false
+  sessionLog.value.push({ role: 'system', text: '已断开' })
+}
+
+async function sendSessionInput() {
+  const text = sessionInput.value.trim()
+  if (!text || waitingResponse.value || !termProjectPath.value) return
+  sessionInput.value = ''
+  sessionLog.value.push({ role: 'user', text })
+  waitingResponse.value = true
+  scrollTerminal()
+
+  try {
+    const result = await execute('spawnAiProcess', {
+      tool: termTool.value,
+      path: termProjectPath.value,
+      input: text,
+    })
+    if (result?.error) {
+      sessionLog.value.push({ role: 'system', text: `进程错误: ${result.error}` })
+    } else {
+      const output = result?.combined?.trim() || result?.stdout?.trim() || result?.stderr?.trim()
+      if (output) {
+        sessionLog.value.push({ role: 'assistant', text: output })
+      } else {
+        sessionLog.value.push({ role: 'system', text: `(模型无输出, exit code: ${result?.code ?? '?'})` })
+      }
+    }
+  } catch (e: any) {
+    sessionLog.value.push({ role: 'system', text: `错误: ${e.message || e}` })
+  }
+  waitingResponse.value = false
+  scrollTerminal()
+}
+
+function scrollTerminal() {
+  setTimeout(() => {
+    if (terminalRef.value) terminalRef.value.scrollTop = terminalRef.value.scrollHeight
+  }, 50)
+}
+
 async function saveFeishuConfig() {
-  const ok = await execute('saveFeishuConfig', feishuCfg.value)
-  feishuStatus.value = ok ? { ok: true, msg: '配置已保存' } : { ok: false, msg: '保存失败' }
+  const ok = await execute('saveFeishuConfig', JSON.parse(JSON.stringify(feishuCfg.value)))
+  if (ok) {
+    feishuStatus.value = { ok: true, msg: '配置已保存，正在连接飞书...' }
+    const started = await execute('startFeishu')
+    if (started) {
+      feishuConnStatus.value = 'connecting'
+      feishuStatus.value = { ok: true, msg: '飞书客户端已启动' }
+      startFeishuPolling()
+    }
+  } else {
+    feishuStatus.value = { ok: false, msg: '保存失败' }
+  }
   setTimeout(() => { feishuStatus.value = null }, 3000)
+}
+
+async function disconnectFeishu() {
+  await execute('stopFeishu')
+  feishuConnStatus.value = 'stopped'
+  stopFeishuPolling()
 }
 
 async function testFeishu() {
   const ok = await execute('testFeishu')
   feishuStatus.value = ok ? { ok: true, msg: '测试消息已发送 ✓' } : { ok: false, msg: '发送失败，请检查配置' }
   setTimeout(() => { feishuStatus.value = null }, 3000)
+}
+
+let feishuPollTimer: any = null
+async function startFeishuPolling() {
+  const status = await execute('feishuStatus')
+  feishuConnStatus.value = status
+  feishuPollTimer = setTimeout(startFeishuPolling, 3000)
+}
+function stopFeishuPolling() {
+  if (feishuPollTimer) { clearTimeout(feishuPollTimer); feishuPollTimer = null }
 }
 </script>
 
@@ -216,4 +338,18 @@ textarea.input{font-family:monospace;resize:vertical}
 .slider::before{content:'';position:absolute;height:16px;width:16px;left:2px;bottom:2px;background:#fff;transition:0.3s;border-radius:50%}
 .switch input:checked+.slider{background:#409EFF}
 .switch input:checked+.slider::before{transform:translateX(16px)}
+.btn.danger{background:#e74c3c;color:#fff;border-color:#e74c3c}
+.btn.danger:hover{background:#c0392b}
+.session-badge{font-size:11px;color:#27ae60;margin-left:8px}
+.session-bar{border:1px solid #eee;border-radius:8px;padding:16px;margin-bottom:12px;max-width:600px}
+.terminal-output{border:1px solid #ddd;border-radius:6px;padding:10px;height:300px;overflow-y:auto;background:#1a1a2e;color:#e0e0e0;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.5;margin-bottom:8px}
+.term-line{margin-bottom:2px;word-break:break-word}
+.term-line.system{color:#888;font-style:italic}
+.term-line.thinking{color:#888;animation:pulse 1.5s infinite}
+.term-prompt{color:#4CAF50;margin-right:8px;user-select:none}
+.term-line.user .term-prompt{color:#64B5F6}
+.term-line.assistant .term-prompt{color:#FFD54F}
+.term-text{white-space:pre-wrap}
+.session-input-bar{display:flex;gap:8px}
+@keyframes pulse{0%{opacity:0.4}50%{opacity:1}100%{opacity:0.4}}
 </style>

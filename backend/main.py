@@ -76,31 +76,22 @@ app.include_router(workspace_router)
 from plugins.sync.backend.router import router as sync_router
 app.include_router(sync_router)
 
-from core.ai.mcp.router import router as mcp_router
-app.include_router(mcp_router)
-
-from core.events.router import router as activities_router
-app.include_router(activities_router)
-
 from plugins.music.backend.router import router as music_router
 app.include_router(music_router)
 
-from core.ai.search_router import router as search_router
-app.include_router(search_router)
-
-from core.plugin.marketplace import router as marketplace_router
-app.include_router(marketplace_router)
+from plugins.todo.backend.router import router as todo_router
+app.include_router(todo_router)
 
 from plugins.remote.backend.router import router as remote_router
-app.include_router(remote_router)
 from plugins.remote.backend.router import ws_router as remote_ws_router
+app.include_router(remote_router)
 app.include_router(remote_ws_router)
 
 from plugins.chat.backend.router import router as chat_router
 app.include_router(chat_router)
 
 from plugins.notes.backend.router import router as notes_router
-app.include_router(notes_router, prefix="/api/plugins/notes")
+app.include_router(notes_router)
 
 from plugins.schedule.backend.router import router as schedule_router
 app.include_router(schedule_router)
@@ -113,8 +104,11 @@ app.include_router(notifications_ws_router)
 from plugins.rss.backend.router import router as rss_router
 app.include_router(rss_router)
 
-from plugins.mail.backend.router import router as mail_router
-app.include_router(mail_router)
+try:
+    from plugins.mail.backend.router import router as mail_router
+    app.include_router(mail_router)
+except ModuleNotFoundError:
+    pass
 
 
 @app.websocket("/ws/sync/{workspace_id}")
