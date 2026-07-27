@@ -97,6 +97,9 @@ app.include_router(notifications_ws_router)
 from plugins.rss.backend.router import router as rss_router
 app.include_router(rss_router)
 
+from plugins.mail.backend.router import router as mail_router
+app.include_router(mail_router)
+
 
 @app.websocket("/ws/sync/{workspace_id}")
 async def sync_websocket(websocket: WebSocket, workspace_id: int):
