@@ -1,0 +1,12 @@
+{
+  "id": "devops",
+  "name": "omniaide-devops",
+  "displayName": "DevOps",
+  "description": "项目管理 · 终端集成 · 飞书机器人对接",
+  "version": "1.0.0",
+  "icon": "FolderOpened",
+  "keywords": ["devops", "project", "terminal", "opencode", "claude", "飞书", "feishu"],
+  "permissions": ["storage", "notification", "shell"],
+  "builtin": false,
+  "main": "dist/index.js"
+}

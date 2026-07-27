@@ -160,6 +160,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
   proc.registerBridgeHandler('shell:openPath', async ([path]) => shell.openPath(path))
   proc.registerBridgeHandler('shell:openExternal', async ([url]) => shell.openExternal(url))
+  proc.registerBridgeHandler('dialog:showOpenDialog', async ([opts]) => dialog.showOpenDialog(opts))
 
   proc.registerBridgeHandler('storage:get', async ([key]) => {
     const file = join(app.getPath('userData'), 'plugin-data', `${proc.pluginId}.json`)

@@ -12,6 +12,7 @@ import plugins.notes.backend.models  # noqa
 import plugins.music.backend.models  # noqa
 import core.database.redis  # noqa
 import core.events.models  # noqa
+import plugins.notifications.backend.models  # noqa
 
 
 async def init_db():

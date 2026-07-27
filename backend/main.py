@@ -14,6 +14,22 @@ async def lifespan(app: FastAPI):
     from core.events.bus import worker_loop
     from core.events.workers import register_workers
     from core.ai.scheduler import scheduler_loop
+    from core.database.session import engine
+    from core.database.base import Base
+
+    # Ensure all tables exist
+    import core.plugin.models  # noqa
+    import core.auth.domain.models  # noqa
+    import plugins.files.backend.models  # noqa
+    import plugins.workspaces.backend.models  # noqa
+    import plugins.sync.backend.models  # noqa
+    import plugins.todo.backend.models  # noqa
+    import plugins.notes.backend.models  # noqa
+    import plugins.music.backend.models  # noqa
+    import core.events.models  # noqa
+    import plugins.notifications.backend.models  # noqa
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     register_workers()
     worker_task = asyncio.create_task(worker_loop())
