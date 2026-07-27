@@ -48,12 +48,12 @@ export class Character {
 
   buildDogProcedural() {
     this.isDog = true
-    const fur = new THREE.MeshStandardMaterial({ color: 0xD4A574, roughness: 0.7, metalness: 0 })
-    const furDark = new THREE.MeshStandardMaterial({ color: 0x8B6914, roughness: 0.8 })
-    const furLight = new THREE.MeshStandardMaterial({ color: 0xF0D5B0, roughness: 0.7 })
-    const noseMat = new THREE.MeshStandardMaterial({ color: 0x2C1810, roughness: 0.9 })
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0 })
-    const eyeW = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 })
+    const fur = new THREE.MeshPhysicalMaterial({ color: 0xD4A574, roughness: 0.75, metalness: 0, clearcoat: 0.15, clearcoatRoughness: 0.4, sheen: 0.3, sheenColor: new THREE.Color(0xD4A574) })
+    const furDark = new THREE.MeshPhysicalMaterial({ color: 0x8B6914, roughness: 0.85, metalness: 0, sheen: 0.2, sheenColor: new THREE.Color(0x8B6914) })
+    const furLight = new THREE.MeshPhysicalMaterial({ color: 0xF0D5B0, roughness: 0.7, metalness: 0, sheen: 0.35, sheenColor: new THREE.Color(0xF0D5B0) })
+    const noseMat = new THREE.MeshPhysicalMaterial({ color: 0x2C1810, roughness: 0.6, metalness: 0.1, clearcoat: 0.5 })
+    const eyeMat = new THREE.MeshPhysicalMaterial({ color: 0x1a1a2e, roughness: 0, metalness: 0.8, clearcoat: 1 })
+    const eyeW = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0 })
 
     // Body - elongated, lower to ground
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.45, 24, 24), fur)
@@ -181,11 +181,11 @@ export class Character {
     this.animator?.addClip(sadClip)
   }
 
-  updateProcedural(dt: number, time: number, stateName: string, moveTarget?: { x: number; z: number } | null) {
+  updateProcedural(dt: number, time: number, stateName: string, moveTarget?: { x: number; z: number } | null, velocityX?: number) {
     if (!this.isDog) return
 
     const breathe = Math.sin(time * 1.5) * 0.008
-    this.group.position.y = breathe
+    this.group.position.y += breathe
 
     // Tail wag
     if (this.tailBone) {
@@ -219,10 +219,11 @@ export class Character {
     }
 
     // Leg animation (walk cycle / idle)
+    const walkSpeed = velocityX ? Math.min(Math.abs(velocityX) * 3, 8) : 4
     this.legBones.forEach((leg, i) => {
       if (stateName === 'walk' && moveTarget) {
         const phase = i * Math.PI / 2
-        leg.rotation.x = Math.sin(time * 4 + phase) * 0.2
+        leg.rotation.x = Math.sin(time * walkSpeed + phase) * 0.25
       } else if (stateName === 'happy') {
         leg.position.y = 0.15 + Math.sin(time * 6 + i * 1.5) * 0.04
       } else if (stateName === 'sleep') {

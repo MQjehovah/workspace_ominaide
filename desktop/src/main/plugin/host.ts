@@ -324,6 +324,14 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     const d = screen.getPrimaryDisplay()
     return { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height, scaleFactor: d.scaleFactor }
   })
+  proc.registerBridgeHandler('BrowserWindow:setBounds', async ([bounds]) => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.setBounds(bounds)
+  })
+  proc.registerBridgeHandler('BrowserWindow:maximize', async () => {
+    const win = childWindows[childWindows.length - 1]
+    if (win && !win.isDestroyed()) win.maximize()
+  })
   proc.registerBridgeHandler('globalShortcut:register', async ([accelerator]) => {
     const { globalShortcut } = require('electron')
     globalShortcut.register(accelerator, () => {

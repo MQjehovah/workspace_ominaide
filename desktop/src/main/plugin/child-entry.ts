@@ -74,6 +74,8 @@ function createElectronProxy() {
       setSkipTaskbar(v: boolean) { rpc('BrowserWindow:setSkipTaskbar', v).catch(() => {}) }
       openDevTools() { rpc('BrowserWindow:openDevTools').catch(() => {}) }
       setIgnoreMouseEvents(v: boolean, opts?: any) { rpc('BrowserWindow:setIgnoreMouseEvents', v, opts).catch(() => {}) }
+      setBounds(bounds: any) { rpc('BrowserWindow:setBounds', bounds).catch(() => {}) }
+      maximize() { rpc('BrowserWindow:maximize').catch(() => {}) }
       onDidDispose() { return this }
     },
     globalShortcut: {

@@ -17,11 +17,11 @@ export interface SpringTarget {
 }
 
 export class PhysicsSystem {
-  private bodies: PhysicsBody[] = []
+  bodies: PhysicsBody[] = []
   private springs: Map<PhysicsBody, SpringTarget> = new Map()
-  private groundY = 0
-  private gravity = -12
-  private bounds = { minX: -2, maxX: 2, minZ: -2, maxZ: 2 }
+  groundY = 0
+  gravity = -12
+  bounds = { minX: -2, maxX: 2, minZ: -2, maxZ: 2 }
 
   createBody(position: THREE.Vector3, radius = 0.3, mass = 1): PhysicsBody {
     const body: PhysicsBody = {

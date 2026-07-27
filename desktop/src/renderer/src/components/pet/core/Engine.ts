@@ -21,10 +21,18 @@ export class Engine {
     // Scene
     this.scene = new THREE.Scene()
 
-    // Camera
-    this.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100)
-    this.camera.position.set(0, 1.8, 4)
-    this.camera.lookAt(0, 0.6, 0)
+    // Orthographic Camera — screen-facing, character stays same size regardless of position
+    const frustumHeight = 3
+    const aspect = w / h
+    this.camera = new THREE.OrthographicCamera(
+      -frustumHeight * aspect / 2,
+      frustumHeight * aspect / 2,
+      frustumHeight / 2,
+      -frustumHeight / 2,
+      0.1, 100
+    )
+    this.camera.position.set(0, 0, 5)
+    this.camera.lookAt(0, 0, 0)
 
     // WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
@@ -55,7 +63,12 @@ export class Engine {
   resize() {
     const w = this.container.clientWidth || window.innerWidth
     const h = this.container.clientHeight || window.innerHeight
-    this.camera.aspect = w / h
+    const frustumHeight = 3
+    const aspect = w / h
+    this.camera.left = -frustumHeight * aspect / 2
+    this.camera.right = frustumHeight * aspect / 2
+    this.camera.top = frustumHeight / 2
+    this.camera.bottom = -frustumHeight / 2
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(w, h)
     this.labelRenderer.setSize(w, h)

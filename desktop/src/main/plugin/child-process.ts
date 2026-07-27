@@ -127,13 +127,13 @@ export class PluginChildProcess extends EventEmitter {
 
   private writeToChild(msg: unknown): void {
     if (this.proc?.stdin?.writable) {
-      this.proc.stdin.write(encodeMessage(msg as any))
+      try { this.proc.stdin.write(encodeMessage(msg as any)) } catch {}
     }
   }
 
   sendRaw(data: string): void {
     if (this.proc?.stdin?.writable) {
-      this.proc.stdin.write(data)
+      try { this.proc.stdin.write(data) } catch {}
     }
   }
 

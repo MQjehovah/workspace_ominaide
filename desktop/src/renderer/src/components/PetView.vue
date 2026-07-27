@@ -14,7 +14,7 @@
       <div class="menu-sep"></div>
       <div class="menu-item" @click="doAction('close')"><span>✕</span> 隐藏</div>
     </div>
-    <div class="drag-handle"></div>
+
   </div>
 </template>
 
@@ -154,7 +154,7 @@ onUnmounted(() => {
 
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none}
-.pet-wrap{width:100vw;height:100vh;position:relative;overflow:hidden;background:transparent;-webkit-app-region:drag;transition:opacity 0.5s}
+.pet-wrap{width:100vw;height:100vh;position:relative;overflow:hidden;background:transparent;transition:opacity 0.5s}
 canvas{display:block;-webkit-app-region:no-drag}
 
 .drop-zone{position:absolute;inset:8px;border:2px dashed rgba(68,255,136,0.5);border-radius:14px;background:rgba(68,255,136,0.06);display:flex;align-items:center;justify-content:center;font-size:14px;color:rgba(68,255,136,0.7);z-index:50;pointer-events:none;backdrop-filter:blur(3px);-webkit-app-region:no-drag}
@@ -163,6 +163,5 @@ canvas{display:block;-webkit-app-region:no-drag}
 .menu-item{padding:8px 14px;font-size:12px;color:#333;cursor:pointer;border-radius:6px;display:flex;align-items:center;gap:8px}
 .menu-item:hover{background:#f0f4ff}
 .menu-sep{height:1px;background:#eee;margin:3px 6px}
-.drag-handle{position:fixed;bottom:0;left:0;right:0;height:20px;-webkit-app-region:drag;z-index:20;cursor:move}
-.drag-handle:hover{background:rgba(255,255,255,0.08)}
+
 </style>

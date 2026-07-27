@@ -71,13 +71,15 @@ export class PetEngine {
       loaded = true
     }
 
-    this.character.group.position.y = 0.3
+    this.character.group.scale.set(0.5, 0.5, 0.5)
+    this.character.group.position.y = -0.8
     this.engine.scene.add(this.character.group)
 
     // Setup states AFTER model is loaded (to map actual clip names)
     this.setupStatesWithClips()
 
     this.behavior.fsm = this.fsm
+    this.setupPhysicsBounds()
     this.setupPhysics()
     this.setupBehavior()
     this.setupInteraction()
@@ -146,12 +148,22 @@ export class PetEngine {
 
   private setupPhysics() {
     if (!this.config.enablePhysics) return
-    this.physicsBody = this.physics.createBody(new THREE.Vector3(0, 0.3, 0), 0.25, 1.5)
+    this.physics.gravity = -12
+    this.physics.groundY = -1.5
+    this.physicsBody = this.physics.createBody(new THREE.Vector3(0, -0.5, 0), 0.3, 1)
     this.physics.attachSpring(this.physicsBody, {
-      position: new THREE.Vector3(0, 0.3, 0),
+      position: new THREE.Vector3(0, -0.5, 0),
       stiffness: 3,
-      damping: 0.6,
+      damping: 1.2,
     })
+  }
+
+  private setupPhysicsBounds() {
+    const { w, h } = this.engine.getContainerSize()
+    const frustumHeight = 3
+    const aspect = w / h
+    const halfWidth = frustumHeight * aspect / 2
+    this.physics.bounds = { minX: -halfWidth, maxX: halfWidth, minZ: -1, maxZ: 1 }
   }
 
   private setupBehavior() {
@@ -190,6 +202,9 @@ export class PetEngine {
   }
 
   private dragActive = false
+  private wanderTimer = 0
+  private nextWanderTime = 3 + Math.random() * 5
+  private readonly feetToGroupOffset = 0.015  // character feet local Y * scale 0.5
 
   private setupInteraction() {
     this.interaction = new InteractionSystem(
@@ -215,13 +230,14 @@ export class PetEngine {
       this.dragActive = true
     }
 
-    this.interaction.onDragMove = (worldX: number, worldZ: number) => {
+    this.interaction.onDragMove = (worldX: number, _worldZ: number) => {
+      // constrain to X axis only; Z stays at 0 (screen plane)
       if (this.config.enablePhysics && this.physicsBody) {
         this.physics.setTargetPosition(this.physicsBody,
-          new THREE.Vector3(worldX, 0.3, worldZ))
+          new THREE.Vector3(worldX, -0.5, 0))
       } else {
         this.character.group.position.x = worldX
-        this.character.group.position.z = worldZ
+        this.character.group.position.z = 0
       }
     }
 
@@ -270,19 +286,26 @@ export class PetEngine {
 
   private addLights() {
     const scene = this.engine.scene
-    scene.add(new THREE.HemisphereLight(0x8888ff, 0x444422, 0.4))
-    const sun = new THREE.DirectionalLight(0xffeedd, 0.8)
-    sun.position.set(3, 5, 4)
+    scene.add(new THREE.HemisphereLight(0x8888ff, 0x444422, 0.6))
+    const sun = new THREE.DirectionalLight(0xffeedd, 1.2)
+    sun.position.set(2, 4, 3)
     sun.castShadow = true
     sun.shadow.mapSize.set(1024, 1024)
     scene.add(sun)
-    scene.add(new THREE.DirectionalLight(0x8888ff, 0.2))
-    const fill = new THREE.DirectionalLight(0x8888ff, 0.3)
-    fill.position.set(-2, 1, -3)
+    const fill = new THREE.DirectionalLight(0x88aaff, 0.4)
+    fill.position.set(-2, 0.5, 2)
     scene.add(fill)
-    const rim = new THREE.DirectionalLight(0xccddff, 0.2)
-    rim.position.set(-1, 2, -5)
+    const rim = new THREE.DirectionalLight(0xccddff, 0.3)
+    rim.position.set(0, 1, -4)
     scene.add(rim)
+    // subtle ground shadow
+    const shadowGeo = new THREE.CircleGeometry(0.6, 32)
+    const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.08, depthWrite: false })
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat)
+    shadow.rotation.x = -Math.PI / 2
+    shadow.position.set(0, -1.5, 0)
+    shadow.name = 'pet_shadow'
+    scene.add(shadow)
   }
 
   private update(dt: number) {
@@ -292,13 +315,22 @@ export class PetEngine {
     this.character.animator?.update(dt)
     this.behavior.update(dt)
 
+    // Auto-wander: periodically walk to a random X position
+    if (this.fsm.current === 'idle' && !this.dragActive && !this.behavior.isLocked()) {
+      this.wanderTimer += dt
+      if (this.wanderTimer >= this.nextWanderTime) {
+        this.wanderTimer = 0
+        this.nextWanderTime = 4 + Math.random() * 8
+        this.startWander()
+      }
+    }
+
     if (this.config.enablePhysics && this.physicsBody) {
       if (this.fsm.current === 'walk' && this.currentMoveTarget) {
         this.physics.setTargetPosition(this.physicsBody,
-          new THREE.Vector3(this.currentMoveTarget.x, 0.3, this.currentMoveTarget.z))
+          new THREE.Vector3(this.currentMoveTarget.x, -0.5, 0))
         const dx = this.physicsBody.position.x - this.currentMoveTarget.x
-        const dz = this.physicsBody.position.z - this.currentMoveTarget.z
-        const dist = Math.sqrt(dx * dx + dz * dz)
+        const dist = Math.abs(dx)
         if (dist < 0.1) {
           this.currentMoveTarget = null
           this.fsm.transition('idle')
@@ -309,13 +341,46 @@ export class PetEngine {
       const body = this.physics.getBody(0)
       if (body) {
         this.character.group.position.x = body.position.x
-        this.character.group.position.z = body.position.z
+        this.character.group.position.y = body.position.y - (body.radius + this.feetToGroupOffset)
+        this.character.group.position.z = 0
+        this.character.updateProcedural(dt, this.time, this.fsm.current, this.currentMoveTarget, body.velocity.x)
       }
+    } else {
+      this.character.updateProcedural(dt, this.time, this.fsm.current, this.currentMoveTarget)
     }
 
-    this.character.updateProcedural(dt, this.time, this.fsm.current, this.currentMoveTarget)
+    // soft shadow follows character
+    const shadow = this.engine.scene.getObjectByName('pet_shadow')
+    if (shadow) {
+      shadow.position.x = this.character.group.position.x
+    }
+
+    // Face movement direction
+    if (this.currentMoveTarget) {
+      const dx = this.currentMoveTarget.x - this.character.group.position.x
+      if (Math.abs(dx) > 0.05) {
+        this.character.group.rotation.y = dx > 0 ? Math.PI / 2 : -Math.PI / 2
+      }
+    } else {
+      // Smoothly return to facing forward when idle
+      this.character.group.rotation.y *= 0.92
+    }
 
     this.vfx.update(dt, this.time)
+  }
+
+  private startWander() {
+    const { w, h } = this.engine.getContainerSize()
+    const frustumHeight = 3
+    const aspect = w / h
+    const halfWidth = frustumHeight * aspect / 2 - 0.4
+    // shorter hops: 0.5~2.5 units from current position
+    const range = 0.5 + Math.random() * 2
+    const dir = Math.random() > 0.5 ? 1 : -1
+    let targetX = this.character.group.position.x + dir * range
+    targetX = Math.max(-halfWidth, Math.min(halfWidth, targetX))
+    this.currentMoveTarget = { x: targetX, z: 0 }
+    this.fsm.transition('walk')
   }
 
   getBehaviorSystem(): BehaviorSystem { return this.behavior }

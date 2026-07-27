@@ -36,20 +36,20 @@ export default {
         if (petWin.isVisible()) { petWin.hide(); return }
         petWin.show(); petWin.focus(); return
       }
-      // Position at right edge of primary display
-      let winX = 1600, winY = 200
-      try {
-        const display: any = await context.signal('getPrimaryDisplay')
-        if (display) { winX = display.x + display.width - 300; winY = display.y + display.height - 400 }
-      } catch {}
       const preloadPath = join(__dirname, '../../../dist-electron/preload/index.js')
       petWin = new BrowserWindow({
-        width: 280, height: 340, x: winX, y: winY,
         frame: false, transparent: true,
         alwaysOnTop: true, skipTaskbar: true,
         resizable: false,
         webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
       })
+      // Fullscreen transparent overlay
+      try {
+        const display: any = await context.signal('getPrimaryDisplay')
+        if (display) petWin.setBounds({ x: display.x, y: display.y, width: display.width, height: display.height })
+      } catch {
+        petWin.maximize()
+      }
       const url = process.env.VITE_DEV_SERVER_URL
         ? `${process.env.VITE_DEV_SERVER_URL}?view=pet`
         : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=pet`
