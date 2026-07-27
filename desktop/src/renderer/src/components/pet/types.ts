@@ -32,7 +32,7 @@ export type PetMood = 'happy' | 'sad' | 'sleepy' | 'excited' | 'neutral'
 export interface InteractionEvent {
   type: 'click' | 'rightclick' | 'dragstart' | 'drag' | 'dragend' | 'hover'
   target?: string
-  position?: THREE.Vector3
+  position?: { x: number; y: number; z: number }
 }
 
 export interface CharacterAnimations {

@@ -5,7 +5,7 @@ export default {
   panel: Panel,
   page: Page,
   async activate(context: any) {
-    const { BrowserWindow, globalShortcut, ipcMain, screen } = require('electron') as any
+    const { BrowserWindow, globalShortcut } = require('electron') as any
     const { join } = require('path') as any
     let assistantWin: any = null
     let petWin: any = null
@@ -31,9 +31,6 @@ export default {
       assistantWin.on('closed', () => { assistantWin = null })
     }
 
-    let petCursorInterval: any = null
-    let petIgnoreOverride = false
-
     async function togglePet() {
       if (petWin && !petWin.isDestroyed()) {
         if (petWin.isVisible()) { petWin.hide(); return }
@@ -57,51 +54,13 @@ export default {
         ? `${process.env.VITE_DEV_SERVER_URL}?view=pet`
         : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=pet`
       petWin.loadURL(url)
-
-      // Precise mouse passthrough: poll global cursor, hit-test via renderer
-      petWin.webContents.on('did-finish-load', () => {
-        startPetCursorTracking()
-      })
-
-      // Listen for hit-test results from renderer
-      const hitTestHandler = (_: any, isOverPet: boolean) => {
-        petIgnoreOverride = isOverPet
-        applyIgnore()
-      }
-      ipcMain.on('pet:hit-test', hitTestHandler)
-
-      function startPetCursorTracking() {
-        stopPetCursorTracking()
-        petCursorInterval = setInterval(() => {
-          if (!petWin || petWin.isDestroyed()) { stopPetCursorTracking(); return }
-          const cursor = screen.getCursorScreenPoint()
-          const bounds = petWin.getBounds()
-          const localX = cursor.x - bounds.x
-          const localY = cursor.y - bounds.y
-          const inside = localX >= 0 && localX < bounds.width && localY >= 0 && localY < bounds.height
-          if (inside) {
-            petWin.webContents.send('pet:cursor-pos', localX, localY)
-          } else {
-            petIgnoreOverride = false
-            applyIgnore()
-          }
-        }, 50)
-      }
-
-      function stopPetCursorTracking() {
-        if (petCursorInterval) { clearInterval(petCursorInterval); petCursorInterval = null }
-      }
-
-      function applyIgnore() {
-        if (!petWin || petWin.isDestroyed()) return
-        petWin.setIgnoreMouseEvents(!petIgnoreOverride, { forward: true })
-      }
-
-      petWin.on('closed', () => {
-        stopPetCursorTracking()
-        ipcMain.removeListener('pet:hit-test', hitTestHandler)
-        petWin = null
-      })
+      // Start in passthrough mode; main process IPC (pet:hit-test) toggles dynamically
+      setTimeout(() => {
+        if (petWin && !petWin.isDestroyed()) {
+          petWin.setIgnoreMouseEvents(true, { forward: true })
+        }
+      }, 500)
+      petWin.on('closed', () => { petWin = null })
     }
 
     globalShortcut.register('CommandOrControl+Shift+A', () => { showAssistant() })

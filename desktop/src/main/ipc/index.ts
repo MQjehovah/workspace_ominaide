@@ -362,6 +362,14 @@ export function registerIpcHandlers() {
     return { x: p.x, y: p.y }
   })
 
+  // Precise mouse passthrough for pet window
+  ipcMain.on('pet:hit-test', (event, isOverPet: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win && !win.isDestroyed()) {
+      win.setIgnoreMouseEvents(!isOverPet, { forward: true })
+    }
+  })
+
   ipcMain.handle('shell:open-external', (_, url: string) => {
     const { shell } = require('electron')
     shell.openExternal(url)
