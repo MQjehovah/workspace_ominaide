@@ -1,0 +1,8 @@
+{
+  "name": "mail",
+  "version": "1.0.0",
+  "title": "邮件",
+  "description": "邮件账号配置云端同步",
+  "icon": "Message",
+  "permissions": []
+}

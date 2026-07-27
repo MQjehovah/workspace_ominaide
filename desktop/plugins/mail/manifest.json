@@ -6,7 +6,7 @@
   "version": "1.0.0",
   "icon": "Message",
   "keywords": ["mail", "email"],
-  "permissions": ["storage", "notification", "shell"],
+  "permissions": ["storage", "notification", "shell", "api"],
   "builtin": true,
   "main": "dist/index.js"
 }

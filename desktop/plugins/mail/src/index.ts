@@ -3,7 +3,7 @@ import Page from './Page.vue'
 import { ImapClient } from './imap'
 
 interface MailAccount {
-  id: string
+  id: string | number
   name: string
   email: string
   imapHost: string
@@ -18,7 +18,7 @@ interface MailAccount {
 
 interface EmailSummary {
   uid: number
-  accountId: string
+  accountId: string | number
   subject: string
   from: string
   date: string
@@ -30,7 +30,7 @@ const accountsKey = 'mail_accounts'
 let pluginCtx: any = null
 
 // In-memory email cache per account (key=accountId, value={emails, time})
-const emailCache = new Map<string, { emails: EmailSummary[]; time: number }>()
+const emailCache = new Map<string | number, { emails: EmailSummary[]; time: number }>()
 const CACHE_TTL = 60000 // 60 seconds
 
 export default {
@@ -64,23 +64,36 @@ export default {
     })
 
     context.registerCommand('listAccounts', async () => {
+      try {
+        const data = await context.api?.get('/plugins/mail/accounts')
+        if (data) return data
+      } catch {}
       return (await context.storage?.get(accountsKey)) || []
     })
 
     context.registerCommand('addAccount', async (args: any) => {
+      const payload = {
+        name: args.name || '',
+        email: args.email || '',
+        imap_host: args.imapHost || '',
+        imap_port: args.imapPort || 993,
+        imap_tls: args.imapTls !== false,
+        smtp_host: args.smtpHost || '',
+        smtp_port: args.smtpPort || 465,
+        smtp_tls: args.smtpTls !== false,
+        username: args.username || args.email || '',
+        password: args.password || '',
+      }
+      try {
+        const acc = await context.api?.post('/plugins/mail/accounts', payload)
+        if (acc) return { success: true, account: mapResponseToAccount(acc) }
+      } catch {}
+      // offline fallback
       const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
       const acc: MailAccount = {
         id: Date.now().toString(36),
-        name: args.name || '',
-        email: args.email || '',
-        imapHost: args.imapHost || '',
-        imapPort: args.imapPort || 993,
-        imapTls: args.imapTls !== false,
-        smtpHost: args.smtpHost || '',
-        smtpPort: args.smtpPort || 465,
-        smtpTls: args.smtpTls !== false,
+        ...args,
         username: args.username || args.email || '',
-        password: args.password || '',
       }
       accounts.push(acc)
       await context.storage?.set(accountsKey, accounts)
@@ -88,6 +101,10 @@ export default {
     })
 
     context.registerCommand('removeAccount', async (args: any) => {
+      try {
+        await context.api?.delete(`/plugins/mail/accounts/${args?.id}`)
+        return { success: true }
+      } catch {}
       let accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
       accounts = accounts.filter(a => a.id !== args?.id)
       await context.storage?.set(accountsKey, accounts)
@@ -95,22 +112,28 @@ export default {
     })
 
     context.registerCommand('updateAccount', async (args: any) => {
+      const payload: any = {}
+      if (args.name !== undefined) payload.name = args.name
+      if (args.email !== undefined) payload.email = args.email
+      if (args.imapHost !== undefined) payload.imap_host = args.imapHost
+      if (args.imapPort !== undefined) payload.imap_port = args.imapPort
+      if (args.imapTls !== undefined) payload.imap_tls = args.imapTls
+      if (args.smtpHost !== undefined) payload.smtp_host = args.smtpHost
+      if (args.smtpPort !== undefined) payload.smtp_port = args.smtpPort
+      if (args.smtpTls !== undefined) payload.smtp_tls = args.smtpTls
+      if (args.username !== undefined) payload.username = args.username
+      if (args.password !== undefined) payload.password = args.password
+      try {
+        const acc = await context.api?.put(`/plugins/mail/accounts/${args?.id}`, payload)
+        if (acc) {
+          emailCache.delete(args.id)
+          return { success: true, account: mapResponseToAccount(acc) }
+        }
+      } catch {}
       const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
       const idx = accounts.findIndex(a => a.id === args?.id)
       if (idx === -1) return { success: false, error: 'Account not found' }
-      accounts[idx] = {
-        ...accounts[idx],
-        name: args.name ?? accounts[idx].name,
-        email: args.email ?? accounts[idx].email,
-        imapHost: args.imapHost ?? accounts[idx].imapHost,
-        imapPort: args.imapPort ?? accounts[idx].imapPort,
-        imapTls: args.imapTls !== undefined ? args.imapTls : accounts[idx].imapTls,
-        smtpHost: args.smtpHost ?? accounts[idx].smtpHost,
-        smtpPort: args.smtpPort ?? accounts[idx].smtpPort,
-        smtpTls: args.smtpTls !== undefined ? args.smtpTls : accounts[idx].smtpTls,
-        username: args.username ?? accounts[idx].username,
-        password: args.password ?? accounts[idx].password,
-      }
+      accounts[idx] = { ...accounts[idx], ...args }
       await context.storage?.set(accountsKey, accounts)
       emailCache.delete(args.id)
       return { success: true, account: accounts[idx] }
@@ -206,4 +229,20 @@ function formatTime(iso: string): string {
   if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
   if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
   return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+function mapResponseToAccount(r: any): MailAccount {
+  return {
+    id: r.id,
+    name: r.name || '',
+    email: r.email,
+    imapHost: r.imap_host,
+    imapPort: r.imap_port,
+    imapTls: r.imap_tls,
+    smtpHost: r.smtp_host,
+    smtpPort: r.smtp_port,
+    smtpTls: r.smtp_tls,
+    username: r.username,
+    password: r.password || '',
+  }
 }
