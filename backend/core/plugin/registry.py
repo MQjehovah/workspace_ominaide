@@ -93,7 +93,17 @@ async def _register_plugin_routes(app: FastAPI, name: str, plugin_dir: Path):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         if hasattr(module, "router"):
-            app.include_router(module.router, prefix=f"/api/plugins/{name}")
+            router = module.router
+            # If the router already carries a full /api/... prefix, mount it
+            # as-is; otherwise mount under /api/plugins/{name}.
+            has_api_prefix = any(
+                getattr(r, "path", "").startswith("/api/")
+                for r in getattr(router, "routes", [])
+            )
+            if has_api_prefix:
+                app.include_router(router)
+            else:
+                app.include_router(router, prefix=f"/api/plugins/{name}")
 
 
 async def get_plugins(db: AsyncSession) -> list[PluginRegistry]:

@@ -65,6 +65,7 @@ async function doSave() {
     console.error('[notes] save failed:', e)
     saveStatus.value = '保存失败'
     setTimeout(async () => {
+      if (!currentId.value) return
       try {
         await window.mqbox?.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: content.value })
         showSaved()

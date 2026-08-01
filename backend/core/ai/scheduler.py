@@ -94,23 +94,43 @@ async def _check_reminders():
 
 EVENT_SCAN_INTERVAL = 15 * 60  # seconds between LLM scans of the event stream
 _last_event_scan = 0.0
-_last_event_cursor = None  # datetime cursor of the last scanned event
+# Composite cursor (created_at, id) — advances precisely so batches never lose
+# events (when more than the limit arrive at once) nor re-read old ones.
+_last_event_cursor = None
+
+DAILY_SCAN_INTERVAL = 24 * 60 * 60  # seconds between daily preference/memory analyses
+_last_daily_scan = 0.0
+_last_daily_scan_date = None  # date string of the last daily analysis
+
+MAX_EVENTS_PER_BATCH = 40  # cap for a single LLM batch (prevent prompt overflow)
+
+
+async def _fetch_new_events(db, cursor, limit=MAX_EVENTS_PER_BATCH):
+    from sqlalchemy import select, or_, and_
+    from core.events.models import UserActivity
+    q = select(UserActivity).order_by(UserActivity.id).limit(limit)
+    if cursor:
+        cursor_ts, cursor_id = cursor
+        q = q.where(or_(
+            UserActivity.created_at > cursor_ts,
+            and_(UserActivity.created_at == cursor_ts, UserActivity.id > cursor_id),
+        ))
+    r = await db.execute(q)
+    return list(r.scalars().all())
 
 
 async def _scan_events():
-    """Periodically ask the LLM to review ALL recent user events and summarize
-    anything important into a notification.
+    """Review ONLY events that happened since the last scan.
 
-    Covers every recorded activity (file uploads, todo changes, schedule,
-    new mail, etc.). Batches new events since the last scan into one LLM call;
-    if anything is important, pushes a single summary notification over WebSocket.
+    - No new events      -> skip entirely, no LLM call.
+    - New events (capped) -> one batched LLM call; notify ONLY if genuinely important.
+      The cursor advances to the last processed event, so a burst larger than the
+      cap is picked up in the following scans instead of overflowing the prompt.
     """
     from core.config.settings import settings
     if not settings.llm_api_key:
         return
-    from datetime import datetime, timedelta
-    from sqlalchemy import select
-    from core.events.models import UserActivity
+    from datetime import datetime
     from core.database.session import async_session
 
     global _last_event_cursor
@@ -118,20 +138,15 @@ async def _scan_events():
     now = datetime.utcnow()
     cursor = _last_event_cursor
     if cursor is None:
-        cursor = now - timedelta(hours=3)  # first scan: look back a few hours
+        # First scan (or after restart): only today's events — never read the whole history.
+        cursor = (now.replace(hour=0, minute=0, second=0, microsecond=0), 0)
 
     try:
         async with async_session() as db:
-            r = await db.execute(
-                select(UserActivity)
-                .where(UserActivity.created_at > cursor)
-                .order_by(UserActivity.created_at)
-                .limit(40)
-            )
-            events = list(r.scalars().all())
+            events = await _fetch_new_events(db, cursor)
             if not events:
-                _last_event_cursor = now
-                return
+                _last_event_cursor = (now, 0)
+                return  # nothing new — don't call the LLM
 
             items = []
             for e in events:
@@ -155,10 +170,11 @@ async def _scan_events():
                 messages=[
                     {"role": "system", "content": (
                         "你是一个个人AI助手。下面是一段时间内用户的行为事件记录（文件操作、待办、日程、新邮件等）。"
-                        "请找出其中重要、需要用户注意的事项（紧急事务、截止期限、重要邮件、关键变更、异常等），"
-                        "并用中文写一段简短总结（3-5 句话）。"
-                        "只返回 JSON，格式: {\"important\": true/false, \"summary\": \"总结内容\"}。"
-                        "若没有重要事项返回 {\"important\": false}。不要输出其他内容。"
+                        "请直接判断【是否需要给用户发送一条提醒通知】："
+                        "需要通知的情况：紧急任务/截止期限临近、重要客户或领导的邮件、需要用户尽快处理或决策的事、异常或错误。"
+                        "不需要通知的情况：日常普通操作（普通上传、普通笔记编辑、常规订阅等）、或虽有事件但无需打扰用户。"
+                        "只返回 JSON，格式: {\"notify\": true/false, \"summary\": \"通知内容(简短中文2-4句，仅当notify为true时)或空字符串\"}。"
+                        "不要输出其他内容。"
                     )},
                     {"role": "user", "content": batch},
                 ],
@@ -166,26 +182,26 @@ async def _scan_events():
             )
             raw = resp.choices[0].message.content or ""
             m = re.search(r"\{.*\}", raw, re.S)
-            important = False
+            notify = False
             summary = ""
             if m:
                 try:
                     data = _json.loads(m.group(0))
-                    important = bool(data.get("important"))
+                    notify = bool(data.get("notify", data.get("important", False)))
                     summary = str(data.get("summary") or "").strip()
                 except Exception:
                     pass
 
-            _last_event_cursor = events[-1].created_at
-            await db.commit()
-
-            if not important or not summary:
-                return
+            # Advance the cursor past everything we just processed.
+            last = events[-1]
+            _last_event_cursor = (last.created_at, last.id)
+            if not notify or not summary:
+                return  # LLM decided no notification is needed
 
             from plugins.notifications.backend.service import create_notification
             from plugins.notifications.backend.router import ws_manager
             n = await create_notification(
-                db, events[-1].user_id,
+                db, last.user_id,
                 "🔔 重要事项提醒",
                 summary,
                 "important",
@@ -193,7 +209,7 @@ async def _scan_events():
             )
             await db.commit()
             try:
-                await ws_manager.notify_user(events[-1].user_id, {
+                await ws_manager.notify_user(last.user_id, {
                     "type": "new_notification",
                     "id": n.id,
                     "title": "🔔 重要事项提醒",
@@ -205,9 +221,118 @@ async def _scan_events():
         print(f"[scheduler] event scan error: {e}")
 
 
+async def _daily_event_analysis():
+    """Run once a day: analyse the day's events to update user preferences / permanent memory.
+
+    Processes events in capped batches so a busy day can't overflow the prompt.
+    """
+    from core.config.settings import settings
+    if not settings.llm_api_key:
+        return
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+    from core.events.models import UserActivity
+    from core.database.session import async_session
+    from core.auth.domain.models import UserProfile
+
+    now = datetime.utcnow()
+    since = now - timedelta(hours=24)
+    try:
+        async with async_session() as db:
+            r = await db.execute(
+                select(UserActivity).where(UserActivity.created_at >= since).order_by(UserActivity.id)
+            )
+            events = list(r.scalars().all())
+            if not events:
+                return
+
+            from openai import AsyncOpenAI
+            import json as _json
+            import re
+            client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+
+            # Accumulated profile data merged across batches.
+            merged = {"interests": [], "projects": [], "habits": [], "preferences": {}}
+            user_ids = set()
+
+            for i in range(0, len(events), MAX_EVENTS_PER_BATCH):
+                chunk = events[i:i + MAX_EVENTS_PER_BATCH]
+                user_ids.update(e.user_id for e in chunk)
+                items = []
+                for e in chunk:
+                    ts = e.created_at.strftime("%m-%d %H:%M") if e.created_at else ""
+                    items.append(f"[{ts}] {e.event_type}: {e.summary or ''}")
+                batch = "\n".join(items)
+
+                resp = await client.chat.completions.create(
+                    model=settings.llm_model,
+                    messages=[
+                        {"role": "system", "content": (
+                            "你是一个个人AI助手，负责从用户的行为事件中提取长期有效的用户画像与偏好，用于永久记忆。"
+                            "分析：用户关注的项目/领域、常用工具与工作习惯、重要联系人/团队、时间安排规律、兴趣偏好、"
+                            "需要记住的长期事项。只返回 JSON，格式: "
+                            "{\"interests\": [\"兴趣/领域\"], \"projects\": [{\"name\": \"项目名\", \"status\": \"进行中/已完成\"}], "
+                            "\"habits\": [\"工作习惯\"], \"preferences\": {\"偏好键\": \"值\"}}。不要输出其他内容。"
+                        )},
+                        {"role": "user", "content": batch},
+                    ],
+                    temperature=0.2,
+                )
+                raw = resp.choices[0].message.content or ""
+                m = re.search(r"\{.*\}", raw, re.S)
+                if not m:
+                    continue
+                try:
+                    data = _json.loads(m.group(0))
+                except Exception:
+                    continue
+                merged["interests"].extend(data.get("interests") or [])
+                merged["habits"].extend(data.get("habits") or [])
+                merged["projects"].extend(data.get("projects") or [])
+                if isinstance(data.get("preferences"), dict):
+                    merged["preferences"].update(data["preferences"])
+
+            # De-duplicate accumulated lists.
+            merged["interests"] = list(dict.fromkeys(merged["interests"]))
+            merged["habits"] = list(dict.fromkeys(merged["habits"]))
+            seen = set()
+            projects = []
+            for p in merged["projects"]:
+                name = (p.get("name") if isinstance(p, dict) else str(p))
+                if name and name not in seen:
+                    seen.add(name)
+                    projects.append(p)
+            merged["projects"] = projects
+
+            # Update the user's profile preferences (long-term memory).
+            for uid in user_ids:
+                pr = (await db.execute(select(UserProfile).where(UserProfile.user_id == uid))).scalar_one_or_none()
+                if pr is None:
+                    continue
+                prefs = {}
+                try:
+                    if pr.preferences:
+                        prefs = _json.loads(pr.preferences) if isinstance(pr.preferences, str) else pr.preferences
+                except Exception:
+                    prefs = {}
+                prefs["last_analysis"] = now.isoformat()
+                prefs["interests"] = merged["interests"] or prefs.get("interests", [])
+                prefs["habits"] = merged["habits"] or prefs.get("habits", [])
+                if merged["projects"]:
+                    prefs["projects"] = merged["projects"]
+                if merged["preferences"]:
+                    prefs["profile"] = merged["preferences"]
+                pr.preferences = _json.dumps(prefs, ensure_ascii=False)
+            await db.commit()
+            print(f"[scheduler] daily analysis done ({len(events)} events, {len(merged['projects'])} projects)")
+    except Exception as e:
+        print(f"[scheduler] daily analysis error: {e}")
+
+
 async def scheduler_loop():
-    """Background loop: check time every 60s, trigger briefing at 9:30 and event reminders."""
-    global _last_event_scan
+    """Background loop: check time every 60s, trigger briefing at 9:30, event reminders,
+    periodic event scanning, and once-daily preference/memory analysis."""
+    global _last_event_scan, _last_daily_scan, _last_daily_scan_date
     while True:
         try:
             now = datetime.now()
@@ -222,6 +347,11 @@ async def scheduler_loop():
             if _clock() - _last_event_scan >= EVENT_SCAN_INTERVAL:
                 _last_event_scan = _clock()
                 await _scan_events()
+
+            if _last_daily_scan_date != today_key and _clock() - _last_daily_scan >= DAILY_SCAN_INTERVAL:
+                _last_daily_scan = _clock()
+                _last_daily_scan_date = today_key
+                await _daily_event_analysis()
 
             if now.hour == BRIEFING_HOUR and now.minute == BRIEFING_MINUTE:
                 # Collect users who have recent activity (active in last 7 days)
