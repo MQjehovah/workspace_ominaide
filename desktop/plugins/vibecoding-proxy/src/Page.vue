@@ -12,26 +12,31 @@
     <!-- Projects Tab -->
     <div v-if="tab === 'projects'" class="content">
       <div class="toolbar">
-        <button class="btn primary" @click="pickAndScan">📂 选择目录并扫描</button>
+        <button class="btn primary" @click="pickAndScan">🔍 扫描目录</button>
+        <button class="btn" @click="addProjectDir">➕ 添加项目</button>
         <input v-model="projectFilter" class="search-input" placeholder="过滤项目..." />
       </div>
-      <div class="project-grid">
+      <div class="project-grid scrollable">
         <div v-for="p in filteredProjects" :key="p.path" class="project-card">
           <div class="card-header">
             <span class="card-type">{{ typeIcon(p.type) }}</span>
             <span class="card-name">{{ p.name }}</span>
+            <span v-if="acpRunning(p.path)" class="acp-badge">ACP 🟢</span>
           </div>
           <div class="card-meta">
             <span>{{ p.type }}</span>
-            <span>{{ p.hasGit ? '✓ git' : 'no git' }}</span>
+            <span :class="{ bound: binding === p.path }">{{ binding === p.path ? '📌 已绑定' : '' }}</span>
             <span>{{ new Date(p.lastModified).toLocaleDateString() }}</span>
           </div>
-          <div class="card-desc">{{ p.description || '暂无描述' }}</div>
+          <div class="card-desc">{{ p.description || p.path }}</div>
           <div class="card-actions">
-            <button class="btn sm" @click="openTerminal(p.path, 'opencode')">🚀 opencode</button>
-            <button class="btn sm" @click="openTerminal(p.path, 'claude')">🤖 claude</button>
+            <button v-if="!acpRunning(p.path)" class="btn sm accent" @click="doStartAcp(p)">🚀 opencode ACP</button>
+            <button v-else class="btn sm danger" @click="doStopAcp(p)">■ 停止 ACP</button>
+            <button v-if="acpRunning(p.path) && binding !== p.path" class="btn sm" @click="doBindFeishu(p)">📌 绑定飞书</button>
+            <button v-else-if="binding === p.path" class="btn sm bound-btn" @click="doUnbindFeishu">📌 已绑定飞书</button>
             <button class="btn sm" @click="openFolder(p.path)">📂 文件夹</button>
             <button class="btn sm" @click="openVSCode(p.path)">💻 VS Code</button>
+            <button class="btn sm" @click="removeProject(p)">🗑 移除</button>
           </div>
         </div>
       </div>
@@ -117,7 +122,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const { execute } = defineProps<{ data: any; execute: Function; close: Function }>()
 
@@ -136,6 +141,9 @@ const terminalRef = ref<HTMLElement | null>(null)
 const feishuCfg = ref({ appId: '', appSecret: '', enabled: false, webhookUrl: '', secret: '' })
 const feishuStatus = ref<{ ok: boolean; msg: string } | null>(null)
 const feishuConnStatus = ref('stopped')
+const acpStatus = ref<any[]>([])
+const binding = ref('')
+let acpPollTimer: any = null
 const feishuConnLabel = computed(() => {
   const map: Record<string, string> = { connected: '✅ 已连接', connecting: '⏳ 连接中...', reconnecting: '🔄 重连中...', stopped: '⏹ 未连接', disconnected: '⏹ 已断开' }
   return map[feishuConnStatus.value] || feishuConnStatus.value
@@ -148,17 +156,78 @@ const filteredProjects = computed(() => {
 })
 
 onMounted(async () => {
-  const [proj, cfg] = await Promise.all([
+  const [proj, cfg, acp, bind] = await Promise.all([
     execute('getProjects'),
     execute('getFeishuConfig'),
+    execute('getAcpStatus'),
+    execute('getBinding'),
   ])
   projects.value = proj || []
-  feishuCfg.value = cfg || { webhookUrl: '', secret: '', enabled: false }
+  feishuCfg.value = cfg || { appId: '', appSecret: '', enabled: false, webhookUrl: '', secret: '' }
+  acpStatus.value = acp || []
+  binding.value = bind || ''
+  startAcpPolling()
 })
+
+function acpRunning(path: string): boolean {
+  return acpStatus.value.some((a: any) => a.path === path && a.running)
+}
+
+function startAcpPolling() {
+  stopAcpPolling()
+  acpPollTimer = setInterval(async () => {
+    acpStatus.value = await execute('getAcpStatus') || []
+  }, 3000)
+}
+
+function stopAcpPolling() {
+  if (acpPollTimer) { clearInterval(acpPollTimer); acpPollTimer = null }
+}
+
+async function doStartAcp(p: any) {
+  const r = await execute('startAcp', { path: p.path })
+  if (r?.success) {
+    acpStatus.value = await execute('getAcpStatus') || []
+  }
+}
+
+async function doStopAcp(p: any) {
+  await execute('stopAcp', { path: p.path })
+  acpStatus.value = await execute('getAcpStatus') || []
+}
+
+async function doBindFeishu(p: any) {
+  binding.value = p.path
+  await execute('bindProject', { path: p.path })
+}
+
+async function doUnbindFeishu() {
+  binding.value = ''
+  await execute('bindProject', { path: '' })
+}
+
+async function removeProject(p: any) {
+  await execute('removeProject', { path: p.path })
+  projects.value = await execute('getProjects') || []
+  acpStatus.value = await execute('getAcpStatus') || []
+}
 
 function typeIcon(type: string) {
   const map: Record<string, string> = { node: '🟢', python: '🐍', rust: '🦀', go: '🔵', dotnet: '🟣', other: '📁' }
   return map[type] || '📁'
+}
+
+async function addProjectDir() {
+  const win = window as any
+  let dir = ''
+  if (win.mqbox?.dialog?.selectFolder) {
+    dir = await win.mqbox.dialog.selectFolder()
+  } else {
+    dir = await execute('pickProject')
+  }
+  if (!dir) return
+  await execute('addProject', { dir })
+  projects.value = await execute('getProjects') || []
 }
 
 async function pickAndScan() {
@@ -170,7 +239,7 @@ async function pickAndScan() {
     dir = await execute('pickProject')
   }
   if (!dir) return
-  const proj = await execute('scanDir', { dir })
+  const proj = await execute('scanCustomDir', { dir })
   if (proj) projects.value = proj
 }
 
@@ -290,6 +359,11 @@ async function startFeishuPolling() {
 function stopFeishuPolling() {
   if (feishuPollTimer) { clearTimeout(feishuPollTimer); feishuPollTimer = null }
 }
+
+onUnmounted(() => {
+  stopAcpPolling()
+  stopFeishuPolling()
+})
 </script>
 
 <style scoped>
@@ -305,6 +379,7 @@ function stopFeishuPolling() {
 .search-input{flex:1;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:12px;outline:none}
 .search-input:focus{border-color:#409EFF}
 .project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.project-grid.scrollable{max-height:calc(100vh - 140px);overflow-y:auto;padding-bottom:20px}
 .project-card{border:1px solid #eee;border-radius:8px;padding:12px;transition:box-shadow 0.2s}
 .project-card:hover{box-shadow:0 2px 12px rgba(0,0,0,0.06)}
 .card-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
@@ -340,6 +415,11 @@ textarea.input{font-family:monospace;resize:vertical}
 .switch input:checked+.slider::before{transform:translateX(16px)}
 .btn.danger{background:#e74c3c;color:#fff;border-color:#e74c3c}
 .btn.danger:hover{background:#c0392b}
+.btn.accent{background:#8B5CF6;color:#fff;border-color:#8B5CF6}
+.btn.accent:hover{background:#7C3AED}
+.acp-badge{font-size:10px;color:#8B5CF6;margin-left:auto;font-weight:600}
+.bound{color:#8B5CF6;font-weight:500}
+.bound-btn{color:#8B5CF6;border-color:#8B5CF6}
 .session-badge{font-size:11px;color:#27ae60;margin-left:8px}
 .session-bar{border:1px solid #eee;border-radius:8px;padding:16px;margin-bottom:12px;max-width:600px}
 .terminal-output{border:1px solid #ddd;border-radius:6px;padding:10px;height:300px;overflow-y:auto;background:#1a1a2e;color:#e0e0e0;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.5;margin-bottom:8px}

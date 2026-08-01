@@ -165,7 +165,7 @@ export class FeishuClient {
       if (eventId) { this.seenEvents.add(eventId); if (this.seenEvents.size > 5000) this.seenEvents.clear() }
 
       if (eventType === 'im.message.receive_v1') {
-        this.processMessage(payload.event || {})
+        this.processMessage(payload.event || {}).catch(e => console.error('[feishu] processMessage error:', e))
       }
 
     } catch {}
@@ -179,9 +179,11 @@ export class FeishuClient {
     const messageId = message.message_id || ''
     const msgType = message.message_type || ''
 
+    console.error(`[feishu] msg received: type=${msgType} chat=${chatId} msgId=${messageId}`)
+
     let contentStr = message.content || '{}'
     let contentObj: any = {}
-    try { contentObj = JSON.parse(contentStr) } catch {}
+    try { contentObj = JSON.parse(contentStr) } catch { console.error(`[feishu] parse content failed: ${contentStr}`) }
 
     let text = ''
     if (msgType === 'text') text = (contentObj.text || '').trim()
@@ -190,10 +192,13 @@ export class FeishuClient {
       for (const plist of parts) for (const p of plist) text += p.text || ''
     }
 
-    if (!text) return
+    console.error(`[feishu] parsed text: "${text.slice(0, 100)}"`)
+
+    if (!text) { console.error('[feishu] empty text, skipping'); return }
 
     this.lastMessageId = messageId
     this.lastChatId = chatId
+    console.error(`[feishu] calling onMessage handler`)
     this.handler.onMessage?.(chatId, userId, text, messageId)
   }
 

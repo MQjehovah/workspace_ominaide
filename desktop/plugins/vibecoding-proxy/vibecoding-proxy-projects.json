@@ -1,0 +1,177 @@
+[
+  {
+    "name": "agent",
+    "path": "E:\\ai\\agent",
+    "type": "python",
+    "lastModified": 1784451447285.151,
+    "description": ""
+  },
+  {
+    "name": "rag",
+    "path": "E:\\ai\\rag",
+    "type": "other",
+    "lastModified": 1778078724921.7544,
+    "description": ""
+  },
+  {
+    "name": "releng",
+    "path": "E:\\gerrit\\releng",
+    "type": "other",
+    "lastModified": 1768051198963.288,
+    "description": ""
+  },
+  {
+    "name": "AD_Lib",
+    "path": "E:\\jmq\\AD_Lib",
+    "type": "other",
+    "lastModified": 1657957762532.525,
+    "description": ""
+  },
+  {
+    "name": "billd-desk",
+    "path": "E:\\jmq\\billd-desk",
+    "type": "node",
+    "lastModified": 1720944838952.9429,
+    "description": ""
+  },
+  {
+    "name": "electron-quick-start",
+    "path": "E:\\jmq\\electron-quick-start",
+    "type": "node",
+    "lastModified": 1720880364729.7227,
+    "description": "A minimal Electron application"
+  },
+  {
+    "name": "faster-whisper",
+    "path": "E:\\jmq\\faster-whisper",
+    "type": "python",
+    "lastModified": 1707999367052.145,
+    "description": ""
+  },
+  {
+    "name": "faster-whisper-webui",
+    "path": "E:\\jmq\\faster-whisper-webui",
+    "type": "python",
+    "lastModified": 1708000321940.8728,
+    "description": ""
+  },
+  {
+    "name": "foc",
+    "path": "E:\\jmq\\foc",
+    "type": "other",
+    "lastModified": 1693643655249.4807,
+    "description": ""
+  },
+  {
+    "name": "KiCad_Lib",
+    "path": "E:\\jmq\\KiCad_Lib",
+    "type": "other",
+    "lastModified": 1651565349762.059,
+    "description": ""
+  },
+  {
+    "name": "MQBalance",
+    "path": "E:\\jmq\\MQBalance",
+    "type": "other",
+    "lastModified": 1693836115500.9753,
+    "description": ""
+  },
+  {
+    "name": "MQBox",
+    "path": "E:\\jmq\\MQBox",
+    "type": "other",
+    "lastModified": 1693655817105.4912,
+    "description": ""
+  },
+  {
+    "name": "MQControl",
+    "path": "E:\\jmq\\MQControl",
+    "type": "other",
+    "lastModified": 1656862515823.522,
+    "description": ""
+  },
+  {
+    "name": "MQFly",
+    "path": "E:\\jmq\\MQFly",
+    "type": "other",
+    "lastModified": 1651296561591.7666,
+    "description": ""
+  },
+  {
+    "name": "MQHeater",
+    "path": "E:\\jmq\\MQHeater",
+    "type": "other",
+    "lastModified": 1651934942526.016,
+    "description": ""
+  },
+  {
+    "name": "opencv_tutorial",
+    "path": "E:\\jmq\\opencv_tutorial",
+    "type": "other",
+    "lastModified": 1662558604157.3728,
+    "description": ""
+  },
+  {
+    "name": "opengl_tutorial",
+    "path": "E:\\jmq\\opengl_tutorial",
+    "type": "other",
+    "lastModified": 1674388548548.6504,
+    "description": ""
+  },
+  {
+    "name": "SegFormer",
+    "path": "E:\\jmq\\SegFormer",
+    "type": "python",
+    "lastModified": 1685861983709.3442,
+    "description": ""
+  },
+  {
+    "name": "mqbox",
+    "path": "E:\\mqbox",
+    "type": "node",
+    "lastModified": 1784409206160.7195,
+    "description": "个人效率工具助手"
+  },
+  {
+    "name": "aoi_algorithm",
+    "path": "E:\\qlkj\\aoi_algorithm",
+    "type": "other",
+    "lastModified": 1725113544132.9524,
+    "description": ""
+  },
+  {
+    "name": "aoi_client",
+    "path": "E:\\qlkj\\aoi_client",
+    "type": "other",
+    "lastModified": 1783842113845.4204,
+    "description": ""
+  },
+  {
+    "name": "aoi_server",
+    "path": "E:\\qlkj\\aoi_server",
+    "type": "python",
+    "lastModified": 1716999687471.8303,
+    "description": ""
+  },
+  {
+    "name": "gas_pyqt",
+    "path": "E:\\qlkj\\gas_pyqt",
+    "type": "python",
+    "lastModified": 1726068722400.5312,
+    "description": ""
+  },
+  {
+    "name": "zeekr_ble",
+    "path": "E:\\qlkj\\zeekr_ble",
+    "type": "other",
+    "lastModified": 1715092482449.3083,
+    "description": ""
+  },
+  {
+    "name": "rosiwit_ws",
+    "path": "E:\\rosiwit_ws",
+    "type": "other",
+    "lastModified": 1785169544620.626,
+    "description": ""
+  }
+]

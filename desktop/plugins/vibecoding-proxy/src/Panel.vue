@@ -4,8 +4,8 @@
     <template v-else>
       <div class="section">
         <div class="section-title">快速操作</div>
-        <button class="action-btn" @click="execute('scanProjects')">
-          <span class="icon">🔍</span> 扫描工作区项目
+        <button class="action-btn" @click="execute('scanDir')">
+          <span class="icon">🔍</span> 扫描项目
         </button>
         <button class="action-btn" @click="execute('open')">
           <span class="icon">📂</span> 项目管理器
