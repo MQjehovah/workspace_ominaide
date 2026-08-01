@@ -76,3 +76,31 @@ async def test_mail_password_encrypted(client, admin_token):
     stored = rows[0][0]
     assert "super-secret-password" not in stored
     assert stored.startswith("enc:")
+
+
+async def test_mail_event_report_and_mcp(client, admin_token):
+    """Mail events can be reported, deduplicated, and queried via MCP."""
+    payload = {
+        "account_id": "acc1",
+        "uid": 1001,
+        "subject": "紧急测试邮件",
+        "from_address": "noreply@example.com",
+        "date": "2026-08-01 10:00:00",
+        "preview": "请优先处理",
+        "content": "这是紧急邮件内容",
+        "important": True,
+    }
+    r = await client.post("/api/plugins/mail/events", json=payload, headers=auth(admin_token))
+    assert r.status_code == 201, r.text
+    # Dedupe: same uid should return existing, not a new row
+    r2 = await client.post("/api/plugins/mail/events", json=payload, headers=auth(admin_token))
+    assert r2.status_code == 201
+    assert r2.json()["id"] == r.json()["id"]
+    # List events
+    r3 = await client.get("/api/plugins/mail/events", headers=auth(admin_token))
+    assert r3.status_code == 200
+    assert any(e["subject"] == "紧急测试邮件" for e in r3.json())
+    # MCP tool available
+    r4 = await client.get("/api/mcp/tools", headers=auth(admin_token))
+    names = {t["name"] for t in r4.json()["tools"]}
+    assert "list_recent_emails" in names

@@ -31,7 +31,7 @@
       </div>
       <div v-if="loading" class="status">加载中...</div>
       <div v-else-if="filteredEmails.length === 0" class="status">暂无邮件</div>
-      <div v-for="e in filteredEmails" :key="e.uid" class="email-item" :class="{ unread: !e.flags?.includes('\\Seen') }" @click="selectedEmail = e">
+      <div v-for="e in filteredEmails" :key="e.uid" class="email-item" :class="{ unread: !e.flags?.includes('\\Seen') }" @click="openEmail(e)">
         <div class="email-from">{{ e.from || '未知' }}</div>
         <div class="email-subject">{{ e.subject || '(无主题)' }}</div>
         <div class="email-date">{{ formatTime(e.date) }}</div>
@@ -47,7 +47,7 @@
           <span>发件人: {{ selectedEmail.from }}</span>
           <span>时间: {{ new Date(selectedEmail.date).toLocaleString() }}</span>
         </div>
-        <div class="detail-body">{{ selectedEmail.preview }}</div>
+        <div class="detail-body">{{ selectedEmail.text || selectedEmail.preview }}</div>
       </div>
     </div>
     <div class="email-detail empty-detail" v-else>
@@ -155,12 +155,27 @@ async function load() {
 
 async function selectAccount(id: string) {
   activeAccount.value = id
-  loading.value = true
+  // 1) Show cached emails immediately (fast)
   const result = await props.execute('fetchEmails', { accountId: id })
-  if (result?.success) {
+  if (result?.success && activeAccount.value === id) {
     allEmails.value = result.emails || []
   }
-  loading.value = false
+  // 2) Refresh in background so next open is up-to-date
+  const fresh = await props.execute('fetchEmails', { accountId: id, force: true })
+  if (fresh?.success && activeAccount.value === id) {
+    allEmails.value = fresh.emails || []
+  }
+}
+
+async function openEmail(e: any) {
+  selectedEmail.value = e
+  // Mark as read on the server and update local state
+  if (e && !e.flags?.includes('\\Seen')) {
+    const r = await props.execute('markEmailRead', { accountId: e.accountId ?? activeAccount.value, uid: e.uid })
+    if (r?.success) {
+      e.flags = [...(e.flags || []), '\\Seen']
+    }
+  }
 }
 
 async function refreshAll() {
@@ -168,7 +183,7 @@ async function refreshAll() {
   selectedEmail.value = null
   const all: any[] = []
   for (const acc of accounts.value) {
-    const result = await props.execute('fetchEmails', { accountId: acc.id })
+    const result = await props.execute('fetchEmails', { accountId: acc.id, force: true })
     if (result?.success) all.push(...(result.emails || []))
   }
   all.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -260,7 +275,19 @@ function formatTime(iso: string) {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-onMounted(() => { load() })
+onMounted(async () => {
+  await load()
+  // Preload all accounts' emails in background so clicks are instant
+  props.execute('preloadEmails').catch(() => {})
+  // Show cached emails immediately if any
+  const cached: any[] = []
+  for (const acc of accounts.value) {
+    const r = await props.execute('fetchEmails', { accountId: acc.id })
+    if (r?.success) cached.push(...(r.emails || []))
+  }
+  cached.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  if (cached.length) allEmails.value = cached
+})
 </script>
 
 <style scoped>

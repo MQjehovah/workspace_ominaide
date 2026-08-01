@@ -44,12 +44,22 @@ const keyMap: Record<string, string> = {
 export function registerIpcHandlers() {
   // Config
   ipcMain.handle('config:get', async (_, key: string) => (await getConfig())?.[key])
-  ipcMain.handle('config:set', async (_, key: string, value: any) => setConfig(key, value))
+  ipcMain.handle('config:set', async (_, key: string, value: any) => {
+    await setConfig(key, value)
+    if (key === 'token' || key === 'serverUrl') {
+      const { startNotificationCenter, stopNotificationCenter } = await import('../notificationCenter')
+      if (key === 'token' && !value) stopNotificationCenter()
+      else startNotificationCenter().catch(() => {})
+    }
+  })
 
   // Auth
   ipcMain.handle('auth:set', async (_, serverUrl: string, token: string) => {
     await setConfig('serverUrl', serverUrl)
     await setConfig('token', token)
+    const { startNotificationCenter, stopNotificationCenter } = await import('../notificationCenter')
+    if (!token) stopNotificationCenter()
+    else startNotificationCenter().catch(() => {})
   })
   // Plugin management
   ipcMain.handle('plugin:list', async () => {

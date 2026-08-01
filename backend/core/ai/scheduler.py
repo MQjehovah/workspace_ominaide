@@ -1,5 +1,6 @@
 """Daily scheduler: generate briefing at 9:30 AM and push as notification."""
 import asyncio
+from time import time as _clock
 from datetime import datetime, time
 
 BRIEFING_HOUR = 9
@@ -91,8 +92,122 @@ async def _check_reminders():
         print(f"[scheduler] reminder error: {e}")
 
 
+EVENT_SCAN_INTERVAL = 15 * 60  # seconds between LLM scans of the event stream
+_last_event_scan = 0.0
+_last_event_cursor = None  # datetime cursor of the last scanned event
+
+
+async def _scan_events():
+    """Periodically ask the LLM to review ALL recent user events and summarize
+    anything important into a notification.
+
+    Covers every recorded activity (file uploads, todo changes, schedule,
+    new mail, etc.). Batches new events since the last scan into one LLM call;
+    if anything is important, pushes a single summary notification over WebSocket.
+    """
+    from core.config.settings import settings
+    if not settings.llm_api_key:
+        return
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+    from core.events.models import UserActivity
+    from core.database.session import async_session
+
+    global _last_event_cursor
+
+    now = datetime.utcnow()
+    cursor = _last_event_cursor
+    if cursor is None:
+        cursor = now - timedelta(hours=3)  # first scan: look back a few hours
+
+    try:
+        async with async_session() as db:
+            r = await db.execute(
+                select(UserActivity)
+                .where(UserActivity.created_at > cursor)
+                .order_by(UserActivity.created_at)
+                .limit(40)
+            )
+            events = list(r.scalars().all())
+            if not events:
+                _last_event_cursor = now
+                return
+
+            items = []
+            for e in events:
+                ts = e.created_at.strftime("%m-%d %H:%M") if e.created_at else ""
+                detail = ""
+                if e.details:
+                    try:
+                        import json as _j
+                        detail = " " + _j.dumps(e.details, ensure_ascii=False)[:200]
+                    except Exception:
+                        pass
+                items.append(f"[{ts}] {e.event_type}: {e.summary or ''}{detail}")
+            batch = "\n".join(items)
+
+            from openai import AsyncOpenAI
+            import json as _json
+            import re
+            client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+            resp = await client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {"role": "system", "content": (
+                        "你是一个个人AI助手。下面是一段时间内用户的行为事件记录（文件操作、待办、日程、新邮件等）。"
+                        "请找出其中重要、需要用户注意的事项（紧急事务、截止期限、重要邮件、关键变更、异常等），"
+                        "并用中文写一段简短总结（3-5 句话）。"
+                        "只返回 JSON，格式: {\"important\": true/false, \"summary\": \"总结内容\"}。"
+                        "若没有重要事项返回 {\"important\": false}。不要输出其他内容。"
+                    )},
+                    {"role": "user", "content": batch},
+                ],
+                temperature=0.1,
+            )
+            raw = resp.choices[0].message.content or ""
+            m = re.search(r"\{.*\}", raw, re.S)
+            important = False
+            summary = ""
+            if m:
+                try:
+                    data = _json.loads(m.group(0))
+                    important = bool(data.get("important"))
+                    summary = str(data.get("summary") or "").strip()
+                except Exception:
+                    pass
+
+            _last_event_cursor = events[-1].created_at
+            await db.commit()
+
+            if not important or not summary:
+                return
+
+            from plugins.notifications.backend.service import create_notification
+            from plugins.notifications.backend.router import ws_manager
+            n = await create_notification(
+                db, events[-1].user_id,
+                "🔔 重要事项提醒",
+                summary,
+                "important",
+                "/",
+            )
+            await db.commit()
+            try:
+                await ws_manager.notify_user(events[-1].user_id, {
+                    "type": "new_notification",
+                    "id": n.id,
+                    "title": "🔔 重要事项提醒",
+                    "body": summary,
+                })
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[scheduler] event scan error: {e}")
+
+
 async def scheduler_loop():
     """Background loop: check time every 60s, trigger briefing at 9:30 and event reminders."""
+    global _last_event_scan
     while True:
         try:
             now = datetime.now()
@@ -103,6 +218,10 @@ async def scheduler_loop():
                 _sent_today.clear()
 
             await _check_reminders()
+
+            if _clock() - _last_event_scan >= EVENT_SCAN_INTERVAL:
+                _last_event_scan = _clock()
+                await _scan_events()
 
             if now.hour == BRIEFING_HOUR and now.minute == BRIEFING_MINUTE:
                 # Collect users who have recent activity (active in last 7 days)

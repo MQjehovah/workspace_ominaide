@@ -51,8 +51,29 @@ async def create_schedule_event(user_id: int, args: dict) -> dict:
         return {"id": ev.id, "title": ev.title, "start_time": str(ev.start_time), "remind_before": ev.remind_before}
 
 
+async def list_recent_emails(user_id: int, args: dict) -> dict:
+    """List recent emails reported by the user's mail client. Returns subject, sender and preview."""
+    limit = min(int(args.get("limit", 10)), 50)
+    only_important = bool(args.get("important", False))
+    async with async_session() as db:
+        from plugins.mail.backend.models import MailEvent
+        q = select(MailEvent).where(MailEvent.user_id == user_id)
+        if only_important:
+            q = q.where(MailEvent.important == True)
+        q = q.order_by(MailEvent.created_at.desc()).limit(limit)
+        r = await db.execute(q)
+        events = r.scalars().all()
+        return {"emails": [{
+            "id": e.id,
+            "subject": e.subject,
+            "from": e.from_address,
+            "date": e.date or (str(e.created_at) if e.created_at else ""),
+            "preview": (e.preview or "")[:300],
+            "important": bool(e.important),
+        } for e in events]}
+
+
 async def search_articles(user_id: int, args: dict) -> dict:
-    """Search RSS/feed articles by keyword."""
     q = args.get("q", "")
     if not q: return {"items": []}
     async with async_session() as db:
@@ -121,6 +142,7 @@ async def unified_search_tool(user_id: int, args: dict) -> dict:
 
 def register_ai_tools():
     tool_registry.register(MCPTool(name="list_schedule_events", description="List upcoming schedule/calendar events within a date range. Returns event titles and times.", inputSchema={"type":"object","properties":{"start":{"type":"string","description":"Start date ISO format"},"end":{"type":"string","description":"End date ISO format"}}}), list_schedule_events)
+    tool_registry.register(MCPTool(name="list_recent_emails", description="List recent emails received by the user. Returns subject, sender and preview. Use important=true to filter for important mail.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results"},"important":{"type":"boolean","description":"Only important emails"}}}), list_recent_emails)
     tool_registry.register(MCPTool(name="create_schedule_event", description="Create a schedule/calendar event. Use this to turn natural-language requests like '明天下午3点开会' into calendar events.", inputSchema={"type":"object","properties":{"title":{"type":"string","description":"Event title"},"start_time":{"type":"string","description":"Start time ISO format, e.g. 2026-08-02T15:00:00"},"end_time":{"type":"string","description":"Optional end time ISO format"},"notes":{"type":"string","description":"Optional notes"},"remind_before":{"type":"integer","description":"Minutes before to remind, default 10"}},"required":["title","start_time"]}), create_schedule_event)
     tool_registry.register(MCPTool(name="search_articles", description="Search RSS feed articles by keyword. Returns matching article titles and summaries.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Search keyword"}},"required":["q"]}), search_articles)
     tool_registry.register(MCPTool(name="list_notifications", description="List recent notifications. Use unread=true to see only unread.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results"},"unread":{"type":"boolean","description":"Only unread"}}}), list_notifications)

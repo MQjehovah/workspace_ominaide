@@ -44,3 +44,29 @@ class MailAccountResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+class MailEventCreate(BaseModel):
+    account_id: str | None = None
+    uid: int | None = None
+    subject: str | None = None
+    from_address: str | None = None
+    date: str | None = None
+    preview: str | None = None
+    content: str | None = None
+    important: bool = False
+
+
+class MailEventResponse(BaseModel):
+    id: int
+    user_id: int
+    account_id: str | None = None
+    uid: int | None = None
+    subject: str | None = None
+    from_address: str | None = None
+    date: str | None = None
+    preview: str | None = None
+    content: str | None = None
+    important: bool = False
+    created_at: datetime
+    model_config = {"from_attributes": True}

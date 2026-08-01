@@ -21,8 +21,8 @@ interface ImapMessage {
   text: string
   html: string
   attachments: { filename: string; contentType: string; size: number }[]
+  _contentType?: string
 }
-
 export class ImapClient extends EventEmitter {
   private config: ImapConfig
   private socket: net.Socket | tls.TLSSocket | null = null
@@ -32,6 +32,7 @@ export class ImapClient extends EventEmitter {
   private selectedMailbox = ''
   private authenticated = false
   private responseLines: string[] = []
+  private literalRemaining = 0
 
   constructor(config: ImapConfig) {
     super()
@@ -113,6 +114,13 @@ export class ImapClient extends EventEmitter {
     return uids
   }
 
+  async setSeen(uids: number[]): Promise<void> {
+    if (uids.length === 0) return
+    const tag = this.nextTag()
+    const uidStr = uids.join(',')
+    await this.sendCommand(`${tag} UID STORE ${uidStr} +FLAGS.SILENT (\\Seen)`)
+  }
+
   async fetchEmails(uids: number[]): Promise<ImapMessage[]> {
     if (uids.length === 0) return []
     const tag = this.nextTag()
@@ -133,7 +141,7 @@ export class ImapClient extends EventEmitter {
       if (line.startsWith('* ')) {
         if (current && current.uid) {
           this.applyHeaders(headerLines, current)
-          current.text = this.extractText(textBuffer.trim())
+          current.text = this.extractText(textBuffer.trim(), current._contentType)
           messages.push(current as ImapMessage)
         }
         current = { uid: 0, seq: 0, flags: [], date: new Date(), subject: '', from: [], to: [], text: '', html: '', attachments: [] }
@@ -152,7 +160,7 @@ export class ImapClient extends EventEmitter {
       } else if (line === ')') {
         if (current && current.uid) {
           this.applyHeaders(headerLines, current)
-          current.text = this.extractText(textBuffer.trim())
+          current.text = this.extractText(textBuffer.trim(), current._contentType)
           messages.push(current as ImapMessage)
         }
         current = null; section = ''; headerLines = []; textBuffer = ''
@@ -165,7 +173,7 @@ export class ImapClient extends EventEmitter {
     }
     if (current && current.uid) {
       this.applyHeaders(headerLines, current)
-      current.text = this.extractText(textBuffer.trim())
+      current.text = this.extractText(textBuffer.trim(), current._contentType)
       messages.push(current as ImapMessage)
     }
     return messages
@@ -175,10 +183,19 @@ export class ImapClient extends EventEmitter {
     let subject = '', from = '', date = '', to = ''
     for (const line of lines) {
       const lower = line.toLowerCase()
+      // Folded/continuation header lines (start with space/tab) belong to the
+      // previous header — e.g. "Content-Type: multipart/..." + "\tboundary=..."
+      if (/^[ \t]/.test(line)) {
+        if (msg._contentType && !lower.startsWith('content-type:')) {
+          msg._contentType += ' ' + line.trim()
+        }
+        continue
+      }
       if (lower.startsWith('subject:')) subject = line.slice(8).trim()
       else if (lower.startsWith('from:')) from = line.slice(5).trim()
       else if (lower.startsWith('date:')) date = line.slice(5).trim()
       else if (lower.startsWith('to:')) to = line.slice(3).trim()
+      else if (lower.startsWith('content-type:')) msg._contentType = line.slice(13).trim()
     }
     msg.subject = this.decodeMime(subject)
     if (date) msg.date = new Date(date)
@@ -186,36 +203,144 @@ export class ImapClient extends EventEmitter {
     if (to) msg.to = this.parseAddresses(to)
   }
 
-  private extractText(raw: string): string {
-    let text = raw
-    text = text.replace(/^[ \t]*--=+[^\n]*\n?/gm, '')
-    text = text.replace(/^[ \t]*=_Part[^\n]*\n?/gm, '')
-    text = text.replace(/^[ \t]*Content-[^\n]*\n?/gm, '')
-    text = text.replace(/^[ \t]*--[^\n]*--\s*\n?/gm, '')
-    text = text.replace(/^[ \t]*MIME-Version:[^\n]*\n?/gm, '')
-    text = text.replace(/^[ \t]*boundary="[^"]*"\s*\n?/gm, '')
-    text = text.replace(/^[ \t]*charset="?[^"\n]+"?\s*\n?/gm, '')
-    text = text.replace(/^[ \t]*Content-Transfer-Encoding:[^\n]*\n?/gm, '')
-    text = text.replace(/^[ \t]*multipart\/[^\n]*\n?/gm, '')
-    text = text.replace(/--=_NextPart[^\n]*/g, '')
-    // Soft line breaks
-    text = text.replace(/=\r?\n/g, '')
-    // Quoted-printable: =XX → byte, then reinterpret as UTF-8
-    text = text.replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-    text = Buffer.from(text, 'latin1').toString('utf-8')
-    text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    text = text.replace(/<[^>]+>/g, '')
-    text = text.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
-    text = text.split('\n').map(line => {
-      const t = line.trim()
-      if (t.length > 40 && /^[A-Za-z0-9+/=]+$/.test(t)) {
-        try { return Buffer.from(t, 'base64').toString('utf-8') } catch {}
+  private extractText(raw: string, contentType?: string): string {
+    let text = (raw || '').replace(/\r\n/g, '\n')
+    const topCt = (contentType || '').toLowerCase()
+    const boundary = contentType?.match(/boundary="?([^";]+)"?/i)?.[1] || text.match(/^\s*--([^\s]+)/)?.[1]
+
+    const parts: { ct: string; cte: string; charset: string; body: string }[] = []
+    if (boundary) {
+      parts.push(...this.parseMultipart(boundary, text))
+    } else {
+      const first = text.indexOf('\n\n')
+      if (first !== -1) {
+        const headers = this.parseHeaders(text.slice(0, first))
+        parts.push(...this.parseMime(headers, text.slice(first + 2)))
+      } else {
+        parts.push({ ct: topCt || 'text/plain', cte: '', charset: this.getCharset(topCt), body: text })
       }
-      return line
-    }).join('\n')
-    text = text.replace(/\n{3,}/g, '\n\n').trim()
-    return text
+    }
+
+    let plain: string | null = null
+    let html: string | null = null
+    for (const p of parts) {
+      let content = p.body
+      const cte = (p.cte || '').toLowerCase()
+      let isBytes = false
+      if (cte.includes('base64')) {
+        try {
+          content = Buffer.from(content.replace(/\s+/g, ''), 'base64').toString('latin1')
+          isBytes = true
+        } catch {
+          content = ''
+        }
+      } else if (cte) {
+        content = this.decodeQuotedPrintable(content)
+        isBytes = true
+      }
+      const decoded = isBytes ? this.decodeCharset(Buffer.from(content, 'latin1'), p.charset) : content
+      if (!decoded) continue
+      if (p.ct.includes('text/plain') && plain === null) plain = decoded
+      else if (p.ct.includes('text/html') && html === null) html = decoded
+    }
+    if (plain !== null) return this.cleanText(plain)
+    if (html !== null) return this.stripHtml(html)
+    // Fallback: whole body as text
+    return this.cleanText(this.decodeCharset(Buffer.from(this.decodeQuotedPrintable(text), 'latin1'), 'utf-8'))
+  }
+
+  /** Split a multipart body by boundary into leaf parts (recursively). */
+  private parseMultipart(boundary: string, body: string) {
+    const segs = body.split('--' + boundary)
+    const results: { ct: string; cte: string; charset: string; body: string }[] = []
+    for (const seg of segs) {
+      const t = seg.replace(/^\n+/, '').replace(/\n?--\s*$/, '')
+      if (!t.trim()) continue
+      const nidx = t.indexOf('\n\n')
+      if (nidx === -1) continue
+      const ph = this.parseHeaders(t.slice(0, nidx))
+      const pb = t.slice(nidx + 2)
+      // A segment with no headers at all is the multipart preamble (e.g.
+      // "This is a multi-part message in MIME format.") — not a real part.
+      if (Object.keys(ph).length === 0 && !pb.trim()) continue
+      results.push(...this.parseMime(ph, pb))
+    }
+    return results
+  }
+
+  /** Handle a single MIME part; recurse if it is itself multipart. */
+  private parseMime(
+    headers: Record<string, string>,
+    body: string,
+  ): { ct: string; cte: string; charset: string; body: string }[] {
+    const ct = (headers['content-type'] || 'text/plain').toLowerCase()
+    const cte = headers['content-transfer-encoding'] || ''
+    const charset = this.getCharset(headers['content-type'] || '')
+    const boundary = ct.match(/boundary="?([^";]+)"?/i)?.[1]
+    if (boundary) return this.parseMultipart(boundary, body)
+    return [{ ct, cte, charset, body }]
+  }
+
+  private parseHeaders(block: string): Record<string, string> {
+    const headers: Record<string, string> = {}
+    let current = ''
+    for (const line of block.split('\n')) {
+      if (/^[ \t]/.test(line) && current) {
+        headers[current] += ' ' + line.trim()
+        continue
+      }
+      const idx = line.indexOf(':')
+      if (idx === -1) continue
+      current = line.slice(0, idx).trim().toLowerCase()
+      headers[current] = line.slice(idx + 1).trim()
+    }
+    return headers
+  }
+
+  private getCharset(ct: string): string {
+    return (ct.match(/charset="?([^";]+)"?/i)?.[1] || '').replace(/["']/g, '').trim()
+  }
+
+  private decodeQuotedPrintable(s: string): string {
+    // Remove soft line breaks (=\n) first so =XX runs survive
+    return s.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+  }
+
+  private decodeCharset(buf: Buffer, charset: string): string {
+    const cs = (charset || 'utf-8').toLowerCase()
+    if (!cs || cs === 'utf-8' || cs === 'utf8') return buf.toString('utf-8')
+    if (cs === 'us-ascii' || cs === 'ascii' || cs === 'iso-8859-1' || cs === 'latin1') {
+      return buf.toString('latin1')
+    }
+    try {
+      return new TextDecoder(cs).decode(buf)
+    } catch {
+      return buf.toString('utf-8')
+    }
+  }
+
+  private stripHtml(html: string): string {
+    return this.cleanText(
+      html
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<br\s*\/?\s*>/gi, '\n')
+        .replace(/<\/(p|div|tr|li|h\d|table|blockquote)>/gi, '\n')
+        .replace(/<[^>]+>/g, ''),
+    )
+  }
+
+  private cleanText(t: string): string {
+    return t
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
   }
 
   async logout(): Promise<void> {
@@ -243,21 +368,53 @@ export class ImapClient extends EventEmitter {
 
   private onData(data: string) {
     this.buffer += data
-    const lines = this.buffer.split('\r\n')
-    this.buffer = lines.pop() || ''
+    this._processBuffer()
+  }
 
-    for (const line of lines) {
-      if (!line.trim()) continue
-      const firstWord = line.split(' ')[0]
-      const pending = this.pending.get(firstWord)
-      if (pending) {
-        this.responseLines.push(line)
-        pending.resolve(this.responseLines.slice())
-        this.pending.delete(firstWord)
-        this.responseLines = []
-      } else {
-        this.responseLines.push(line)
+  /**
+   * Process the accumulated buffer, honoring IMAP literals ({NNN}).
+   * Literal content is consumed byte-exactly (not line-split at stream level)
+   * and blank lines are preserved so MIME structure survives.
+   */
+  private _processBuffer() {
+    while (true) {
+      if (this.literalRemaining > 0) {
+        if (this.buffer.length < this.literalRemaining) return
+        const lit = this.buffer.slice(0, this.literalRemaining)
+        this.buffer = this.buffer.slice(this.literalRemaining)
+        this.literalRemaining = 0
+        // Literal content may contain \r\n; split into lines, preserving blank
+        // lines so MIME header/body separators survive.
+        for (const part of lit.split('\r\n')) {
+          if (part === '') this.responseLines.push('')
+          else this._handleLine(part)
+        }
+        continue
       }
+      const nl = this.buffer.indexOf('\r\n')
+      if (nl === -1) return
+      const line = this.buffer.slice(0, nl)
+      this.buffer = this.buffer.slice(nl + 2)
+      const litMatch = line.match(/\{(\d+)\}\s*$/)
+      if (litMatch) {
+        this.literalRemaining = parseInt(litMatch[1])
+        const head = line.replace(/\{(\d+)\}\s*$/, '')
+        if (head.trim()) this._handleLine(head)
+      } else {
+        this._handleLine(line)
+      }
+    }
+  }
+
+  private _handleLine(line: string) {
+    if (line === '') return
+    this.responseLines.push(line)
+    const firstWord = line.split(' ')[0]
+    const pending = this.pending.get(firstWord)
+    if (pending) {
+      pending.resolve(this.responseLines.slice())
+      this.pending.delete(firstWord)
+      this.responseLines = []
     }
   }
 
@@ -269,11 +426,10 @@ export class ImapClient extends EventEmitter {
     return s.replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/g, (_, charset, encoding, text) => {
       try {
         if (encoding === 'B') {
-          const buf = Buffer.from(text, 'base64')
-          return buf.toString(charset as BufferEncoding)
+          return this.decodeCharset(Buffer.from(text, 'base64'), charset)
         } else if (encoding === 'Q') {
-          const buf = Buffer.from(text.replace(/_/g, ' '), 'base64')
-          return buf.toString(charset as BufferEncoding)
+          const q = text.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
+          return this.decodeCharset(Buffer.from(q, 'latin1'), charset)
         }
       } catch {}
       return text

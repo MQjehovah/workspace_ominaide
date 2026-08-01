@@ -24,14 +24,124 @@ interface EmailSummary {
   date: string
   flags: string[]
   preview: string
+  text: string
 }
 
 const accountsKey = 'mail_accounts'
 let pluginCtx: any = null
 
+async function getAccounts(): Promise<MailAccount[]> {
+  // Prefer backend accounts, fall back to local storage.
+  try {
+    const data = await pluginCtx?.api?.get('/plugins/mail/accounts')
+    const list = Array.isArray(data) ? data : data?.accounts
+    if (list && list.length) return list.map(mapResponseToAccount)
+  } catch { /* ignore */ }
+  return (await pluginCtx?.storage?.get(accountsKey)) || []
+}
+
 // In-memory email cache per account (key=accountId, value={emails, time})
 const emailCache = new Map<string | number, { emails: EmailSummary[]; time: number }>()
-const CACHE_TTL = 60000 // 60 seconds
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+function cacheKey(id: string | number) {
+  return `mail_cache_v3_${id}`
+}
+
+async function readStorageCache(id: string | number): Promise<{ emails: EmailSummary[]; time: number } | null> {
+  try {
+    return (await pluginCtx?.storage?.get(cacheKey(id))) || null
+  } catch {
+    return null
+  }
+}
+
+async function writeStorageCache(id: string | number, entry: { emails: EmailSummary[]; time: number }) {
+  try {
+    await pluginCtx?.storage?.set(cacheKey(id), entry)
+  } catch { /* ignore */ }
+}
+
+async function getCachedOrFetch(acc: MailAccount, force = false): Promise<EmailSummary[]> {
+  const now = Date.now()
+  if (!force) {
+    const mem = emailCache.get(acc.id)
+    if (mem && now - mem.time < CACHE_TTL) return mem.emails
+    const stored = await readStorageCache(acc.id)
+    if (stored && now - stored.time < CACHE_TTL) {
+      emailCache.set(acc.id, stored)
+      return stored.emails
+    }
+  }
+  const emails = await fetchInbox(acc)
+  const entry = { emails, time: now }
+  emailCache.set(acc.id, entry)
+  await writeStorageCache(acc.id, entry)
+  return emails
+}
+
+function createImapClient(acc: MailAccount) {
+  return new ImapClient({
+    host: acc.imapHost,
+    port: acc.imapPort,
+    user: acc.username,
+    password: acc.password,
+    tls: acc.imapTls,
+  })
+}
+
+// ---- New-email detection & cloud reporting ----
+
+async function reportNewEmails(acc: MailAccount, emails: EmailSummary[]) {
+  const seenKey = `mail_seen_${acc.id}`
+  let seen: number[] = []
+  try {
+    seen = (await pluginCtx?.storage?.get(seenKey)) || []
+  } catch { /* ignore */ }
+  const seenSet = new Set(seen)
+  let changed = false
+  for (const email of emails) {
+    if (seenSet.has(email.uid)) continue
+    seenSet.add(email.uid)
+    changed = true
+    // Report every new email to the cloud; the LLM decides importance there.
+    try {
+      await pluginCtx?.api?.post('/plugins/mail/events', {
+        account_id: String(acc.id),
+        uid: email.uid,
+        subject: email.subject,
+        from_address: email.from,
+        date: email.date,
+        preview: email.preview,
+        content: email.text,
+      })
+    } catch (e: any) {
+      console.error('[mail] report to cloud failed:', e?.message || e)
+    }
+  }
+  if (changed) {
+    try {
+      await pluginCtx?.storage?.set(seenKey, Array.from(seenSet).slice(-500))
+    } catch { /* ignore */ }
+  }
+}
+
+async function refreshAndReport() {
+  const accounts = await getAccounts()
+  for (const acc of accounts) {
+    try {
+      const emails = await getCachedOrFetch(acc, true)
+      await reportNewEmails(acc, emails)
+    } catch (e: any) {
+      console.error('[mail] refresh error:', e?.message || e)
+    }
+  }
+  // The cloud LLM reviews all events periodically and pushes important-item
+  // notifications via WebSocket; the host shows them as system notifications.
+  try {
+    await pluginCtx?.signal?.('panel:updated')
+  } catch { /* ignore */ }
+}
 
 export default {
   panel: Panel,
@@ -40,7 +150,7 @@ export default {
     pluginCtx = context
 
     context.registerCommand('getPanelData', async () => {
-      const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
+      const accounts = await getAccounts()
       const allEmails: EmailSummary[] = []
       for (const acc of accounts) {
         const emails = await getCachedOrFetch(acc)
@@ -59,7 +169,7 @@ export default {
     })
 
     context.registerCommand('getPageData', async () => {
-      const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
+      const accounts = await getAccounts()
       return { accounts }
     })
 
@@ -140,18 +250,59 @@ export default {
     })
 
     context.registerCommand('fetchEmails', async (args: any) => {
-      const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
-      const acc = accounts.find(a => a.id === args?.accountId)
+      const accounts = await getAccounts()
+      const acc = accounts.find(a => a.id === args?.accountId || a.id === Number(args?.accountId))
       if (!acc) return { success: false, error: 'Account not found' }
-      const emails = await getCachedOrFetch(acc, true)
+      const emails = await getCachedOrFetch(acc, !!args?.force)
       return { success: true, emails: emails.slice(0, 50) }
+    })
+
+    context.registerCommand('preloadEmails', async () => {
+      const accounts = await getAccounts()
+      const results: Record<string, number> = {}
+      for (const acc of accounts) {
+        try {
+          const emails = await getCachedOrFetch(acc)
+          results[String(acc.id)] = emails.length
+        } catch { /* ignore */ }
+      }
+      return { success: true, counts: results }
+    })
+
+    context.registerCommand('markEmailRead', async (args: any) => {
+      const accounts = await getAccounts()
+      const acc = accounts.find(a => a.id === args?.accountId || a.id === Number(args?.accountId))
+      if (!acc || !args?.uid) return { success: false, error: 'Account not found' }
+      try {
+        const client = createImapClient(acc)
+        await client.connect()
+        await client.login()
+        await client.selectMailbox('INBOX')
+        await client.setSeen([args.uid])
+        await client.logout()
+        // Update local flags so the UI reflects read state immediately.
+        const cached = emailCache.get(acc.id) || (await readStorageCache(acc.id))
+        if (cached) {
+          const emails = cached.emails.map(e =>
+            e.uid === args.uid && !e.flags?.includes('\\Seen')
+              ? { ...e, flags: [...(e.flags || []), '\\Seen'] }
+              : e,
+          )
+          const entry = { emails, time: cached.time }
+          emailCache.set(acc.id, entry)
+          await writeStorageCache(acc.id, entry)
+        }
+        return { success: true }
+      } catch (e: any) {
+        return { success: false, error: e?.message || 'Failed to mark read' }
+      }
     })
 
     context.registerCommand('sendEmail', async (args: any) => {
       try {
         const { createTransport } = require('nodemailer')
-        const accounts: MailAccount[] = (await context.storage?.get(accountsKey)) || []
-        const acc = accounts.find(a => a.id === args?.accountId)
+        const accounts = await getAccounts()
+        const acc = accounts.find(a => a.id === args?.accountId || a.id === Number(args?.accountId))
         if (!acc) return { success: false, error: 'Account not found' }
 
         const transporter = createTransport({
@@ -174,30 +325,27 @@ export default {
         return { success: false, error: e.message }
       }
     })
+
+    // Periodic refresh: detect new mail, report to cloud, notify for important items.
+    const REFRESH_INTERVAL = 5 * 60 * 1000
+    refreshTimer = setInterval(() => {
+      refreshAndReport().catch(() => {})
+    }, REFRESH_INTERVAL)
+    // Initial background check (skip if accounts not configured yet)
+    setTimeout(() => {
+      refreshAndReport().catch(() => {})
+    }, 15000)
   },
-  deactivate() {},
+  deactivate() {
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
+  },
 }
 
-async function getCachedOrFetch(acc: MailAccount, force = false): Promise<EmailSummary[]> {
-  const cached = emailCache.get(acc.id)
-  const now = Date.now()
-  if (!force && cached && now - cached.time < CACHE_TTL) {
-    return cached.emails
-  }
-  const emails = await fetchInbox(acc)
-  emailCache.set(acc.id, { emails, time: now })
-  return emails
-}
+let refreshTimer: any = null
 
 async function fetchInbox(acc: MailAccount): Promise<EmailSummary[]> {
   try {
-    const client = new ImapClient({
-      host: acc.imapHost,
-      port: acc.imapPort,
-      user: acc.username,
-      password: acc.password,
-      tls: acc.imapTls,
-    })
+    const client = createImapClient(acc)
 
     await client.connect()
     await client.login()
@@ -207,15 +355,19 @@ async function fetchInbox(acc: MailAccount): Promise<EmailSummary[]> {
     const messages = await client.fetchEmails(recent)
     await client.logout()
 
-    return messages.map(msg => ({
-      uid: msg.uid,
-      accountId: acc.id,
-      subject: msg.subject || '(无主题)',
-      from: msg.from?.[0]?.address || '',
-      date: msg.date.toISOString(),
-      flags: msg.flags,
-      preview: (msg.text || '').slice(0, 200),
-    }))
+    return messages.map(msg => {
+      const text = msg.text || ''
+      return {
+        uid: msg.uid,
+        accountId: acc.id,
+        subject: msg.subject || '(无主题)',
+        from: msg.from?.[0]?.address || '',
+        date: msg.date.toISOString(),
+        flags: msg.flags,
+        preview: text.slice(0, 200),
+        text,
+      }
+    })
   } catch (e) {
     console.error(`[mail] fetch inbox failed for ${acc.email}:`, e)
     return []
