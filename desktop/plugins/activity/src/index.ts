@@ -17,6 +17,8 @@ const MIN_SESSION_MINUTES = 1
 const CLIPBOARD_PREVIEW_LEN = 200
 
 const WINDOWS_PS = [
+  '$OutputEncoding = [System.Text.Encoding]::UTF8;',
+  '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;',
   'Add-Type -TypeDefinition \'using System;using System.Runtime.InteropServices;',
   'public class W{[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
   '[DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,System.Text.StringBuilder t,int c);',
@@ -27,7 +29,22 @@ const WINDOWS_PS = [
   '$p=0;[W]::GetWindowThreadProcessId($h,[ref]$p)|Out-Null;',
   '$proc=Get-Process -Id $p -ErrorAction SilentlyContinue;',
   'if($proc){Write-Output ($proc.ProcessName+"`t"+$sb.ToString())}',
-].join(' ')
+].join('\n')
+
+function getActiveWindow(): Promise<{ app: string; title: string } | null> {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve(null)
+    // Use -EncodedCommand to avoid Windows command-line quoting/parsing issues.
+    const encoded = Buffer.from(WINDOWS_PS, 'utf16le').toString('base64')
+    execFile('powershell', ['-NoProfile', '-EncodedCommand', encoded], { timeout: 5000 }, (err, stdout) => {
+      if (err) return resolve(null)
+      const line = stdout.trim().split(/\r?\n/)[0] || ''
+      const idx = line.indexOf('\t')
+      if (idx <= 0) return resolve(null)
+      resolve({ app: line.slice(0, idx), title: line.slice(idx + 1).trim() })
+    })
+  })
+}
 
 let ctx: any = null
 let activityTimer: any = null
@@ -38,21 +55,9 @@ let lastClipboard = ''
 async function getConfig(): Promise<Record<string, any>> {
   try { return (await ctx?.storage?.get('activity_config')) || {} } catch { return {} }
 }
+
 async function saveConfig(cfg: Record<string, any>) {
   try { await ctx?.storage?.set('activity_config', cfg) } catch { /* ignore */ }
-}
-
-function getActiveWindow(): Promise<{ app: string; title: string } | null> {
-  return new Promise((resolve) => {
-    if (process.platform !== 'win32') return resolve(null)
-    execFile('powershell', ['-NoProfile', '-Command', WINDOWS_PS], { timeout: 5000 }, (err, stdout) => {
-      if (err) return resolve(null)
-      const line = stdout.trim().split(/\r?\n/)[0] || ''
-      const idx = line.indexOf('\t')
-      if (idx <= 0) return resolve(null)
-      resolve({ app: line.slice(0, idx), title: line.slice(idx + 1).trim() })
-    })
-  })
 }
 
 async function reportEvent(payload: Record<string, unknown>) {
