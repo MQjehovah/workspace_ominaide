@@ -5,6 +5,17 @@ const REFRESH_INTERVAL = 30 * 60 * 1000 // 30 minutes
 
 let refreshTimer: any = null
 
+function relTime(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const diff = Date.now() - d.getTime()
+  if (diff < 60000) return '刚刚'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
+  if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)} 天前`
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
 export default {
   panel: Panel,
   page: Page,
@@ -12,15 +23,15 @@ export default {
     context.registerCommand('getPanelData', async () => {
       let items: any[] = []
       try {
-        const r = await context.api.get('/rss/entries?unread=true&page_size=5')
+        const r = await context.api.get('/rss/entries?unread=true&page_size=6')
         items = r?.items || []
       } catch {}
       return {
         title: '资讯',
-        subtitle: items.length > 0 ? `${items.length} 条未读` : '暂无未读',
-        items: items.slice(0, 5).map((e: any) => ({
+        subtitle: items.length > 0 ? `${items.length} 条新文章` : '暂无新文章',
+        items: items.slice(0, 4).map((e: any) => ({
           title: e.title,
-          subtitle: e.feed_title || '',
+          subtitle: `${e.feed_title || '资讯'} · ${relTime(e.published || e.created_at)}`,
         })),
       }
     })

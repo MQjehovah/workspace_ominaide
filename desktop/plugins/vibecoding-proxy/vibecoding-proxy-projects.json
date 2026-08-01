@@ -1,5 +1,19 @@
 [
   {
+    "name": "control",
+    "path": "C:\\Users\\mqjeh\\Desktop\\control",
+    "type": "other",
+    "lastModified": 1763258586788.4001,
+    "description": ""
+  },
+  {
+    "name": "webrtc",
+    "path": "C:\\Users\\mqjeh\\Desktop\\webrtc",
+    "type": "node",
+    "lastModified": 1762938800223.0396,
+    "description": ""
+  },
+  {
     "name": "agent",
     "path": "E:\\ai\\agent",
     "type": "python",
