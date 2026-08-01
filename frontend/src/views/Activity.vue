@@ -20,7 +20,7 @@
             <h3 style="font-size:14px;font-weight:600;color:#1a1a2e;margin:0 0 12px">应用使用时长</h3>
             <div v-if="stats.app_minutes?.length" class="app-bars">
               <div v-for="a in stats.app_minutes" :key="a.app" class="app-bar-row">
-                <span class="app-bar-name" :title="a.app">{{ a.app }}</span>
+                <span class="app-bar-name" :title="a.app">{{ friendlyApp(a.app) }}</span>
                 <div class="app-bar-track">
                   <div class="app-bar-fill" :style="{ width: barWidth(a.minutes) + '%' }"></div>
                 </div>
@@ -154,7 +154,7 @@ const statCards = computed(() => [
   { label: '总事件数', value: String(stats.value?.event_count ?? '—') },
   { label: '应用总时长', value: stats.value?.total_minutes ? `${stats.value.total_minutes} min` : '—' },
   { label: '剪贴板次数', value: String(stats.value?.clipboard_count ?? '—') },
-  { label: '最常用应用', value: (stats.value?.top_app ?? '—') as string },
+  { label: '最常用应用', value: friendlyApp(stats.value?.top_app ?? '—') as string },
 ])
 
 const typeCountEntries = computed(() => {
@@ -170,10 +170,24 @@ function barWidth(minutes: number): number {
   return Math.round((minutes / max) * 100)
 }
 
+const APP_ALIASES: Record<string, string> = {
+  code: 'VSCode', 'code-insiders': 'VSCode', cursor: 'Cursor',
+  chrome: 'Chrome', msedge: 'Edge', firefox: 'Firefox', opera: 'Opera',
+  explorer: '资源管理器', wechat: '微信', qq: 'QQ', wecom: '企业微信',
+  dingtalk: '钉钉', feishu: '飞书', lark: '飞书',
+  devenv: 'Visual Studio', idea64: 'IntelliJ IDEA', pycharm64: 'PyCharm',
+  webstorm64: 'WebStorm', goland64: 'GoLand', studio64: 'Android Studio',
+  windowsterminal: '终端', cmd: '命令行', powershell: 'PowerShell',
+  node: 'Node.js', python: 'Python', java: 'Java', slack: 'Slack', teams: 'Teams', zoom: 'Zoom',
+}
+function friendlyApp(name: string): string {
+  return APP_ALIASES[String(name || '').toLowerCase()] || name
+}
+
 function detailText(d: any): string {
   if (!d) return ''
   const parts: string[] = []
-  if (d.app) parts.push(d.app)
+  if (d.app) parts.push(friendlyApp(d.app))
   if (d.title) parts.push(String(d.title).slice(0, 40))
   if (d.minutes) parts.push(`${d.minutes} 分钟`)
   if (d.length) parts.push(`长度 ${d.length}`)
