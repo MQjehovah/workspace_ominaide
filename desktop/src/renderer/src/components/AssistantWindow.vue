@@ -126,7 +126,7 @@ async function executeAction(text: string): Promise<string | null> {
   // Open page: "打开日程" "打开设置" "打开文件管理"
   const openMatch = t.match(/^打开(.+)/)
   if (openMatch) {
-    const pageMap: Record<string,string> = { '日程':'schedule','设置':'settings','文件':'files','文件管理':'files','笔记':'notes','工作区':'workspaces','用户':'admin/users','插件':'admin/plugins','资讯':'rss' }
+    const pageMap: Record<string,string> = { '日程':'schedule','设置':'settings','文件':'files','文件管理':'files','笔记':'notes','用户':'admin/users','插件':'admin/plugins','资讯':'rss' }
     const key = openMatch[1].trim()
     if (pageMap[key]) { return `正在打开 ${key}…` }
   }

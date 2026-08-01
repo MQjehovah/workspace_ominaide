@@ -33,7 +33,6 @@ async def index_file(
     user_id: int,
     filename: str,
     content: str,
-    workspace_id: int | None = None,
     file_size: int = 0,
 ):
     from core.ai.embeddings import generate_embedding
@@ -53,7 +52,6 @@ async def index_file(
                     "user_id": user_id,
                     "file_id": file_id,
                     "filename": filename,
-                    "workspace_id": workspace_id,
                     "file_size": file_size,
                     "indexed_at": __import__("datetime").datetime.now().isoformat(),
                 },
@@ -67,7 +65,6 @@ async def search_similar(
     user_id: int,
     query: str,
     limit: int = 10,
-    workspace_id: int | None = None,
 ) -> list[dict]:
     from core.ai.embeddings import generate_embedding
 
@@ -78,10 +75,6 @@ async def search_similar(
     client = get_qdrant()
 
     must_conditions = [FieldCondition(key="user_id", match=MatchValue(value=user_id))]
-    if workspace_id:
-        must_conditions.append(
-            FieldCondition(key="workspace_id", match=MatchValue(value=workspace_id))
-        )
 
     results = client.search(
         collection_name=COLLECTION_NAME,
@@ -94,7 +87,6 @@ async def search_similar(
         {
             "file_id": r.payload.get("file_id"),
             "filename": r.payload.get("filename"),
-            "workspace_id": r.payload.get("workspace_id"),
             "file_size": r.payload.get("file_size"),
             "score": round(r.score, 4),
         }

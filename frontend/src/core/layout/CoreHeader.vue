@@ -7,6 +7,7 @@
       <span class="breadcrumb">{{ route.name }}</span>
     </div>
     <div class="header-right">
+      <GlobalSearch />
       <el-dropdown trigger="click" @visible-change="fetchNotifications">
         <el-badge :value="unreadCount" :hidden="unreadCount === 0" class="bell-badge">
           <button class="bell-btn">
@@ -55,6 +56,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Setting, SwitchButton, Bell } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import client from '@/api/client'
+import GlobalSearch from './GlobalSearch.vue'
 
 defineEmits<{ 'toggle-sidebar': [] }>()
 const route = useRoute()
@@ -63,7 +65,28 @@ const auth = useAuthStore()
 
 const notifications = ref<any[]>([])
 const unreadCount = ref(0)
-let pollTimer: any = null
+let ws: WebSocket | null = null
+let reconnectTimer: any = null
+
+function connectWebSocket() {
+  const token = localStorage.getItem('token')
+  if (!token) return
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?token=${encodeURIComponent(token)}`)
+  ws.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data)
+      if (data && data.id) {
+        notifications.value.unshift(data)
+        unreadCount.value += 1
+      }
+    } catch { /* ignore */ }
+  }
+  ws.onclose = () => {
+    reconnectTimer = setTimeout(connectWebSocket, 5000)
+  }
+  ws.onerror = () => ws?.close()
+}
 
 async function fetchNotifications() {
   try {
@@ -90,8 +113,8 @@ function formatTime(iso: string) {
   if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
 }
-onMounted(() => { fetchUnreadCount(); pollTimer = setInterval(fetchUnreadCount, 15000) })
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
+onMounted(() => { fetchUnreadCount(); connectWebSocket() })
+onUnmounted(() => { if (ws) ws.close(); if (reconnectTimer) clearTimeout(reconnectTimer) })
 </script>
 
 <style scoped>

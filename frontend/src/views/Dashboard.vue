@@ -44,7 +44,7 @@
 import { ref, onMounted } from 'vue'
 import client from '@/api/client'
 
-const stats = ref([{ label: '用户数', value: '...' }, { label: '文件数', value: '...' }, { label: '工作区', value: '...' }, { label: '事件数', value: '...' }])
+const stats = ref([{ label: '用户数', value: '...' }, { label: '文件数', value: '...' }, { label: '待办', value: '...' }, { label: '事件数', value: '...' }])
 const events = ref<any[]>([])
 const eventsLoading = ref(true)
 const connected = ref(false)
@@ -53,16 +53,16 @@ const healthTitle = ref('...')
 
 async function fetchStats() {
   try {
-    const [users, files, ws, ev] = await Promise.all([
+    const [users, files, todos, ev] = await Promise.all([
       client.get('/auth/users').then(r => r.data.length || r.data.length).catch(() => '?'),
       client.get('/files?page_size=1').then(r => r.data.total ?? r.data.length ?? '?').catch(() => '?'),
-      Promise.resolve(0).catch(() => '?'),
+      client.get('/plugins/todo/items').then(r => (r.data?.items ?? r.data ?? []).length).catch(() => '?'),
       client.get('/activities?limit=0').then(r => Array.isArray(r.data) ? r.data.length : '?').catch(() => '?'),
     ])
     stats.value = [
       { label: '用户数', value: String(users) },
       { label: '文件数', value: String(files) },
-      { label: '工作区', value: String(ws) },
+      { label: '待办', value: String(todos) },
       { label: '事件数', value: String(ev) },
     ]
   } catch { /* keep defaults */ }

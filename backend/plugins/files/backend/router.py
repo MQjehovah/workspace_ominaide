@@ -1,4 +1,4 @@
-﻿import io
+import io
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File
 from fastapi.responses import StreamingResponse, Response
@@ -127,7 +127,7 @@ async def confirm_upload(
 ):
     try:
         file_record = await file_service.confirm_upload(db, user["id"], req.file_id)
-        await record_event(db, user["id"], "file.uploaded", "file", file_record.id, f"涓婁紶鏂囦欢: {file_record.original_name}", {"size": file_record.size, "mime": file_record.mime_type})
+        await record_event(db, user["id"], "file.uploaded", "file", file_record.id, f"上传文件: {file_record.original_name}", {"size": file_record.size, "mime": file_record.mime_type})
         background_tasks.add_task(index_file_for_search, file_record, user["id"])
         return FileResponse.model_validate(file_record)
     except ValueError as e:
@@ -153,7 +153,6 @@ async def index_file_for_search(file_record, user_id: int):
                 user_id=user_id,
                 filename=file_record.original_name,
                 content=content,
-                workspace_id=file_record.workspace_id,
                 file_size=file_record.size,
             )
         finally:
@@ -168,20 +167,21 @@ async def list_files(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     status: str = Query("active"),
-    workspace_id: int | None = None,
     bucket: str | None = None,
     mime_type: str | None = None,
     favorite: bool | None = None,
     folder_path: str | None = None,
     is_folder: bool | None = None,
+    search: str | None = None,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     params = FileQueryParams(
         page=page, page_size=page_size, status=status,
-        workspace_id=workspace_id, bucket=bucket,
+        bucket=bucket,
         mime_type=mime_type, favorite=favorite,
         folder_path=folder_path, is_folder=is_folder,
+        search=search,
     )
     files, total = await file_service.get_files(db, user["id"], params)
     return FileListResponse(
@@ -329,7 +329,7 @@ async def trash_file(
     try:
         f = await file_service.get_file(db, user["id"], file_id)
         await file_service.trash_file(db, user["id"], file_id)
-        if f: await record_event(db, user["id"], "file.trashed", "file", file_id, f"鍒犻櫎鏂囦欢: {f.original_name}")
+        if f: await record_event(db, user["id"], "file.trashed", "file", file_id, f"删除文件: {f.original_name}")
         return {"message": "File moved to trash"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -370,7 +370,7 @@ async def rename_file(
 ):
     try:
         file_record = await file_service.rename_file(db, user["id"], file_id, req.new_name)
-        await record_event(db, user["id"], "file.renamed", "file", file_id, f"閲嶅懡鍚嶆枃浠? {file_record.original_name}", {"old_name": file_record.original_name})
+        await record_event(db, user["id"], "file.renamed", "file", file_id, f"重命名文件: {file_record.original_name}", {"old_name": file_record.original_name})
         return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -385,7 +385,7 @@ async def move_file(
 ):
     try:
         file_record = await file_service.move_file(db, user["id"], file_id, req.new_folder_path)
-        await record_event(db, user["id"], "file.moved", "file", file_id, f"绉诲姩鏂囦欢: {file_record.original_name}", {"new_path": req.new_folder_path})
+        await record_event(db, user["id"], "file.moved", "file", file_id, f"移动文件: {file_record.original_name}", {"new_path": req.new_folder_path})
         return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

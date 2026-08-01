@@ -18,9 +18,13 @@
 
 👁️ **桌面远程控制** — WebRTC 屏幕共享 + 鼠标键盘注入 + 多屏切换
 
-🤖 **AI 助理** — 全局热键 `Ctrl+Shift+A` 呼出浮动对话窗，语音输入，自然语言操作（打开页面、搜索、创建日程），支持后端代理 / 前端直连双模式，MCP function calling 可调用所有后端 API
+🤖 **AI 助理** — 桌面端全局热键 `Ctrl+Shift+A` 呼出浮动对话窗，语音输入，自然语言操作（打开页面、搜索、创建日程）；Web 端内置右下角浮动 AI 助理，均可通过 MCP function calling 调用所有后端 API（含自然语言创建日程）
 
-🔔 **通知中心** — WebSocket 实时推送，未读计数 + 下拉列表
+🔍 **统一语义搜索** — 顶部全局搜索框，一条接口检索文件/笔记/RSS/日程，语义 + 关键词双通道，支持 Qdrant 向量检索
+
+💬 **AI 对话历史** — 聊天记录持久化到 MySQL，Web / 桌面 / 移动端共享上下文
+
+🔔 **通知中心** — WebSocket 实时推送，未读计数 + 下拉列表，日程提醒（到点自动推送）
 
 🔐 **完全自托管** — 所有组件通过 Docker Compose 运行在你的机器上，数据主权不妥协
 
@@ -95,7 +99,7 @@
 
 桌面端插件系统支持热加载，当前内置插件：
 
-`player` `remote` `schedule` `rss` `notifications` `assistant` `screenshot` `todo` `files` `notes` `calculator` `clipboard-history` `quick-notes`
+`player` `remote` `schedule` `rss` `assistant` `screenshot` `todo` `files` `notes` `calculator` `clipboard-history` `quick-notes` `everything` `vibecoding-proxy`
 
 ## 快速开始
 

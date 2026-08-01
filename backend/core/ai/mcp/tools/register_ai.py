@@ -19,6 +19,38 @@ async def list_schedule_events(user_id: int, args: dict) -> dict:
         return {"events": [{"id": e.id, "title": e.title, "start_time": str(e.start_time), "end_time": str(e.end_time) if e.end_time else None} for e in evts]}
 
 
+async def create_schedule_event(user_id: int, args: dict) -> dict:
+    """Create a schedule/calendar event. Use this to turn natural-language requests into calendar events."""
+    from datetime import datetime, timedelta
+    title = args.get("title")
+    start = args.get("start_time")
+    if not title or not start:
+        return {"error": "title and start_time are required"}
+    try:
+        start_dt = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+    except ValueError:
+        return {"error": "start_time must be an ISO datetime string, e.g. 2026-08-02T15:00:00"}
+    start_dt = start_dt.replace(tzinfo=None)
+    end = args.get("end_time")
+    end_dt = datetime.fromisoformat(str(end).replace("Z", "+00:00")).replace(tzinfo=None) if end else None
+    notes = args.get("notes")
+    remind_before = int(args.get("remind_before", 10) or 0)
+
+    from plugins.schedule.backend.schemas import EventCreate
+    from plugins.schedule.backend.service import create_event
+    req = EventCreate(
+        title=title,
+        start_time=start_dt,
+        end_time=end_dt or (start_dt + timedelta(hours=1)),
+        notes=notes,
+        remind_before=remind_before,
+    )
+    async with async_session() as db:
+        ev = await create_event(db, user_id, req)
+        await db.commit()
+        return {"id": ev.id, "title": ev.title, "start_time": str(ev.start_time), "remind_before": ev.remind_before}
+
+
 async def search_articles(user_id: int, args: dict) -> dict:
     """Search RSS/feed articles by keyword."""
     q = args.get("q", "")
@@ -82,22 +114,16 @@ async def unified_search_tool(user_id: int, args: dict) -> dict:
     filter_cond = {"must": [{"key": "user_id", "match": {"value": user_id}}]}
     types = args.get("types")
     if types:
-        filter_cond["must"].append({"key": "source_type", "match": {"value": types}})
+        filter_cond["must"].append({"key": "source_type", "match": {"any": types}})
     results = client.search(collection_name="omnidocs", query_vector=vector, limit=10, query_filter=filter_cond)
     return {"results": [{"type": p.payload.get("source_type"), "title": p.payload.get("title"), "snippet": p.payload.get("content", "")[:200], "score": p.score} for p in results]}
 
 
-async def get_daily_briefing_tool(user_id: int, args: dict) -> dict:
-    from plugins.chat.backend.briefing import generate_briefing
-    briefing = await generate_briefing(user_id)
-    return {"briefing": briefing}
-
-
 def register_ai_tools():
     tool_registry.register(MCPTool(name="list_schedule_events", description="List upcoming schedule/calendar events within a date range. Returns event titles and times.", inputSchema={"type":"object","properties":{"start":{"type":"string","description":"Start date ISO format"},"end":{"type":"string","description":"End date ISO format"}}}), list_schedule_events)
+    tool_registry.register(MCPTool(name="create_schedule_event", description="Create a schedule/calendar event. Use this to turn natural-language requests like '明天下午3点开会' into calendar events.", inputSchema={"type":"object","properties":{"title":{"type":"string","description":"Event title"},"start_time":{"type":"string","description":"Start time ISO format, e.g. 2026-08-02T15:00:00"},"end_time":{"type":"string","description":"Optional end time ISO format"},"notes":{"type":"string","description":"Optional notes"},"remind_before":{"type":"integer","description":"Minutes before to remind, default 10"}},"required":["title","start_time"]}), create_schedule_event)
     tool_registry.register(MCPTool(name="search_articles", description="Search RSS feed articles by keyword. Returns matching article titles and summaries.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Search keyword"}},"required":["q"]}), search_articles)
     tool_registry.register(MCPTool(name="list_notifications", description="List recent notifications. Use unread=true to see only unread.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results"},"unread":{"type":"boolean","description":"Only unread"}}}), list_notifications)
     tool_registry.register(MCPTool(name="get_unread_count", description="Get the number of unread notifications.", inputSchema={"type":"object","properties":{}}), get_unread_count)
     tool_registry.register(MCPTool(name="get_user_info", description="Get info about the currently logged-in user.", inputSchema={"type":"object","properties":{}}), get_user_info)
     tool_registry.register(MCPTool(name="unified_search", description="Search across all your data (files, notes, articles, events) with a natural language query. Use this as the primary search tool.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Natural language search query"},"types":{"type":"array","items":{"type":"string"},"description":"Optional: filter by type (file, note, rss_entry, event)"}},"required":["q"]}), unified_search_tool)
-    tool_registry.register(MCPTool(name="get_daily_briefing", description="Generate a daily briefing summarizing today's schedule, notifications, and articles.", inputSchema={"type":"object","properties":{}}), get_daily_briefing_tool)

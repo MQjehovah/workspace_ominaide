@@ -1,12 +1,18 @@
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.pool import NullPool
 from core.config.settings import settings
 
-engine = create_async_engine(settings.database_url, echo=False)
+_is_sqlite = settings.database_url.startswith("sqlite")
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    poolclass=NullPool if _is_sqlite else None,
+)
 
 @event.listens_for(engine.sync_engine, "connect")
 def _enable_wal(dbapi_connection, connection_record):
-    if settings.database_url.startswith("sqlite"):
+    if _is_sqlite:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=5000")

@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database.session import get_db
+from core.auth.dependencies import get_current_admin
 from core.plugin.schemas import PluginInfo, PluginToggleResponse
 from core.plugin import registry as plugin_registry
 from core.plugin.models import PluginRegistry
@@ -24,7 +25,7 @@ async def list_plugins(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{name}/toggle", response_model=PluginToggleResponse)
-async def toggle_plugin(name: str, db: AsyncSession = Depends(get_db)):
+async def toggle_plugin(name: str, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     try:
         record = await plugin_registry.toggle_plugin(db, name)
         return PluginToggleResponse(name=record.name, enabled=record.enabled)
@@ -33,7 +34,7 @@ async def toggle_plugin(name: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/install")
-async def install_plugin(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def install_plugin(file: UploadFile = File(...), admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     """Install a plugin from a zip archive. Supports both unified (manifest.json)
     and legacy (package.json) formats."""
     if not file.filename or not file.filename.endswith(".zip"):
@@ -159,7 +160,7 @@ def _read_json(path: Path) -> dict:
 
 
 @router.delete("/{name}")
-async def uninstall_plugin(name: str, db: AsyncSession = Depends(get_db)):
+async def uninstall_plugin(name: str, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     from main import app
     try:
         await plugin_registry.uninstall_plugin(db, app, name)

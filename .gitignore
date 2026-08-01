@@ -30,4 +30,9 @@ docker/volumes/
 # Logs
 *.log
 
+# Test artifacts
+backend/test_app.db
+backend/_test.db
+backend/_final_test.db
+
 desktop_plugins/

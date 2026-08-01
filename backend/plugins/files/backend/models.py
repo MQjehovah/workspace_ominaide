@@ -7,7 +7,6 @@ class File(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True, index=True)
     bucket = Column(String(50), nullable=False)
     object_key = Column(String(500), nullable=False)
     original_name = Column(String(255), nullable=False)

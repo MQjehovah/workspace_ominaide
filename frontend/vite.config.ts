@@ -10,8 +10,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://mqgeek.com:8000',
-      '/ws': { target: 'ws://mqgeek.com:8000', ws: true }
+      '/api': process.env.VITE_PROXY_TARGET || 'http://localhost:8000',
+      '/ws': { target: process.env.VITE_PROXY_TARGET?.replace(/^http/, 'ws') || 'ws://localhost:8000', ws: true }
     }
   }
 })

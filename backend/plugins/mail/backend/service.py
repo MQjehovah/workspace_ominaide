@@ -2,6 +2,14 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from .models import MailAccount
 from .schemas import MailAccountCreate, MailAccountUpdate
+from core.crypto import encrypt_secret, decrypt_secret
+
+
+def _decrypt(acc: MailAccount) -> MailAccount:
+    import copy
+    clone = copy.copy(acc)
+    clone.password = decrypt_secret(acc.password)
+    return clone
 
 
 async def list_accounts(db: AsyncSession, user_id: int) -> list[MailAccount]:
@@ -9,7 +17,7 @@ async def list_accounts(db: AsyncSession, user_id: int) -> list[MailAccount]:
         select(MailAccount).where(MailAccount.user_id == user_id)
         .order_by(MailAccount.id)
     )
-    return list(result.scalars().all())
+    return [_decrypt(a) for a in result.scalars().all()]
 
 
 async def create_account(db: AsyncSession, user_id: int, req: MailAccountCreate) -> MailAccount:
@@ -24,12 +32,12 @@ async def create_account(db: AsyncSession, user_id: int, req: MailAccountCreate)
         smtp_port=req.smtp_port,
         smtp_tls=req.smtp_tls,
         username=req.username,
-        password=req.password,
+        password=encrypt_secret(req.password),
     )
     db.add(acc)
     await db.flush()
     await db.refresh(acc)
-    return acc
+    return _decrypt(acc)
 
 
 async def update_account(db: AsyncSession, user_id: int, account_id: int, req: MailAccountUpdate) -> MailAccount | None:
@@ -58,10 +66,10 @@ async def update_account(db: AsyncSession, user_id: int, account_id: int, req: M
     if req.username is not None:
         acc.username = req.username
     if req.password is not None:
-        acc.password = req.password
+        acc.password = encrypt_secret(req.password)
     await db.flush()
     await db.refresh(acc)
-    return acc
+    return _decrypt(acc)
 
 
 async def delete_account(db: AsyncSession, user_id: int, account_id: int) -> bool:

@@ -44,8 +44,55 @@ async def _send_briefing(user_id: int):
         print(f"[scheduler] briefing error for user {user_id}: {e}")
 
 
+async def _check_reminders():
+    """Check for upcoming schedule events and push reminder notifications."""
+    from datetime import timedelta
+    from sqlalchemy import select
+    from plugins.schedule.backend.models import Event
+    from plugins.notifications.backend.service import create_notification
+    from core.database.session import async_session
+
+    now = datetime.now()
+    window = now + timedelta(minutes=15)
+    try:
+        async with async_session() as db:
+            r = await db.execute(
+                select(Event).where(
+                    Event.reminded == False,
+                    Event.remind_before > 0,
+                    Event.start_time >= now,
+                    Event.start_time <= window,
+                )
+            )
+            events = list(r.scalars().all())
+
+            reminded: list[Event] = []
+            for ev in events:
+                delta_min = (ev.start_time - now).total_seconds() / 60
+                if delta_min <= ev.remind_before:
+                    await create_notification(
+                        db, ev.user_id,
+                        f"⏰ 日程提醒: {ev.title}",
+                        f"{ev.start_time.strftime('%m-%d %H:%M')} 开始",
+                        "reminder",
+                        "/schedule",
+                    )
+                    ev.reminded = True
+                    reminded.append(ev)
+            await db.commit()
+
+            for ev in reminded:
+                try:
+                    from plugins.notifications.backend.router import ws_manager
+                    await ws_manager.notify_user(ev.user_id, {"type": "new_notification", "title": f"⏰ 日程提醒: {ev.title}"})
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[scheduler] reminder error: {e}")
+
+
 async def scheduler_loop():
-    """Background loop: check time every 60s, trigger briefing at 9:30."""
+    """Background loop: check time every 60s, trigger briefing at 9:30 and event reminders."""
     while True:
         try:
             now = datetime.now()
@@ -54,6 +101,8 @@ async def scheduler_loop():
             # Reset sent tracking at midnight
             if _sent_today and _sent_today_date() != today_key:
                 _sent_today.clear()
+
+            await _check_reminders()
 
             if now.hour == BRIEFING_HOUR and now.minute == BRIEFING_MINUTE:
                 # Collect users who have recent activity (active in last 7 days)

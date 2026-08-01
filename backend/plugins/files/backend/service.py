@@ -25,12 +25,11 @@ def _generate_object_key(user_id: int, filename: str) -> str:
 async def create_folder(
     db: AsyncSession, user_id: int, req: CreateFolderRequest
 ) -> File:
-    bucket = f"ws-{user_id}" if req.workspace_id else DEFAULT_BUCKET
+    bucket = DEFAULT_BUCKET
     object_key = f"folder:{user_id}/{uuid.uuid4().hex}"
 
     folder = File(
         user_id=user_id,
-        workspace_id=req.workspace_id,
         bucket=bucket,
         object_key=object_key,
         original_name=req.name,
@@ -57,7 +56,6 @@ async def generate_upload_url(
         object_key=object_key,
         original_name=req.filename,
         mime_type=req.mime_type or "application/octet-stream",
-        workspace_id=req.workspace_id,
         folder_path=req.folder_path,
         status="uploading",
     )
@@ -112,8 +110,6 @@ async def get_files(
 
     if params.status:
         query = query.where(File.status == params.status)
-    if params.workspace_id is not None:
-        query = query.where(File.workspace_id == params.workspace_id)
     if params.bucket:
         query = query.where(File.bucket == params.bucket)
     if params.mime_type:
@@ -124,6 +120,9 @@ async def get_files(
         query = query.where(File.folder_path == params.folder_path)
     if params.is_folder is not None:
         query = query.where(File.is_folder == params.is_folder)
+    if params.search:
+        like = f"%{params.search}%"
+        query = query.where(or_(File.original_name.ilike(like), File.mime_type.ilike(like)))
 
 
 

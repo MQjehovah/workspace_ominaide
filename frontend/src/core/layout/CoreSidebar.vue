@@ -25,10 +25,6 @@
         <el-icon><Document /></el-icon>
         <span>笔记</span>
       </el-menu-item>
-      <el-menu-item index="/workspaces">
-        <el-icon><Grid /></el-icon>
-        <span>工作区</span>
-      </el-menu-item>
 
       <div class="menu-divider"></div>
       <div class="menu-label" v-if="!collapsed">管理</div>
@@ -61,7 +57,7 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, Grid, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion } from '@element-plus/icons-vue'
+import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()

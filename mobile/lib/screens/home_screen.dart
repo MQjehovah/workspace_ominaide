@@ -3,6 +3,7 @@ import 'dashboard_screen.dart';
 import 'files_screen.dart';
 import 'notes_screen.dart';
 import 'music_screen.dart';
+import '../services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,6 +14,25 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _page = 0;
   final _pages = [const DashboardScreen(), const FilesScreen(), const NotesScreen(), const MusicScreen()];
+
+  @override
+  void initState() {
+    super.initState();
+    NotificationService().start(_showNotification);
+  }
+
+  @override
+  void dispose() {
+    NotificationService().stop();
+    super.dispose();
+  }
+
+  void _showNotification(String title, String body) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(body.isEmpty ? title : '$title\n$body'), duration: const Duration(seconds: 4)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

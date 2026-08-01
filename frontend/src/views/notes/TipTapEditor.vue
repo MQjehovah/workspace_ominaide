@@ -270,17 +270,18 @@ async function runPreset(preset: any) {
 
 async function callLLM(content: string, instruction: string, cfg: any): Promise<string> {
   const system = 'You are a helpful writing assistant. Respond with ONLY the modified text, no explanations, no markdown formatting, no code blocks. Keep the same tone and style as the original unless instructed otherwise.'
+  const userContent = `${instruction}\n\n---\n${content}`
   const messages = [
     { role: 'system', content: system },
-    { role: 'user', content: `${instruction}\n\n---\n${content}` },
+    { role: 'user', content: userContent },
   ]
   if (cfg.mode === 'backend') {
-    const res = await client.post('/chat', { messages, stream: false, model: cfg.model || undefined })
-    return res.data?.choices?.[0]?.message?.content || ''
+    const res = await client.post('/chat', { message: userContent })
+    return res.data?.reply || ''
   } else {
     const baseUrl = (cfg.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
     const apiKey = cfg.apiKey || ''
-    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model: cfg.model || 'gpt-4o-mini', messages, stream: false }),
@@ -318,6 +319,10 @@ function mdToHTML(md: string): string {
 
 const editor = useEditor({
   extensions: editorExtensions,
+  editorProps: {
+    handlePaste,
+    handleDrop,
+  },
   onUpdate: ({ editor }) => {
     try {
       const md = defaultMarkdownSerializer.serialize(editor.state.doc)
@@ -365,8 +370,8 @@ async function uploadFile(file: File): Promise<string | null> {
   }
 }
 
-function handlePaste(_event: ClipboardEvent) {
-  const items = _event.clipboardData?.items
+function handlePaste(_view: any, event: ClipboardEvent) {
+  const items = event.clipboardData?.items
   if (!items) return false
   for (const item of Array.from(items)) {
     if (item.type.startsWith('image/')) {
@@ -378,8 +383,8 @@ function handlePaste(_event: ClipboardEvent) {
   return false
 }
 
-function handleDrop(_event: DragEvent) {
-  const files = _event.dataTransfer?.files
+function handleDrop(_view: any, event: DragEvent) {
+  const files = event.dataTransfer?.files
   if (!files || files.length === 0) return false
   for (const file of Array.from(files)) {
     if (file.type.startsWith('image/')) uploadImage(file)

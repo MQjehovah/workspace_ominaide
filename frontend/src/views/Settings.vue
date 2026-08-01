@@ -71,6 +71,12 @@
 
           <el-tab-pane label="LLM" name="llm">
             <el-form label-width="120px" style="margin-top:12px;max-width:600px">
+              <el-form-item label="调用方式">
+                <el-radio-group v-model="llmConfig.mode">
+                  <el-radio-button value="backend">后端代理</el-radio-button>
+                  <el-radio-button value="direct">前端直连</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
               <el-form-item label="API Key">
                 <el-input v-model="llmConfig.apiKey" type="password" show-password placeholder="sk-..." />
               </el-form-item>
@@ -78,7 +84,7 @@
                 <el-input v-model="llmConfig.baseUrl" placeholder="https://api.openai.com/v1" />
               </el-form-item>
               <el-form-item label="模型">
-                <el-input v-model="llmConfig.model" placeholder="gpt-4o" />
+                <el-input v-model="llmConfig.model" placeholder="gpt-4o-mini" />
               </el-form-item>
               <el-form-item>
                 <el-button type="primary" @click="saveLlmConfig">保存</el-button>
@@ -115,18 +121,39 @@ const serverVersion = ref('')
 
 const serverUrl = ref(localStorage.getItem('server_url') || 'http://localhost:8000')
 
-const llmConfig = ref({
-  apiKey: localStorage.getItem('llm_api_key') || '',
-  baseUrl: localStorage.getItem('llm_base_url') || 'https://api.openai.com/v1',
-  model: localStorage.getItem('llm_model') || 'gpt-4o'
-})
-
 function saveServerUrl() {
   localStorage.setItem('server_url', serverUrl.value)
   ElMessage.success('已保存')
 }
 
+const llmConfig = ref({
+  apiKey: '',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+  mode: 'backend' as 'backend' | 'direct'
+})
+
+function loadLlmConfig() {
+  try {
+    const raw = localStorage.getItem('ai_chat_config')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      llmConfig.value = {
+        apiKey: parsed.apiKey || '',
+        baseUrl: parsed.baseUrl || 'https://api.openai.com/v1',
+        model: parsed.model || 'gpt-4o-mini',
+        mode: parsed.mode === 'direct' ? 'direct' : 'backend'
+      }
+      return
+    }
+  } catch { /* ignore */ }
+  llmConfig.value.apiKey = localStorage.getItem('llm_api_key') || ''
+  llmConfig.value.baseUrl = localStorage.getItem('llm_base_url') || 'https://api.openai.com/v1'
+  llmConfig.value.model = localStorage.getItem('llm_model') || 'gpt-4o-mini'
+}
+
 function saveLlmConfig() {
+  localStorage.setItem('ai_chat_config', JSON.stringify(llmConfig.value))
   localStorage.setItem('llm_api_key', llmConfig.value.apiKey)
   localStorage.setItem('llm_base_url', llmConfig.value.baseUrl)
   localStorage.setItem('llm_model', llmConfig.value.model)
@@ -191,5 +218,6 @@ onMounted(async () => {
   } catch { /* ignore */ }
   fetchProfile()
   checkHealth()
+  loadLlmConfig()
 })
 </script>

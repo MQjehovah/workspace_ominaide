@@ -224,6 +224,50 @@ class ApiService {
     return data['content']?[0]?['text'] ?? 'No response';
   }
 
+  // -- Search --
+  Future<Map<String, dynamic>> searchAll(String query) async {
+    final result = <String, dynamic>{
+      'files': <FileItem>[],
+      'articles': <Map<String, dynamic>>[],
+      'semantic': <Map<String, dynamic>>[],
+    };
+    try {
+      final filesRes = await http.get(
+        Uri.parse('$_baseUrl/api/files?search=${Uri.encodeComponent(query)}&page_size=10'),
+        headers: _headers,
+      );
+      if (filesRes.statusCode == 200) {
+        final data = jsonDecode(filesRes.body);
+        result['files'] = (data['files'] as List? ?? [])
+            .map((f) => FileItem.fromJson(f))
+            .where((f) => !f.isFolder)
+            .toList();
+      }
+    } catch (_) {}
+    try {
+      final rssRes = await http.get(
+        Uri.parse('$_baseUrl/api/rss/search?q=${Uri.encodeComponent(query)}&page_size=10'),
+        headers: _headers,
+      );
+      if (rssRes.statusCode == 200) {
+        final data = jsonDecode(rssRes.body);
+        result['articles'] = (data['items'] as List? ?? []).cast<Map<String, dynamic>>();
+      }
+    } catch (_) {}
+    try {
+      final semRes = await http.post(
+        Uri.parse('$_baseUrl/api/search'),
+        headers: _headers,
+        body: jsonEncode({'q': query, 'top_k': 5}),
+      );
+      if (semRes.statusCode == 200) {
+        final data = jsonDecode(semRes.body);
+        result['semantic'] = (data['results'] as List? ?? []).cast<Map<String, dynamic>>();
+      }
+    } catch (_) {}
+    return result;
+  }
+
   // -- Audio --
   Future<List<FileItem>> listAudioFiles() async {
     final res = await http.get(

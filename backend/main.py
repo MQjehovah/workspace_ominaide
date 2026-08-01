@@ -21,15 +21,18 @@ async def lifespan(app: FastAPI):
     import core.plugin.models  # noqa
     import core.auth.domain.models  # noqa
     import plugins.files.backend.models  # noqa
-    import plugins.workspaces.backend.models  # noqa
     import plugins.sync.backend.models  # noqa
     import plugins.todo.backend.models  # noqa
     import plugins.notes.backend.models  # noqa
     import plugins.music.backend.models  # noqa
     import core.events.models  # noqa
     import plugins.notifications.backend.models  # noqa
+    import plugins.chat.backend.models  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    from core.database.migrations import ensure_schema_migrations
+    await ensure_schema_migrations()
 
     register_workers()
     worker_task = asyncio.create_task(worker_loop())
@@ -51,10 +54,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="OmniAide API", version="0.1.0", lifespan=lifespan)
 
+from core.config.settings import settings as app_settings
+
+_origins = app_settings.cors_origins_list
+_allow_all = "*" in _origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if _allow_all else _origins,
+    allow_credentials=not _allow_all,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -69,9 +76,6 @@ app.include_router(plugin_router)
 
 from plugins.files.backend.router import router as file_router
 app.include_router(file_router)
-
-from plugins.workspaces.backend.router import router as workspace_router
-app.include_router(workspace_router)
 
 from plugins.sync.backend.router import router as sync_router
 app.include_router(sync_router)
@@ -110,9 +114,18 @@ try:
 except ModuleNotFoundError:
     pass
 
+from core.ai.mcp.router import router as mcp_router
+app.include_router(mcp_router)
 
-@app.websocket("/ws/sync/{workspace_id}")
-async def sync_websocket(websocket: WebSocket, workspace_id: int):
+from core.ai.search_router import router as search_router
+app.include_router(search_router)
+
+from core.events.router import router as activities_router
+app.include_router(activities_router)
+
+
+@app.websocket("/ws/sync/{folder_id}")
+async def sync_websocket(websocket: WebSocket, folder_id: int):
     from core.auth.jwt import decode_access_token
     token = websocket.query_params.get("token")
     payload = decode_access_token(token) if token else None
@@ -123,29 +136,33 @@ async def sync_websocket(websocket: WebSocket, workspace_id: int):
     user_id = int(payload["sub"])
 
     from core.database.session import async_session
-    from plugins.workspaces.backend.service import get_workspace as get_ws
+    from sqlalchemy import select
+    from plugins.sync.backend.models import SyncFolder
 
     async with async_session() as db:
-        ws = await get_ws(db, user_id, workspace_id)
-        if not ws:
+        result = await db.execute(
+            select(SyncFolder).where(SyncFolder.id == folder_id, SyncFolder.user_id == user_id)
+        )
+        folder = result.scalar_one_or_none()
+        if not folder:
             await websocket.close(code=4003)
             return
 
         from plugins.sync.backend.websocket_manager import manager
-        await manager.connect(websocket, user_id, workspace_id)
+        await manager.connect(websocket, user_id, folder_id)
         try:
             while True:
                 data = await websocket.receive_json()
                 if data.get("type") == "sync_ack":
                     from plugins.sync.backend.service import mark_synced
-                    await mark_synced(db, data.get("event_id"))
+                    await mark_synced(db, user_id, data.get("event_id"))
                     await db.commit()
                 elif data.get("type") == "conflict":
                     from plugins.sync.backend.service import mark_conflicted
-                    await mark_conflicted(db, data.get("event_id"))
+                    await mark_conflicted(db, user_id, data.get("event_id"))
                     await db.commit()
         except WebSocketDisconnect:
-            manager.disconnect(websocket, user_id, workspace_id)
+            manager.disconnect(websocket, user_id, folder_id)
 
 
 @app.get("/health")

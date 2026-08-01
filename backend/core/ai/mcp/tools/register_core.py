@@ -3,7 +3,6 @@
 from core.ai.mcp.registry import tool_registry
 from core.ai.mcp.core import MCPTool
 from core.ai.mcp.tools.files import search_files, list_files, get_file_info, get_file_download
-from core.ai.mcp.tools.workspace_tools import list_workspaces_tool
 from core.ai.mcp.tools.context_tool import get_system_context
 
 
@@ -17,7 +16,6 @@ def register_core_tools():
                 "properties": {
                     "query": {"type": "string", "description": "Search query (filename or keyword)"},
                     "limit": {"type": "integer", "description": "Maximum number of results", "default": 10},
-                    "workspace_id": {"type": "integer", "description": "Filter by workspace ID (optional)"},
                 },
                 "required": ["query"],
             },
@@ -28,11 +26,10 @@ def register_core_tools():
     tool_registry.register(
         MCPTool(
             name="list_files",
-            description="List files with optional filters (workspace, type, status).",
+            description="List files with optional filters (type, status).",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "workspace_id": {"type": "integer", "description": "Filter by workspace ID"},
                     "mime_type": {"type": "string", "description": "Filter by MIME type prefix (e.g. 'image/', 'application/pdf')"},
                     "status": {"type": "string", "description": "File status: active or trash", "default": "active"},
                     "limit": {"type": "integer", "description": "Max results", "default": 50},
@@ -71,18 +68,6 @@ def register_core_tools():
             },
         ),
         get_file_download,
-    )
-
-    tool_registry.register(
-        MCPTool(
-            name="list_workspaces",
-            description="List all workspaces for the current user.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-            },
-        ),
-        list_workspaces_tool,
     )
 
     tool_registry.register(

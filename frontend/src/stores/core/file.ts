@@ -4,7 +4,6 @@ import client from '@/api/client'
 export interface FileItem {
   id: number
   user_id: number
-  workspace_id: number | null
   bucket: string
   object_key: string
   original_name: string
@@ -32,10 +31,10 @@ export const useFileStore = defineStore('file', {
     pageSize: 50,
     loading: false,
     viewMode: 'grid' as 'grid' | 'list',
-    currentWorkspaceId: null as number | null
+    search: ''
   }),
   actions: {
-    async fetchFiles(params?: { workspace_id?: number; status?: string; page?: number }) {
+    async fetchFiles(params?: { status?: string; page?: number; search?: string }) {
       this.loading = true
       try {
         const res = await client.get<FileListResponse>('/files', {
@@ -43,7 +42,7 @@ export const useFileStore = defineStore('file', {
             page: params?.page || this.page,
             page_size: this.pageSize,
             status: params?.status || 'active',
-            workspace_id: params?.workspace_id || this.currentWorkspaceId
+            search: params?.search !== undefined ? params.search : this.search || undefined
           }
         })
         this.files = res.data.files
@@ -53,10 +52,9 @@ export const useFileStore = defineStore('file', {
         this.loading = false
       }
     },
-    async getUploadUrl(filename: string, workspaceId?: number) {
+    async getUploadUrl(filename: string) {
       const res = await client.post('/files/upload-url', {
-        filename,
-        workspace_id: workspaceId || this.currentWorkspaceId
+        filename
       })
       return res.data as { upload_url: string; file_id: number; object_key: string }
     },

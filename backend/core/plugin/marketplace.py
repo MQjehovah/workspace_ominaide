@@ -1,7 +1,8 @@
 import json, shutil, zipfile, tempfile
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
+from core.auth.dependencies import get_current_admin
 
 MARKETPLACE_DIR = Path(__file__).resolve().parent.parent.parent / "desktop_plugins"
 router = APIRouter(prefix="/api/plugins/marketplace", tags=["marketplace"])
@@ -53,7 +54,7 @@ async def list_marketplace():
 
 
 @router.post("/upload")
-async def upload_plugin(file: UploadFile = File(...)):
+async def upload_plugin(file: UploadFile = File(...), admin: dict = Depends(get_current_admin)):
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files are supported")
     content = await file.read()
@@ -88,7 +89,7 @@ async def download_plugin(plugin_id: str):
 
 
 @router.delete("/{plugin_id}")
-async def delete_plugin(plugin_id: str):
+async def delete_plugin(plugin_id: str, admin: dict = Depends(get_current_admin)):
     plugin_dir = resolve_plugin_dir(plugin_id)
     if not plugin_dir:
         raise HTTPException(status_code=404, detail="Plugin not found")

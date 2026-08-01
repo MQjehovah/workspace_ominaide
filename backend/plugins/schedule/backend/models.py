@@ -13,5 +13,6 @@ class Event(Base):
     notes = Column(Text, nullable=True)
     color = Column(String(20), default="#409EFF")
     remind_before = Column(Integer, default=0)
+    reminded = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

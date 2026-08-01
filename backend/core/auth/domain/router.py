@@ -5,7 +5,7 @@ from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenRespons
 from core.auth.domain.service import register, login, refresh_access_token
 from core.auth.domain.profile_service import get_or_create_profile, update_profile
 from core.database.session import get_db
-from core.auth.dependencies import get_current_user
+from core.auth.dependencies import get_current_user, get_current_admin
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -49,7 +49,7 @@ async def get_me(user: dict = Depends(get_current_user), db: AsyncSession = Depe
 
 
 @router.get("/users", response_model=list[AdminUserResponse])
-async def list_users(db: AsyncSession = Depends(get_db)):
+async def list_users(admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     from sqlalchemy import select
     from core.auth.domain.models import User as UserModel
     result = await db.execute(select(UserModel).order_by(UserModel.id))
@@ -58,26 +58,30 @@ async def list_users(db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/users/{user_id}/toggle-active")
-async def toggle_user_active(user_id: int, req: ToggleActiveRequest, db: AsyncSession = Depends(get_db)):
+async def toggle_user_active(user_id: int, req: ToggleActiveRequest, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     from sqlalchemy import select
     from core.auth.domain.models import User as UserModel
     result = await db.execute(select(UserModel).where(UserModel.id == user_id))
     u = result.scalar_one_or_none()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    if u.id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Cannot disable your own account")
     u.is_active = req.is_active
     await db.flush()
     return {"id": u.id, "is_active": u.is_active}
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_user(user_id: int, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     from sqlalchemy import select
     from core.auth.domain.models import User as UserModel
     result = await db.execute(select(UserModel).where(UserModel.id == user_id))
     u = result.scalar_one_or_none()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    if u.id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
     await db.delete(u)
     await db.flush()
     return {"message": "User deleted"}
@@ -123,7 +127,7 @@ async def put_profile(req: UserProfileUpdate, user: dict = Depends(get_current_u
 
 
 @router.put("/users/{user_id}")
-async def update_user(user_id: int, req: UpdateUserRequest, db: AsyncSession = Depends(get_db)):
+async def update_user(user_id: int, req: UpdateUserRequest, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     from sqlalchemy import select
     from core.auth.domain.models import User as UserModel
     result = await db.execute(select(UserModel).where(UserModel.id == user_id))

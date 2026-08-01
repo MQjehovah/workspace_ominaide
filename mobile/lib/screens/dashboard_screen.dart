@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/file_item.dart';
+import 'search_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -36,7 +38,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _chatLoading = true;
     });
     try {
-      final reply = await ApiService().callMCP('get_system_context', {});
+      final res = await ApiService().post('/chat', {'message': text});
+      String reply;
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        reply = data['reply'] as String? ?? '（无回复）';
+      } else {
+        reply = 'AI 服务未配置或不可用';
+      }
       if (!mounted) return;
       setState(() { _messages.add({'role': 'ai', 'text': reply}); _chatLoading = false; });
     } catch (e) {
@@ -48,7 +57,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('OmniAide')),
+      appBar: AppBar(
+        title: const Text('OmniAide'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen())),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           // AI Chat Input
@@ -105,7 +122,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(children: [
-              _quickBtn(Icons.folder, '文件', () {}),
+              _quickBtn(Icons.search, '搜索', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()))),
               const SizedBox(width: 12),
               _quickBtn(Icons.refresh, '刷新', _loadRecent),
             ]),

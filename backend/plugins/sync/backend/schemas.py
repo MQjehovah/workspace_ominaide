@@ -6,7 +6,7 @@ from datetime import datetime
 
 class SyncEventResponse(BaseModel):
     id: int
-    workspace_id: int | None = None
+    sync_folder_id: int | None = None
     event_type: str
     file_path: str
     file_size: int | None = None

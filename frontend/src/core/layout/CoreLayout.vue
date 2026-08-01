@@ -7,6 +7,7 @@
         <router-view />
       </div>
     </div>
+    <AssistantPanel />
   </div>
 </template>
 
@@ -14,6 +15,7 @@
 import { ref, onMounted } from 'vue'
 import CoreSidebar from './CoreSidebar.vue'
 import CoreHeader from './CoreHeader.vue'
+import AssistantPanel from './AssistantPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const collapsed = ref(false)

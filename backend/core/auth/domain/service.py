@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.domain.models import User
 from core.auth.domain.schemas import RegisterRequest
@@ -12,10 +12,13 @@ async def register(db: AsyncSession, req: RegisterRequest) -> User:
     ))
     if existing.scalar_one_or_none():
         raise ValueError("Username or email already exists")
+    count_result = await db.execute(select(func.count(User.id)))
+    is_first = (count_result.scalar() or 0) == 0
     user = User(
         username=req.username,
         email=req.email,
         password_hash=hash_password(req.password),
+        is_admin=is_first,
     )
     db.add(user)
     await db.flush()
@@ -27,6 +30,8 @@ async def login(db: AsyncSession, username: str, password: str) -> tuple[str, st
     user = result.scalar_one_or_none()
     if not user or not verify_password(password, user.password_hash):
         raise ValueError("Invalid username or password")
+    if not user.is_active:
+        raise ValueError("User is disabled")
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
     return access_token, refresh_token

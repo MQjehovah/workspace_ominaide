@@ -25,11 +25,6 @@ const router = createRouter({
           component: () => import('@/views/Files.vue')
         },
         {
-          path: 'workspaces',
-          name: 'Workspaces',
-          component: () => import('@/views/Workspaces.vue')
-        },
-        {
           path: 'settings',
           name: 'Settings',
           component: () => import('@/views/Settings.vue')

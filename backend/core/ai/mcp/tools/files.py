@@ -9,7 +9,6 @@ async def search_files(user_id: int, args: dict) -> MCPCallResponse:
     """Semantic file search using Qdrant, with fallback to filename search."""
     query = args.get("query", "")
     limit = args.get("limit", 10)
-    workspace_id = args.get("workspace_id")
 
     results = []
 
@@ -19,7 +18,6 @@ async def search_files(user_id: int, args: dict) -> MCPCallResponse:
             user_id=user_id,
             query=query,
             limit=limit,
-            workspace_id=workspace_id,
         )
         if semantic_results:
             results = semantic_results
@@ -36,8 +34,6 @@ async def search_files(user_id: int, args: dict) -> MCPCallResponse:
             if query:
                 like = f"%{query}%"
                 q = q.where(File.original_name.ilike(like))
-            if workspace_id:
-                q = q.where(File.workspace_id == workspace_id)
             q = q.limit(limit)
             result = await db.execute(q)
             files = list(result.scalars().all())
@@ -48,7 +44,6 @@ async def search_files(user_id: int, args: dict) -> MCPCallResponse:
                 "filename": f.original_name,
                 "file_size": f.size,
                 "mime_type": f.mime_type,
-                "workspace_id": f.workspace_id,
                 "score": 0.0,
             }
             for f in files
@@ -65,7 +60,6 @@ async def list_files(user_id: int, args: dict) -> MCPCallResponse:
             page=args.get("page", 1),
             page_size=args.get("limit", 50),
             status=args.get("status", "active"),
-            workspace_id=args.get("workspace_id"),
             mime_type=args.get("mime_type"),
         )
         files, total = await get_files(db, user_id, params)
@@ -76,7 +70,6 @@ async def list_files(user_id: int, args: dict) -> MCPCallResponse:
             "name": f.original_name,
             "size": f.size,
             "mime_type": f.mime_type,
-            "workspace_id": f.workspace_id,
             "is_favorite": f.is_favorite,
             "created_at": f.created_at.isoformat() if f.created_at else None,
         }
@@ -104,7 +97,6 @@ async def get_file_info(user_id: int, args: dict) -> MCPCallResponse:
             "mime_type": f.mime_type,
             "bucket": f.bucket,
             "object_key": f.object_key,
-            "workspace_id": f.workspace_id,
             "tags": f.tags,
             "is_favorite": f.is_favorite,
             "status": f.status,

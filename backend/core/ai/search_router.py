@@ -42,7 +42,7 @@ async def search(req: SearchRequest, user: dict = Depends(get_current_user)):
 
         filter_cond = {"must": [{"key": "user_id", "match": {"value": user["id"]}}]}
         if req.types:
-            filter_cond["must"].append({"key": "source_type", "match": {"value": req.types}})
+            filter_cond["must"].append({"key": "source_type", "match": {"any": req.types}})
 
         results = client.search(
             collection_name="omnidocs",

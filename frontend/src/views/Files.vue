@@ -1,8 +1,17 @@
 <template>
   <div class="page-wrapper">
-    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">
       <h2>文件管理</h2>
-      <div style="display:flex; gap:8px">
+      <div style="display:flex; gap:8px; align-items:center">
+        <el-input
+          v-model="searchText"
+          placeholder="搜索文件名..."
+          clearable
+          style="width:220px"
+          :prefix-icon="Search"
+          @input="onSearchInput"
+          @keyup.enter="doSearch"
+        />
         <el-upload
           :http-request="handleUpload"
           :show-file-list="false"
@@ -38,13 +47,20 @@
                 {{ store.formatSize(file.size) }}
               </div>
             </div>
-            <div style="position:absolute; top:8px; right:8px">
+            <div style="position:absolute; top:8px; right:8px; display:flex; gap:4px">
               <el-button
                 :icon="file.is_favorite ? StarFilled : Star"
                 :type="file.is_favorite ? 'warning' : 'default'"
                 text
                 size="small"
                 @click.stop="store.toggleFavorite(file.id)"
+              />
+              <el-button
+                icon="Delete"
+                type="danger"
+                text
+                size="small"
+                @click.stop="handleDelete(file)"
               />
             </div>
           </el-card>
@@ -67,13 +83,19 @@
       </el-table-column>
       <el-table-column prop="mime_type" label="类型" width="120" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column width="80">
+      <el-table-column width="120">
         <template #default="{ row }">
           <el-button
             :icon="row.is_favorite ? StarFilled : Star"
             :type="row.is_favorite ? 'warning' : 'default'"
             text
             @click.stop="store.toggleFavorite(row.id)"
+          />
+          <el-button
+            icon="Delete"
+            type="danger"
+            text
+            @click.stop="handleDelete(row)"
           />
         </template>
       </el-table-column>
@@ -93,11 +115,21 @@
     <!-- File Preview Dialog -->
     <el-dialog v-model="previewVisible" :title="previewFileItem?.original_name" width="60%">
       <div v-if="previewFileItem">
-        <p><strong>类型:</strong> {{ previewFileItem.mime_type }}</p>
-        <p><strong>大小:</strong> {{ store.formatSize(previewFileItem.size) }}</p>
-        <p><strong>创建时间:</strong> {{ previewFileItem.created_at }}</p>
+        <p><strong>类型:</strong> {{ previewFileItem.mime_type }}　<strong>大小:</strong> {{ store.formatSize(previewFileItem.size) }}　<strong>创建时间:</strong> {{ previewFileItem.created_at }}</p>
         <div v-if="previewFileItem.mime_type?.startsWith('image/')" style="text-align:center">
           <img :src="previewSrc" style="max-width:100%; max-height:500px" />
+        </div>
+        <div v-else-if="previewFileItem.mime_type?.startsWith('audio/')" style="padding:20px 0">
+          <audio controls autoplay style="width:100%" :src="previewSrc"></audio>
+        </div>
+        <div v-else-if="previewFileItem.mime_type?.startsWith('video/')" style="text-align:center">
+          <video controls autoplay style="max-width:100%; max-height:500px" :src="previewSrc"></video>
+        </div>
+        <div v-else style="text-align:center; padding:20px; color:#909399">
+          该类型暂不支持在线预览
+        </div>
+        <div style="text-align:center; margin-top:12px">
+          <el-button type="primary" :icon="Download" @click="downloadFile(previewFileItem)">下载</el-button>
         </div>
       </div>
     </el-dialog>
@@ -105,21 +137,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useFileStore, FileItem } from '@/stores/core/file'
-import { Upload, Grid, List, Loading, StarFilled, Star } from '@element-plus/icons-vue'
+import { Upload, Grid, List, Loading, StarFilled, Star, Search, Download, Delete } from '@element-plus/icons-vue'
 import {
   Document, Picture, VideoCamera, Headset, Reading, FolderDelete
 } from '@element-plus/icons-vue'
 import client from '@/api/client'
 
-const route = useRoute()
 const store = useFileStore()
 const viewMode = ref<'grid' | 'list'>('grid')
 const previewVisible = ref(false)
 const previewFileItem = ref<FileItem | null>(null)
 const previewSrc = ref('')
+const searchText = ref('')
+let searchTimer: any = null
 
 const iconMap: Record<string, any> = {
   Document, Picture, VideoCamera, Headset, Reading, FolderDelete, StarFilled, Star
@@ -128,6 +161,58 @@ const iconMap: Record<string, any> = {
 function getIconComponent(mime: string | null) {
   const name = store.getFileIcon(mime)
   return iconMap[name] || Document
+}
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(doSearch, 400)
+}
+
+async function doSearch() {
+  store.search = searchText.value.trim()
+  store.page = 1
+  await store.fetchFiles({ search: store.search })
+}
+
+function streamSrc(file: FileItem): string {
+  const token = localStorage.getItem('token') || ''
+  return `/api/files/${file.id}/stream?token=${encodeURIComponent(token)}`
+}
+
+async function previewFile(file: FileItem) {
+  previewFileItem.value = file
+  previewVisible.value = true
+  previewSrc.value = ''
+  const mime = file.mime_type || ''
+  if (mime.startsWith('image/') || mime.startsWith('audio/') || mime.startsWith('video/')) {
+    if (mime.startsWith('image/')) {
+      try {
+        const res = await client.get(`/files/${file.id}/download-url`)
+        previewSrc.value = res.data.download_url || streamSrc(file)
+      } catch { previewSrc.value = streamSrc(file) }
+    } else {
+      previewSrc.value = streamSrc(file)
+    }
+  }
+}
+
+async function downloadFile(file: FileItem) {
+  const a = document.createElement('a')
+  a.href = `/api/files/${file.id}/download`
+  a.download = file.original_name
+  a.click()
+}
+
+async function handleDelete(file: FileItem) {
+  try {
+    await ElMessageBox.confirm(`确定删除「${file.original_name}」？`, '删除文件', { type: 'warning' })
+  } catch { return }
+  try {
+    await store.deleteFile(file.id)
+    ElMessage.success('已移入回收站')
+  } catch {
+    ElMessage.error('删除失败')
+  }
 }
 
 async function handleUpload(options: any) {
@@ -156,26 +241,7 @@ async function handleUpload(options: any) {
   }
 }
 
-async function previewFile(file: FileItem) {
-  previewFileItem.value = file
-  previewVisible.value = true
-  if (file.mime_type?.startsWith('image/')) {
-    const res = await client.get(`/files/${file.id}/download-url`)
-    previewSrc.value = res.data.download_url
-  }
-}
-
-watch(() => route.query.workspace_id, (val) => {
-  if (val) {
-    store.currentWorkspaceId = Number(val)
-    store.fetchFiles()
-  }
-})
-
 onMounted(() => {
-  if (route.query.workspace_id) {
-    store.currentWorkspaceId = Number(route.query.workspace_id)
-  }
   store.fetchFiles()
 })
 </script>

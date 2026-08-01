@@ -6,7 +6,6 @@ from typing import Optional
 class FileResponse(BaseModel):
     id: int
     user_id: int
-    workspace_id: int | None = None
     bucket: str
     object_key: str
     original_name: str
@@ -32,14 +31,12 @@ class FileListResponse(BaseModel):
 
 class CreateFolderRequest(BaseModel):
     name: str
-    workspace_id: int | None = None
     parent_path: str = "/"
 
 
 class UploadUrlRequest(BaseModel):
     filename: str
     mime_type: str | None = None
-    workspace_id: int | None = None
     folder_path: str = "/"
     bucket: str | None = None
 
@@ -70,7 +67,6 @@ class FileQueryParams(BaseModel):
     page: int = 1
     page_size: int = 50
     status: str = "active"
-    workspace_id: int | None = None
     bucket: str | None = None
     mime_type: str | None = None
     search: str | None = None
