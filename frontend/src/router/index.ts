@@ -20,6 +20,11 @@ const router = createRouter({
           component: () => import('@/views/Dashboard.vue')
         },
         {
+          path: 'activities',
+          name: '活动记录',
+          component: () => import('@/views/Activity.vue')
+        },
+        {
           path: 'files',
           name: 'Files',
           component: () => import('@/views/Files.vue')

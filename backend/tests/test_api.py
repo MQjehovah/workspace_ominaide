@@ -104,3 +104,21 @@ async def test_mail_event_report_and_mcp(client, admin_token):
     r4 = await client.get("/api/mcp/tools", headers=auth(admin_token))
     names = {t["name"] for t in r4.json()["tools"]}
     assert "list_recent_emails" in names
+
+
+async def test_activity_post_and_list(client, admin_token):
+    """Client-reported activity events can be posted and listed."""
+    payload = {
+        "event_type": "app.used",
+        "entity_type": "app",
+        "summary": "使用 Code 15 分钟",
+        "details": {"app": "Code", "title": "workspace", "minutes": 15},
+    }
+    r = await client.post("/api/activities", json=payload, headers=auth(admin_token))
+    assert r.status_code == 201, r.text
+    assert r.json()["event_type"] == "app.used"
+    assert r.json()["details"]["minutes"] == 15
+    # Listed back
+    r2 = await client.get("/api/activities?event_type=app.used", headers=auth(admin_token))
+    assert r2.status_code == 200
+    assert any(a["event_type"] == "app.used" for a in r2.json())

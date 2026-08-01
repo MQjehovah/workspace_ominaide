@@ -304,6 +304,9 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   proc.registerBridgeHandler('clipboard:writeText', async ([text]) => {
     clipboard.writeText(text)
   })
+  proc.registerBridgeHandler('clipboard:readText', async () => {
+    return clipboard.readText()
+  })
   proc.registerBridgeHandler('shell:showItemInFolder', async ([path]) => {
     shell.showItemInFolder(path)
   })

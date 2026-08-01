@@ -15,6 +15,10 @@
         <el-icon><DataAnalysis /></el-icon>
         <span>仪表盘</span>
       </el-menu-item>
+      <el-menu-item index="/activities">
+        <el-icon><TrendCharts /></el-icon>
+        <span>活动记录</span>
+      </el-menu-item>
       <el-menu-item index="/schedule"><el-icon><Calendar /></el-icon><span>日程</span></el-menu-item>
       <el-menu-item index="/rss"><el-icon><Promotion /></el-icon><span>资讯</span></el-menu-item>
       <el-menu-item index="/files">
@@ -57,7 +61,7 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion } from '@element-plus/icons-vue'
+import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()

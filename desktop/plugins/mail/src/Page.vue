@@ -144,8 +144,10 @@ const composeSuccess = ref(false)
 const compose = ref<any>({ fromAccount: '', to: '', subject: '', text: '' })
 
 const filteredEmails = computed(() => {
-  if (!activeAccount.value) return allEmails.value
-  return allEmails.value.filter((e: any) => e.accountId === activeAccount.value)
+  const list = activeAccount.value
+    ? allEmails.value.filter((e: any) => e.accountId === activeAccount.value)
+    : allEmails.value
+  return [...list].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
 })
 
 async function load() {

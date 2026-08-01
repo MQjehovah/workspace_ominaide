@@ -65,10 +65,13 @@ SKIP_PATHS = (
     '/api/sync/',           # sync operations
     '/api/files/',          # file operations
     '/api/plugins/notes/',  # notes plugin records own events
-    '/api/plugins/schedule/',  # schedule plugin records own events
-    '/api/plugins/rss/',    # rss (un)subscribe records own events
     '/api/plugins/todo/',   # todo plugin records own events
-    '/api/plugins/music/',  # music playlist records own events
+    '/api/plugins/mail/',   # mail plugin records own events
+    '/api/schedule/',       # schedule plugin records own events
+    '/api/rss/',            # rss plugin records own events
+    '/api/music/',          # music plugin records own events
+    '/api/search',          # search is a read operation
+    '/api/activities',      # activity reporting is itself an event
 )
 
 

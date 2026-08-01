@@ -355,19 +355,21 @@ async function fetchInbox(acc: MailAccount): Promise<EmailSummary[]> {
     const messages = await client.fetchEmails(recent)
     await client.logout()
 
-    return messages.map(msg => {
-      const text = msg.text || ''
-      return {
-        uid: msg.uid,
-        accountId: acc.id,
-        subject: msg.subject || '(无主题)',
-        from: msg.from?.[0]?.address || '',
-        date: msg.date.toISOString(),
-        flags: msg.flags,
-        preview: text.slice(0, 200),
-        text,
-      }
-    })
+    return messages
+      .map(msg => {
+        const text = msg.text || ''
+        return {
+          uid: msg.uid,
+          accountId: acc.id,
+          subject: msg.subject || '(无主题)',
+          from: msg.from?.[0]?.address || '',
+          date: msg.date.toISOString(),
+          flags: msg.flags,
+          preview: text.slice(0, 200),
+          text,
+        }
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   } catch (e) {
     console.error(`[mail] fetch inbox failed for ${acc.email}:`, e)
     return []

@@ -1,0 +1,12 @@
+{
+  "id": "activity",
+  "name": "omniaide-activity",
+  "displayName": "用户行为采集",
+  "description": "采集桌面应用使用与剪贴板内容，供 AI 分析行为（默认关闭，隐私可控）",
+  "version": "1.0.0",
+  "icon": "DataAnalysis",
+  "keywords": ["activity", "behavior", "monitor", "采集"],
+  "permissions": ["storage", "notification"],
+  "builtin": true,
+  "main": "dist/index.js"
+}

@@ -129,6 +129,16 @@ async def fetch_feed_content(db: AsyncSession, feed: Feed) -> int:
                 content=entry.summary or entry.content or str(entry.id),
                 metadata={"link": entry.link} if entry.link else None,
             ))
+        # Record the refresh operation itself (feed fetch/refresh).
+        try:
+            from core.events.recorder import record_event
+            await record_event(
+                db, feed.user_id, "rss.refreshed", "rss", feed.id,
+                f"订阅刷新: {feed.title or feed.url}",
+                {"feed": feed.title or feed.url, "new_entries": new},
+            )
+        except Exception:
+            pass
         return new
     except Exception as ex:
         print(f"[rss] fetch error {feed.url}: {ex}")
