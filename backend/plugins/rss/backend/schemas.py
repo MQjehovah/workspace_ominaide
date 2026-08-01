@@ -29,6 +29,7 @@ class EntryResponse(BaseModel):
     read: bool = False
     starred: bool = False
     created_at: datetime
+    feed_title: str | None = None
     model_config = {"from_attributes": True}
 
 

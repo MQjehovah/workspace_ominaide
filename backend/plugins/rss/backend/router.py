@@ -56,7 +56,7 @@ async def list_entries(
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await service.list_entries(db, user["id"], feed_id, unread, starred, page, page_size)
-    return {"items": [EntryResponse.model_validate(e) for e in items], "total": total}
+    return {"items": await _with_feed_titles(db, items), "total": total}
 
 
 @router.put("/entries/{entry_id}/read")
@@ -94,4 +94,24 @@ async def search(
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
     r = await db.execute(base.order_by(Entry.published.desc()).offset((page - 1) * page_size).limit(page_size))
     items = r.scalars().all()
-    return {"items": [EntryResponse.model_validate(e) for e in items], "total": total}
+    return {"items": await _with_feed_titles(db, items), "total": total}
+
+
+async def _with_feed_titles(db: AsyncSession, entries: list[Entry]) -> list[EntryResponse]:
+    """Attach the feed title to each entry response."""
+    if not entries:
+        return []
+    feed_ids = {e.feed_id for e in entries}
+    titles: dict[int, str] = {}
+    try:
+        r = await db.execute(select(Feed.id, Feed.title).where(Feed.id.in_(feed_ids)))
+        for fid, ftitle in r.all():
+            titles[fid] = ftitle or ""
+    except Exception:
+        pass
+    out = []
+    for e in entries:
+        item = EntryResponse.model_validate(e)
+        item.feed_title = titles.get(e.feed_id)
+        out.append(item)
+    return out

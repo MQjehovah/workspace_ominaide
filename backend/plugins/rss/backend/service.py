@@ -106,6 +106,21 @@ async def fetch_feed_content(db: AsyncSession, feed: Feed) -> int:
             new += 1
         await db.flush()
         for entry in new_entries:
+            # Record an activity event so the periodic LLM scan can summarize it.
+            try:
+                from core.events.recorder import record_event
+                await record_event(
+                    db, feed.user_id, "article.new", "rss", entry.id,
+                    f"新文章: {entry.title or ''}",
+                    {
+                        "feed": feed.title or feed.url,
+                        "url": entry.link,
+                        "title": entry.title,
+                        "summary": (entry.summary or entry.content or "")[:800],
+                    },
+                )
+            except Exception:
+                pass
             asyncio.create_task(index_content(
                 user_id=feed.user_id,
                 source_type='rss_entry',
