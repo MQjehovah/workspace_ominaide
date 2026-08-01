@@ -70,6 +70,7 @@
 import { ref, computed, onMounted } from 'vue'
 import client from '@/api/client'
 import { ElMessage } from 'element-plus'
+import { parseBackendDate } from '@/utils/date'
 
 const feeds = ref<any[]>([])
 const activeFeed = ref<number | null>(null)
@@ -146,7 +147,10 @@ async function toggleStar(e: any) {
   try { const r = await client.put(`/rss/entries/${e.id}/star`); e.starred = r.data.starred } catch { /* ignore */ }
 }
 function formatTime(iso: string) {
-  if (!iso) return ''; const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  if (!iso) return ''
+  const d = parseBackendDate(iso)
+  if (isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 onMounted(() => { loadFeeds(); loadEntries() })
 </script>

@@ -97,6 +97,7 @@
 import { ref, computed, onMounted } from 'vue'
 import client from '@/api/client'
 import { Refresh } from '@element-plus/icons-vue'
+import { parseBackendDate } from '@/utils/date'
 
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -205,8 +206,10 @@ function tagType(t: string): string {
 
 function formatTime(iso: string) {
   if (!iso) return ''
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const d = parseBackendDate(iso)
+  if (isNaN(d.getTime())) return ''
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 async function loadStats() {

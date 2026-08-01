@@ -21,6 +21,14 @@ export function createChildContext(info: PluginInfo): PluginContext {
   function waitForResponse(id: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
       pendingResolve = resolve
+      let done = false
+      const timeout = setTimeout(() => {
+        if (done) return
+        done = true
+        process.stdin?.removeListener('data', cleanup)
+        reject(new Error(`RPC timeout waiting for response ${id}`))
+      }, 30000)
+
       const cleanup = (chunk: Buffer) => {
         respBuffer += chunk.toString()
         const lines = respBuffer.split('\n')
@@ -31,6 +39,9 @@ export function createChildContext(info: PluginInfo): PluginContext {
           try {
             const msg = JSON.parse(trimmed)
             if ((msg as any).id === id) {
+              if (done) return
+              done = true
+              clearTimeout(timeout)
               pendingResolve = null
               respBuffer = ''
               process.stdin?.removeListener('data', cleanup)

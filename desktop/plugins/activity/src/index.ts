@@ -52,18 +52,26 @@ const WINDOWS_PS = [
   'if($proc){Write-Output ($proc.ProcessName+"`t"+$sb.ToString())}',
 ].join('\n')
 
+let activeWindowInFlight = false
+
 function getActiveWindow(): Promise<{ app: string; title: string } | null> {
+  // Prevent overlapping PowerShell calls (which would spawn accumulating processes).
+  if (activeWindowInFlight) return Promise.resolve(null)
+  activeWindowInFlight = true
   return new Promise((resolve) => {
-    if (process.platform !== 'win32') return resolve(null)
+    if (process.platform !== 'win32') { activeWindowInFlight = false; return resolve(null) }
     // Use -EncodedCommand to avoid Windows command-line quoting/parsing issues.
     const encoded = Buffer.from(WINDOWS_PS, 'utf16le').toString('base64')
-    execFile('powershell', ['-NoProfile', '-EncodedCommand', encoded], { timeout: 5000 }, (err, stdout) => {
+    const child = execFile('powershell', ['-NoProfile', '-EncodedCommand', encoded], { timeout: 5000 }, (err, stdout) => {
+      activeWindowInFlight = false
       if (err) return resolve(null)
       const line = stdout.trim().split(/\r?\n/)[0] || ''
       const idx = line.indexOf('\t')
       if (idx <= 0) return resolve(null)
       resolve({ app: normalizeApp(line.slice(0, idx)), title: line.slice(idx + 1).trim() })
     })
+    // Explicitly kill the child after the timeout so no process leaks.
+    setTimeout(() => { try { child.kill() } catch { /* ignore */ } }, 6000)
   })
 }
 

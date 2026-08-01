@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { PluginInfo, PluginPanel, PanelData, PanelItem } from '../../shared/types'
 import PanelCard from './PanelCard.vue'
+import { parseBackendDate } from '../utils/date'
 
 const pluginList = ref<PluginInfo[]>([])
 const panels = ref<PluginPanel[]>([])
@@ -102,7 +103,10 @@ function onDocClick(e: MouseEvent) {
   showNotifDropdown.value = false
 }
 function fmt(iso: string) {
-  if (!iso) return ''; const d = new Date(iso); const now = new Date(); const diff = now.getTime() - d.getTime()
+  if (!iso) return ''
+  const d = parseBackendDate(iso)
+  if (isNaN(d.getTime())) return ''
+  const now = new Date(); const diff = now.getTime() - d.getTime()
   if (diff < 60000) return '刚刚'; if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
   if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'
   return (d.getMonth()+1)+'/'+d.getDate()+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0')
