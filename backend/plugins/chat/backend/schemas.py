@@ -23,3 +23,13 @@ class ChatHistoryItem(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TranslateRequest(BaseModel):
+    text: str
+    target: str = "zh"  # zh | en | ja | etc.
+
+
+class TranslateResponse(BaseModel):
+    text: str
+    translated: str

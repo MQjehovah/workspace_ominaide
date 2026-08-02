@@ -114,8 +114,9 @@ function fmt(iso: string) {
 
 const defaultIcon: Record<string, string> = {
   assistant: '💬', calculator: '🔢', 'clipboard-history': '📋', files: '📁', notes: '📝',
-  player: '🎵', 'quick-notes': '⚡', remote: '🖥️', rss: '📡', schedule: '📅',
+  player: '🎵', remote: '🖥️', rss: '📡', schedule: '📅',
   screenshot: '📸', todo: '✅', notifications: '🔔', everything: '🔍',
+  activity: '📊', translator: '🌐', sysmonitor: '🖥️', pomodoro: '🍅',
 }
 
 onMounted(() => {

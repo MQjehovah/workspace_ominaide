@@ -99,7 +99,7 @@
 
 桌面端插件系统支持热加载，当前内置插件：
 
-`player` `remote` `schedule` `rss` `assistant` `screenshot` `todo` `files` `notes` `calculator` `clipboard-history` `quick-notes` `everything` `vibecoding-proxy`
+`player` `remote` `schedule` `rss` `assistant` `screenshot` `todo` `files` `notes` `calculator` `clipboard-history` `everything` `vibecoding-proxy` `activity` `translator` `sysmonitor` `pomodoro`
 
 ## 快速开始
 

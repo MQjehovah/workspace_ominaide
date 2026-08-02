@@ -1,0 +1,12 @@
+{
+  "id": "translator",
+  "name": "omniaide-translator",
+  "displayName": "翻译助手",
+  "description": "划词/输入快速翻译，支持多语言（中英日韩法等）",
+  "version": "1.0.0",
+  "icon": "Reading",
+  "keywords": ["translate", "翻译", "translation"],
+  "permissions": ["storage"],
+  "builtin": true,
+  "main": "dist/index.js"
+}

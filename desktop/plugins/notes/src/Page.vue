@@ -5,6 +5,15 @@
         <span class="sidebar-title">笔记</span>
         <button class="new-btn" title="新建笔记" @click="createNote">+</button>
       </div>
+      <div class="quick-capture">
+        <input
+          v-model="quickText"
+          class="quick-input"
+          placeholder="快速记录… Enter 保存"
+          @keyup.enter="quickAdd"
+        />
+        <button v-if="quickText" class="quick-ai" title="AI 扩写成完整笔记" @click="quickAi">✨</button>
+      </div>
       <div class="notes-list">
         <TreeNode
           v-for="node in tree"
@@ -106,6 +115,50 @@ async function createNote() {
     }
     await loadTree()
   } catch {}
+}
+
+// ---- Quick capture (merged from quick-notes) ----
+const quickText = ref('')
+const quickLoading = ref(false)
+
+async function quickAdd() {
+  const text = quickText.value.trim()
+  if (!text || quickLoading.value) return
+  quickLoading.value = true
+  try {
+    const res = await window.mqbox?.api.post('/plugins/notes', { title: text, content: '' })
+    if (res?.id) {
+      await openNote(res.id)
+      quickText.value = ''
+    }
+    await loadTree()
+  } catch (e) {
+    console.error('[notes] quick add failed:', e)
+  }
+  quickLoading.value = false
+}
+
+async function quickAi() {
+  const text = quickText.value.trim()
+  if (!text || quickLoading.value) return
+  quickLoading.value = true
+  try {
+    const chat = await window.mqbox?.api.post('/chat', {
+      message: `请把下面这条灵感/想法扩写成一篇有条理、内容充实的笔记（用中文，Markdown 格式，包含小标题）。\n\n灵感：${text}`,
+    })
+    const content = chat?.reply || text
+    const res = await window.mqbox?.api.post('/plugins/notes', { title: text.slice(0, 30), content })
+    if (res?.id) {
+      await openNote(res.id)
+      quickText.value = ''
+    }
+    await loadTree()
+  } catch (e) {
+    console.error('[notes] AI expand failed:', e)
+    // Fallback: save as plain note
+    await quickAdd()
+  }
+  quickLoading.value = false
 }
 
 async function createChildNote(parentId: number) {
@@ -244,9 +297,13 @@ onUnmounted(() => {
 .notes-page { display:flex; height:100vh; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
 .sidebar { width:220px; border-right:1px solid #e8e8e8; display:flex; flex-direction:column; flex-shrink:0; }
 .sidebar-hd { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid #e8e8e8; }
-.sidebar-title { font-size:14px; font-weight:600; }
 .new-btn { width:28px; height:28px; border-radius:6px; border:1px solid #e0e0e0; background:#fff; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; }
 .new-btn:hover { background:#f5f5f5; }
+.quick-capture { display:flex; align-items:center; gap:6px; padding:8px 12px; }
+.quick-input { flex:1; min-width:0; padding:6px 10px; border:1px solid #e0e0e0; border-radius:6px; font-size:12px; outline:none; }
+.quick-input:focus { border-color:#6366f1; }
+.quick-ai { flex-shrink:0; width:26px; height:26px; border:none; border-radius:6px; background:linear-gradient(135deg,#6366f1,#a855f7); color:#fff; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; }
+.quick-ai:hover { filter:brightness(1.1); }
 .notes-list { flex:1; overflow-y:auto; }
 .editor-area { flex:1; display:flex; flex-direction:column; padding:12px 20px; min-width:0; }
 .editor-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:12px; }

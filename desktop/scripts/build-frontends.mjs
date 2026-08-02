@@ -9,8 +9,8 @@ const pluginsDir = resolve(__dirname, '..', 'plugins')
 
 const pagePlugins = [
   'assistant', 'calculator', 'clipboard-history', 'files', 'mail',
-  'notes', 'notifications', 'player', 'quick-notes', 'remote', 'rss',
-  'schedule', 'screenshot', 'todo',
+  'notes', 'player', 'pomodoro', 'remote', 'rss',
+  'schedule', 'screenshot', 'sysmonitor', 'todo', 'translator',
 ]
 const noPagePlugins = ['everything']
 

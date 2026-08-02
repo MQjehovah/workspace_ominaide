@@ -1,0 +1,25 @@
+{
+  "name": "omniaide-sysmonitor",
+  "version": "1.1.0",
+  "displayName": "系统监控",
+  "description": "CPU/内存/磁盘/GPU 实时监控，支持内存与磁盘清理",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "omniaide": {
+    "id": "sysmonitor",
+    "displayName": "系统监控",
+    "icon": "Monitor",
+    "keywords": ["system", "monitor", "cpu", "内存", "磁盘", "gpu", "监控", "清理"],
+    "permissions": ["storage", "notification"],
+    "builtin": true
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vue": "^3.5.40",
+    "typescript": "~5.6.0"
+  }
+}

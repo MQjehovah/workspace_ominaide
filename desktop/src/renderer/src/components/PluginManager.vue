@@ -106,7 +106,7 @@ const editingBuiltin = ref('')
 const newBinding = ref<any>({ pluginId: '', command: '', accelerator: '' })
 const configPluginId = ref('')
 
-const pluginColors: Record<string, string> = { screenshot: '#28A745', 'quick-notes': '#DC3545', 'clipboard-history': '#0078D4', todo: '#FF9800', player: '#E91E63', files: '#2196F3', notes: '#FF9800', calculator: '#9C27B0', everything: '#666' }
+const pluginColors: Record<string, string> = { screenshot: '#28A745', 'clipboard-history': '#0078D4', todo: '#FF9800', player: '#E91E63', files: '#2196F3', notes: '#FF9800', calculator: '#9C27B0', everything: '#666', activity: '#8b5cf6', translator: '#0ea5e9', sysmonitor: '#10b981', pomodoro: '#ef4444' }
 function getColor(id: string) { return pluginColors[id] || '#666' }
 
 async function load() {
@@ -116,7 +116,7 @@ async function load() {
 }
 
 function getCommands(pluginId: string): string[] {
-  const cmds: Record<string, string[]> = { screenshot: ['region', 'fullscreen', 'open'], todo: ['add', 'done'], player: ['play', 'pause', 'next', 'prev'], 'clipboard-history': ['copy'], 'quick-notes': ['add'] }
+  const cmds: Record<string, string[]> = { screenshot: ['region', 'fullscreen', 'open'], todo: ['add', 'done'], player: ['play', 'pause', 'next', 'prev'], 'clipboard-history': ['copy'], notes: ['create'], translator: ['open'], pomodoro: ['start', 'open'], sysmonitor: ['refresh'] }
   return cmds[pluginId] || ['run']
 }
 

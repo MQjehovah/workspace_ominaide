@@ -2,13 +2,11 @@
   "id": "notes",
   "name": "omniaide-notes",
   "displayName": "笔记",
-  "description": "Markdown 笔记",
-  "version": "1.0.0",
+  "description": "富文本笔记 + 快速记录 + AI 扩写，支持目录树、图片、表格",
+  "version": "1.1.0",
   "icon": "Document",
-  "keywords": [
-    "note"
-  ],
-  "permissions": [],
+  "keywords": ["note", "笔记", "markdown", "快捷", "灵感"],
+  "permissions": ["storage", "notification"],
   "builtin": false,
   "main": "dist/index.js"
 }

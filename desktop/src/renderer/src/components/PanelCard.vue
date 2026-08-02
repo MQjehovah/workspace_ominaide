@@ -56,8 +56,9 @@ const emit = defineEmits<{
 const defaultIcon = computed(() => {
   const icons: Record<string, string> = {
     assistant: '💬', calculator: '🔢', 'clipboard-history': '📋', files: '📁', notes: '📝',
-    player: '🎵', 'quick-notes': '⚡', remote: '🖥️', rss: '📡', schedule: '📅',
+    player: '🎵', remote: '🖥️', rss: '📡', schedule: '📅',
     screenshot: '📸', todo: '✅', notifications: '🔔', everything: '🔍',
+    activity: '📊', translator: '🌐', sysmonitor: '🖥️', pomodoro: '🍅',
   }
   return icons[props.pluginId] || '🔌'
 })

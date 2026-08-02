@@ -7,7 +7,7 @@ from core.config.settings import settings
 from core.database.session import get_db, async_session
 from core.auth.dependencies import get_current_user
 from core.ai.agent import run_agent, run_agent_stream
-from plugins.chat.backend.schemas import ChatRequest, ChatResponse, ChatHistoryItem
+from plugins.chat.backend.schemas import ChatRequest, ChatResponse, ChatHistoryItem, TranslateRequest, TranslateResponse
 from plugins.chat.backend.memory import build_context
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -116,3 +116,27 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/translate", response_model=TranslateResponse)
+async def translate(req: TranslateRequest, user: dict = Depends(get_current_user)):
+    """Direct LLM translation (no agent/tools)."""
+    if not settings.llm_api_key:
+        raise HTTPException(status_code=400, detail="LLM API key not configured")
+    lang_map = {"zh": "中文", "en": "English", "ja": "日语", "ko": "韩语", "fr": "法语", "de": "德语", "es": "西班牙语", "ru": "俄语"}
+    target_lang = lang_map.get(req.target, req.target)
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+        resp = await client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": f"你是一个专业翻译。请把用户文本翻译成{target_lang}。只返回翻译结果，不要任何解释或多余内容。保持原意、语气和格式。"},
+                {"role": "user", "content": req.text},
+            ],
+            temperature=0.2,
+        )
+        translated = (resp.choices[0].message.content or "").strip()
+        return TranslateResponse(text=req.text, translated=translated)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
