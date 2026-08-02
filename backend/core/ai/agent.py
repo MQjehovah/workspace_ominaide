@@ -23,7 +23,7 @@ async def run_agent(
     user_id: int,
     messages: list[dict],
     tools_filter: list[str] | None = None,
-    max_turns: int = 8,
+    max_turns: int = 20,
 ) -> str:
     """Non-streaming agent loop (kept for backward compat)."""
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
@@ -65,7 +65,7 @@ async def run_agent_stream(
     user_id: int,
     messages: list[dict],
     tools_filter: list[str] | None = None,
-    max_turns: int = 8,
+    max_turns: int = 20,
 ):
     """Streaming agent: yields SSE-formatted strings."""
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
@@ -76,6 +76,7 @@ async def run_agent_stream(
 
     for turn in range(max_turns):
         accumulated_content = ""
+        accumulated_reasoning = ""
         tool_calls = None
         async for chunk in await client.chat.completions.create(
             model=settings.llm_model,
@@ -87,6 +88,10 @@ async def run_agent_stream(
             delta = chunk.choices[0].delta if chunk.choices else None
             if not delta:
                 continue
+
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning:
+                accumulated_reasoning += reasoning
 
             if delta.content:
                 accumulated_content += delta.content
@@ -116,7 +121,10 @@ async def run_agent_stream(
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             return
 
-        msg = {"role": "assistant", "content": accumulated_content or None}
+        msg: dict = {"role": "assistant", "content": accumulated_content or None}
+        # DeepSeek thinking mode: reasoning_content must be echoed back verbatim
+        if accumulated_reasoning:
+            msg["reasoning_content"] = accumulated_reasoning
         openai_tc = []
         for tc in tool_calls:
             try:

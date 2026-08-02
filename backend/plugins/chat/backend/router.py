@@ -66,7 +66,7 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
     messages.append({"role": "user", "content": req.message})
 
     try:
-        reply = await run_agent(user["id"], messages)
+        reply = await run_agent(user["id"], messages, max_turns=30)
         await save_message(user["id"], "user", req.message)
         await save_message(user["id"], "assistant", reply)
         return ChatResponse(reply=reply)
@@ -93,7 +93,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
     async def event_stream():
         reply_parts = []
         try:
-            async for event in run_agent_stream(user["id"], messages):
+            async for event in run_agent_stream(user["id"], messages, max_turns=30):
                 if event.startswith("data: "):
                     try:
                         payload = json.loads(event[6:].strip())
