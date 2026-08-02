@@ -96,11 +96,14 @@ export function registerIpcHandlers() {
           title: result.title || pluginId,
           subtitle: result.subtitle || undefined,
           description: result.description || undefined,
+          itemsLayout: result.itemsLayout || undefined,
           items: (result.items || []).map((i: any) => ({
             title: i.title || '',
             subtitle: i.subtitle || undefined,
             action: i.action || undefined,
             actionArgs: i.actionArgs || undefined,
+            icon: i.icon || undefined,
+            color: i.color || undefined,
           })),
           switches: (result.switches || []).map((s: any) => ({
             label: s.label || '',

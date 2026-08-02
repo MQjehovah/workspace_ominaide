@@ -32,6 +32,8 @@ export interface PanelItem {
   subtitle?: string
   action?: string
   actionArgs?: unknown
+  icon?: string   // emoji or icon name (used in grid layout)
+  color?: string  // background color for grid cells
 }
 
 export interface PanelSwitch {
@@ -51,6 +53,7 @@ export interface PanelData {
   subtitle?: string
   description?: string
   items?: PanelItem[]
+  itemsLayout?: 'list' | 'grid'  // grid renders items as icon tiles (phone-style)
   switches?: PanelSwitch[]
   buttons?: PanelButton[]
 }

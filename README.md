@@ -99,7 +99,9 @@
 
 桌面端插件系统支持热加载，当前内置插件：
 
-`player` `remote` `schedule` `rss` `assistant` `screenshot` `todo` `files` `notes` `calculator` `clipboard-history` `everything` `vibecoding-proxy` `activity` `translator` `sysmonitor` `pomodoro`
+`player` `remote` `schedule` `rss` `assistant` `screenshot` `todo` `files` `notes` `calculator` `clipboard-history` `everything` `vibecoding-proxy` `activity` `translator` `sysmonitor` `pomodoro` `quicklinks`
+
+> `quicklinks`（快捷指令）以手机式图标网格展示，点击即可一键打开软件 / 网页 / 文件夹，或运行脚本与命令；面板支持 `itemsLayout: 'grid'` 布局。
 
 ## 快速开始
 

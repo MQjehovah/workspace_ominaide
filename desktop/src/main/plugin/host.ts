@@ -162,8 +162,26 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     return res.data
   })
 
-  proc.registerBridgeHandler('shell:openPath', async ([path]) => shell.openPath(path))
+  proc.registerBridgeHandler('shell:openPath', async ([path]) => {
+    writeLog(proc.pluginId, 'debug', `shell:openPath called: ${String(path)}`)
+    const result = await shell.openPath(path)
+    writeLog(proc.pluginId, 'debug', `shell:openPath result: ${String(result)}`)
+    return result
+  })
   proc.registerBridgeHandler('shell:openExternal', async ([url]) => shell.openExternal(url))
+  proc.registerBridgeHandler('shell:exec', async ([command, args]) => {
+    const { spawn } = require('child_process')
+    writeLog(proc.pluginId, 'debug', `shell:exec called: ${String(command)} ${JSON.stringify(args || [])}`)
+    try {
+      const child = spawn(command, args || [], { detached: true, stdio: 'ignore', windowsHide: true })
+      child.on('error', () => {})
+      child.unref()
+      return { ok: true }
+    } catch (e: any) {
+      writeLog(proc.pluginId, 'debug', `shell:exec error: ${e.message}`)
+      return { ok: false, error: e.message }
+    }
+  })
   proc.registerBridgeHandler('dialog:showOpenDialog', async ([opts]) => dialog.showOpenDialog(opts))
 
   proc.registerBridgeHandler('storage:get', async ([key]) => {

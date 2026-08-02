@@ -1,0 +1,12 @@
+{
+  "id": "quicklinks",
+  "name": "omniaide-quicklinks",
+  "displayName": "快捷指令",
+  "description": "一键打开软件 / 网页 / 文件夹 / 运行脚本与命令，图标网格面板",
+  "version": "1.0.0",
+  "icon": "Zap",
+  "keywords": ["quick", "快捷", "启动", "app", "命令"],
+  "permissions": ["storage", "shell"],
+  "builtin": false,
+  "main": "dist/index.js"
+}

@@ -59,11 +59,18 @@ async function logout() {
 }
 
 async function executeCommand(pluginId: string, command: string, args?: unknown) {
+  console.log('[MainPanel] executeCommand', pluginId, command, args)
   if (command === 'openPage') {
     openPluginPage(pluginId)
     return
   }
-  await window.mqbox?.plugin.execute(pluginId, command, args || {})
+  const plainArgs = args ? JSON.parse(JSON.stringify(args)) : {}
+  try {
+    const r = await window.mqbox?.plugin.execute(pluginId, command, plainArgs)
+    console.log('[MainPanel] execute result', r)
+  } catch (e) {
+    console.error('[MainPanel] execute error', e)
+  }
   await loadPanelData(pluginId)
 }
 

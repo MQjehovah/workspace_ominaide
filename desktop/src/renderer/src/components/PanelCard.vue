@@ -11,7 +11,25 @@
       </button>
     </div>
     <div v-if="data.description" class="panel-desc">{{ data.description }}</div>
-    <div v-if="data.items?.length" class="panel-items">
+
+    <!-- Icon grid layout (phone-style app tiles) -->
+    <div v-if="data.itemsLayout === 'grid' && data.items?.length" class="panel-grid">
+      <div
+        v-for="(item, idx) in data.items"
+        :key="idx"
+        class="grid-tile"
+        :class="{ clickable: !!item.action }"
+        :title="item.subtitle || item.title"
+        @click="handleItemClick(item)"
+      >
+        <div class="grid-icon" :style="{ background: item.color || '#6366f1' }">
+          <span>{{ item.icon || '🔗' }}</span>
+        </div>
+        <div class="grid-label">{{ item.title }}</div>
+      </div>
+    </div>
+
+    <div v-if="data.itemsLayout !== 'grid' && data.items?.length" class="panel-items">
       <div
         v-for="(item, idx) in data.items"
         :key="idx"
@@ -59,6 +77,7 @@ const defaultIcon = computed(() => {
     player: '🎵', remote: '🖥️', rss: '📡', schedule: '📅',
     screenshot: '📸', todo: '✅', notifications: '🔔', everything: '🔍',
     activity: '📊', translator: '🌐', sysmonitor: '🖥️', pomodoro: '🍅',
+    quicklinks: '⚡',
   }
   return icons[props.pluginId] || '🔌'
 })
@@ -74,7 +93,6 @@ function openPage() {
 function handleItemClick(item: PanelItem) {
   if (item.action) emit('execute', item.action, item.actionArgs)
 }
-
 function handleSwitch(sw: any, newVal: boolean) {
   emit('execute', sw.command, sw.commandArgs)
 }
@@ -129,6 +147,19 @@ function handleSwitch(sw: any, newVal: boolean) {
 }
 
 .panel-desc { padding: 2px 16px 8px; font-size: 11px; color: #8a94a8; line-height: 1.5; }
+
+/* Icon grid layout */
+.panel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 4px 14px 14px; }
+.grid-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: default; }
+.grid-tile.clickable { cursor: pointer; }
+.grid-icon {
+  width: 46px; height: 46px; border-radius: 14px; display: flex; align-items: center; justify-content: center;
+  font-size: 22px; box-shadow: 4px 4px 8px rgba(163,177,198,0.45), -4px -4px 8px rgba(255,255,255,0.8);
+  transition: transform 0.1s;
+}
+.grid-tile.clickable:hover .grid-icon { transform: scale(1.06); }
+.grid-tile.clickable:active .grid-icon { transform: scale(0.95); }
+.grid-label { font-size: 10px; color: #4a5268; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
 
 .panel-items { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 4px; }
 .panel-item {
