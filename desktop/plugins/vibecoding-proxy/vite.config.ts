@@ -7,6 +7,6 @@ export default defineConfig({
   build: {
     lib: { entry: resolve(__dirname, 'src/index.ts'), name: 'VibeCodingProxyPlugin', formats: ['cjs'], fileName: 'index' },
     outDir: 'dist', emptyOutDir: true,
-    rollupOptions: { external: ['fs', 'path', 'child_process', 'ws', 'protobufjs'] },
+    rollupOptions: { external: ['fs', 'path', 'os', 'http', 'child_process', 'ws', 'protobufjs'] },
   },
 })

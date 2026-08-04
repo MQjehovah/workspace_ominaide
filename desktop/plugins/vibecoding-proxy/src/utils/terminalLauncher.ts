@@ -1,7 +1,13 @@
 import { spawn, exec } from 'child_process'
 import { resolve } from 'path'
 
-export type AiTool = 'opencode' | 'claude'
+export type AiTool = 'opencode' | 'claude' | 'codex'
+
+export const AI_TOOL_LABELS: Record<AiTool, string> = {
+  opencode: 'opencode',
+  claude: 'Claude Code',
+  codex: 'Codex CLI',
+}
 
 interface AiSession {
   id: string
@@ -82,49 +88,123 @@ export function launchTerminal(projectPath: string, tool: AiTool, prompt?: strin
   }
 }
 
-let sessionStarted = false
+// ===== 持续会话执行（飞书 / 终端 tab 共用）=====
 
-export function resetSession() { sessionStarted = false }
+export interface SessionState {
+  tool: AiTool
+  projectPath: string
+  firstRun: boolean
+}
 
-export function spawnAiProcess(tool: AiTool, projectPath: string, input: string): Promise<{ stdout: string; stderr: string; combined: string; code: number | null; error?: string } | null> {
+let state: SessionState | null = null
+
+export function resetSession() { state = null }
+
+export function currentSessionTool(): AiTool | null { return state ? state.tool : null }
+
+/** Build the full shell command line for a tool. */
+function buildToolCommand(tool: AiTool, input: string, continuation: boolean): string {
+  const q = (s: string) => '"' + s.replace(/"/g, '""') + '"'
+  switch (tool) {
+    case 'opencode':
+      return continuation ? `opencode run --dangerously-skip-permissions -c ${q(input)}` : `opencode run --dangerously-skip-permissions ${q(input)}`
+    case 'claude':
+      return continuation ? `claude -p --dangerously-skip-permissions --continue ${q(input)}` : `claude -p --dangerously-skip-permissions ${q(input)}`
+    case 'codex':
+      return continuation ? `codex exec -s danger-full-access --dangerously-bypass-approvals-and-sandbox resume --last ${q(input)}` : `codex exec -s danger-full-access --dangerously-bypass-approvals-and-sandbox ${q(input)}`
+  }
+}
+
+export async function spawnAiProcess(tool: AiTool, projectPath: string, input: string): Promise<{ stdout: string; stderr: string; combined: string; code: number | null; error?: string } | null> {
   try {
     const dir = resolve(projectPath)
-    const args = sessionStarted
-      ? ['run', '-c', input]
-      : ['run', input]
-    const child = spawn(tool, args, {
-      cwd: dir,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
-      timeout: 180000,
-    })
-    sessionStarted = true
-    let stdout = ''
-    let stderr = ''
-    child.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
-    child.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        child.kill()
-        resolve({ stdout, stderr, combined: stdout + stderr, code: null, error: 'timeout (180s)' })
-      }, 180000)
-      child.on('close', (code: number | null) => {
-        clearTimeout(timer)
-        resolve({ stdout, stderr, combined: stdout + stderr, code })
-      })
-      child.on('error', (err) => {
-        clearTimeout(timer)
-        resolve({ stdout, stderr, combined: stdout + stderr, code: -1, error: err.message })
-      })
-    })
+    const continuation = state !== null && state.tool === tool && state.projectPath === dir
+    const cmdLine = buildToolCommand(tool, input, continuation)
+    state = { tool, projectPath: dir, firstRun: !continuation }
+
+    // Windows: run via PowerShell -EncodedCommand so multi-word + CJK prompts survive intact.
+    const isWindows = process.platform === 'win32'
+    const result = isWindows
+      ? await runChild('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(`Set-Location -LiteralPath ${JSON.stringify(dir)}; ${cmdLine}`, 'utf16le').toString('base64')], dir)
+      : await runChild('/bin/sh', ['-c', cmdLine], dir)
+    if (!result) return null
+    // Clean noise (CLIXML, headers) and keep only the agent reply
+    result.combined = cleanAgentOutput(result.combined, tool)
+    return result
   } catch (e: any) {
     return Promise.resolve({ stdout: '', stderr: '', combined: '', code: -1, error: e.message || String(e) })
   }
 }
 
-export async function checkAiTools(): Promise<{ opencode: boolean; claude: boolean }> {
+/** Remove PowerShell CLIXML noise + agent header banners, keep only the reply. */
+export function cleanAgentOutput(raw: string, tool: AiTool): string {
+  let t = String(raw || '')
+  // Strip PowerShell CLIXML progress objects entirely
+  t = t.replace(/<Objs[\s\S]*?<\/Objs>/gi, '')
+  t = t.replace(/#<\s*CLIXML[\s\S]*?>/gi, '')
+  // Drop ANSI escape sequences
+  t = t.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+  // Drop common agent noise lines
+  t = t.split('\n').filter((l: string) => {
+    const s = l.trim()
+    if (!s) return true
+    if (s.includes('Reading additional input from stdin')) return false
+    if (s.startsWith('OpenAI Codex v')) return false
+    if (/^--------$/.test(s) && t.split('--------').length > 2) return false
+    if (/^\d+ \d+$/.test(s)) return false
+    return true
+  }).join('\n')
+
+  // For codex, keep the tail after the final "codex" answer marker and strip "tokens used".
+  if (tool === 'codex') {
+    const tokensIdx = t.lastIndexOf('tokens used')
+    if (tokensIdx > -1) t = t.slice(0, tokensIdx)
+    const marker = 'codex\n'
+    const lastMarker = t.lastIndexOf(marker)
+    if (lastMarker > -1) {
+      t = t.slice(lastMarker + marker.length).trim()
+    } else {
+      // fallback: keep last non-empty block
+      const blocks = t.split('\n\n').map(b => b.trim()).filter(Boolean)
+      if (blocks.length) t = blocks[blocks.length - 1]
+    }
+  } else {
+    const lines = t.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.length) t = lines.join('\n')
+  }
+
+  return t.trim()
+}
+
+function runChild(command: string, args: string[], cwd: string): Promise<{ stdout: string; stderr: string; combined: string; code: number | null; error?: string }> {
+  const child = spawn(command, args, {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 600000,
+  })
+  let stdout = ''
+  let stderr = ''
+  child.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
+  child.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.kill()
+      resolve({ stdout, stderr, combined: stdout + stderr, code: null, error: 'timeout (600s)' })
+    }, 600000)
+    child.on('close', (code: number | null) => {
+      clearTimeout(timer)
+      resolve({ stdout, stderr, combined: stdout + stderr, code })
+    })
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      resolve({ stdout, stderr, combined: stdout + stderr, code: -1, error: err.message })
+    })
+  })
+}
+
+export async function checkAiTools(): Promise<Record<AiTool, boolean>> {
   const check = (name: string) => new Promise<boolean>(r => {
     exec(`where ${name} 2>nul || which ${name} 2>/dev/null`, (err) => r(!err))
   })
-  return { opencode: await check('opencode'), claude: await check('claude') }
+  return { opencode: await check('opencode'), claude: await check('claude'), codex: await check('codex') }
 }

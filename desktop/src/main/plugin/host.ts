@@ -1,8 +1,7 @@
 import { join } from 'path'
 import { app, clipboard, BrowserWindow, Notification, shell, dialog, desktopCapturer, screen } from 'electron'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync } from 'fs'
 import { Low } from 'lowdb'
-import { JSONFile } from 'lowdb/node'
 import axios from 'axios'
 import { getConfig, setConfig } from '../config'
 import * as screenshot from '../screenshot'
@@ -184,20 +183,36 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   })
   proc.registerBridgeHandler('dialog:showOpenDialog', async ([opts]) => dialog.showOpenDialog(opts))
 
+  // BOM-tolerant JSON adapter: strip UTF-8 BOM on read, write without BOM.
+  const jsonAdapter = (file: string) => ({
+    async read(): Promise<any> {
+      try {
+        const raw = require('fs').readFileSync(file, 'utf-8').replace(/^\uFEFF/, '')
+        return raw.trim() ? JSON.parse(raw) : {}
+      } catch {
+        return {}
+      }
+    },
+    async write(data: any): Promise<void> {
+      const { mkdirSync } = require('fs')
+      const { dirname } = require('path')
+      mkdirSync(dirname(file), { recursive: true })
+      require('fs').writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8')
+    },
+  })
+
   proc.registerBridgeHandler('storage:get', async ([key]) => {
     const file = join(app.getPath('userData'), 'plugin-data', `${proc.pluginId}.json`)
-    mkdirSync(join(app.getPath('userData'), 'plugin-data'), { recursive: true })
-    const adapter = new JSONFile(file)
-    const db = new Low(adapter, {})
+    const adapter = jsonAdapter(file)
+    const db = new Low(adapter as any, {})
     await db.read()
     return (db.data as any)?.[key]
   })
 
   proc.registerBridgeHandler('storage:set', async ([key, value]) => {
     const file = join(app.getPath('userData'), 'plugin-data', `${proc.pluginId}.json`)
-    mkdirSync(join(app.getPath('userData'), 'plugin-data'), { recursive: true })
-    const adapter = new JSONFile(file)
-    const db = new Low(adapter, {})
+    const adapter = jsonAdapter(file)
+    const db = new Low(adapter as any, {})
     await db.read()
     ;(db.data as any)[key] = value
     await db.write()

@@ -211,7 +211,6 @@ export class FeishuClient {
         if (chunks.length > 1) chunk += `\n\n(${i + 1}/${chunks.length})`
         const content = JSON.stringify({
           config: { wide_screen_mode: true },
-          header: { title: { tag: 'plain_text', content: chunk.split('\n')[0].replace(/^#+\s*/, '').slice(0, 50) || '回复' } },
           elements: [{ tag: 'markdown', content: chunk }],
         })
         await fetch(`${FEISHU_BASE}/im/v1/messages/${messageId}/reply`, {
@@ -220,6 +219,24 @@ export class FeishuClient {
           body: JSON.stringify({ msg_type: 'interactive', content }),
         })
       }
+    } catch {}
+  }
+
+  /** Send a standalone message to a chat_id (used for test). */
+  async sendDirect(text: string, chatId?: string): Promise<void> {
+    try {
+      const token = await this.getToken()
+      const target = chatId || this.lastChatId
+      if (!target) return
+      const content = JSON.stringify({
+        config: { wide_screen_mode: true },
+        elements: [{ tag: 'markdown', content: text }],
+      })
+      await fetch(`${FEISHU_BASE}/im/v1/messages?receive_id_type=chat_id`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receive_id: target, msg_type: 'interactive', content }),
+      })
     } catch {}
   }
 

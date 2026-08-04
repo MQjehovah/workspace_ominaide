@@ -2,10 +2,10 @@
   "id": "vibecoding-proxy",
   "name": "omniaide-vibecoding-proxy",
   "displayName": "VibeCoding Proxy",
-  "description": "项目管理 · 终端集成 · 飞书机器人 · opencode 代理",
-  "version": "1.0.0",
+  "description": "项目内运行 opencode/claude/codex 编程 agent，通过飞书/Telegram/Webhook 远程代理执行",
+  "version": "1.2.0",
   "icon": "FolderOpened",
-  "keywords": ["vibecoding", "project", "terminal", "opencode", "claude", "飞书", "feishu", "proxy"],
+  "keywords": ["vibecoding", "project", "terminal", "opencode", "claude", "codex", "飞书", "feishu", "telegram", "webhook", "通道", "proxy"],
   "permissions": ["storage", "notification", "shell"],
   "builtin": false,
   "main": "dist/index.js"
