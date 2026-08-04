@@ -1,19 +1,5 @@
 [
   {
-    "name": "agent",
-    "path": "E:\\ai\\agent",
-    "type": "python",
-    "lastModified": 1784451447285.151,
-    "description": ""
-  },
-  {
-    "name": "rag",
-    "path": "E:\\ai\\rag",
-    "type": "other",
-    "lastModified": 1778078724921.7544,
-    "description": ""
-  },
-  {
     "name": "workspace_rosiwit_bussiness",
     "path": "E:\\workspace_rosiwit_bussiness",
     "type": "other",
