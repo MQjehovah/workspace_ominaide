@@ -1,5 +1,6 @@
 import { spawn, exec } from 'child_process'
 import { resolve } from 'path'
+import { existsSync } from 'fs'
 
 export type AiTool = 'opencode' | 'claude' | 'codex'
 
@@ -90,6 +91,21 @@ export function launchTerminal(projectPath: string, tool: AiTool, prompt?: strin
 
 // ===== 持续会话执行（飞书 / 终端 tab 共用）=====
 
+/** Resolve a working powershell.exe path (child process PATH may lack it). */
+function powershellPath(): string {
+  const candidates = [
+    process.env.SystemRoot ? resolve(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : '',
+    resolve('C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'),
+    resolve('C:/Windows/SysWOW64/WindowsPowerShell/v1.0/powershell.exe'),
+    'powershell.exe',
+  ]
+  for (const c of candidates) {
+    if (!c) continue
+    try { if (existsSync(c)) return c } catch {}
+  }
+  return 'powershell.exe'
+}
+
 export interface SessionState {
   tool: AiTool
   projectPath: string
@@ -125,7 +141,7 @@ export async function spawnAiProcess(tool: AiTool, projectPath: string, input: s
     // Windows: run via PowerShell -EncodedCommand so multi-word + CJK prompts survive intact.
     const isWindows = process.platform === 'win32'
     const result = isWindows
-      ? await runChild('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(`Set-Location -LiteralPath ${JSON.stringify(dir)}; ${cmdLine}`, 'utf16le').toString('base64')], dir)
+      ? await runChild(powershellPath(), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(`Set-Location -LiteralPath ${JSON.stringify(dir)}; ${cmdLine}`, 'utf16le').toString('base64')], dir)
       : await runChild('/bin/sh', ['-c', cmdLine], dir)
     if (!result) return null
     // Clean noise (CLIXML, headers) and keep only the agent reply
