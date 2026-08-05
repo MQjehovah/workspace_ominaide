@@ -28,7 +28,7 @@
                   <span v-else style="font-size:11px;color:#e6a23c">未构建</span>
                   <div style="display:flex;gap:6px">
                     <el-button size="small" :disabled="!p.hasBuild" @click="downloadPlugin(p)">下载</el-button>
-                    <el-popconfirm title="确定删除？" @confirm="deletePlugin(p.name)">
+                    <el-popconfirm title="确定删除？" @confirm="deletePlugin(p.id)">
                       <template #reference><el-button size="small" type="danger">删除</el-button></template>
                     </el-popconfirm>
                   </div>

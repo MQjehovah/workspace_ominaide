@@ -34,9 +34,31 @@ function ensurePluginBuilt(name) {
   if (!existsSync(join(distDir, 'index.js'))) {
     throw new Error(`Plugin ${name}: dist/index.js not found after build`)
   }
-  if (!existsSync(join(frontendDir, 'index.html'))) {
-    throw new Error(`Plugin ${name}: frontend/index.html not found after build`)
+  // frontend is optional (backend-only plugins like activity have no frontend)
+}
+
+function copyRuntimeDeps(pluginDir, tmpDir, pkg) {
+  const deps = pkg?.dependencies || {}
+  const names = Object.keys(deps).filter(Boolean)
+  if (!names.length) return
+
+  const srcNm = join(pluginDir, 'node_modules')
+  if (!existsSync(srcNm)) return
+
+  const dstNm = join(tmpDir, 'node_modules')
+  let count = 0
+  for (const dep of names) {
+    const src = join(srcNm, dep)
+    if (!existsSync(src)) {
+      console.warn(`  [warn] runtime dep "${dep}" not found in plugin node_modules`)
+      continue
+    }
+    // scoped packages live under node_modules/@scope/name
+    const dst = join(dstNm, dep)
+    cpSync(src, dst, { recursive: true })
+    count++
   }
+  if (count) console.log(`  [deps] bundled ${count} runtime dependencies`)
 }
 
 function packPlugin(name) {
@@ -60,13 +82,23 @@ function packPlugin(name) {
   // Copy required files
   cpSync(join(pluginDir, 'manifest.json'), join(tmpDir, 'manifest.json'))
   cpSync(join(pluginDir, 'dist'), join(tmpDir, 'dist'), { recursive: true })
-  cpSync(join(pluginDir, 'frontend'), join(tmpDir, 'frontend'), { recursive: true })
+  // frontend is optional (backend-only plugins have none)
+  const frontendDir = join(pluginDir, 'frontend')
+  if (existsSync(frontendDir)) {
+    cpSync(frontendDir, join(tmpDir, 'frontend'), { recursive: true })
+  }
 
   // Optional: package.json
   const pkgPath = join(pluginDir, 'package.json')
+  let pkg = null
   if (existsSync(pkgPath)) {
+    pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
     cpSync(pkgPath, join(tmpDir, 'package.json'))
   }
+
+  // Bundle runtime dependencies (from `dependencies`) so the plugin works in the
+  // packaged app without relying on the host's node_modules (e.g. protobufjs, ws).
+  copyRuntimeDeps(pluginDir, tmpDir, pkg)
 
   // Create zip
   const zipName = `${id}-${version}.zip`

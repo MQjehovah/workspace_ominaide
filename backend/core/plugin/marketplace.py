@@ -16,7 +16,7 @@ def resolve_plugin_dir(plugin_id: str) -> Path | None:
             continue
         pkg = json.loads((entry / "package.json").read_text(encoding="utf-8"))
         manifest = pkg.get("omniaide") or pkg.get("mqbox") or {}
-        if manifest.get("id") == plugin_id or entry.name == plugin_id:
+        if manifest.get("id") == plugin_id or entry.name == plugin_id or pkg.get("name") == plugin_id:
             return entry
     return None
 
@@ -69,12 +69,13 @@ async def upload_plugin(file: UploadFile = File(...), admin: dict = Depends(get_
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
     name = pkg.get("name", file.filename.replace(".zip", ""))
-    plugin_dir = MARKETPLACE_DIR / name
+    manifest = pkg.get("omniaide") or pkg.get("mqbox") or {}
+    plugin_id = manifest.get("id", name)
+    plugin_dir = MARKETPLACE_DIR / plugin_id
     plugin_dir.mkdir(parents=True, exist_ok=True)
     (plugin_dir / "package.json").write_text(json.dumps(pkg, ensure_ascii=False, indent=2), encoding="utf-8")
     (plugin_dir / "plugin.zip").write_bytes(content)
-    manifest = pkg.get("omniaide") or pkg.get("mqbox") or {}
-    return {"id": manifest.get("id", name), "name": name, "displayName": manifest.get("displayName", name), "version": pkg.get("version", "0.0.0")}
+    return {"id": plugin_id, "name": name, "displayName": manifest.get("displayName", name), "version": pkg.get("version", "0.0.0")}
 
 
 @router.get("/{plugin_id}/download")

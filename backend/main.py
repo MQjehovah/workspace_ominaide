@@ -74,6 +74,9 @@ app.include_router(auth_router)
 from core.plugin.router import router as plugin_router
 app.include_router(plugin_router)
 
+from core.plugin.marketplace import router as marketplace_router
+app.include_router(marketplace_router)
+
 from plugins.files.backend.router import router as file_router
 app.include_router(file_router)
 
