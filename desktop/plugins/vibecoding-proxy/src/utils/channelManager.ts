@@ -96,6 +96,7 @@ export function createChannelManager(storage: { get: (k: string) => Promise<any>
   }
 
   async function startAll() {
+    await loadChannels()
     for (const cfg of channels) {
       if (!cfg.enabled) continue
       try {

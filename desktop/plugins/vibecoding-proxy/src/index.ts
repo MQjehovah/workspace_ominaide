@@ -7,7 +7,6 @@ import { checkAiTools, spawnAiProcess, resetSession, type AiTool } from './utils
 import { createChannelManager, CHANNEL_TYPES, type IncomingMessage } from './utils/channelManager'
 
 let toolsCache: Record<AiTool, boolean> = { opencode: false, claude: false, codex: false }
-let storageBase = ''
 let activeAgent: { path: string; tool: AiTool } | null = null
 let channelManager: any = null
 
@@ -20,9 +19,8 @@ export default {
       toolsCache = await checkAiTools()
     } catch {}
 
-    // Use plugin storage dir for data persistence
-    storageBase = context.plugin.path || process.cwd()
-    initStorage(storageBase)
+    // Persist project list in the user data dir (host provides OMNIAIDE_USER_DATA)
+    initStorage()
 
     channelManager = createChannelManager(context.storage, async (msg: IncomingMessage) => {
       // Channel → agent run (session-aware)

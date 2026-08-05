@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, mkdirSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { execSync } from 'child_process'
+import { homedir } from 'os'
 
 export interface ProjectInfo {
   name: string
@@ -15,12 +16,36 @@ export interface ProjectInfo {
 let projects: ProjectInfo[] = []
 let storagePath = ''
 
-export function initStorage(basePath: string) {
-  storagePath = join(basePath, 'vibecoding-proxy-projects.json')
+/** User data dir (set by the host) or home dir as fallback — never the plugin/project dir. */
+function defaultStoragePath(): string {
+  const userData = process.env.OMNIAIDE_USER_DATA || homedir()
+  return join(userData, 'plugin-data', 'vibecoding-proxy-projects.json')
+}
+
+export function initStorage(_basePath?: string) {
+  storagePath = defaultStoragePath()
   try {
     const data = readFileSync(storagePath, 'utf-8')
     projects = JSON.parse(data)
-  } catch { projects = [] }
+  } catch {
+    projects = migrateLegacyFile()
+  }
+}
+
+/** One-time migration from the old plugin-dir location (< 1.2.0). */
+function migrateLegacyFile(): ProjectInfo[] {
+  const legacy = process.env.OMNIAIDE_PLUGIN_PATH
+    ? join(process.env.OMNIAIDE_PLUGIN_PATH, 'vibecoding-proxy-projects.json')
+    : ''
+  if (!legacy || legacy === storagePath) return []
+  try {
+    if (!existsSync(legacy)) return []
+    const data = readFileSync(legacy, 'utf-8')
+    const list = JSON.parse(data)
+    if (!Array.isArray(list)) return []
+    save()
+    return list
+  } catch { return [] }
 }
 
 function save() {

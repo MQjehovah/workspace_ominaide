@@ -1,6 +1,7 @@
 import { fork, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { EventEmitter } from 'events'
+import { app } from 'electron'
 import type { PluginInfo, RpcRequest, RpcResponse } from '../../shared/types'
 import { encodeMessage, decodeMessage } from './rpc'
 
@@ -44,6 +45,7 @@ export class PluginChildProcess extends EventEmitter {
         ...process.env,
         OMNIAIDE_PLUGIN_ID: this.pluginId,
         OMNIAIDE_PLUGIN_PATH: this.info.path,
+        OMNIAIDE_USER_DATA: app.getPath('userData'),
       },
     })
 

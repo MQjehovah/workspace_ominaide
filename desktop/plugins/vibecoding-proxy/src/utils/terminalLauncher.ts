@@ -1,6 +1,6 @@
 import { spawn, exec } from 'child_process'
 import { resolve } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, statSync } from 'fs'
 
 export type AiTool = 'opencode' | 'claude' | 'codex'
 
@@ -134,6 +134,11 @@ function buildToolCommand(tool: AiTool, input: string, continuation: boolean): s
 export async function spawnAiProcess(tool: AiTool, projectPath: string, input: string): Promise<{ stdout: string; stderr: string; combined: string; code: number | null; error?: string } | null> {
   try {
     const dir = resolve(projectPath)
+    // Windows spawn with a missing cwd fails instantly with ENOENT even though
+    // powershell.exe exists — validate the working directory up front.
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+      return { stdout: '', stderr: '', combined: '', code: -1, error: `项目目录不存在或无法访问: ${dir}` }
+    }
     const continuation = state !== null && state.tool === tool && state.projectPath === dir
     const cmdLine = buildToolCommand(tool, input, continuation)
     state = { tool, projectPath: dir, firstRun: !continuation }
@@ -196,24 +201,19 @@ function runChild(command: string, args: string[], cwd: string): Promise<{ stdou
   const child = spawn(command, args, {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: 600000,
+    windowsHide: true,
   })
   let stdout = ''
   let stderr = ''
   child.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
   child.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      child.kill()
-      resolve({ stdout, stderr, combined: stdout + stderr, code: null, error: 'timeout (600s)' })
-    }, 600000)
     child.on('close', (code: number | null) => {
-      clearTimeout(timer)
       resolve({ stdout, stderr, combined: stdout + stderr, code })
     })
     child.on('error', (err) => {
-      clearTimeout(timer)
-      resolve({ stdout, stderr, combined: stdout + stderr, code: -1, error: err.message })
+      const hint = !existsSync(cwd) ? ` · 工作目录不存在: ${cwd}` : ''
+      resolve({ stdout, stderr, combined: stdout + stderr, code: -1, error: `${err.message}${hint}` })
     })
   })
 }
