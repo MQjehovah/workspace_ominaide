@@ -10,6 +10,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] | None = None
+    images: list[str] | None = None
 
 
 class ChatResponse(BaseModel):

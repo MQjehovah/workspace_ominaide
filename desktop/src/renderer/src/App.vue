@@ -4,7 +4,6 @@
     <MainPanel v-else-if="view === 'main'" />
     <SearchBox v-else-if="view === 'search'" />
     <PluginPage v-else-if="view === 'plugin-page'" />
-    <AssistantWindow v-else-if="view === 'assistant'" />
     <ScreenshotPanel v-else-if="view === 'screenshot'" />
     <ScreenshotEditor v-else-if="view === 'screenshot-editor'" />
     <PluginManager v-else-if="view === 'plugin-manager'" />
@@ -22,7 +21,6 @@ import PluginPage from './components/PluginPage.vue'
 import PluginManager from './components/PluginManager.vue'
 import LoginPage from './components/LoginPage.vue'
 import ScreenshotPanel from './components/ScreenshotPanel.vue'
-import AssistantWindow from './components/AssistantWindow.vue'
 import ScreenshotEditor from './components/ScreenshotEditor.vue'
 
 const ready = ref(false)

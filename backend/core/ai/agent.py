@@ -19,6 +19,29 @@ def _to_openai_tools(mcp_tools):
     ]
 
 
+def _serialize_result(result) -> str:
+    """Serialize an MCP tool result to a compact readable string."""
+    if hasattr(result, "content"):
+        parts = []
+        for c in result.content or []:
+            if getattr(c, "text", None):
+                parts.append(c.text)
+            elif getattr(c, "resource", None):
+                rtext = getattr(c.resource, "text", None)
+                if rtext:
+                    parts.append(rtext)
+        try:
+            if len(parts) > 1:
+                return json.dumps(parts, ensure_ascii=False)
+            return parts[0] if parts else ""
+        except Exception:
+            pass
+    try:
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception:
+        return str(result)
+
+
 async def run_agent(
     user_id: int,
     messages: list[dict],
@@ -55,7 +78,7 @@ async def run_agent(
                 user_id,
                 type("Req", (), {"name": tc.function.name, "arguments": func_args})(),
             )
-            content = json.dumps(result.data, ensure_ascii=False) if hasattr(result, "data") else str(result)
+            content = _serialize_result(result)
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": content})
 
     return "Agent reached max turns without final response."
@@ -92,6 +115,7 @@ async def run_agent_stream(
             reasoning = getattr(delta, "reasoning_content", None)
             if reasoning:
                 accumulated_reasoning += reasoning
+                yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning}, ensure_ascii=False)}\n\n"
 
             if delta.content:
                 accumulated_content += delta.content
@@ -152,7 +176,8 @@ async def run_agent_stream(
                 type("Req", (), {"name": name, "arguments": func_args})(),
             )
             content = json.dumps(result.data, ensure_ascii=False) if hasattr(result, "data") else str(result)
-            yield f"data: {json.dumps({'type': 'tool_result', 'name': name, 'content': content}, ensure_ascii=False)}\n\n"
+            is_err = bool(getattr(result, "isError", False) or getattr(result, "is_error", False))
+            yield f"data: {json.dumps({'type': 'tool_result', 'name': name, 'content': content, 'error': is_err}, ensure_ascii=False)}\n\n"
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": content})
 
     yield f"data: {json.dumps({'type': 'token', 'content': '\n\n[Agent reached max turns]'})}\n\n"

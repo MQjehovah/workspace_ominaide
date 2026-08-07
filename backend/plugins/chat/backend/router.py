@@ -63,7 +63,16 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
     if req.history:
         for m in req.history:
             messages.append({"role": m.role, "content": m.content})
-    messages.append({"role": "user", "content": req.message})
+
+    user_content: str | list = req.message
+    if req.images:
+        parts: list = [{"type": "text", "text": req.message}]
+        for img in req.images[:6]:
+            if isinstance(img, str) and img.startswith("data:"):
+                parts.append({"type": "image_url", "image_url": {"url": img}})
+        if len(parts) > 1:
+            user_content = parts
+    messages.append({"role": "user", "content": user_content})
 
     try:
         reply = await run_agent(user["id"], messages, max_turns=30)
@@ -86,7 +95,16 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
     if req.history:
         for m in req.history:
             messages.append({"role": m.role, "content": m.content})
-    messages.append({"role": "user", "content": req.message})
+
+    user_content: str | list = req.message
+    if req.images:
+        parts: list = [{"type": "text", "text": req.message}]
+        for img in req.images[:6]:
+            if isinstance(img, str) and img.startswith("data:"):
+                parts.append({"type": "image_url", "image_url": {"url": img}})
+        if len(parts) > 1:
+            user_content = parts
+    messages.append({"role": "user", "content": user_content})
 
     await save_message(user["id"], "user", req.message)
 
