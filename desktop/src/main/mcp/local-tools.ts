@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, mkdirSy
 import { join, resolve, basename } from 'path'
 import { homedir, cpus, totalmem, freemem, hostname, platform, release } from 'os'
 import { exec } from 'child_process'
+import { listSkillSummaries, getSkillInstructions } from './skills'
 
 export interface LocalToolDef {
   name: string
@@ -442,6 +443,32 @@ export const localTools: LocalToolDef[] = [
       required: ['url'],
     },
     handler: (args: any) => fetchWebpage(args || {}),
+  },
+  {
+    name: 'list_skills',
+    description: '列出所有已安装并可用的技能(id、名称、描述、启用状态)。任务可能匹配已安装技能时先调用此工具',
+    inputSchema: { type: 'object', properties: {} },
+    handler: () => {
+      const skills = listSkillSummaries()
+      if (!skills.length) return '当前没有已安装的技能'
+      return '可用技能:\n' + skills.map(s => `- ${s.id} (${s.name}${s.enabled ? '' : ',已停用'}): ${s.description || '无描述'}`).join('\n')
+    },
+  },
+  {
+    name: 'use_skill',
+    description: '加载并执行某个已安装技能的完整指令,调用后按技能说明中的步骤执行。用户明确提到技能名或任务与技能匹配时调用此工具',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        skill: { type: 'string', description: '技能 id 或名称,如 docx / pptx;不确定时先调用 list_skills' },
+      },
+      required: ['skill'],
+    },
+    handler: (args: any) => {
+      const instr = getSkillInstructions((args?.skill || '').trim())
+      if (!instr) return `未找到技能: ${args?.skill}\n可用技能: ${listSkillSummaries().map(s => s.id).join(', ') || '无'}`
+      return instr
+    },
   },
 ]
 

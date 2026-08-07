@@ -206,6 +206,19 @@ export function getEnabledInstructions(limit = 12000): string {
   return out.join('\n\n')
 }
 
+export function listSkillSummaries(): { id: string; name: string; description: string; enabled: boolean }[] {
+  return listSkills().map(s => ({ id: s.id, name: s.name, description: s.description, enabled: s.enabled }))
+}
+
+export function getSkillInstructions(idOrName: string): string | null {
+  for (const s of listSkills()) {
+    if (s.id === idOrName || s.name === idOrName) {
+      return `## 技能: ${s.name}\n${s.description ? `(描述: ${s.description})\n` : ''}${s.instructions}`
+    }
+  }
+  return null
+}
+
 export function initSkillsManager() {
   mkdirSync(dir(), { recursive: true })
 }

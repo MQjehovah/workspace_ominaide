@@ -374,6 +374,11 @@ export function registerIpcHandlers() {
     shell.openExternal(url)
   })
 
+  ipcMain.handle('shell:open-path', (_e, path: string) => {
+    const { shell } = require('electron')
+    return shell.openPath(String(path || ''))
+  })
+
   ipcMain.handle('file:open-url', async (_, url: string, name: string) => {
     const { shell } = require('electron')
     const tmp = join(app.getPath('temp'), 'omniaide-' + name)

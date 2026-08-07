@@ -191,23 +191,36 @@ const searchMatches = computed(() => {
 })
 
 const deliverables = computed(() => {
-  const out: { name: string; url: string; step: string }[] = []
+  const out: { name: string; url: string; step: string; kind: 'url' | 'file' }[] = []
   for (const m of current?.value?.messages || []) {
     for (const st of m.steps) {
       if (!st.result) continue
+      const result = st.result
       try {
-        const parsed = JSON.parse(st.result)
+        const parsed = JSON.parse(result)
         if (parsed && typeof parsed === 'object' && parsed.download_url) {
           out.push({
             name: parsed.filename || decodeURIComponent(parsed.download_url.split('?')[0].split('/').pop() || '') || st.name,
             url: parsed.download_url,
             step: st.name,
+            kind: 'url',
           })
         }
-      } catch {
-        const m2 = st.result.match(/https?:\/\/[^\s"']+/)
-        if (m2) out.push({ name: st.name, url: m2[1], step: st.name })
+      } catch { /* not json */ }
+      // local file paths from desktop tools (create_office_doc / write_file / run_command)
+      const fileRe = /([A-Za-z]:\\[^\s"']+\.(?:docx|pptx|txt|md|csv|json|log|py|js|ts|html|css|xml|zip))|(\/[^\s"']+\.(?:docx|pptx|txt|md|csv|json|log|py|js|ts|html|css|xml|zip))/g
+      let fm: RegExpExecArray | null
+      const seen = new Set<string>()
+      while ((fm = fileRe.exec(result))) {
+        const p = fm[1] || fm[2]
+        if (!p || seen.has(p)) continue
+        seen.add(p)
+        const name = p.split(/[\\/]/).pop() || p
+        out.push({ name, url: p, step: st.name, kind: 'file' })
       }
+      // http links
+      const m2 = result.match(/https?:\/\/[^\s"']+/)
+      if (m2) out.push({ name: st.name, url: m2[1], step: st.name, kind: 'url' })
     }
   }
   return out
@@ -1195,13 +1208,26 @@ async function importCloudHistory() {
   }
 }
 
-function openDeliverable(url: string) {
+function openDeliverable(d: { name: string; url: string; step: string; kind: 'url' | 'file' }) {
   try {
     const w = window as any
-    if (w.mqbox?.shell?.openExternal) w.mqbox.shell.openExternal(url)
-    else window.open(url, '_blank')
+    if (d.kind === 'file') {
+      if (w.mqbox?.shell?.openPath) {
+        w.mqbox.shell.openPath(d.url).catch(() => {
+          if (w.mqbox?.shell?.openExternal) w.mqbox.shell.openExternal('file:///' + d.url.replace(/\\/g, '/'))
+        })
+      } else if (w.mqbox?.shell?.openExternal) {
+        w.mqbox.shell.openExternal('file:///' + d.url.replace(/\\/g, '/'))
+      }
+    } else {
+      if (w.mqbox?.shell?.openExternal) w.mqbox.shell.openExternal(d.url)
+      else window.open(d.url, '_blank')
+    }
   } catch {
-    window.open(url, '_blank')
+    try {
+      const w = window as any
+      if (w.mqbox?.shell?.openExternal) w.mqbox.shell.openExternal('file:///' + d.url.replace(/\\/g, '/'))
+    } catch { /* ignore */ }
   }
 }
 
@@ -1605,7 +1631,9 @@ const suggestions = [
       </div>
     </main>
 
-    <aside v-if="detailOpen" class="detail-panel">
+    <template v-if="detailOpen">
+      <div class="detail-backdrop" @click="detailOpen = false"></div>
+      <aside class="detail-panel">
       <div class="detail-hd">
         <div class="detail-tabs">
           <button class="detail-tab" :class="{ active: detailTab === 'process' }" @click="detailTab = 'process'">过程 <span class="tab-badge">{{ processEntries.length }}</span></button>
@@ -1668,7 +1696,7 @@ const suggestions = [
               <div class="deliv-name one-line" :title="d.name">{{ d.name }}</div>
               <div class="deliv-step">{{ d.step }}</div>
             </div>
-            <button class="deliv-open" @click="openDeliverable(d.url)">打开</button>
+            <button class="deliv-open" @click="openDeliverable(d)">打开</button>
           </div>
         </template>
         <template v-else-if="detailTab === 'skills'">
@@ -1684,6 +1712,7 @@ const suggestions = [
         </template>
       </div>
     </aside>
+    </template>
 
     <transition name="fade">
       <div v-if="paletteOpen" class="overlay" @click.self="paletteOpen = false">
@@ -1998,6 +2027,7 @@ const suggestions = [
   --red: #f4686d;
   height: 100vh;
   display: flex;
+  position: relative;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -2228,12 +2258,25 @@ const suggestions = [
 
 /* detail panel */
 .detail-panel {
-  width: 300px;
-  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 80vw;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   background: var(--bg2);
   border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .35);
+}
+.detail-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 29;
+  background: rgba(4, 6, 10, .35);
+  cursor: default;
 }
 .detail-hd {
   display: flex;

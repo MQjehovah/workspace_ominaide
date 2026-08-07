@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('mqbox', {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
+    openPath: (path: string) => ipcRenderer.invoke('shell:open-path', path),
     openUrl: (url: string, name: string) => ipcRenderer.invoke('file:open-url', url, name),
   },
   dialog: {
