@@ -12,6 +12,11 @@ interface Step {
   status: 'running' | 'done' | 'error'
   collapsed: boolean
 }
+interface TimelineItem {
+  kind: 'reasoning' | 'tool' | 'text'
+  text?: string
+  stepId?: number
+}
 interface Msg {
   id: number
   role: 'user' | 'assistant'
@@ -20,9 +25,11 @@ interface Msg {
   reasoning: string
   reasoningOpen: boolean
   steps: Step[]
+  timeline: TimelineItem[]
   pending: boolean
   error: string
   collapsed?: boolean
+  reasoningSeparated?: boolean
   usage?: { chars: number; tools: number; duration: number }
 }
 interface Session {
@@ -82,7 +89,7 @@ const editingTitle = ref('')
 const toolsCache = ref<any[]>([])
 const skillsLoading = ref(false)
 const agentOpen = ref(false)
-const agentTab = ref<'mcp' | 'local' | 'skills'>('mcp')
+const agentTab = ref<'local' | 'mcp' | 'skills'>('local')
 const mcpServers = ref<any[]>([])
 const mcpTools = ref<any[]>([])
 const skillsList = ref<any[]>([])
@@ -246,6 +253,7 @@ function saveSessions() {
       text: m.text,
       reasoning: m.reasoning,
       steps: m.steps.map(st => ({ id: st.id, name: st.name, args: st.args, result: st.result, status: st.status })),
+      timeline: (m.timeline || []).map(tl => ({ kind: tl.kind, text: tl.text, stepId: tl.stepId })),
       error: m.error,
     })),
     promptHistory: s.promptHistory.slice(-100),
@@ -263,17 +271,26 @@ function loadSessions() {
     const loaded = (data.sessions || []).map((s: any) => ({
       ...s,
       pinned: !!s.pinned,
-      messages: (s.messages || []).map((m: any) => ({
-        id: m.id,
-        role: m.role,
-        text: m.text || '',
-        html: '',
-        reasoning: m.reasoning || '',
-        reasoningOpen: true,
-        steps: (m.steps || []).map((st: any) => ({ id: st.id, name: st.name, args: st.args, result: st.result || '', status: st.status, collapsed: false })),
-        pending: false,
-        error: m.error || '',
-      })),
+      messages: (s.messages || []).map((m: any) => {
+        const steps = (m.steps || []).map((st: any) => ({ id: st.id, name: st.name, args: st.args, result: st.result || '', status: st.status, collapsed: false }))
+        let timeline = (m.timeline || []).map((tl: any) => ({ kind: tl.kind, text: tl.text, stepId: tl.stepId }))
+        if (!timeline.length && (steps.length || m.reasoning)) {
+          if (m.reasoning) timeline.push({ kind: 'reasoning', text: m.reasoning })
+          for (const st of steps) timeline.push({ kind: 'tool', stepId: st.id })
+        }
+        return {
+          id: m.id,
+          role: m.role,
+          text: m.text || '',
+          html: '',
+          reasoning: m.reasoning || '',
+          reasoningOpen: true,
+          steps,
+          timeline,
+          pending: false,
+          error: m.error || '',
+        }
+      }),
       promptHistory: s.promptHistory || [],
       histIdx: 0,
     }))
@@ -350,12 +367,35 @@ function finishRender(m: Msg) {
   m.html = renderMarkdown(m.text)
 }
 
-function scrollBottom() {
+let userScrolledUp = false
+let scrollLockTimer: any = null
+
+function onMsgsScroll() {
   const el = msgsRef.value
   if (!el) return
-  if (el.scrollHeight - el.scrollTop - el.clientHeight < 160) {
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  if (!atBottom) {
+    userScrolledUp = true
+    clearTimeout(scrollLockTimer)
+  } else {
+    userScrolledUp = false
+  }
+}
+
+function scrollBottom(force = false) {
+  const el = msgsRef.value
+  if (!el) return
+  if (force || (!userScrolledUp && el.scrollHeight - el.scrollTop - el.clientHeight < 160)) {
     requestAnimationFrame(() => { if (el) el.scrollTop = el.scrollHeight })
   }
+}
+
+function scrollToBottomAfterRender() {
+  nextTick(() => {
+    scrollBottom(true)
+    setTimeout(() => scrollBottom(true), 60)
+    setTimeout(() => scrollBottom(true), 200)
+  })
 }
 
 function autoSize() {
@@ -380,6 +420,25 @@ watch(
       const el = detailBodyRef.value
       if (el) el.scrollTop = el.scrollHeight
     })
+  }
+)
+
+watch(
+  () => currentId.value,
+  () => {
+    nextTick(() => {
+      setTimeout(() => scrollBottom(true), 60)
+      setTimeout(() => scrollBottom(true), 250)
+    })
+  }
+)
+
+// keep scrolled to bottom when session content changes while viewing bottom
+watch(
+  () => current.value?.messages.length,
+  () => {
+    if (loading.value) return
+    nextTick(() => scrollBottom())
   }
 )
 
@@ -451,12 +510,45 @@ function appendToken(m: Msg, content: string) {
 }
 
 function appendReasoning(m: Msg, content: string) {
+  if (m.reasoning && !m.reasoningSeparated) {
+    m.reasoning += '\n\n----------\n'
+  }
   m.reasoning += content
+  const last = m.timeline[m.timeline.length - 1]
+  if (last && last.kind === 'reasoning') {
+    last.text += content
+  } else {
+    m.timeline.push({ kind: 'reasoning', text: content })
+  }
+  m.reasoningSeparated = true
   scrollBottom()
+  scrollReasoningIntoView(m)
+}
+
+function scrollReasoningIntoView(m: Msg) {
+  nextTick(() => {
+    const el = msgsRef.value
+    if (!el) return
+    const bodies = el.querySelectorAll('.reasoning-body')
+    const lastBody = bodies[bodies.length - 1] as HTMLElement | undefined
+    if (lastBody) lastBody.scrollTop = lastBody.scrollHeight
+  })
+}
+
+function flushIntermediateText(m: Msg) {
+  if (m.text && m.text.trim()) {
+    m.timeline.push({ kind: 'text', text: m.text })
+    m.text = ''
+    m.html = ''
+  }
 }
 
 function startStep(m: Msg, name: string, args: any) {
-  m.steps.push({ id: stepSeq++, name, args, result: '', status: 'running', collapsed: false })
+  flushIntermediateText(m)
+  const step: Step = { id: stepSeq++, name, args, result: '', status: 'running', collapsed: false }
+  m.steps.push(step)
+  m.timeline.push({ kind: 'tool', stepId: step.id })
+  m.reasoningSeparated = false
   scrollBottom()
 }
 
@@ -466,6 +558,7 @@ function finishStep(m: Msg, name: string, result: string, isError: boolean) {
     st.result = result
     st.status = isError ? 'error' : 'done'
   }
+  scrollBottom()
 }
 
 function handleEvent(m: Msg, data: any) {
@@ -567,18 +660,20 @@ async function send() {
   if (!message.trim() && images.length) message = '请分析这张图片'
   attachments.value = []
   const s = ensureSession()
-  s.messages.push({ id: idSeq++, role: 'user', text: message, html: '', reasoning: '', reasoningOpen: false, steps: [], pending: false, error: '' })
+  s.messages.push({ id: idSeq++, role: 'user', text: message, html: '', reasoning: '', reasoningOpen: false, steps: [], timeline: [], pending: false, error: '' })
   s.promptHistory.push(message)
   s.histIdx = s.promptHistory.length
   input.value = ''
   autoSize()
-  const asst: Msg = { id: idSeq++, role: 'assistant', text: '', html: '', reasoning: '', reasoningOpen: true, steps: [], pending: true, error: '' }
+  const asst: Msg = { id: idSeq++, role: 'assistant', text: '', html: '', reasoning: '', reasoningOpen: true, steps: [], timeline: [], pending: true, error: '' }
   s.messages.push(asst)
   setTitleFrom(s, message)
   s.updatedAt = Date.now()
   loading.value = true
   stage.value = '正在思考'
   taskStartAt = Date.now()
+  userScrolledUp = false
+  scrollToBottomAfterRender()
   abortCtl = new AbortController()
   try {
     const history = s.messages.slice(0, -1).filter(m => m.role === 'user' || (m.role === 'assistant' && m.text))
@@ -1068,7 +1163,7 @@ async function saveSkill() {
   }
 }
 
-function openAgentSettings(tab: 'mcp' | 'skills' = 'mcp') {
+function openAgentSettings(tab: 'local' | 'mcp' | 'skills' = 'local') {
   agentTab.value = tab
   agentOpen.value = true
   loadMcp()
@@ -1088,7 +1183,7 @@ async function importCloudHistory() {
     s.title = '云端历史'
     for (const it of items) {
       if (it.role !== 'user' && it.role !== 'assistant') continue
-      s.messages.push({ id: idSeq++, role: it.role, text: it.content || '', html: '', reasoning: '', reasoningOpen: false, steps: [], pending: false, error: '' })
+      s.messages.push({ id: idSeq++, role: it.role, text: it.content || '', html: '', reasoning: '', reasoningOpen: false, steps: [], timeline: [], pending: false, error: '' })
     }
     for (const m of s.messages) m.html = renderMarkdown(m.text)
     sessions.value.unshift(s)
@@ -1292,7 +1387,11 @@ onMounted(() => {
     if (N && N.permission === 'default') N.requestPermission()
   } catch { /* ignore */ }
   window.addEventListener('keydown', onGlobalKey)
-  nextTick(() => inputRef.value?.focus())
+  nextTick(() => {
+    inputRef.value?.focus()
+    setTimeout(() => scrollBottom(true), 80)
+    setTimeout(() => scrollBottom(true), 300)
+  })
 })
 
 onUnmounted(() => {
@@ -1306,6 +1405,10 @@ onUnmounted(() => {
 function stepIcon(st: Step): string {
   if (st.status === 'running') return '○'
   return st.status === 'error' ? '✕' : '✓'
+}
+
+function stepById(m: Msg, id?: number): Step | undefined {
+  return m.steps.find(s => s.id === id)
 }
 
 function prettyJson(args: any): string {
@@ -1390,7 +1493,7 @@ const suggestions = [
         </div>
       </transition>
 
-      <div ref="msgsRef" class="msgs" @click="onMsgsClick">
+      <div ref="msgsRef" class="msgs" @click="onMsgsClick" @scroll.passive="onMsgsScroll">
         <template v-if="current">
           <div v-for="m in current.messages" :id="'msg-' + m.id" :key="m.id" class="msg" :class="[m.role, { flash: flashId === m.id }]">
             <template v-if="m.role === 'user'">
@@ -1398,36 +1501,38 @@ const suggestions = [
               <div class="user-text">{{ m.text }}</div>
             </template>
             <template v-else>
-              <div v-if="m.reasoning" class="reasoning" :class="{ open: m.reasoningOpen }">
-                <button class="reasoning-hd" @click="m.reasoningOpen = !m.reasoningOpen">
-                  <span class="chev">{{ m.reasoningOpen ? '▾' : '▸' }}</span>
-                  <span class="reasoning-title">思考过程</span>
-                </button>
-                <div v-if="m.reasoningOpen" class="reasoning-body">{{ m.reasoning }}</div>
-              </div>
-
-              <div v-for="st in m.steps" :key="st.id" class="step" :class="st.status">
-                <button class="step-hd" @click="st.collapsed = !st.collapsed">
-                  <span class="step-icon">{{ stepIcon(st) }}</span>
-                  <span class="step-name">{{ st.name }}</span>
-                  <span class="step-status" :class="st.status">
-                    {{ st.status === 'running' ? '执行中' : st.status === 'error' ? '失败' : '完成' }}
-                  </span>
-                  <span class="chev">{{ st.collapsed ? '▸' : '▾' }}</span>
-                </button>
-                <div v-if="!st.collapsed" class="step-body">
-                  <div class="step-sec">
-                    <span class="step-sec-label">参数</span>
-                    <pre class="step-args">{{ prettyJson(st.args) }}</pre>
-                  </div>
-                  <div v-if="st.result" class="step-sec">
-                    <span class="step-sec-label">结果</span>
-                    <pre class="step-result" :class="{ err: st.status === 'error' }">{{ st.result }}</pre>
+              <div v-for="(tl, tli) in m.timeline" :key="tli" class="tl-wrap">
+                <div v-if="tl.kind === 'reasoning'" class="reasoning" :class="{ open: m.reasoningOpen }">
+                  <button class="reasoning-hd" @click="m.reasoningOpen = !m.reasoningOpen">
+                    <span class="chev">{{ m.reasoningOpen ? '▾' : '▸' }}</span>
+                    <span class="reasoning-title">思考过程</span>
+                  </button>
+                  <div v-if="m.reasoningOpen" class="reasoning-body">{{ tl.text }}</div>
+                </div>
+                <div v-else-if="tl.kind === 'text'" class="tl-text">{{ tl.text }}</div>
+                <div v-else-if="tl.kind === 'tool' && stepById(m, tl.stepId)" class="step" :class="stepById(m, tl.stepId)!.status">
+                  <button class="step-hd" @click="stepById(m, tl.stepId)!.collapsed = !stepById(m, tl.stepId)!.collapsed">
+                    <span class="step-icon">{{ stepIcon(stepById(m, tl.stepId)!) }}</span>
+                    <span class="step-name">{{ stepById(m, tl.stepId)!.name }}</span>
+                    <span class="step-status" :class="stepById(m, tl.stepId)!.status">
+                      {{ stepById(m, tl.stepId)!.status === 'running' ? '执行中' : stepById(m, tl.stepId)!.status === 'error' ? '失败' : '完成' }}
+                    </span>
+                    <span class="chev">{{ stepById(m, tl.stepId)!.collapsed ? '▸' : '▾' }}</span>
+                  </button>
+                  <div v-if="!stepById(m, tl.stepId)!.collapsed" class="step-body">
+                    <div class="step-sec">
+                      <span class="step-sec-label">参数</span>
+                      <pre class="step-args">{{ prettyJson(stepById(m, tl.stepId)!.args) }}</pre>
+                    </div>
+                    <div v-if="stepById(m, tl.stepId)!.result" class="step-sec">
+                      <span class="step-sec-label">结果</span>
+                      <pre class="step-result" :class="{ err: stepById(m, tl.stepId)!.status === 'error' }">{{ stepById(m, tl.stepId)!.result }}</pre>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div v-if="m.pending && !m.text && m.steps.length === 0" class="pending">
+              <div v-if="m.pending && !m.text && m.timeline.length === 0" class="pending">
                 <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
                 <span class="pending-text">思考中…</span>
               </div>
@@ -1675,8 +1780,8 @@ const suggestions = [
         <div class="settings-panel agent-panel">
           <div class="settings-hd">Agent 引擎</div>
           <div class="agent-tabs">
-            <button class="agent-tab" :class="{ active: agentTab === 'mcp' }" @click="agentTab = 'mcp'; loadMcp()">MCP 服务器</button>
             <button class="agent-tab" :class="{ active: agentTab === 'local' }" @click="agentTab = 'local'; loadMcp()">本地工具</button>
+            <button class="agent-tab" :class="{ active: agentTab === 'mcp' }" @click="agentTab = 'mcp'; loadMcp()">MCP 服务器</button>
             <button class="agent-tab" :class="{ active: agentTab === 'skills' }" @click="agentTab = 'skills'; loadSkills()">技能</button>
           </div>
 
@@ -2672,6 +2777,15 @@ const suggestions = [
   cursor: pointer;
 }
 .reasoning-hd:hover { color: var(--text); }
+.tl-text {
+  margin-bottom: 10px;
+  padding: 2px 2px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .reasoning-body {
   padding: 8px 12px;
   font-size: 12.5px;
@@ -2679,6 +2793,7 @@ const suggestions = [
   color: #a7b0c0;
   font-style: italic;
   white-space: pre-wrap;
+  word-break: break-word;
   max-height: 180px;
   overflow-y: auto;
 }

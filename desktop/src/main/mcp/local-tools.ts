@@ -206,6 +206,115 @@ function systemInfo(_args: any): string {
   }, null, 2)
 }
 
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-f]+);/g, (_m, n) => String.fromCharCode(parseInt(n, 16)))
+}
+
+function stripHtml(s: string): string {
+  return s
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+async function webSearch(args: { query: string; count?: number; lang?: string }): Promise<string> {
+  const query = (args.query || '').trim()
+  if (!query) return '需要 query 搜索关键词'
+  const count = Math.min(Math.max(args.count ?? 5, 1), 10)
+  const lang = args.lang || 'zh-CN'
+  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&mkt=${encodeURIComponent(lang)}&count=${count}`
+  let html = ''
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) return `搜索请求失败 (${res.status})`
+    html = await res.text()
+  } catch (e: any) {
+    return `联网搜索出错: ${e?.message || e}`
+  }
+
+  const results: { title: string; url: string; snippet: string }[] = []
+  const parts = html.split('<li class="b_algo"')
+  for (let i = 1; i < parts.length && results.length < count; i++) {
+    const seg = parts[i]
+    const h2End = seg.indexOf('</h2>')
+    if (h2End < 0) continue
+    const h2block = seg.slice(0, h2End)
+    const a = /<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/.exec(h2block)
+    if (!a) continue
+    let url = decodeEntities(a[1])
+    // strip bing tracking suffix like " ... | https://real"
+    const sp = url.split(' | ')
+    if (sp.length > 1) url = sp[0]
+    const pRe = /<p[^>]*>([\s\S]*?)<\/p>/
+    const p = pRe.exec(seg)
+    results.push({
+      title: stripHtml(a[2]),
+      url,
+      snippet: p ? stripHtml(p[1]) : '',
+    })
+  }
+
+  if (!results.length) {
+    const looseRe = /<h2><a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a><\/h2>/g
+    let lm: RegExpExecArray | null
+    while ((lm = looseRe.exec(html))) {
+      if (results.length >= count) break
+      results.push({ title: stripHtml(lm[2]), url: decodeEntities(lm[1]).split(' | ')[0], snippet: '' })
+    }
+  }
+
+  if (!results.length) return `没有搜索到"${query}"的结果`
+  return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet || '(无摘要)'}`).join('\n\n')
+}
+
+async function fetchWebpage(args: { url: string; maxChars?: number }): Promise<string> {
+  const target = (args.url || '').trim()
+  if (!target) return '需要 url'
+  if (!/^https?:\/\//i.test(target)) return 'url 必须以 http:// 或 https:// 开头'
+  const maxChars = args.maxChars ?? 8000
+  try {
+    const res = await fetch(target, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) return `网页请求失败 (${res.status})`
+    const type = res.headers.get('content-type') || ''
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (/application\/pdf/i.test(type)) {
+      return `该链接是 PDF 文件 (${(buf.length / 1024).toFixed(0)} KB),不支持在线解析文本`
+    }
+    const text = buf.toString('utf-8').replace(/^\uFEFF/, '')
+    const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(text)?.[1] || ''
+    const main = stripHtml(text)
+    const out = `${title ? `标题: ${title.trim()}\n\n` : ''}${main}`
+    return truncateLocal(out, maxChars)
+  } catch (e: any) {
+    return `读取网页出错: ${e?.message || e}`
+  }
+}
+
+function truncateLocal(s: string, max: number): string {
+  if (!s || s.length <= max) return s
+  return s.slice(0, max) + `\n…[内容过长已截断,共 ${s.length} 字符]`
+}
+
 export const localTools: LocalToolDef[] = [
   {
     name: 'read_file',
@@ -306,6 +415,33 @@ export const localTools: LocalToolDef[] = [
       required: ['command'],
     },
     handler: (args: any) => runCommand(args || {}),
+  },
+  {
+    name: 'web_search',
+    description: '联网搜索(基于 Bing,无需 API Key),返回标题/链接/摘要',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '搜索关键词' },
+        count: { type: 'number', description: '返回条数,默认 5,最多 10' },
+        lang: { type: 'string', description: '语言区域,如 zh-CN / en-US,默认 zh-CN' },
+      },
+      required: ['query'],
+    },
+    handler: (args: any) => webSearch(args || {}),
+  },
+  {
+    name: 'read_webpage',
+    description: '读取指定网页 URL 的内容并提取纯文本(可获取搜索结果页面正文)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: '网页完整 URL' },
+        maxChars: { type: 'number', description: '最多返回字符数,默认 8000' },
+      },
+      required: ['url'],
+    },
+    handler: (args: any) => fetchWebpage(args || {}),
   },
 ]
 

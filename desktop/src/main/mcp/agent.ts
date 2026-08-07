@@ -98,8 +98,8 @@ export async function runAgentSession(req: AgentRequest, emit: (p: AgentPayload)
   const maxTokens = opts.maxTokens ?? req.llm.maxTokens
   const maxContextChars = opts.maxContextChars ?? req.maxContextChars ?? MAX_CONTEXT_CHARS
 
-  let system = '你是一个能调用工具的 AI 助手。当需要获取信息或执行操作时,选择合适的工具;工具结果返回后,基于结果组织最终回答。用中文回复。\n\n工具使用原则:\n- 用户要求创建/生成文件时,应调用对应的创建工具\n- 用户要求读取或修改 Word/PowerPoint 文档时,应使用 Office 文档工具\n- 用户要求执行命令或查看本机文件时,应使用本地工具\n- 如果工具执行失败,尝试其他方式或明确告知用户'
-  const skills = getEnabledInstructions()
+  let system = '你是一个能调用工具的 AI 助手。当需要获取信息或执行操作时,选择合适的工具;工具结果返回后,基于结果组织最终回答。用中文回复。\n\n工具使用原则:\n- 用户要求创建/生成文件时,应调用对应的创建工具\n- 用户要求读取或修改 Word/PowerPoint 文档时,应使用 Office 文档工具\n- 用户要求执行命令或查看本机文件时,应使用本地工具\n- 用户询问最新信息、新闻、时事或你知识库之外的实时数据时,应使用 web_search 联网搜索,必要时用 read_webpage 读取结果页面\n- 如果工具执行失败,尝试其他方式或明确告知用户'
+  const skills = getEnabledInstructions(60000)
   if (skills) system += '\n\n你可以使用以下技能,按技能说明执行:\n\n' + skills
 
   const messages: any[] = [{ role: 'system', content: system }]
