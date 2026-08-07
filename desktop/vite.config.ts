@@ -17,7 +17,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: resolve(__dirname, 'dist-electron/main'),
-            rollupOptions: { external: (id: string) => id === 'ws' || id.startsWith('@nut-tree-fork/') || id === 'node-pty' },
+            rollupOptions: { external: (id: string) => id === 'ws' || id.startsWith('@nut-tree-fork/') || id === 'node-pty' || id.startsWith('@modelcontextprotocol/') },
           },
         },
       },

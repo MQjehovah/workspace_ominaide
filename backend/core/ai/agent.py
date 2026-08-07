@@ -97,6 +97,12 @@ async def run_agent_stream(
         all_tools = [t for t in all_tools if t.name in tools_filter]
     openai_tools = _to_openai_tools(all_tools)
 
+    total_chars = 0
+    total_tools = 0
+
+    def usage_event():
+        return f"data: {json.dumps({'type': 'usage', 'chars': total_chars, 'tools': total_tools}, ensure_ascii=False)}\n\n"
+
     for turn in range(max_turns):
         accumulated_content = ""
         accumulated_reasoning = ""
@@ -135,13 +141,19 @@ async def run_agent_stream(
 
             finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
             if finish_reason == "stop":
+                total_chars += len(accumulated_content) + len(accumulated_reasoning)
+                yield usage_event()
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 
             if finish_reason == "tool_calls":
                 break
 
+        total_chars += len(accumulated_content) + len(accumulated_reasoning)
+        total_tools += len(tool_calls or [])
+
         if not tool_calls:
+            yield usage_event()
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             return
 
@@ -181,4 +193,5 @@ async def run_agent_stream(
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": content})
 
     yield f"data: {json.dumps({'type': 'token', 'content': '\n\n[Agent reached max turns]'})}\n\n"
+    yield usage_event()
     yield f"data: {json.dumps({'type': 'done'})}\n\n"

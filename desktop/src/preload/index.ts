@@ -130,6 +130,33 @@ contextBridge.exposeInMainWorld('mqbox', {
     put: (path: string, body?: any) => ipcRenderer.invoke('api:put', path, body),
     delete: (path: string) => ipcRenderer.invoke('api:delete', path),
   },
+  mcp: {
+    list: () => ipcRenderer.invoke('mcp:list'),
+    add: (cfg: any) => ipcRenderer.invoke('mcp:add', cfg),
+    update: (id: string, patch: any) => ipcRenderer.invoke('mcp:update', id, patch),
+    remove: (id: string) => ipcRenderer.invoke('mcp:remove', id),
+    refresh: () => ipcRenderer.invoke('mcp:refresh'),
+    tools: () => ipcRenderer.invoke('mcp:tools'),
+    testCall: (name: string, args: any) => ipcRenderer.invoke('mcp:test-call', name, args),
+  },
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+    create: (data: any) => ipcRenderer.invoke('skills:create', data),
+    update: (id: string, patch: any) => ipcRenderer.invoke('skills:update', id, patch),
+    toggle: (id: string, enabled: boolean) => ipcRenderer.invoke('skills:toggle', id, enabled),
+    remove: (id: string) => ipcRenderer.invoke('skills:delete', id),
+    installFolder: () => ipcRenderer.invoke('skills:install-folder'),
+    installUrl: (url: string) => ipcRenderer.invoke('skills:install-url', url),
+  },
+  agent: {
+    start: (req: any) => ipcRenderer.invoke('agent:start', req),
+    abort: (sessionId: string) => ipcRenderer.invoke('agent:abort', sessionId),
+    onEvent: (callback: (payload: any) => void) => {
+      const handler = (_: any, payload: any) => callback(payload)
+      ipcRenderer.on('agent:event', handler)
+      return () => ipcRenderer.removeListener('agent:event', handler)
+    },
+  },
   log: {
     write: (pluginId: string, level: string, message: string) =>
       ipcRenderer.invoke('log:write', pluginId, level, message),

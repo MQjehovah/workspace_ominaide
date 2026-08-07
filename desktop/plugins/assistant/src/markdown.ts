@@ -87,7 +87,8 @@ renderer.code = ({ text, lang }: { text: string; lang?: string }): string => {
     } catch { /* keep escaped */ }
   }
   const cls = langName ? ` class="hljs language-${escapeHtml(langName)}"` : ' class="hljs"'
-  return `<pre><code${cls}>${body}</code></pre>`
+  const copy = `<button class="code-copy" data-code="${escapeHtml(text)}">复制</button>`
+  return `<div class="code-wrap"><pre><code${cls}>${body}</code></pre>${copy}</div>`
 }
 marked.use({ renderer })
 

@@ -7,6 +7,9 @@ import { setupShortcut } from './shortcut'
 import { startSync, stopSync } from './sync/syncWorker'
 import { getConfig } from './config'
 import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window'
+import { registerMcpIpc, abortAllAgentSessions } from './mcp/ipc'
+import { initMcpManager, disposeAll } from './mcp/mcp-manager'
+import { initSkillsManager } from './mcp/skills'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
@@ -114,6 +117,9 @@ app.whenReady().then(async () => {
     return new Response('Plugin frontend not found', { status: 404 })
   })
   registerIpcHandlers()
+  registerMcpIpc()
+  initMcpManager()
+  initSkillsManager()
   await initPlugins()
   createTray()
   const cfg = await getConfig()
@@ -136,6 +142,8 @@ app.on('before-quit', () => {
   isQuitting = true
   getProcessManager().stopAll()
   closeAllPluginWindows()
+  abortAllAgentSessions()
+  disposeAll().catch(() => {})
   try { (require('./notificationCenter') as any)?.stopNotificationCenter?.() } catch { /* ignore */ }
 })
 
