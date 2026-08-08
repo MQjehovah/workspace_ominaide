@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 
@@ -24,7 +23,7 @@ class _NotesScreenState extends State<NotesScreen> {
     try {
       final res = await ApiService().get('/plugins/notes/tree');
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data = ApiService().decodeJson(res);
         _notes = data is List ? _flattenTree(data) : [];
       } else {
         _error = '服务器错误: ${res.statusCode}';
@@ -62,6 +61,47 @@ class _NotesScreenState extends State<NotesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+    }
+  }
+
+  Future<void> _createChild(Map<String, dynamic> parent) async {
+    final parentId = parent['id'];
+    if (parentId == null) return;
+    try {
+      final res = await ApiService().post('/plugins/notes', {'title': '无标题', 'content': '', 'parent_id': parentId});
+      if (res.statusCode == 201) {
+        await _loadNotes();
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+    }
+  }
+
+  Future<void> _deleteNote(Map<String, dynamic> note) async {
+    final id = note['id'];
+    if (id == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('删除笔记'),
+        content: Text('确定删除「${note['title'] ?? '无标题'}」?子笔记也会一并删除。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('删除', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ApiService().delete('/plugins/notes/$id');
+      await _loadNotes();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败: $e')));
     }
   }
 
@@ -126,6 +166,17 @@ class _NotesScreenState extends State<NotesScreen> {
                           ? Text(n['updated_at'].toString().substring(0, 10), style: TextStyle(fontSize: 11, color: Colors.grey.shade500))
                           : null,
                         onTap: () => _openNote(n),
+                        trailing: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, size: 18),
+                          onSelected: (v) {
+                            if (v == 'child') _createChild(n);
+                            else if (v == 'delete') _deleteNote(n);
+                          },
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(value: 'child', child: Text('新建子笔记')),
+                            const PopupMenuItem(value: 'delete', child: Text('删除', style: TextStyle(color: Colors.red))),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -163,7 +214,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     try {
       final res = await ApiService().get('/plugins/notes/$id');
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data = ApiService().decodeJson(res);
         _titleCtrl.text = data['title'] ?? '';
         final raw = data['content'] ?? '';
         _contentCtrl.text = ApiService().parseNoteContent(raw);

@@ -3,6 +3,7 @@ import 'dashboard_screen.dart';
 import 'files_screen.dart';
 import 'notes_screen.dart';
 import 'music_screen.dart';
+import 'chat_screen.dart';
 import '../services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -13,7 +14,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _page = 0;
-  final _pages = [const DashboardScreen(), const FilesScreen(), const NotesScreen(), const MusicScreen()];
+  final _pages = [const DashboardScreen(), const FilesScreen(), const NotesScreen(), const MusicScreen(), const ChatScreen()];
 
   @override
   void initState() {
@@ -46,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(icon: Icon(Icons.folder_outlined), selectedIcon: Icon(Icons.folder), label: '文件'),
           NavigationDestination(icon: Icon(Icons.article_outlined), selectedIcon: Icon(Icons.article), label: '笔记'),
           NavigationDestination(icon: Icon(Icons.headphones_outlined), selectedIcon: Icon(Icons.headphones), label: '音乐'),
+          NavigationDestination(icon: Icon(Icons.smart_toy_outlined), selectedIcon: Icon(Icons.smart_toy), label: 'AI'),
         ],
       ),
     );

@@ -272,7 +272,7 @@ class _MusicScreenState extends State<MusicScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: Theme.of(context).colorScheme.surfaceVariant,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(

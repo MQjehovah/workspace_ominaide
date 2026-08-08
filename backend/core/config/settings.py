@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     intelligence_layer_enabled: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    cors_origins: str = '["http://localhost:3000","http://localhost:5173","app://."]'
+    cors_origins: str = '["*","http://localhost:3000","http://localhost:5173","http://localhost:5000","http://localhost:8080","app://."]'
     webrtc_ice_servers: str = '[{"urls":"stun:mqgeek.com:3478"},{"urls":"turn:mqgeek.com:3478","username":"guest","credential":"guest"},{"urls":"turn:mqgeek.com:3478?transport=tcp","username":"guest","credential":"guest"}]'
 
     model_config = {

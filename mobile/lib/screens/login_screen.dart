@@ -9,7 +9,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _serverUrl = TextEditingController(text: 'http://10.0.2.2:8000');
+  final _serverUrl = TextEditingController(text: 'http://mqgeek.com:8000');
   final _username = TextEditingController();
   final _password = TextEditingController();
   bool _loading = false;

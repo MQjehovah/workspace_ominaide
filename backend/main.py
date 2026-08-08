@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from core.events.middleware import ActivityMiddleware
 
@@ -58,13 +59,28 @@ from core.config.settings import settings as app_settings
 
 _origins = app_settings.cors_origins_list
 _allow_all = "*" in _origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if _allow_all else _origins,
-    allow_credentials=not _allow_all,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+
+@app.middleware("http")
+async def cors_middleware(request, call_next):
+    """Reliable CORS: add headers to all responses and short-circuit OPTIONS."""
+    origin = request.headers.get("origin", "")
+    allow = "*" if _allow_all else (origin if origin in _origins else "")
+    if request.method == "OPTIONS":
+        headers = {
+            "Access-Control-Allow-Origin": allow or "*",
+            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type,Authorization",
+            "Access-Control-Max-Age": "600",
+        }
+        return Response(status_code=204, headers=headers)
+    response = await call_next(request)
+    if allow:
+        response.headers["Access-Control-Allow-Origin"] = allow
+        response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,PATCH,OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    return response
+
 
 app.add_middleware(ActivityMiddleware)
 

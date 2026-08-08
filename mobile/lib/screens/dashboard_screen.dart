@@ -1,8 +1,11 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/file_item.dart';
 import 'search_screen.dart';
+import 'chat_screen.dart';
+import 'schedule_screen.dart';
+import 'todo_screen.dart';
+import 'notifications_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -12,46 +15,40 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final _chatController = TextEditingController();
-  final _messages = <Map<String, String>>[];
-  bool _chatLoading = false;
   List<FileItem> _recentFiles = [];
   bool _loadingFiles = true;
+  int _todoCount = 0;
+  int _unreadCount = 0;
+  int _eventCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadRecent();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final api = ApiService();
+      final todos = await api.listTodoItems();
+      final notifs = await api.listNotifications();
+      final events = await api.listScheduleEvents();
+      if (!mounted) return;
+      setState(() {
+        _todoCount = todos.length;
+        _unreadCount = notifs.where((n) => n['read'] == false).length;
+        _eventCount = events.length;
+      });
+    } catch (e) {
+      debugPrint('[dashboard] stats error: $e');
+    }
   }
 
   Future<void> _loadRecent() async {
     final files = await ApiService().listFiles();
     if (!mounted) return;
     setState(() { _recentFiles = files; _loadingFiles = false; });
-  }
-
-  Future<void> _sendChat() async {
-    final text = _chatController.text.trim();
-    if (text.isEmpty) return;
-    _chatController.clear();
-    setState(() {
-      _messages.add({'role': 'user', 'text': text});
-      _chatLoading = true;
-    });
-    try {
-      final res = await ApiService().post('/chat', {'message': text});
-      String reply;
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        reply = data['reply'] as String? ?? '（无回复）';
-      } else {
-        reply = 'AI 服务未配置或不可用';
-      }
-      if (!mounted) return;
-      setState(() { _messages.add({'role': 'ai', 'text': reply}); _chatLoading = false; });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() { _messages.add({'role': 'ai', 'text': '连接失败'}); _chatLoading = false; });
-    }
   }
 
   @override
@@ -79,41 +76,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     hintText: '向 AI 提问...',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                    suffixIcon: _chatLoading
-                      ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))
-                      : IconButton(icon: const Icon(Icons.send), onPressed: _sendChat),
-                  ),
-                  onSubmitted: (_) => _sendChat(),
-                ),
-                if (_messages.isNotEmpty)
-                  SizedBox(
-                    height: 140,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.only(top: 8),
-                      itemCount: _messages.length,
-                      itemBuilder: (_, i) {
-                        final m = _messages[i];
-                        final isUser = m['role'] == 'user';
-                        return Align(
-                          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: isUser ? const Color(0xFF007AFF) : Colors.grey.shade100,
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(12), topRight: const Radius.circular(12),
-                                bottomLeft: isUser ? const Radius.circular(12) : Radius.zero,
-                                bottomRight: isUser ? Radius.zero : const Radius.circular(12),
-                              ),
-                            ),
-                            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                            child: Text(m['text'] ?? '', style: TextStyle(color: isUser ? Colors.white : Colors.black87, fontSize: 13)),
-                          ),
-                        );
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.send),
+                      onPressed: () {
+                        final q = _chatController.text.trim();
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(initialQuery: q)));
                       },
                     ),
                   ),
+                  onSubmitted: (_) {
+                    final q = _chatController.text.trim();
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(initialQuery: q)));
+                  },
+                ),
               ],
             ),
           ),
@@ -121,11 +96,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // Quick Actions
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(children: [
-              _quickBtn(Icons.search, '搜索', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()))),
-              const SizedBox(width: 12),
-              _quickBtn(Icons.refresh, '刷新', _loadRecent),
-            ]),
+            child: Column(
+              children: [
+                Row(children: [
+                  _quickBtn(Icons.smart_toy, 'AI 助手', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatScreen()))),
+                  const SizedBox(width: 12),
+                  _quickBtn(Icons.event, '日程', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScheduleScreen()))),
+                  const SizedBox(width: 12),
+                  _quickBtn(Icons.check_circle_outline, '待办', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TodoScreen()))),
+                ]),
+                const SizedBox(height: 12),
+                Row(children: [
+                  _quickBtn(Icons.notifications, '通知', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()))),
+                  const SizedBox(width: 12),
+                  _quickBtn(Icons.search, '搜索', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()))),
+                  const SizedBox(width: 12),
+                  _quickBtn(Icons.refresh, '刷新', _loadRecent),
+                ]),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Overview stats
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                _statCard(Icons.check_circle_outline, '待办', _todoCount),
+                const SizedBox(width: 12),
+                _statCard(Icons.notifications_outlined, '未读通知', _unreadCount),
+                const SizedBox(width: 12),
+                _statCard(Icons.event, '日程', _eventCount),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -165,18 +169,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
             color: Colors.grey.shade50,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.grey.shade200),
           ),
-          child: Column(children: [
-            Icon(icon, color: const Color(0xFF007AFF)),
-            const SizedBox(height: 6),
-            Text(label, style: const TextStyle(fontSize: 12)),
-          ]),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: const Color(0xFF007AFF)),
+              const SizedBox(height: 6),
+              Text(label, style: const TextStyle(fontSize: 12)),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _statCard(IconData icon, String label, int value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(children: [
+          Icon(icon, size: 20, color: const Color(0xFF007AFF)),
+          const SizedBox(height: 4),
+          Text('$value', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+        ]),
       ),
     );
   }
