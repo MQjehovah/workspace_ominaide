@@ -35,14 +35,39 @@
         <div class="header-actions">
           <span class="save-status" :class="{ dirty: saveStatus === '未保存' }">{{ saveStatus }}</span>
           <button class="save-btn" :disabled="!currentId" @click="exportMarkdown" title="导出为 Markdown">导出</button>
+          <button class="save-btn" :disabled="!currentId" @click="openHistory" title="版本历史">历史</button>
           <button class="save-btn" :disabled="!currentId" @click="doSave">保存 (Ctrl+S)</button>
           <button class="del-btn" @click="deleteNote">删除</button>
         </div>
       </div>
-      <TipTapEditor ref="editorRef" :key="currentId" v-model="content" @update:model-value="markDirty" />
+      <TipTapEditor ref="editorRef" :key="currentId" v-model="content" @update:model-value="markDirty" @open-note="openEmbeddedNote" />
     </div>
     <div class="empty-area" v-else>
       <p>选择或创建一篇笔记</p>
+    </div>
+
+    <div v-if="historyOpen" class="history-overlay" @click.self="historyOpen = false">
+      <div class="history-modal">
+        <div class="history-hd">
+          <span>版本历史</span>
+          <button class="history-close" @click="historyOpen = false">✕</button>
+        </div>
+        <div class="history-body">
+          <div v-if="versions.length === 0" class="history-empty">暂无历史版本</div>
+          <div v-for="v in versions" :key="v.id" class="history-item" :class="{ active: v.id === selectedVersion?.id }" @click="loadVersion(v)">
+            <div class="history-ver">v{{ v.version }}</div>
+            <div class="history-main">
+              <div class="history-title">{{ v.title || '无标题' }}</div>
+              <div class="history-time">{{ fmtVersionTime(v.created_at) }}</div>
+            </div>
+            <button class="history-restore" @click.stop="restoreVersion(v)">恢复</button>
+          </div>
+        </div>
+        <div v-if="selectedVersion" class="history-preview">
+          <div class="history-preview-hd">预览 v{{ selectedVersion.version }} <button class="history-restore" @click="restoreVersion(selectedVersion)">恢复此版本</button></div>
+          <div class="history-preview-body">{{ selectedVersion.text }}</div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -60,6 +85,54 @@ const editorRef = ref<any>(null)
 const saveStatus = ref('')
 let hideSaveTimer: any = null
 let suppressDirty = false
+const historyOpen = ref(false)
+const versions = ref<any[]>([])
+const selectedVersion = ref<any>(null)
+
+function fmtVersionTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+async function openHistory() {
+  if (!currentId.value) return
+  historyOpen.value = true
+  selectedVersion.value = null
+  try {
+    const res = await window.mqbox?.api.get(`/plugins/notes/${currentId.value}/versions`) || { versions: [] }
+    versions.value = res.versions || []
+  } catch (e) {
+    console.error('[notes] load versions failed:', e)
+    versions.value = []
+  }
+}
+
+async function loadVersion(v: any) {
+  if (!currentId.value) return
+  try {
+    const res = await window.mqbox?.api.get(`/plugins/notes/${currentId.value}/versions/${v.id}`) || {}
+    selectedVersion.value = { ...res, version: v.version, text: res.content || '' }
+  } catch (e) {
+    console.error('[notes] load version failed:', e)
+  }
+}
+
+async function restoreVersion(v: any) {
+  if (!currentId.value || !confirm(`确定恢复到 v${v.version}?当前内容会先保存为历史版本。`)) return
+  try {
+    const res = await window.mqbox?.api.post(`/plugins/notes/${currentId.value}/versions/${v.id}/restore`, {})
+    if (res?.content !== undefined) {
+      title.value = res.title || ''
+      content.value = res.content || ''
+      historyOpen.value = false
+      showSaved()
+    }
+  } catch (e) {
+    console.error('[notes] restore version failed:', e)
+  }
+}
 
 function showSaved() {
   saveStatus.value = '已保存'
@@ -234,6 +307,17 @@ function flattenTree(nodes: any[]): any[] {
   return result
 }
 
+function openEmbeddedNote(id: number) {
+  const all = flattenTree(tree.value)
+  const note = all.find((n: any) => n.id === id)
+  if (note) {
+    openNote(id)
+  } else {
+    // note not in tree (folder or missing) — still try to open
+    openNote(id)
+  }
+}
+
 function findNodePath(nodes: any[], id: number): any[] {
   for (const n of nodes) {
     if (n.id === id) return [n]
@@ -355,5 +439,23 @@ onUnmounted(() => {
 .save-btn:hover { background:#d9ecff; }
 .del-btn { padding:4px 12px; border-radius:6px; border:1px solid #f56c6c; background:#fff; color:#f56c6c; cursor:pointer; font-size:12px; }
 .del-btn:hover { background:#fef0f0; }
+.history-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:100; display:flex; align-items:center; justify-content:center; }
+.history-modal { width:560px; max-width:90vw; max-height:80vh; background:#fff; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,0.2); }
+.history-hd { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; }
+.history-close { border:none; background:transparent; cursor:pointer; font-size:16px; color:#9ca3af; }
+.history-body { flex:1; overflow-y:auto; padding:8px; min-height:120px; }
+.history-empty { text-align:center; color:#9ca3af; padding:30px; font-size:13px; }
+.history-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; }
+.history-item:hover { background:#f3f4f6; }
+.history-item.active { background:#e0f2fe; }
+.history-ver { font-size:11px; font-weight:700; color:#3b82f6; background:#eff6ff; border-radius:6px; padding:2px 6px; flex-shrink:0; }
+.history-main { flex:1; min-width:0; }
+.history-title { font-size:13px; color:#374151; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.history-time { font-size:11px; color:#9ca3af; margin-top:2px; }
+.history-restore { padding:4px 10px; border:1px solid #3b82f6; background:#eff6ff; color:#3b82f6; border-radius:6px; font-size:12px; cursor:pointer; flex-shrink:0; }
+.history-restore:hover { background:#dbeafe; }
+.history-preview { border-top:1px solid #e5e7eb; max-height:240px; display:flex; flex-direction:column; }
+.history-preview-hd { display:flex; justify-content:space-between; align-items:center; padding:8px 16px; font-size:12px; color:#6b7280; }
+.history-preview-body { flex:1; overflow-y:auto; padding:8px 16px 16px; font-size:13px; color:#374151; white-space:pre-wrap; word-break:break-word; }
 .empty-area { flex:1; display:flex; align-items:center; justify-content:center; color:#ccc; font-size:14px; }
 </style>

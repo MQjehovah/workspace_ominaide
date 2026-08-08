@@ -96,6 +96,48 @@ async def update_note(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/{note_id}/versions")
+async def get_note_versions(
+    note_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        versions = await notes_service.list_versions(db, user["id"], note_id)
+        return {"versions": versions}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{note_id}/versions/{version_id}")
+async def get_note_version(
+    note_id: int,
+    version_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        v = await notes_service.get_version(db, user["id"], note_id, version_id)
+        return v
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{note_id}/versions/{version_id}/restore")
+async def restore_note_version(
+    note_id: int,
+    version_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        note = await notes_service.restore_version(db, user["id"], note_id, version_id)
+        await record_event(db, user["id"], "note.restored", "note", note_id, f"恢复笔记版本: {note.title}")
+        return NoteResponse.model_validate(note)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.delete("/{note_id}")
 async def delete_note(
     note_id: int,

@@ -73,6 +73,12 @@ async def update_note(
     note = await get_note(db, user_id, note_id)
     if not note:
         raise ValueError("Note not found")
+    # Snapshot previous state before applying changes (page history)
+    if not note.is_folder and (req.content is not None or req.title is not None):
+        changed = (req.content is not None and (req.content or "") != (note.content or "")) or \
+                  (req.title is not None and (req.title or "") != (note.title or ""))
+        if changed:
+            await snapshot_version(db, user_id, note_id, note)
     if req.title is not None: note.title = req.title
     if req.content is not None: note.content = req.content
     if req.parent_id is not None: note.parent_id = req.parent_id
@@ -92,6 +98,83 @@ async def update_note(
             metadata={"link": f"/notes/{note.id}"},
         ))
 
+    return note
+
+
+async def snapshot_version(db: AsyncSession, user_id: int, note_id: int, note: PluginNote):
+    """Save a snapshot of the note's current state as a new version."""
+    from plugins.notes.backend.models import NoteVersion
+    from sqlalchemy import func
+    r = await db.execute(
+        select(func.coalesce(func.max(NoteVersion.version), 0)).where(NoteVersion.note_id == note_id)
+    )
+    next_version = (r.scalar() or 0) + 1
+    db.add(NoteVersion(
+        note_id=note_id,
+        user_id=user_id,
+        title=note.title,
+        content=note.content,
+        version=next_version,
+    ))
+    # keep last 50 versions
+    r2 = await db.execute(
+        select(NoteVersion.id).where(NoteVersion.note_id == note_id).order_by(NoteVersion.version.desc()).offset(50)
+    )
+    for old_id in r2.scalars().all():
+        await db.delete(old_id)
+
+
+async def list_versions(db: AsyncSession, user_id: int, note_id: int) -> list[dict]:
+    from plugins.notes.backend.models import NoteVersion
+    note = await get_note(db, user_id, note_id)
+    if not note:
+        raise ValueError("Note not found")
+    r = await db.execute(
+        select(NoteVersion).where(NoteVersion.note_id == note_id).order_by(NoteVersion.version.desc()).limit(50)
+    )
+    vs = r.scalars().all()
+    return [{
+        "id": v.id,
+        "version": v.version,
+        "title": v.title or note.title,
+        "created_at": str(v.created_at),
+    } for v in vs]
+
+
+async def get_version(db: AsyncSession, user_id: int, note_id: int, version_id: int) -> dict:
+    from plugins.notes.backend.models import NoteVersion
+    note = await get_note(db, user_id, note_id)
+    if not note:
+        raise ValueError("Note not found")
+    r = await db.execute(
+        select(NoteVersion).where(NoteVersion.id == version_id, NoteVersion.note_id == note_id)
+    )
+    v = r.scalar_one_or_none()
+    if not v:
+        raise ValueError("Version not found")
+    return {"id": v.id, "version": v.version, "title": v.title or note.title, "content": v.content or "", "created_at": str(v.created_at)}
+
+
+async def restore_version(db: AsyncSession, user_id: int, note_id: int, version_id: int) -> PluginNote:
+    """Restore note content to a previous version (creates a new version snapshot of current state first)."""
+    note = await get_note(db, user_id, note_id)
+    if not note:
+        raise ValueError("Note not found")
+    v = await get_version(db, user_id, note_id, version_id)
+    await snapshot_version(db, user_id, note_id, note)
+    note.title = v["title"] or note.title
+    note.content = v["content"]
+    await db.flush()
+    await db.refresh(note)
+    if not note.is_folder:
+        asyncio.create_task(index_content(
+            user_id=user_id,
+            source_type='note',
+            source_id=note.id,
+            title=note.title,
+            content=_index_text(note.content),
+            metadata={"link": f"/notes/{note.id}"},
+        ))
     return note
 
 

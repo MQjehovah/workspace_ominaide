@@ -87,12 +87,15 @@ import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
+import mermaid from 'mermaid'
+import { NoteEmbed } from './NoteEmbedExtension'
+import { Diagram } from './DiagramExtension'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import { defaultMarkdownParser, defaultMarkdownSerializer } from 'prosemirror-markdown'
 
 const props = defineProps<{ modelValue: string }>()
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string]; 'open-note': [id: number] }>()
 
 const editorExtensions = [
   StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false, underline: false }),
@@ -104,6 +107,8 @@ const editorExtensions = [
   TableRow,
   TableCell,
   TableHeader,
+  NoteEmbed,
+  Diagram,
 ]
 
 const showAi = ref(false)
@@ -179,6 +184,14 @@ const slashItems = [
   { id: 'ordered', icon: '1.', label: '有序列表', action: 'cmd', prompt: 'toggleOrderedList', args: {} },
   { id: 'quote', icon: '"', label: '引用', action: 'cmd', prompt: 'toggleBlockquote', args: {} },
   { id: 'table', icon: '⊞', label: '插入表格', action: 'cmd', prompt: 'insertTable', args: {} },
+  { id: 'mermaid', icon: '📊', label: 'Mermaid 图表', action: 'cmd', prompt: 'insertMermaid', args: {} },
+  { id: 'code', icon: '</>', label: '代码块', action: 'cmd', prompt: 'insertCodeBlock', args: {} },
+  { id: 'embed', icon: '🔗', label: '嵌入笔记', action: 'cmd', prompt: 'insertEmbed', args: {} },
+  { id: 'diagram', icon: '📐', label: '绘图画布', action: 'cmd', prompt: 'insertDiagram', args: {} },
+  { id: 'todo', icon: '☑', label: '待办清单', action: 'template', prompt: 'todo' },
+  { id: 'meeting', icon: '📋', label: '会议纪要', action: 'template', prompt: 'meeting' },
+  { id: 'weekly', icon: '📅', label: '周报模板', action: 'template', prompt: 'weekly' },
+  { id: 'decision', icon: '📌', label: '决策记录', action: 'template', prompt: 'decision' },
 ]
 
 function loadAIConfig() {
@@ -232,6 +245,13 @@ function closeSlash() {
   editor.value?.chain().focus().run()
 }
 
+const TEMPLATES: Record<string, string> = {
+  todo: `- [ ] 任务一\n- [ ] 任务二\n- [ ] 任务三`,
+  meeting: `# 会议纪要\n\n## 主题\n\n## 参会人\n\n## 议题\n1. \n\n## 决议\n1. \n\n## 行动项\n- [ ] `,
+  weekly: `# 周报\n\n## 本周完成\n1. \n\n## 下周计划\n1. \n\n## 问题与风险\n- `,
+  decision: `# 决策记录\n\n## 背景\n\n## 选项\n1. \n2. \n\n## 决定\n\n## 理由\n\n## 后续行动\n- `,
+}
+
 function runSlash(item: any) {
   if (!editor.value) return
   // '/' was prevented from insertion (handleKeyDown), so no cleanup needed.
@@ -244,9 +264,33 @@ function runSlash(item: any) {
     } else {
       triggerAi()
     }
+  } else if (item.action === 'template') {
+    const tpl = TEMPLATES[item.prompt] || ''
+    editor.value.chain().focus().insertContent(tpl).run()
   } else {
     const chain: any = editor.value.chain().focus()
-    if (item.prompt === 'insertTable') chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+    if (item.prompt === 'insertTable') chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+    else if (item.prompt === 'insertMermaid') {
+      chain.insertContent({ type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: 'graph TD\n  A[开始] --> B{判断}\n  B -->|是| C[通过]\n  B -->|否| D[失败]' }] }).run()
+    }
+    else if (item.prompt === 'insertCodeBlock') {
+      chain.insertContent({ type: 'codeBlock', attrs: { language: null }, content: [{ type: 'text', text: '' }] }).run()
+    }
+    else if (item.prompt === 'insertEmbed') {
+      const idStr = window.prompt('输入要嵌入的笔记 ID:')
+      const noteId = Number(idStr)
+      if (idStr && !isNaN(noteId)) {
+        chain.insertContent({ type: 'noteEmbed', attrs: { noteId, label: '笔记 #' + noteId } }).run()
+      }
+    }
+    else if (item.prompt === 'insertDiagram') {
+      console.log('[notes] inserting diagramCanvas, schema has:', !!editor.value?.schema?.nodes?.diagramCanvas)
+      if (editor.value?.schema?.nodes?.diagramCanvas) {
+        editor.value.chain().focus().insertContent({ type: 'diagramCanvas', attrs: { data: '{"nodes":[],"edges":[]}' } }).run()
+      } else {
+        console.error('[notes] diagramCanvas node not in schema')
+      }
+    }
     else chain[item.prompt]?.(item.args || {}).run?.() || chain[item.prompt]?.().run?.()
   }
 }
@@ -485,6 +529,18 @@ const editor = useEditor({
       }
       return false
     },
+    handleClick: (view, pos, event) => {
+      const target = event.target as HTMLElement
+      const embedEl = target.closest?.('[data-note-id]')
+      if (embedEl) {
+        const noteId = embedEl.getAttribute('data-note-id')
+        if (noteId) {
+          emit('open-note', Number(noteId))
+          return true
+        }
+      }
+      return false
+    },
     handlePaste: (view, event) => {
       const items = event.clipboardData?.items
       if (!items) return
@@ -516,6 +572,7 @@ const editor = useEditor({
         emit('update:modelValue', json)
       } catch {}
     }
+    scheduleMermaidRender()
   },
   onCreate: ({ editor }) => {
     if (props.modelValue) {
@@ -523,6 +580,7 @@ const editor = useEditor({
     }
     // Initial load done — allow change propagation from now on.
     nextTick(() => { loadingContent = false })
+    scheduleMermaidRender()
   },
 })
 
@@ -598,7 +656,6 @@ function getJSONContent(): string {
     return ''
   }
 }
-
 // Markdown export (lossy but human-readable)
 function getMarkdown(): string {
   if (!editor.value) return ''
@@ -612,6 +669,48 @@ function getMarkdown(): string {
       return ''
     }
   }
+}
+
+let mermaidInit = false
+let mermaidRenderTimer: any = null
+
+function ensureMermaid() {
+  if (!mermaidInit) {
+    mermaidInit = true
+    try {
+      mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' })
+    } catch { /* ignore */ }
+  }
+}
+
+async function renderMermaidBlocks() {
+  const dom = editor.value?.view?.dom
+  if (!dom) return
+  ensureMermaid()
+  const blocks = dom.querySelectorAll('pre code.language-mermaid')
+  if (!blocks.length) return
+  for (const el of Array.from(blocks)) {
+    const pre = el.closest('pre')
+    if (!pre || pre.dataset.mermaidDone) continue
+    const code = (el.textContent || '').trim()
+    if (!code) continue
+    try {
+      const id = 'mmd-' + Math.random().toString(36).slice(2, 8)
+      const { svg } = await mermaid.render(id, code)
+      pre.dataset.mermaidDone = '1'
+      pre.innerHTML = svg
+      pre.classList.add('mermaid-rendered')
+    } catch (e) {
+      pre.dataset.mermaidDone = '1'
+      pre.classList.add('mermaid-error')
+      pre.title = 'Mermaid 解析失败: ' + (e as any)?.message
+    }
+  }
+}
+
+function scheduleMermaidRender() {
+  if (mermaidRenderTimer) clearTimeout(mermaidRenderTimer)
+  mermaidRenderTimer = setTimeout(renderMermaidBlocks, 300)
 }
 
 defineExpose({ getJSONContent, getMarkdown })
@@ -715,6 +814,17 @@ defineExpose({ getJSONContent, getMarkdown })
   margin: 0.5em 0;
 }
 .editor-content :deep(pre code) { background: none; color: inherit; padding: 0; }
+.editor-content :deep(pre.mermaid-rendered) { background: #fff; padding: 8px; overflow-x: auto; }
+.editor-content :deep(pre.mermaid-rendered svg) { max-width: 100%; height: auto; }
+.editor-content :deep(pre.mermaid-error) { border: 1px solid #fca5a5; }
+.editor-content :deep(.note-embed) { margin: 0.5em 0; }
+.editor-content :deep(.note-embed-card) { display:flex; align-items:center; gap:8px; padding:10px 14px; border:1px solid #dbeafe; background:#eff6ff; border-radius:8px; cursor:pointer; }
+.editor-content :deep(.note-embed-card:hover) { background:#dbeafe; }
+.editor-content :deep(.note-embed-icon) { font-size:15px; }
+.editor-content :deep(.note-embed-label) { font-size:13px; color:#1d4ed8; font-weight:500; }
+.editor-content :deep(.diagram-node-wrapper) { margin: 0.5em 0; border: 1px dashed #cbd5e1; border-radius: 10px; }
+.editor-content :deep(.diagram-remove) { padding: 3px 10px; border: 1px solid #fca5a5; background: #fef2f2; color: #dc2626; border-radius: 6px; font-size: 11px; cursor: pointer; }
+.editor-content :deep(.diagram-remove:hover) { background: #fee2e2; }
 .editor-content :deep(table) { border-collapse: collapse; width: 100%; margin: 0.5em 0; font-size: 13px; }
 .editor-content :deep(th), .editor-content :deep(td) { border: 1px solid #d0d5dd; padding: 8px 12px; text-align: left; min-width: 60px; }
 .editor-content :deep(th) { background: #f8fafc; font-weight: 600; }
