@@ -6,6 +6,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { listLocalTools, callLocalTool } from './local-tools'
 import { createOfficeClient, closeOfficeClient, OFFICE_SERVER_ID, type OfficeClientHandle } from './office-mcp'
+import { createBackendClient, closeBackendClient, BACKEND_SERVER_ID, type BackendClientHandle } from './backend-mcp'
 
 export interface McpServerConfig {
   id: string
@@ -35,15 +36,26 @@ let servers: McpServerConfig[] = []
 let conns = new Map<string, ConnInfo>()
 let toolsCache: { name: string; description: string; inputSchema: any; serverId: string }[] | null = null
 let officeHandle: OfficeClientHandle | null = null
+let backendHandle: BackendClientHandle | null = null
 
 function officeServerInfo(): McpServerConfig {
   return { id: OFFICE_SERVER_ID, name: 'Office 文档', transport: 'internal', enabled: true }
+}
+
+function backendServerInfo(): McpServerConfig {
+  return { id: BACKEND_SERVER_ID, name: '后端服务', transport: 'internal', enabled: true }
 }
 
 async function ensureOffice(): Promise<OfficeClientHandle> {
   if (officeHandle) return officeHandle
   officeHandle = await createOfficeClient()
   return officeHandle
+}
+
+async function ensureBackend(): Promise<BackendClientHandle> {
+  if (backendHandle) return backendHandle
+  backendHandle = await createBackendClient()
+  return backendHandle
 }
 
 function load() {
@@ -124,6 +136,7 @@ async function disconnect(id: string) {
 export function getServers(): McpServerConfig[] {
   const out = servers.map(s => ({ ...s }))
   out.push(officeServerInfo())
+  out.push(backendServerInfo())
   return out
 }
 
@@ -174,6 +187,19 @@ export async function listTools(): Promise<{ name: string; description: string; 
   } catch (e: any) {
     console.error('[mcp] office server init failed:', e?.message || e)
   }
+  try {
+    const backend = await ensureBackend()
+    for (const t of backend.tools) {
+      out.push({
+        name: `${BACKEND_SERVER_ID}${TOOL_SEP}${t.name}`,
+        description: `[后端] ${t.description || t.name}`,
+        inputSchema: t.inputSchema || { type: 'object', properties: {} },
+        serverId: BACKEND_SERVER_ID,
+      })
+    }
+  } catch (e: any) {
+    console.error('[mcp] backend server init failed:', e?.message || e)
+  }
   for (const s of servers) {
     if (!s.enabled) continue
     try {
@@ -202,6 +228,12 @@ export function getServerStatus(id: string): { connected: boolean; error?: strin
       ? toolsCache.filter(t => t.serverId === OFFICE_SERVER_ID).length
       : 0
     return { connected: !!officeHandle, tools: toolCount }
+  }
+  if (id === BACKEND_SERVER_ID) {
+    const toolCount = toolsCache
+      ? toolsCache.filter(t => t.serverId === BACKEND_SERVER_ID).length
+      : 0
+    return { connected: !!backendHandle, tools: toolCount }
   }
   const info = conns.get(id)
   if (!info) return { connected: false, tools: 0 }
@@ -252,6 +284,22 @@ export async function callTool(name: string, args: any): Promise<{ content: stri
       return { content: `Office 工具调用失败: ${e?.message || e}`, error: true }
     }
   }
+  if (serverId === BACKEND_SERVER_ID) {
+    try {
+      const backend = await ensureBackend()
+      const res = await backend.client.callTool({ name: toolName, arguments: args || {} })
+      const blocks: any[] = (res as any).content || []
+      let text = ''
+      for (const c of blocks) {
+        if (c && c.type === 'text' && c.text) text += (text ? '\n' : '') + c.text
+        else if (c && c.type === 'resource' && c.resource?.text) text += (text ? '\n' : '') + c.resource.text
+      }
+      if (res.isError) return { content: text || '后端工具执行出错', error: true }
+      return { content: text, error: false }
+    } catch (e: any) {
+      return { content: `后端工具调用失败: ${e?.message || e}`, error: true }
+    }
+  }
   const s = servers.find(x => x.id === serverId)
   if (!s) return { content: `服务器不存在: ${serverId}`, error: true }
   try {
@@ -277,6 +325,10 @@ export async function disposeAll() {
   if (officeHandle) {
     await closeOfficeClient(officeHandle).catch(() => {})
     officeHandle = null
+  }
+  if (backendHandle) {
+    await closeBackendClient(backendHandle).catch(() => {})
+    backendHandle = null
   }
 }
 

@@ -1,7 +1,29 @@
 from typing import Callable, Awaitable
 from core.ai.mcp.core import MCPTool, MCPCallRequest, MCPCallResponse, MCPContent
 
-ToolHandler = Callable[[int, dict], Awaitable[MCPCallResponse]]
+ToolHandler = Callable[[int, dict], Awaitable[MCPCallResponse | dict]]
+
+
+def _to_response(result: MCPCallResponse | dict) -> MCPCallResponse:
+    if isinstance(result, MCPCallResponse):
+        return result
+    # dict result -> wrap as text content
+    if isinstance(result, dict):
+        if result.get("error"):
+            return MCPCallResponse(
+                isError=True,
+                content=[MCPContent(text=str(result.get("error")))]
+            )
+        import json
+        try:
+            text = json.dumps(result, ensure_ascii=False)
+        except Exception:
+            text = str(result)
+        return MCPCallResponse(content=[MCPContent(text=text)])
+    return MCPCallResponse(
+        isError=True,
+        content=[MCPContent(text=f"Unexpected result type: {type(result)}")]
+    )
 
 
 class ToolRegistry:
@@ -32,7 +54,8 @@ class ToolRegistry:
                 content=[MCPContent(text=f"Tool '{req.name}' not found")]
             )
         try:
-            return await handler(user_id, req.arguments)
+            result = await handler(user_id, req.arguments)
+            return _to_response(result)
         except Exception as e:
             return MCPCallResponse(
                 isError=True,

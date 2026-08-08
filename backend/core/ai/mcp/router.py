@@ -20,4 +20,8 @@ async def call_tool(
 ):
     """MCP: Call a tool with arguments and get results."""
     result = await tool_registry.call(user["id"], req)
-    return result.model_dump()
+    if hasattr(result, "model_dump"):
+        return result.model_dump()
+    # safety fallback
+    from core.ai.mcp.registry import _to_response
+    return _to_response(result).model_dump()
