@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy.dialects.mysql import LONGTEXT
 from core.database.base import Base
 
 
@@ -8,7 +9,7 @@ class PluginNote(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String(500), nullable=False, default="无标题")
-    content = Column(Text, nullable=True, default="")
+    content = Column(Text().with_variant(LONGTEXT, "mysql"), nullable=True, default="")
     parent_id = Column(Integer, ForeignKey("plugin_notes.id"), nullable=True)
     is_folder = Column(Integer, default=0)
     icon = Column(String(50), nullable=True)

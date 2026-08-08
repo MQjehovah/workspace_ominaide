@@ -53,6 +53,41 @@ async def clear_history(user: dict = Depends(get_current_user), db: AsyncSession
 
 @router.post("", response_model=ChatResponse)
 async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
+    """Direct LLM chat (no agent/tools). Use for plain Q&A, writing, editor AI features."""
+    if not settings.llm_api_key:
+        raise HTTPException(status_code=400, detail="LLM API key not configured")
+    try:
+        from openai import AsyncOpenAI
+        messages: list[dict] = []
+        if req.history:
+            for m in req.history:
+                messages.append({"role": m.role, "content": m.content})
+        user_content: str | list = req.message
+        if req.images:
+            parts: list = [{"type": "text", "text": req.message}]
+            for img in req.images[:6]:
+                if isinstance(img, str) and img.startswith("data:"):
+                    parts.append({"type": "image_url", "image_url": {"url": img}})
+            if len(parts) > 1:
+                user_content = parts
+        messages.append({"role": "user", "content": user_content})
+        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+        resp = await client.chat.completions.create(
+            model=settings.llm_model,
+            messages=messages,
+            temperature=0.7,
+        )
+        reply = (resp.choices[0].message.content or "").strip()
+        await save_message(user["id"], "user", req.message)
+        await save_message(user["id"], "assistant", reply)
+        return ChatResponse(reply=reply)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/agent", response_model=ChatResponse)
+async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
+    """Agent chat: runs the AI agent with tool-calling and user context."""
     if not settings.llm_api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
 

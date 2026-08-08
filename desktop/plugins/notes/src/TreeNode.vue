@@ -57,7 +57,7 @@ const emit = defineEmits<{
   move: [sourceId: number, targetId: number, position: 'before' | 'after' | 'inside']
 }>()
 
-const expanded = ref(true)
+const expanded = ref(false)
 const isDragging = ref(false)
 const dropPos = ref<'before' | 'after' | 'inside' | null>(null)
 const hasChildren = computed(() => props.node.children?.length > 0 || props.node.is_folder)

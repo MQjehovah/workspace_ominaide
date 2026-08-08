@@ -4,9 +4,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.ai.indexer import index_content
 from plugins.notes.backend.models import PluginNote
 from plugins.notes.backend.schemas import NoteCreate, NoteUpdate
+from plugins.notes.backend.content_text import note_content_to_text
+
+
+def _index_text(content: str | None) -> str:
+    """Convert stored content (JSON/markdown/html) to readable text for AI indexing."""
+    return note_content_to_text(content)
 
 
 async def create_note(db: AsyncSession, user_id: int, req: NoteCreate) -> PluginNote:
+    # Assign next sort_order among siblings so order is stable (new notes go last).
+    sib_query = select(func.coalesce(func.max(PluginNote.sort_order), -1)).where(
+        PluginNote.user_id == user_id,
+        PluginNote.parent_id.is_(None) if req.parent_id is None else PluginNote.parent_id == req.parent_id,
+    )
+    sib_result = await db.execute(sib_query)
+    max_order = sib_result.scalar() or -1
+
     note = PluginNote(
         user_id=user_id,
         title=req.title,
@@ -14,6 +28,7 @@ async def create_note(db: AsyncSession, user_id: int, req: NoteCreate) -> Plugin
         parent_id=req.parent_id,
         is_folder=1 if req.is_folder else 0,
         icon=req.icon,
+        sort_order=max_order + 1,
     )
     db.add(note)
     await db.flush()
@@ -25,7 +40,7 @@ async def create_note(db: AsyncSession, user_id: int, req: NoteCreate) -> Plugin
             source_type='note',
             source_id=note.id,
             title=note.title,
-            content=note.content or '',
+            content=_index_text(note.content),
             metadata={"link": f"/notes/{note.id}"},
         ))
 
@@ -40,7 +55,7 @@ async def get_notes(
         query = query.where(PluginNote.parent_id == parent_id)
     else:
         query = query.where(PluginNote.parent_id.is_(None))
-    query = query.order_by(PluginNote.sort_order, PluginNote.updated_at.desc())
+    query = query.order_by(PluginNote.sort_order, PluginNote.id)
     result = await db.execute(query)
     return list(result.scalars().all())
 
@@ -73,7 +88,7 @@ async def update_note(
             source_type='note',
             source_id=note.id,
             title=note.title,
-            content=note.content or '',
+            content=_index_text(note.content),
             metadata={"link": f"/notes/{note.id}"},
         ))
 
@@ -97,7 +112,7 @@ async def delete_note(db: AsyncSession, user_id: int, note_id: int):
 async def get_tree(db: AsyncSession, user_id: int) -> list[dict]:
     """Get full note tree structure."""
     result = await db.execute(
-        select(PluginNote).where(PluginNote.user_id == user_id).order_by(PluginNote.sort_order, PluginNote.updated_at.desc())
+        select(PluginNote).where(PluginNote.user_id == user_id).order_by(PluginNote.sort_order, PluginNote.id)
     )
     all_notes = list(result.scalars().all())
     notes_dict = {n.id: {

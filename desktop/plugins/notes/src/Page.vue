@@ -31,13 +31,15 @@
     </div>
     <div class="editor-area" v-if="currentId">
       <div class="editor-header">
-        <input v-model="title" class="title-input" placeholder="无标题" @input="scheduleSave" />
+        <input v-model="title" class="title-input" placeholder="无标题" @input="markDirty" />
         <div class="header-actions">
-          <span class="save-status">{{ saveStatus }}</span>
+          <span class="save-status" :class="{ dirty: saveStatus === '未保存' }">{{ saveStatus }}</span>
+          <button class="save-btn" :disabled="!currentId" @click="exportMarkdown" title="导出为 Markdown">导出</button>
+          <button class="save-btn" :disabled="!currentId" @click="doSave">保存 (Ctrl+S)</button>
           <button class="del-btn" @click="deleteNote">删除</button>
         </div>
       </div>
-      <TipTapEditor :key="currentId" v-model="content" @update:model-value="scheduleSave" />
+      <TipTapEditor ref="editorRef" :key="currentId" v-model="content" @update:model-value="markDirty" />
     </div>
     <div class="empty-area" v-else>
       <p>选择或创建一篇笔记</p>
@@ -54,9 +56,10 @@ const tree = ref<any[]>([])
 const currentId = ref<number | null>(null)
 const title = ref('')
 const content = ref('')
+const editorRef = ref<any>(null)
 const saveStatus = ref('')
-let saveTimer: any = null
 let hideSaveTimer: any = null
+let suppressDirty = false
 
 function showSaved() {
   saveStatus.value = '已保存'
@@ -66,33 +69,61 @@ function showSaved() {
 
 async function doSave() {
   if (!currentId.value) return
+  const mq = (window as any).mqbox
+  if (!mq?.api) {
+    console.error('[notes] mqbox.api unavailable')
+    saveStatus.value = '保存失败: API 不可用'
+    return
+  }
+  // Authoritative content source: native TipTap JSON read directly from the editor.
+  let toSave = content.value
   try {
-    await window.mqbox?.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: content.value })
+    if (editorRef.value?.getJSONContent) {
+      const fromEditor = editorRef.value.getJSONContent()
+      if (fromEditor || !content.value) toSave = fromEditor
+    }
+  } catch (e) {
+    console.warn('[notes] getJSONContent failed, using content.value:', e)
+  }
+  try {
+    const res = await mq.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: toSave })
+    console.log('[notes] save OK, resp:', res?.id || res)
+    if (editorRef.value?.getJSONContent) content.value = toSave
     showSaved()
     await loadTree()
   } catch (e) {
     console.error('[notes] save failed:', e)
-    saveStatus.value = '保存失败'
-    setTimeout(async () => {
-      if (!currentId.value) return
-      try {
-        await window.mqbox?.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: content.value })
-        showSaved()
-      } catch {}
-    }, 2000)
+    saveStatus.value = '保存失败: ' + ((e as any)?.message || String(e))
   }
 }
 
+function exportMarkdown() {
+  if (!editorRef.value?.getMarkdown) return
+  const md = editorRef.value.getMarkdown()
+  if (!md) { saveStatus.value = '内容为空'; return }
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = (title.value || '笔记') + '.md'
+  a.click()
+  URL.revokeObjectURL(url)
+  showSaved()
+}
+
 function scheduleSave() {
+  // kept for compat: just marks dirty, manual save via button / Ctrl+S
+  markDirty()
+}
+
+function markDirty() {
+  if (suppressDirty) return
   saveStatus.value = '未保存'
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(doSave, 800)
 }
 
 function handleKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault()
-    if (saveTimer) clearTimeout(saveTimer)
     doSave()
   }
 }
@@ -110,8 +141,11 @@ async function createNote() {
       title: '无标题', content: '',
     })
     if (res?.id) {
+      suppressDirty = true
       currentId.value = res.id
       title.value = ''; content.value = ''
+      saveStatus.value = ''
+      setTimeout(() => { suppressDirty = false }, 300)
     }
     await loadTree()
   } catch {}
@@ -175,13 +209,20 @@ async function openNote(id: number) {
   const allNotes = flattenTree(tree.value)
   const note = allNotes.find((n: any) => n.id === id)
   if (note?.is_folder) return
+  suppressDirty = true
   currentId.value = id
   try {
     const res = await window.mqbox?.api.get(`/plugins/notes/${id}`) || {}
     title.value = res.title || ''
     content.value = res.content || ''
     saveStatus.value = ''
-  } catch {}
+  } catch (e) {
+    console.error('[notes] open note failed:', e)
+    saveStatus.value = '加载失败'
+  } finally {
+    // allow dirty marking again after the editor finished applying content
+    setTimeout(() => { suppressDirty = false }, 300)
+  }
 }
 
 function flattenTree(nodes: any[]): any[] {
@@ -259,9 +300,8 @@ function findSiblings(nodes: any[], parentId: number | null): any[] | null {
 }
 
 window.addEventListener('beforeunload', () => {
-  if (saveTimer) clearTimeout(saveTimer)
-  if (currentId.value) {
-    window.mqbox?.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: content.value })
+  if (currentId.value && saveStatus.value === '未保存') {
+    // Do not auto-save; rely on manual save. (Auto-save was causing lost content.)
   }
 })
 
@@ -310,6 +350,9 @@ onUnmounted(() => {
 .title-input { flex:1; font-size:22px; font-weight:700; border:none; outline:none; padding:4px 0; }
 .header-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
 .save-status { font-size:11px; color:#67c23a; transition:opacity 0.3s; }
+.save-status.dirty { color:#e6a23c; }
+.save-btn { padding:4px 12px; border-radius:6px; border:1px solid #409eff; background:#ecf5ff; color:#409eff; cursor:pointer; font-size:12px; }
+.save-btn:hover { background:#d9ecff; }
 .del-btn { padding:4px 12px; border-radius:6px; border:1px solid #f56c6c; background:#fff; color:#f56c6c; cursor:pointer; font-size:12px; }
 .del-btn:hover { background:#fef0f0; }
 .empty-area { flex:1; display:flex; align-items:center; justify-content:center; color:#ccc; font-size:14px; }

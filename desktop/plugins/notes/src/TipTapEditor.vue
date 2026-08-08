@@ -68,6 +68,14 @@
           <span>AI 处理中…</span>
         </div>
       </div>
+
+      <div v-if="showSlash" class="slash-menu" :style="slashStyle">
+        <button v-for="(s, i) in slashItems" :key="s.id" class="slash-item" :class="{ active: slashIdx === i }"
+          @mousedown.prevent="runSlash(s)" @mouseenter="slashIdx = i">
+          <span class="slash-icon">{{ s.icon }}</span>
+          <span class="slash-label">{{ s.label }}</span>
+        </button>
+      </div>
     </Teleport>
   </div>
 </template>
@@ -102,6 +110,7 @@ const showAi = ref(false)
 const aiInstruction = ref('')
 const aiLoading = ref(false)
 const selectedText = ref('')
+let loadingContent = true
 const aiInputRef = ref<HTMLInputElement | null>(null)
 const aiPopupRef = ref<HTMLDivElement | null>(null)
 const aiPopupStyle = ref({ top: '0px', left: '0px' })
@@ -155,6 +164,23 @@ const presets = [
   { label: '修正语法', prompt: 'Fix grammar, spelling, and punctuation issues in the following text. Keep the same meaning and style.' },
 ]
 
+const showSlash = ref(false)
+const slashIdx = ref(0)
+const slashStyle = ref({ top: '0px', left: '0px' })
+const slashItems = [
+  { id: 'write', icon: '✍️', label: 'AI 写作', action: 'ai', prompt: '' },
+  { id: 'polish', icon: '✨', label: 'AI 改写润色', action: 'ai', prompt: presets[0].prompt },
+  { id: 'translate', icon: '🌐', label: 'AI 翻译英文', action: 'ai', prompt: presets[1].prompt },
+  { id: 'summary', icon: '📌', label: 'AI 概括要点', action: 'ai', prompt: presets[3].prompt },
+  { id: 'heading1', icon: 'H1', label: '标题 1', action: 'cmd', prompt: 'toggleHeading', args: { level: 1 } },
+  { id: 'heading2', icon: 'H2', label: '标题 2', action: 'cmd', prompt: 'toggleHeading', args: { level: 2 } },
+  { id: 'heading3', icon: 'H3', label: '标题 3', action: 'cmd', prompt: 'toggleHeading', args: { level: 3 } },
+  { id: 'bullet', icon: '•', label: '无序列表', action: 'cmd', prompt: 'toggleBulletList', args: {} },
+  { id: 'ordered', icon: '1.', label: '有序列表', action: 'cmd', prompt: 'toggleOrderedList', args: {} },
+  { id: 'quote', icon: '"', label: '引用', action: 'cmd', prompt: 'toggleBlockquote', args: {} },
+  { id: 'table', icon: '⊞', label: '插入表格', action: 'cmd', prompt: 'insertTable', args: {} },
+]
+
 function loadAIConfig() {
   try {
     const raw = localStorage.getItem('ai_chat_config')
@@ -163,7 +189,7 @@ function loadAIConfig() {
       return
     }
   } catch {}
-  aiConfig = { mode: 'backend', apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }
+  aiConfig = { mode: 'backend', apiKey: '', baseUrl: '', model: '' }
 }
 
 async function serverUrl(): Promise<string> {
@@ -173,6 +199,61 @@ async function serverUrl(): Promise<string> {
 function onWrapperClick() {
   if (!showAi.value) editor.value?.chain().focus().run()
 }
+
+function isAtEmptyBlockStart(): boolean {
+  const ed = editor.value
+  if (!ed) return false
+  try {
+    const { $from } = ed.state.selection
+    // cursor must be at start of its text block
+    if ($from.parentOffset !== 0) return false
+    // the block should be empty (or only whitespace)
+    const node = $from.parent
+    return node.textContent.trim() === ''
+  } catch {
+    return false
+  }
+}
+
+function openSlash() {
+  if (!editor.value) return
+  slashIdx.value = 0
+  const coords = editor.value.view.coordsAtPos(editor.value.state.selection.from)
+  if (coords) {
+    slashStyle.value = { top: `${coords.bottom + 4}px`, left: `${Math.max(8, Math.min(coords.left, window.innerWidth - 280))}px` }
+  } else {
+    slashStyle.value = { top: '200px', left: '16px' }
+  }
+  showSlash.value = true
+}
+
+function closeSlash() {
+  showSlash.value = false
+  editor.value?.chain().focus().run()
+}
+
+function runSlash(item: any) {
+  if (!editor.value) return
+  // '/' was prevented from insertion (handleKeyDown), so no cleanup needed.
+  closeSlash()
+  if (item.action === 'ai') {
+    if (item.prompt) {
+      selectedText.value = editor.value.state.doc.textBetween(editor.value.state.selection.from, editor.value.state.selection.to)
+      aiInstruction.value = item.prompt
+      submitAi()
+    } else {
+      triggerAi()
+    }
+  } else {
+    const chain: any = editor.value.chain().focus()
+    if (item.prompt === 'insertTable') chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+    else chain[item.prompt]?.(item.args || {}).run?.() || chain[item.prompt]?.().run?.()
+  }
+}
+
+onBeforeUnmount(() => {
+  editor.value?.destroy()
+})
 
 function triggerAi() {
   if (!editor.value) return
@@ -264,28 +345,33 @@ async function callAI(instruction: string, selection: string): Promise<string> {
     userMsg = instruction
   }
 
-  if (cfg.mode === 'backend') {
-    const tk = (await (window as any).mqbox?.config?.get('token')) || ''
-    const su = await serverUrl()
-    log('info', `fetch POST ${su}/api/chat`)
-    const r = await fetch(`${su}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tk}` },
-      body: JSON.stringify({ message: userMsg, history: [] }),
-    })
-    if (!r.ok) throw new Error(`API ${r.status} ${r.statusText}`)
-    const data = await r.json()
-    log('info', `backend reply type=${typeof data.reply} val="${String(data.reply).slice(0, 60)}"`)
-    return (data.reply || data.response || '').trim()
+  const tk = (await (window as any).mqbox?.config?.get('token')) || ''
+  const su = await serverUrl()
+
+  // Prefer backend mode when a backend token exists (most reliable)
+  const useBackend = cfg.mode === 'backend' || (!!tk && !!su && !cfg.apiKey)
+  if (useBackend) {
+    log('info', `call backend via IPC: ${su}/api/chat (direct LLM)`)
+    try {
+      const data = await (window as any).mqbox?.api?.post('/chat', {
+        message: userMsg,
+        history: [{ role: 'system', content: systemPrompt }],
+      })
+      log('info', `backend reply type=${typeof data?.reply} val="${String(data?.reply).slice(0, 60)}"`)
+      return (data?.reply || data?.response || '').trim()
+    } catch (e: any) {
+      log('error', `backend IPC failed: ${e?.message || e}`)
+      throw e
+    }
   } else {
     const apiKey = cfg.apiKey || localStorage.getItem('ai_api_key') || ''
     const baseUrl = (cfg.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
     const model = cfg.model || 'gpt-4o-mini'
-    const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    const r = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: cfg.model,
+        model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMsg },
@@ -335,17 +421,43 @@ function applyToEditor(text: string) {
 
 function setContentFromMarkdown(md: string) {
   if (!editor.value) return
-  try {
-    const pmDoc = defaultMarkdownParser.parse(md)
-    if (!pmDoc || pmDoc.content.size === 0) return
-    const mapped = mapNodeNames(pmDoc.toJSON())
-    const node = editor.value.schema.nodeFromJSON(mapped)
-    if (node.content.size === 0) return
-    const tr = editor.value.state.tr.replaceWith(0, editor.value.state.doc.content.size, node.content)
-    editor.value.view.dispatch(tr)
-  } catch (e) {
-    console.warn('[notes] setContentFromMarkdown error:', e)
+  const raw = md || ''
+  if (!raw.trim()) {
+    editor.value.commands.setContent('')
+    return
   }
+  const trimmed = raw.trim()
+  // 1) Native TipTap JSON (our save format) — perfect round-trip
+  if (trimmed.startsWith('{') && trimmed.includes('"type"')) {
+    try {
+      const json = JSON.parse(trimmed)
+      const mapped = mapNodeNames(json)
+      const node = editor.value.schema.nodeFromJSON(mapped)
+      if (node) {
+        editor.value.commands.setContent(node)
+        return
+      }
+    } catch (e) {
+      console.warn('[notes] setContent JSON parse failed, falling back:', e)
+    }
+  }
+  // 2) Markdown
+  try {
+    const pmDoc = defaultMarkdownParser.parse(trimmed)
+    if (pmDoc && pmDoc.content.size > 0) {
+      const mapped = mapNodeNames(pmDoc.toJSON())
+      const node = editor.value.schema.nodeFromJSON(mapped)
+      if (node && node.content.size > 0) {
+        const tr = editor.value.state.tr.replaceWith(0, editor.value.state.doc.content.size, node.content)
+        editor.value.view.dispatch(tr)
+        return
+      }
+    }
+  } catch (e) {
+    console.warn('[notes] markdown parse failed, falling back to text:', e)
+  }
+  // 3) HTML or plain text — insert as-is (TipTap parses HTML natively)
+  editor.value.commands.setContent(trimmed)
 }
 
 const editor = useEditor({
@@ -353,6 +465,26 @@ const editor = useEditor({
   extensions: editorExtensions,
   editorProps: {
     attributes: { spellcheck: 'false' },
+    handleKeyDown: (view, event) => {
+      // Slash command: '/' typed at start of an empty block → open menu
+      if (event.key === '/' && !showSlash.value && !showAi.value) {
+        if (isAtEmptyBlockStart()) {
+          event.preventDefault()
+          openSlash()
+          return true
+        }
+      }
+      // Slash menu navigation
+      if (showSlash.value) {
+        if (event.key === 'ArrowDown') { event.preventDefault(); slashIdx.value = (slashIdx.value + 1) % slashItems.length; return true }
+        if (event.key === 'ArrowUp') { event.preventDefault(); slashIdx.value = (slashIdx.value - 1 + slashItems.length) % slashItems.length; return true }
+        if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); runSlash(slashItems[slashIdx.value]); return true }
+        if (event.key === 'Escape') { event.preventDefault(); closeSlash(); return true }
+        closeSlash()
+        return false
+      }
+      return false
+    },
     handlePaste: (view, event) => {
       const items = event.clipboardData?.items
       if (!items) return
@@ -378,29 +510,41 @@ const editor = useEditor({
     },
   },
   onUpdate: ({ editor }) => {
-    try {
-      const md = defaultMarkdownSerializer.serialize(editor.state.doc)
-      emit('update:modelValue', md || '')
-    } catch {}
+    if (!loadingContent) {
+      try {
+        const json = JSON.stringify(editor.getJSON())
+        emit('update:modelValue', json)
+      } catch {}
+    }
   },
   onCreate: ({ editor }) => {
     if (props.modelValue) {
       setContentFromMarkdown(props.modelValue)
     }
+    // Initial load done — allow change propagation from now on.
+    nextTick(() => { loadingContent = false })
   },
 })
 
+// NOTE: content flows one-way (editor -> onUpdate -> parent). 
+// No watch on props.modelValue: reloading content from props while typing
+// would reset the cursor and can truncate content (root cause of lost notes).
 watch(() => props.modelValue, (val) => {
   if (!editor.value) return
   if (!val) {
     if (editor.value.state.doc.content.size > 1) editor.value.commands.setContent('')
     return
   }
-  try {
-    const currentMd = defaultMarkdownSerializer.serialize(editor.value.state.doc)
-    if (currentMd === val) return
-  } catch {}
-  setContentFromMarkdown(val)
+  // Apply external content only when the editor is not focused.
+  // This prevents overwriting in-progress edits with stale parent state.
+  const hasFocus = editor.value.isFocused
+  if (!hasFocus) {
+    try {
+      const currentJson = JSON.stringify(editor.value.getJSON())
+      if (currentJson === String(val)) return
+    } catch {}
+    setContentFromMarkdown(val)
+  }
 }, { immediate: true })
 
 async function uploadFileViaApi(file: File): Promise<string | null> {
@@ -445,7 +589,32 @@ function insertTable() {
   editor.value?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
 }
 
-onBeforeUnmount(() => editor.value?.destroy())
+// Robust content getters for parent save/export: never throw.
+function getJSONContent(): string {
+  if (!editor.value) return ''
+  try {
+    return JSON.stringify(editor.value.getJSON())
+  } catch {
+    return ''
+  }
+}
+
+// Markdown export (lossy but human-readable)
+function getMarkdown(): string {
+  if (!editor.value) return ''
+  try {
+    return defaultMarkdownSerializer.serialize(editor.value.state.doc) || ''
+  } catch (e) {
+    console.warn('[notes] markdown serialize failed, falling back to HTML:', e)
+    try {
+      return editor.value.getHTML()
+    } catch {
+      return ''
+    }
+  }
+}
+
+defineExpose({ getJSONContent, getMarkdown })
 </script>
 
 <style scoped>
@@ -654,4 +823,47 @@ onBeforeUnmount(() => editor.value?.destroy())
   animation: ai-spin 0.6s linear infinite;
 }
 @keyframes ai-spin { to { transform: rotate(360deg); } }
+
+/* Slash menu */
+.slash-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+  padding: 6px;
+}
+.slash-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  color: #334155;
+}
+.slash-item:hover, .slash-item.active { background: #eef2ff; color: #4f46e5; }
+.slash-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: #f1f5f9;
+  font-size: 12px;
+  color: #64748b;
+}
+.slash-item.active .slash-icon { background: #e0e7ff; color: #4f46e5; }
+.slash-label { font-size: 13px; }
 </style>
