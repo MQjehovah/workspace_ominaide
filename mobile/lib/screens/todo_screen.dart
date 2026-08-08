@@ -72,21 +72,25 @@ class _TodoScreenState extends State<TodoScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     itemCount: _items.length,
                     itemBuilder: (c, i) {
                       final item = _items[i];
                       final done = item['status'] == 'done' || item['completed'] == true;
-                      return CheckboxListTile(
-                        value: done,
-                        title: Text(item['title'] ?? '', style: done ? const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey) : null),
-                        subtitle: Text(item['created_at']?.toString().substring(0, 16) ?? ''),
-                        onChanged: (_) => _toggle(item),
-                        secondary: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () async {
-                            final id = item['id'];
-                            if (id is int) { await ApiService().deleteTodoItem(id); _load(); }
-                          },
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: CheckboxListTile(
+                          value: done,
+                          title: Text(item['title'] ?? '', style: done ? const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey) : null),
+                          subtitle: Text(item['created_at']?.toString().substring(0, 16) ?? ''),
+                          onChanged: (_) => _toggle(item),
+                          secondary: IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              final id = item['id'];
+                              if (id is int) { await ApiService().deleteTodoItem(id); _load(); }
+                            },
+                          ),
                         ),
                       );
                     },

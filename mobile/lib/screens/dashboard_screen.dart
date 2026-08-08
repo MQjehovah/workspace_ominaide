@@ -55,7 +55,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OmniAide'),
+        title: const Text('工作台'),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
@@ -66,32 +66,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: Column(
         children: [
           // AI Chat Input
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: TextField(
+              controller: _chatController,
+              decoration: InputDecoration(
+                hintText: '向 AI 提问...',
+                prefixIcon: const Icon(Icons.smart_toy_outlined),
+                suffixIcon: IconButton(icon: const Icon(Icons.send_rounded), onPressed: () {
+                  final q = _chatController.text.trim();
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(initialQuery: q)));
+                }),
+              ),
+              onSubmitted: (_) {
+                final q = _chatController.text.trim();
+                Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(initialQuery: q)));
+              },
+            ),
+          ),
+
+          // Overview stats
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
               children: [
-                TextField(
-                  controller: _chatController,
-                  decoration: InputDecoration(
-                    hintText: '向 AI 提问...',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.send),
-                      onPressed: () {
-                        final q = _chatController.text.trim();
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(initialQuery: q)));
-                      },
-                    ),
-                  ),
-                  onSubmitted: (_) {
-                    final q = _chatController.text.trim();
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(initialQuery: q)));
-                  },
-                ),
+                _statCard(Icons.check_circle_outline, '待办', _todoCount, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TodoScreen()))),
+                const SizedBox(width: 12),
+                _statCard(Icons.notifications_outlined, '未读通知', _unreadCount, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()))),
+                const SizedBox(width: 12),
+                _statCard(Icons.event, '日程', _eventCount, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScheduleScreen()))),
               ],
             ),
           ),
+          const SizedBox(height: 16),
 
           // Quick Actions
           Padding(
@@ -100,14 +107,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Row(children: [
                   _quickBtn(Icons.smart_toy, 'AI 助手', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatScreen()))),
-                  const SizedBox(width: 12),
-                  _quickBtn(Icons.event, '日程', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScheduleScreen()))),
-                  const SizedBox(width: 12),
-                  _quickBtn(Icons.check_circle_outline, '待办', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TodoScreen()))),
-                ]),
-                const SizedBox(height: 12),
-                Row(children: [
-                  _quickBtn(Icons.notifications, '通知', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()))),
                   const SizedBox(width: 12),
                   _quickBtn(Icons.search, '搜索', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()))),
                   const SizedBox(width: 12),
@@ -118,28 +117,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Overview stats
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _statCard(Icons.check_circle_outline, '待办', _todoCount),
-                const SizedBox(width: 12),
-                _statCard(Icons.notifications_outlined, '未读通知', _unreadCount),
-                const SizedBox(width: 12),
-                _statCard(Icons.event, '日程', _eventCount),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
           // Recent Files
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(children: [
-              Text('最近文件', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+              Text('最近文件', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
             ]),
           ),
+          const SizedBox(height: 4),
           Expanded(
             child: _loadingFiles
               ? const Center(child: CircularProgressIndicator())
@@ -150,11 +135,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     itemCount: _recentFiles.length,
                     itemBuilder: (_, i) {
                       final f = _recentFiles[i];
-                      return ListTile(
-                        dense: true,
-                        leading: Icon(f.isFolder ? Icons.folder : Icons.insert_drive_file, color: f.isFolder ? Colors.amber : Colors.blue),
-                        title: Text(f.originalName, style: const TextStyle(fontSize: 14)),
-                        subtitle: Text(f.sizeFormatted, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(f.isFolder ? Icons.folder_rounded : Icons.insert_drive_file_rounded, color: f.isFolder ? Colors.amber : Theme.of(context).colorScheme.primary),
+                          title: Text(f.originalName, style: const TextStyle(fontSize: 14)),
+                          subtitle: Text(f.sizeFormatted, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
+                        ),
                       );
                     },
                   ),
@@ -165,21 +153,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _quickBtn(IconData icon, String label, VoidCallback onTap) {
+    final scheme = Theme.of(context).colorScheme;
     return Expanded(
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
         child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
           decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: scheme.outlineVariant),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: const Color(0xFF007AFF)),
+              Icon(icon, color: scheme.primary),
               const SizedBox(height: 6),
-              Text(label, style: const TextStyle(fontSize: 12)),
+              Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurface)),
             ],
           ),
         ),
@@ -187,20 +178,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _statCard(IconData icon, String label, int value) {
+  Widget _statCard(IconData icon, String label, int value, VoidCallback onTap) {
+    final scheme = Theme.of(context).colorScheme;
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20, color: scheme.primary),
+              const SizedBox(height: 4),
+              Text('$value', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: scheme.onSurface)),
+              Text(label, style: TextStyle(fontSize: 11, color: scheme.outline)),
+            ],
+          ),
         ),
-        child: Column(children: [
-          Icon(icon, size: 20, color: const Color(0xFF007AFF)),
-          const SizedBox(height: 4),
-          Text('$value', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-        ]),
       ),
     );
   }

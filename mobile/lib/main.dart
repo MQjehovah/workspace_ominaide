@@ -2,21 +2,27 @@ import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'theme.dart';
 
 void main() => runApp(const OmniAideApp());
 
-class OmniAideApp extends StatelessWidget {
+class OmniAideApp extends StatefulWidget {
   const OmniAideApp({super.key});
+  @override
+  State<OmniAideApp> createState() => _OmniAideAppState();
+}
+
+class _OmniAideAppState extends State<OmniAideApp> {
+  ThemeMode _mode = ThemeMode.system;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'OmniAide',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF007AFF),
-        useMaterial3: true,
-        brightness: Brightness.light,
-      ),
+      theme: buildLightTheme(),
+      darkTheme: buildDarkTheme(),
+      themeMode: _mode,
       home: const SplashScreen(),
     );
   }
@@ -46,6 +52,17 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.auto_awesome, size: 64, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 16),
+            Text('OmniAide', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+          ],
+        ),
+      ),
+    );
   }
 }

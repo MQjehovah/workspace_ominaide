@@ -207,6 +207,7 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = msg.role == 'user';
+    final scheme = Theme.of(context).colorScheme;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -214,17 +215,18 @@ class _MessageBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isUser ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceVariant,
+          color: isUser ? scheme.primary : scheme.surface,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: Radius.circular(isUser ? 16 : 4),
             bottomRight: Radius.circular(isUser ? 4 : 16),
           ),
+          border: isUser ? null : Border.all(color: scheme.outlineVariant),
         ),
         child: msg.text.isEmpty && typing
             ? const _TypingIndicator()
-            : SelectableText(msg.text, style: TextStyle(fontSize: 15, color: isUser ? Colors.white : null)),
+            : SelectableText(msg.text, style: TextStyle(fontSize: 15, color: isUser ? scheme.onPrimary : scheme.onSurface)),
       ),
     );
   }

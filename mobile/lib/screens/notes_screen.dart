@@ -157,25 +157,29 @@ class _NotesScreenState extends State<NotesScreen> {
                     final depth = n['depth'] as int? ?? 0;
                     final hasChildren = (n['children'] as List?)?.isNotEmpty ?? false;
                     return Padding(
-                      padding: EdgeInsets.only(left: 12.0 * depth),
-                      child: ListTile(
-                        dense: true,
-                        leading: Icon(hasChildren ? Icons.folder : Icons.article_outlined, size: 20, color: hasChildren ? Colors.amber : Colors.blue),
-                        title: Text(n['title'] ?? '无标题', style: const TextStyle(fontSize: 14)),
-                        subtitle: n['updated_at'] != null
-                          ? Text(n['updated_at'].toString().substring(0, 10), style: TextStyle(fontSize: 11, color: Colors.grey.shade500))
-                          : null,
-                        onTap: () => _openNote(n),
-                        trailing: PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, size: 18),
-                          onSelected: (v) {
-                            if (v == 'child') _createChild(n);
-                            else if (v == 'delete') _deleteNote(n);
-                          },
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(value: 'child', child: Text('新建子笔记')),
-                            const PopupMenuItem(value: 'delete', child: Text('删除', style: TextStyle(color: Colors.red))),
-                          ],
+                      padding: EdgeInsets.only(left: 12.0 * depth, right: 16, bottom: 6),
+                      child: Card(
+                        margin: EdgeInsets.zero,
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                          leading: Icon(hasChildren ? Icons.folder_rounded : Icons.article_outlined, size: 20, color: hasChildren ? Colors.amber : Theme.of(context).colorScheme.primary),
+                          title: Text(n['title'] ?? '无标题', style: const TextStyle(fontSize: 14)),
+                          subtitle: n['updated_at'] != null
+                            ? Text(n['updated_at'].toString().substring(0, 10), style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline))
+                            : null,
+                          onTap: () => _openNote(n),
+                          trailing: PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert, size: 18),
+                            onSelected: (v) {
+                              if (v == 'child') _createChild(n);
+                              else if (v == 'delete') _deleteNote(n);
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(value: 'child', child: Text('新建子笔记')),
+                              const PopupMenuItem(value: 'delete', child: Text('删除', style: TextStyle(color: Colors.red))),
+                            ],
+                          ),
                         ),
                       ),
                     );

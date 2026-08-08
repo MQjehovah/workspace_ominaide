@@ -48,15 +48,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     itemCount: _items.length,
                     itemBuilder: (c, i) {
                       final n = _items[i];
-                      return ListTile(
-                        leading: Icon(Icons.notifications, color: n['read'] == false ? Colors.blue : Colors.grey),
-                        title: Text(n['title'] ?? '通知'),
-                        subtitle: Text(n['body'] ?? ''),
-                        isThreeLine: (n['body'] ?? '').toString().length > 40,
-                        onTap: () {},
+                      final unread = n['read'] == false;
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: Icon(unread ? Icons.notifications_active : Icons.notifications, color: unread ? Colors.blue : Colors.grey),
+                          title: Text(n['title'] ?? '通知', style: TextStyle(fontWeight: unread ? FontWeight.bold : FontWeight.normal)),
+                          subtitle: Text(n['body'] ?? ''),
+                          isThreeLine: (n['body'] ?? '').toString().length > 40,
+                          onTap: () {},
+                        ),
                       );
                     },
                   ),

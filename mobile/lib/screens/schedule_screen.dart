@@ -82,19 +82,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         itemCount: _events.length,
                         itemBuilder: (c, i) {
                           final e = _events[i];
-                          return ListTile(
-                            leading: const Icon(Icons.event),
-                            title: Text(e['title'] ?? '无标题'),
-                            subtitle: Text(_fmtTime(e['start_time']?.toString())),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () async {
-                                final id = e['id'];
-                                if (id is int) { await ApiService().deleteScheduleEvent(id); _load(); }
-                              },
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.primaryContainer, child: Icon(Icons.event, color: Theme.of(context).colorScheme.primary)),
+                              title: Text(e['title'] ?? '无标题'),
+                              subtitle: Text(_fmtTime(e['start_time']?.toString())),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () async {
+                                  final id = e['id'];
+                                  if (id is int) { await ApiService().deleteScheduleEvent(id); _load(); }
+                                },
+                              ),
                             ),
                           );
                         },
