@@ -75,6 +75,35 @@ class ApiService {
     return (data['files'] as List).map((f) => FileItem.fromJson(f)).toList();
   }
 
+  // -- Vibecoding --
+  Future<List<dynamic>> listVibecodingTasks({int limit = 50}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_baseUrl/api/vibecoding/tasks?limit=$limit'),
+        headers: _authHeaders,
+      );
+      if (res.statusCode != 200) return [];
+      final data = decodeJson(res);
+      return (data['tasks'] as List?) ?? [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<dynamic>> listVibecodingDevices() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_baseUrl/api/vibecoding/devices'),
+        headers: _authHeaders,
+      );
+      if (res.statusCode != 200) return [];
+      final data = decodeJson(res);
+      return (data['devices'] as List?) ?? [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Download file bytes through backend proxy (or presigned URL).
   Future<List<int>> downloadFile(int fileId) async {
     final dlRes = await http.get(

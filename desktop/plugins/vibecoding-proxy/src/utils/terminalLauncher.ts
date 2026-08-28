@@ -131,7 +131,7 @@ function buildToolCommand(tool: AiTool, input: string, continuation: boolean): s
   }
 }
 
-export async function spawnAiProcess(tool: AiTool, projectPath: string, input: string): Promise<{ stdout: string; stderr: string; combined: string; code: number | null; error?: string } | null> {
+export async function spawnAiProcess(tool: AiTool, projectPath: string, input: string, onChunk?: (chunk: string) => void): Promise<{ stdout: string; stderr: string; combined: string; code: number | null; error?: string } | null> {
   try {
     const dir = resolve(projectPath)
     // Windows spawn with a missing cwd fails instantly with ENOENT even though
@@ -146,8 +146,8 @@ export async function spawnAiProcess(tool: AiTool, projectPath: string, input: s
     // Windows: run via PowerShell -EncodedCommand so multi-word + CJK prompts survive intact.
     const isWindows = process.platform === 'win32'
     const result = isWindows
-      ? await runChild(powershellPath(), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(`Set-Location -LiteralPath ${JSON.stringify(dir)}; ${cmdLine}`, 'utf16le').toString('base64')], dir)
-      : await runChild('/bin/sh', ['-c', cmdLine], dir)
+      ? await runChild(powershellPath(), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(`Set-Location -LiteralPath ${JSON.stringify(dir)}; ${cmdLine}`, 'utf16le').toString('base64')], dir, onChunk)
+      : await runChild('/bin/sh', ['-c', cmdLine], dir, onChunk)
     if (!result) return null
     // Clean noise (CLIXML, headers) and keep only the agent reply
     result.combined = cleanAgentOutput(result.combined, tool)
@@ -197,21 +197,50 @@ export function cleanAgentOutput(raw: string, tool: AiTool): string {
   return t.trim()
 }
 
-function runChild(command: string, args: string[], cwd: string): Promise<{ stdout: string; stderr: string; combined: string; code: number | null; error?: string }> {
+let activeChild: ReturnType<typeof spawn> | null = null
+
+export function cancelActiveProcess(): boolean {
+  const child = activeChild as any
+  if (!child || child.exitCode !== null || child.signalCode !== null) return false
+  try {
+    if (process.platform === 'win32' && child.pid) {
+      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
+    } else {
+      child.kill('SIGTERM')
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+function runChild(command: string, args: string[], cwd: string, onChunk?: (chunk: string) => void): Promise<{ stdout: string; stderr: string; combined: string; code: number | null; error?: string }> {
   const child = spawn(command, args, {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   })
+  activeChild = child
+  const done = () => { if (activeChild === child) activeChild = null }
   let stdout = ''
   let stderr = ''
-  child.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
-  child.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
+  child.stdout?.on('data', (data: Buffer) => {
+    const text = data.toString()
+    stdout += text
+    try { onChunk?.(text) } catch {}
+  })
+  child.stderr?.on('data', (data: Buffer) => {
+    const text = data.toString()
+    stderr += text
+    try { onChunk?.(text) } catch {}
+  })
   return new Promise((resolve) => {
     child.on('close', (code: number | null) => {
+      done()
       resolve({ stdout, stderr, combined: stdout + stderr, code })
     })
     child.on('error', (err) => {
+      done()
       const hint = !existsSync(cwd) ? ` · 工作目录不存在: ${cwd}` : ''
       resolve({ stdout, stderr, combined: stdout + stderr, code: -1, error: `${err.message}${hint}` })
     })

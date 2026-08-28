@@ -47,9 +47,9 @@ export function registerIpcHandlers() {
   ipcMain.handle('config:set', async (_, key: string, value: any) => {
     await setConfig(key, value)
     if (key === 'token' || key === 'serverUrl') {
-      const { startNotificationCenter, stopNotificationCenter } = await import('../notificationCenter')
-      if (key === 'token' && !value) stopNotificationCenter()
-      else startNotificationCenter().catch(() => {})
+      const { startBackendChannel, stopBackendChannel } = await import('../backendChannel')
+      if (key === 'token' && !value) stopBackendChannel()
+      else startBackendChannel().catch(() => {})
     }
   })
 
@@ -57,9 +57,9 @@ export function registerIpcHandlers() {
   ipcMain.handle('auth:set', async (_, serverUrl: string, token: string) => {
     await setConfig('serverUrl', serverUrl)
     await setConfig('token', token)
-    const { startNotificationCenter, stopNotificationCenter } = await import('../notificationCenter')
-    if (!token) stopNotificationCenter()
-    else startNotificationCenter().catch(() => {})
+    const { startBackendChannel, stopBackendChannel } = await import('../backendChannel')
+    if (!token) stopBackendChannel()
+    else startBackendChannel().catch(() => {})
   })
   // Plugin management
   ipcMain.handle('plugin:list', async () => {

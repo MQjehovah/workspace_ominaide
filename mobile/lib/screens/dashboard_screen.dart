@@ -6,6 +6,7 @@ import 'chat_screen.dart';
 import 'schedule_screen.dart';
 import 'todo_screen.dart';
 import 'notifications_screen.dart';
+import 'vibecoding_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -107,6 +108,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Row(children: [
                   _quickBtn(Icons.smart_toy, 'AI 助手', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatScreen()))),
+                  const SizedBox(width: 12),
+                  _quickBtn(Icons.code, 'VibeCoding', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VibecodingScreen()))),
                   const SizedBox(width: 12),
                   _quickBtn(Icons.search, '搜索', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()))),
                   const SizedBox(width: 12),

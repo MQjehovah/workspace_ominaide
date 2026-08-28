@@ -125,8 +125,8 @@ app.whenReady().then(async () => {
   const cfg = await getConfig()
   await setupShortcut({ search: showSearchWindow, toggle: showMainPanel })
   if (cfg.token) {
-    const { startNotificationCenter } = await import('./notificationCenter')
-    startNotificationCenter().catch(() => {})
+    const { startBackendChannel } = await import('./backendChannel')
+    startBackendChannel().catch(() => {})
     showMainPanel()
   } else {
     showLogin()
@@ -144,7 +144,7 @@ app.on('before-quit', () => {
   closeAllPluginWindows()
   abortAllAgentSessions()
   disposeAll().catch(() => {})
-  try { (require('./notificationCenter') as any)?.stopNotificationCenter?.() } catch { /* ignore */ }
+  try { (require('./backendChannel') as any)?.stopBackendChannel?.() } catch { /* ignore */ }
 })
 
 ipcMain.handle('window:open-main', () => showMainPanel())

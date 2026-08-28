@@ -87,6 +87,9 @@ app.add_middleware(ActivityMiddleware)
 from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)
 
+from core.wschannel import router as host_channel_router
+app.include_router(host_channel_router)
+
 from core.plugin.router import router as plugin_router
 app.include_router(plugin_router)
 
@@ -123,6 +126,13 @@ from plugins.notifications.backend.router import router as notifications_router
 from plugins.notifications.backend.router import ws_router as notifications_ws_router
 app.include_router(notifications_router)
 app.include_router(notifications_ws_router)
+
+from plugins.vibecoding.backend.router import router as vibecoding_router
+from plugins.vibecoding.backend.router import ws_router as vibecoding_ws_router
+app.include_router(vibecoding_router)
+app.include_router(vibecoding_ws_router)
+from plugins.vibecoding.backend.router import register_host_channel
+register_host_channel()
 
 from plugins.rss.backend.router import router as rss_router
 app.include_router(rss_router)

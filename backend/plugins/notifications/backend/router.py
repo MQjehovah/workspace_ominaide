@@ -26,6 +26,9 @@ class WSManager:
                 await ws.send_json(data)
             except Exception:
                 self.connections.get(user_id, set()).discard(ws)
+        # Mirror to desktop hosts over the shared host channel
+        from core.wschannel.hub import host_channel
+        await host_channel.broadcast(user_id, "notifications", data)
 
 
 ws_manager = WSManager()

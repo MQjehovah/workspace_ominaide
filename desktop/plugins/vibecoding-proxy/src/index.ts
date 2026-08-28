@@ -1,14 +1,136 @@
 import Panel from './Panel.vue'
 import Page from './Page.vue'
 import { resolve } from 'path'
+import { existsSync, statSync } from 'fs'
 import { scanForProjects, suggestScanDirs, addProject, removeProject, getProjects, openInFileManager, openInVSCode, initStorage, type ProjectInfo } from './utils/projectManager'
 import { startAcp, stopAcp, getAcpStatus, stopAllAcp } from './utils/acpClient'
-import { checkAiTools, spawnAiProcess, resetSession, type AiTool } from './utils/terminalLauncher'
+import { checkAiTools, spawnAiProcess, cancelActiveProcess, resetSession, type AiTool } from './utils/terminalLauncher'
 import { createChannelManager, CHANNEL_TYPES, type IncomingMessage } from './utils/channelManager'
+import { createVibeChannelClient, type VibeChannelClient } from './utils/channelClient'
+import { OutputParser, type ParsedEvent } from './utils/outputParser'
 
 let toolsCache: Record<AiTool, boolean> = { opencode: false, claude: false, codex: false }
 let activeAgent: { path: string; tool: AiTool } | null = null
 let channelManager: any = null
+let reporter: VibeChannelClient | null = null
+let taskQueue: Promise<void> = Promise.resolve()
+
+function newTaskId(): string {
+  return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function projectNameOf(dir: string): string {
+  const parts = dir.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] || dir
+}
+
+function runVibeTask(opts: { taskId: string; tool: AiTool; dir: string; input: string; source: string; reply?: (text: string) => Promise<void> }): void {
+  taskQueue = taskQueue.then(() => executeVibeTask(opts)).catch((e: any) => {
+    console.error('[vibe] task error:', e?.message || e)
+  })
+}
+
+async function executeVibeTask(opts: { taskId: string; tool: AiTool; dir: string; input: string; source: string; reply?: (text: string) => Promise<void> }): Promise<void> {
+  const { taskId, tool, dir, input, source, reply } = opts
+  try {
+    reporter?.emit(taskId, 'started', {
+      tool, project: dir, project_name: projectNameOf(dir),
+      input: input.slice(0, 500), source,
+    })
+    reporter?.emit(taskId, 'milestone', { stage: 'spawning' })
+
+    const parser = new OutputParser()
+    let buf = ''
+    let lastFlush = 0
+    const flush = (force = false) => {
+      if (!buf) return
+      const now = Date.now()
+      if (!force && now - lastFlush < 400 && buf.length < 512) return
+      reporter?.emit(taskId, 'output', { chunk: buf.slice(0, 8192) })
+      buf = ''
+      lastFlush = now
+    }
+    const emitParsed = (events: ParsedEvent[]) => {
+      for (const ev of events) {
+        if (ev.kind === 'tool') reporter?.emit(taskId, 'tool', { name: ev.name, detail: ev.detail })
+        else reporter?.emit(taskId, 'file', { path: ev.path, action: ev.action })
+      }
+    }
+    const onChunk = (chunk: string) => {
+      buf += chunk
+      flush()
+      emitParsed(parser.feed(chunk))
+    }
+
+    const t0 = Date.now()
+    const result = await spawnAiProcess(tool, dir, input, onChunk)
+    flush(true)
+    emitParsed(parser.flush())
+    const duration = Date.now() - t0
+
+    if (result?.error) {
+      reporter?.emit(taskId, 'failed', { error: result.error, duration_ms: duration, code: result.code ?? -1 })
+    } else {
+      reporter?.emit(taskId, 'done', {
+        code: result?.code ?? 0, duration_ms: duration,
+        output: (result?.combined || '').slice(0, 20000),
+      })
+    }
+    console.error(`[vibe] task ${taskId} done in ${duration}ms code=${result?.code} error=${result?.error}`)
+
+    if (reply) {
+      let text: string
+      if (result?.error) {
+        text = `❌ ${result.error}\n\n${(result.combined || '').slice(-1500)}`
+      } else {
+        text = (result?.combined || '').trim() || `✅ exit=${result?.code}（无输出）`
+        if (text.length > 3800) text = text.slice(0, 3800) + '\n\n…(输出过长已截断)'
+      }
+      try { await reply(text) } catch (e: any) { console.error('[vibe] reply failed:', e?.message) }
+    }
+  } catch (e: any) {
+    reporter?.emit(taskId, 'failed', { error: e?.message || String(e), duration_ms: 0 })
+    if (reply) {
+      try { await reply(`❌ 错误: ${e?.message}`) } catch {}
+    }
+  }
+}
+
+function handleDispatch(msg: any) {
+  const tool = (msg?.tool as AiTool) || 'opencode'
+  const project = String(msg?.project || '')
+  const input = String(msg?.input || '')
+  const taskId = String(msg?.task_id || newTaskId())
+  if (!project || !input) {
+    reporter?.emit(taskId, 'failed', { error: '派发缺少 project/input', duration_ms: 0 })
+    return
+  }
+  if (!toolsCache[tool]) {
+    reporter?.emit(taskId, 'failed', { error: `${tool} 未安装或不在 PATH（本机）`, duration_ms: 0 })
+    return
+  }
+  const dir = resolve(project)
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return
+  runVibeTask({ taskId, tool, dir, input, source: 'mobile' })
+}
+
+function handleControl(msg: any) {
+  if (msg?.action === 'cancel' && msg?.task_id) {
+    const ok = cancelActiveProcess()
+    if (ok) reporter?.emit(String(msg.task_id), 'milestone', { stage: 'cancelled' })
+  }
+}
+
+async function handleProjectsRequest(msg: any) {
+  let tools = { ...toolsCache }
+  try { tools = await checkAiTools(); toolsCache = tools } catch {}
+  reporter?.send({
+    type: 'projects.response',
+    request_id: msg?.request_id || '',
+    projects: getProjects().map((p: ProjectInfo) => ({ name: p.name, path: p.path, type: p.type })),
+    tools,
+  })
+}
 
 export default {
   panel: Panel,
@@ -22,8 +144,20 @@ export default {
     // Persist project list in the user data dir (host provides OMNIAIDE_USER_DATA)
     initStorage()
 
+    reporter = createVibeChannelClient(context)
+    reporter.setServerMessageHandler((msg) => {
+      if (msg?.type === 'task.dispatch') {
+        handleDispatch(msg)
+      } else if (msg?.type === 'task.control') {
+        handleControl(msg)
+      } else if (msg?.type === 'projects.request') {
+        handleProjectsRequest(msg)
+      }
+    })
+    reporter.start()
+
     channelManager = createChannelManager(context.storage, async (msg: IncomingMessage) => {
-      // Channel → agent run (session-aware)
+      // Channel → agent run (session-aware), streamed to backend/mobile
       console.error(`[hook:${msg.channelId}] msg: "${msg.text.slice(0, 60)}"`)
 
       let bPath = ''
@@ -57,28 +191,17 @@ export default {
         if (inst) await inst.reply(msg.replyId, `✅ 收到，正在用 ${bTool} 处理：${msg.text.slice(0, 50)}`)
       } catch {}
 
-      try {
-        const t0 = Date.now()
-        const result = await spawnAiProcess(bTool, dir, msg.text)
-        console.error(`[hook] agent done in ${Date.now()-t0}ms error=${result?.error} code=${result?.code} outLen=${(result?.combined||'').length}`)
-        let reply = ''
-        if (result?.error) {
-          reply = `❌ ${result.error}\n\n${(result.combined || '').slice(-1500)}`
-        } else {
-          reply = (result?.combined || '').trim() || `✅ exit=${result?.code}（无输出）`
-          if (reply.length > 3800) reply = reply.slice(0, 3800) + '\n\n…(输出过长已截断)'
-        }
-        try {
+      runVibeTask({
+        taskId: newTaskId(),
+        tool: bTool,
+        dir,
+        input: msg.text,
+        source: msg.channelId,
+        reply: async (text) => {
           const inst = channelManager.getChannel(msg.channelId)
-          if (inst) await inst.reply(msg.replyId, reply)
-        } catch (e2: any) { console.error('[hook] 回复失败:', e2.message) }
-      } catch (e: any) {
-        console.error('[hook] exception:', e.message)
-        try {
-          const inst = channelManager.getChannel(msg.channelId)
-          if (inst) await inst.reply(msg.replyId, `❌ 错误: ${e.message}`)
-        } catch {}
-      }
+          if (inst) await inst.reply(msg.replyId, text)
+        },
+      })
     })
 
     // Auto-start enabled channels
@@ -183,6 +306,9 @@ export default {
 
     context.registerCommand('getToolsCache', async () => toolsCache)
 
+    context.registerCommand('getBackendStatus', async () =>
+      (await reporter?.status()) || { enabled: false, connected: false, deviceId: '', queued: 0 })
+
     context.registerCommand('resetSession', async () => {
       resetSession()
       return true
@@ -286,5 +412,7 @@ export default {
   deactivate() {
     stopAllAcp()
     if (channelManager) channelManager.stopAll()
+    reporter?.stop()
+    reporter = null
   },
 }

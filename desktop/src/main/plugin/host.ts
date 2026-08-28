@@ -10,10 +10,21 @@ import { writeLog } from '../logger'
 import type { PluginInfo, PluginPanel, SearchProvider } from '../../shared/types'
 import { loadPlugins } from './loader'
 import { PluginProcessManager } from './child-process'
+import { channelSend, channelStatus, setInboundDispatcher } from '../backendChannel'
 
 const processManager = new PluginProcessManager()
 const plugins = new Map<string, PluginInfo>()
 const panels: PluginPanel[] = []
+
+// channel namespace -> pluginId that subscribed to it
+const channelSubscriptions = new Map<string, string>()
+
+setInboundDispatcher((channel, msg) => {
+  const pluginId = channelSubscriptions.get(channel)
+  if (!pluginId) return
+  const proc = processManager.getProcess(pluginId)
+  proc?.executeCommand('channelMessage', { channel, msg }).catch(() => {})
+})
 
 export function getProcessManager(): PluginProcessManager {
   return processManager
@@ -120,6 +131,24 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   proc.registerBridgeHandler('log:write', async ([level, message]) => {
     writeLog(proc.pluginId, level, message)
   })
+
+  // Shared backend channel bridges: any plugin can send on a channel namespace
+  // and subscribe to inbound messages routed back via 'channelMessage' command.
+  proc.registerBridgeHandler('channel:subscribe', async ([channel]) => {
+    if (channel) channelSubscriptions.set(String(channel), proc.pluginId)
+    return true
+  })
+  proc.registerBridgeHandler('channel:unsubscribe', async ([channel]) => {
+    if (channel && channelSubscriptions.get(String(channel)) === proc.pluginId) {
+      channelSubscriptions.delete(String(channel))
+    }
+    return true
+  })
+  proc.registerBridgeHandler('channel:send', async ([channel, msg]) => {
+    if (channel) channelSend(String(channel), msg || {})
+    return true
+  })
+  proc.registerBridgeHandler('channel:status', async () => channelStatus())
 
   proc.registerBridgeHandler('api:get', async ([path]) => {
     const cfg = await getConfig()
