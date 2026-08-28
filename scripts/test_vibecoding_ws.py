@@ -1,5 +1,6 @@
-"""Smoke test for the shared host channel (`/ws/host`) and the vibecoding
-protocol riding on it. No DB needed.
+"""Smoke test for the unified host channel (`/ws/host`): desktop hosts and
+mobile viewers share one websocket; vibecoding and notifications ride it as
+channel tenants. No DB needed.
 
 Run: python scripts/test_vibecoding_ws.py
 """
@@ -28,17 +29,15 @@ dbsession.engine = None
 sys.modules["core.database.session"] = dbsession
 
 from core.wschannel import router as host_channel_router
-from plugins.vibecoding.backend.router import router as vibe_router, ws_router as vibe_ws_router, register_host_channel
-from plugins.notifications.backend.router import router as notif_router, ws_router as notif_ws_router, ws_manager
+from plugins.vibecoding.backend.router import router as vibe_router, register_host_channel
+from plugins.notifications.backend.router import router as notif_router, notify_user
 
 register_host_channel()
 
 app = FastAPI()
 app.include_router(host_channel_router)
 app.include_router(vibe_router)
-app.include_router(vibe_ws_router)
 app.include_router(notif_router)
-app.include_router(notif_ws_router)
 
 token = create_access_token({"sub": "1"})
 client = TestClient(app)
@@ -52,19 +51,29 @@ try:
 except Exception:
     print("PASS: no-token host connection rejected")
 
-with client.websocket_connect(
-    f"/ws/host?token={token}&device_id=dev-1&device_name=TestPC"
-) as host:
-    with client.websocket_connect(f"/ws/vibecoding?token={token}") as mobile:
-        status = mobile.receive_json()
-        assert status["type"] == "device.status", status
-        assert status["devices"][0]["device_id"] == "dev-1", status
-        assert status["devices"][0]["name"] == "TestPC", status
-        snap = mobile.receive_json()
-        assert snap["type"] == "tasks.snapshot", snap
-        print("PASS: mobile sees host device on host connect")
+# 2. legacy endpoints are gone
+for legacy in ("/ws/notifications", "/ws/vibecoding"):
+    try:
+        with client.websocket_connect(f"{legacy}?token={token}") as ws:
+            ws.receive_json()
+        print(f"FAIL: legacy endpoint {legacy} still accepting connections")
+        sys.exit(1)
+    except Exception:
+        print(f"PASS: legacy endpoint {legacy} removed")
 
-        # 2. host -> task.event (channel-wrapped) -> relayed to mobile
+with client.websocket_connect(
+    f"/ws/host?token={token}&role=desktop&device_id=dev-1&device_name=TestPC"
+) as host:
+    with client.websocket_connect(f"/ws/host?token={token}&role=viewer") as viewer:
+        # viewer gets vibecoding snapshots on connect (viewer_connect hook)
+        st = viewer.receive_json()
+        assert st["channel"] == "vibecoding" and st["type"] == "device.status", st
+        assert st["devices"][0]["device_id"] == "dev-1" and st["devices"][0]["name"] == "TestPC", st
+        snap = viewer.receive_json()
+        assert snap["channel"] == "vibecoding" and snap["type"] == "tasks.snapshot", snap
+        print("PASS: viewer sees host device + task snapshot on connect")
+
+        # 3. host -> task.event -> viewer (channel-wrapped)
         host.send_json({
             "channel": "vibecoding",
             "type": "task.event", "task_id": "t-1", "event": "started",
@@ -72,24 +81,26 @@ with client.websocket_connect(
                      "input": "fix bug", "source": "mobile"},
             "ts": 123,
         })
-        ev = mobile.receive_json()
-        assert ev["type"] == "task.event" and ev["device_id"] == "dev-1" and ev["task_id"] == "t-1", ev
-        st = mobile.receive_json()
+        ev = viewer.receive_json()
+        assert ev["channel"] == "vibecoding" and ev["type"] == "task.event", ev
+        assert ev["device_id"] == "dev-1" and ev["task_id"] == "t-1", ev
+        st = viewer.receive_json()
         assert st["type"] == "device.status" and st["devices"][0]["active_task"] == "t-1", st
-        print("PASS: task.event relayed host -> mobile")
+        print("PASS: task.event relayed host -> viewer")
 
-        # 3. mobile -> task.dispatch -> host receives channel-wrapped dispatch
-        mobile.send_json({
+        # 4. viewer -> task.dispatch -> host receives channel-wrapped dispatch
+        viewer.send_json({
+            "channel": "vibecoding",
             "type": "task.dispatch", "task_id": "t-2", "tool": "claude",
             "project": "E:/repo", "input": "hello",
         })
         d = host.receive_json()
         assert d["channel"] == "vibecoding" and d["type"] == "task.dispatch", d
         assert d["task_id"] == "t-2" and d["source"] == "mobile", d
-        print("PASS: task.dispatch routed mobile -> host (channel-wrapped)")
+        print("PASS: task.dispatch routed viewer -> host (channel-wrapped)")
 
-        # 4. projects.request / projects.response roundtrip
-        mobile.send_json({"type": "projects.request", "request_id": "r1"})
+        # 5. projects.request / projects.response roundtrip (viewer <-> host)
+        viewer.send_json({"channel": "vibecoding", "type": "projects.request", "request_id": "r1"})
         pr = host.receive_json()
         assert pr["channel"] == "vibecoding" and pr["type"] == "projects.request", pr
         host.send_json({
@@ -98,36 +109,38 @@ with client.websocket_connect(
             "projects": [{"name": "repo", "path": "E:/repo", "type": "node"}],
             "tools": {"opencode": True},
         })
-        resp = mobile.receive_json()
-        assert resp["type"] == "projects.response" and resp["projects"][0]["name"] == "repo", resp
-        print("PASS: projects.request/response roundtrip via host channel")
+        resp = viewer.receive_json()
+        assert resp["channel"] == "vibecoding" and resp["type"] == "projects.response", resp
+        assert resp["projects"][0]["name"] == "repo", resp
+        print("PASS: projects.request/response roundtrip on the shared channel")
 
-        # 5. done event -> mobile + registry
+        # 6. done event -> viewer + registry
         host.send_json({
             "channel": "vibecoding",
             "type": "task.event", "task_id": "t-1", "event": "done",
             "data": {"code": 0, "duration_ms": 500, "output": "fixed"}, "ts": 456,
         })
-        ev = mobile.receive_json()
+        ev = viewer.receive_json()
         assert ev["type"] == "task.event" and ev["event"] == "done", ev
+        st = viewer.receive_json()
+        assert st["type"] == "device.status", st
 
-        # 6. notifications fan out to BOTH legacy /ws/notifications and /ws/host
-        with client.websocket_connect(f"/ws/notifications?token={token}") as legacy_mobile:
-            import asyncio
+        # 7. notifications fan out to BOTH the host and the viewer, channel-wrapped
+        import asyncio
 
-            async def fanout():
-                await ws_manager.notify_user(1, {"title": "重要邮件", "body": "hello"})
+        async def fanout():
+            await notify_user(1, {"title": "重要邮件", "body": "hello"})
 
-            new_loop = asyncio.new_event_loop()
-            try:
-                new_loop.run_until_complete(fanout())
-            finally:
-                new_loop.close()
-            legacy = legacy_mobile.receive_json()
-            assert legacy["title"] == "重要邮件", legacy
-            via_host = host.receive_json()
-            assert via_host["channel"] == "notifications" and via_host["title"] == "重要邮件", via_host
-            print("PASS: notifications fan out to legacy ws and host channel")
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(fanout())
+        finally:
+            loop.close()
+        via_host = host.receive_json()
+        assert via_host["channel"] == "notifications" and via_host["title"] == "重要邮件", via_host
+        via_viewer = viewer.receive_json()
+        assert via_viewer["channel"] == "notifications" and via_viewer["title"] == "重要邮件", via_viewer
+        print("PASS: notifications fan out to host + viewer, channel-wrapped")
 
 rest = TestClient(app).get(
     "/api/vibecoding/tasks",

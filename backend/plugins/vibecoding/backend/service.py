@@ -9,16 +9,15 @@ CHANNEL = "vibecoding"
 
 
 class VibecodingHub:
-    """Vibecoding protocol on top of the shared host channel.
+    """Vibecoding protocol as a tenant of the shared host channel.
 
-    Desktop-side connectivity is delegated entirely to `host_channel` (the
-    host's single multiplexed websocket). This hub only owns the mobile viewer
-    connections, the task registry (task_id -> device routing + recent-task
-    ring buffer) and the pending request/response map.
+    All transport (desktop hosts and mobile viewers alike) is delegated to
+    `host_channel`. This hub owns only protocol semantics: the task registry
+    (task_id -> device routing + recent-task ring buffer), relay between
+    desktops and viewers, and the pending request/response map.
     """
 
     def __init__(self, history_max: int = 200):
-        self.mobiles: dict[int, set] = {}
         self.device_active_task: dict[str, str] = {}
         self.task_device: dict[str, str] = {}
         self._tasks: dict[int, dict] = {}
@@ -31,46 +30,31 @@ class VibecodingHub:
     def register(self):
         host_channel.register(
             CHANNEL,
-            self.handle_desktop_message,
+            self.handle_message,
             on_connect=self._on_host_connected,
             on_disconnect=self._on_host_disconnected,
+            on_viewer_connect=self._on_viewer_connected,
         )
 
     async def _on_host_connected(self, user_id: int, device_id: str):
-        await self.broadcast_device_status(user_id)
+        await self.push_device_status(user_id)
 
     async def _on_host_disconnected(self, user_id: int, device_id: str):
         self.device_active_task.pop(device_id, None)
         for tid, did in list(self.task_device.items()):
             if did == device_id:
                 self.task_device.pop(tid, None)
-        await self.broadcast_device_status(user_id)
+        await self.push_device_status(user_id)
 
-    # -- mobile connections -----------------------------------------------
+    async def _on_viewer_connected(self, user_id: int, ws: WebSocket):
+        await host_channel.send_to_ws(ws, CHANNEL, {
+            "type": "device.status", "devices": self.devices_payload(user_id),
+        })
+        await host_channel.send_to_ws(ws, CHANNEL, {
+            "type": "tasks.snapshot", "tasks": self.recent_tasks(user_id, 50),
+        })
 
-    async def connect_mobile(self, user_id: int, ws: WebSocket):
-        self.mobiles.setdefault(user_id, set()).add(ws)
-
-    def disconnect_mobile(self, user_id: int, ws: WebSocket):
-        conns = self.mobiles.get(user_id)
-        if conns is not None:
-            conns.discard(ws)
-            if not conns:
-                self.mobiles.pop(user_id, None)
-
-    async def send_to_mobiles(self, user_id: int, data: dict):
-        for ws in list(self.mobiles.get(user_id) or set()):
-            try:
-                await ws.send_json(data)
-            except Exception:
-                self.disconnect_mobile(user_id, ws)
-
-    async def broadcast_device_status(self, user_id: int):
-        await self.send_to_mobiles(
-            user_id, {"type": "device.status", "devices": self.devices_payload(user_id)}
-        )
-
-    # -- desktop reachability via the host channel -------------------------
+    # -- registry views -----------------------------------------------------
 
     def devices_payload(self, user_id: int) -> list:
         return [
@@ -86,31 +70,73 @@ class VibecodingHub:
     def desktop_ids(self, user_id: int) -> list:
         return host_channel.device_ids(user_id)
 
-    async def send_to_desktop(self, user_id: int, device_id: str, data: dict) -> bool:
-        return await host_channel.send(user_id, device_id, CHANNEL, data)
+    async def push_device_status(self, user_id: int):
+        await host_channel.broadcast_to_viewers(
+            user_id, CHANNEL, {"type": "device.status", "devices": self.devices_payload(user_id)}
+        )
 
-    async def broadcast_to_desktops(self, user_id: int, data: dict) -> int:
-        return await host_channel.broadcast(user_id, CHANNEL, data)
+    # -- protocol handler (both directions, channel: vibecoding) -------------
 
-    # -- desktop -> mobile relay (host channel handler) --------------------
-
-    async def handle_desktop_message(self, user_id: int, device_id: str, msg: dict):
+    async def handle_message(self, user_id: int, device_id: str, msg: dict, ws: WebSocket):
         msg_type = msg.get("type")
         if msg_type == "task.event":
+            # desktop -> viewers
+            if not device_id:
+                return
             self.note_task_event(user_id, device_id, msg)
             event = {k: msg[k] for k in ("task_id", "event", "data", "ts") if k in msg}
-            await self.send_to_mobiles(
-                user_id, {"type": "task.event", "device_id": device_id, **event}
+            await host_channel.broadcast_to_viewers(
+                user_id, CHANNEL, {"type": "task.event", "device_id": device_id, **event}
             )
             if msg.get("event") in ("started", "done", "failed"):
-                await self.broadcast_device_status(user_id)
+                await self.push_device_status(user_id)
         elif msg_type == "projects.response":
+            # desktop -> the requesting viewer
             requester = self.pop_pending(msg.get("request_id") or "")
             if requester is not None:
-                try:
-                    await requester.send_json(msg)
-                except Exception:
-                    pass
+                await host_channel.send_to_ws(requester, CHANNEL, msg)
+        elif msg_type == "task.dispatch":
+            dispatch = {
+                "type": "task.dispatch",
+                "task_id": msg.get("task_id"),
+                "tool": msg.get("tool"),
+                "project": msg.get("project"),
+                "input": msg.get("input"),
+                "source": "mobile",
+            }
+            target = msg.get("device_id")
+            if target:
+                if not await host_channel.send_to_host(user_id, target, CHANNEL, dispatch):
+                    await self._dispatch_error(user_id, msg.get("task_id"), "目标设备不在线")
+            else:
+                sent = await host_channel.broadcast_to_hosts(user_id, CHANNEL, dispatch)
+                if not sent:
+                    await self._dispatch_error(user_id, msg.get("task_id"), "没有在线的桌面设备")
+        elif msg_type == "task.control":
+            control = {
+                "type": "task.control",
+                "task_id": msg.get("task_id"),
+                "action": msg.get("action", "cancel"),
+            }
+            target = self.task_device.get(msg.get("task_id") or "")
+            if target:
+                await host_channel.send_to_host(user_id, target, CHANNEL, control)
+            else:
+                await host_channel.broadcast_to_hosts(user_id, CHANNEL, control)
+        elif msg_type == "projects.request":
+            request_id = msg.get("request_id") or ""
+            self.register_pending(request_id, ws)
+            request = {"type": "projects.request", "request_id": request_id}
+            target = msg.get("device_id")
+            if target:
+                await host_channel.send_to_host(user_id, target, CHANNEL, request)
+            else:
+                await host_channel.broadcast_to_hosts(user_id, CHANNEL, request)
+
+    async def _dispatch_error(self, user_id: int, task_id, reason: str):
+        await host_channel.broadcast_to_viewers(user_id, CHANNEL, {
+            "type": "dispatch.error", "task_id": task_id, "reason": reason,
+        })
 
     # -- task registry ------------------------------------------------------
 
@@ -185,10 +211,10 @@ class VibecodingHub:
                 break
         return out
 
-    # -- mobile -> desktop request/response ---------------------------------
+    # -- viewer -> desktop request/response ----------------------------------
 
-    def register_pending(self, request_id: str, ws: WebSocket):
-        if request_id:
+    def register_pending(self, request_id: str, ws):
+        if request_id and ws is not None:
             self._pending[request_id] = (ws, time.time())
 
     def pop_pending(self, request_id: str):

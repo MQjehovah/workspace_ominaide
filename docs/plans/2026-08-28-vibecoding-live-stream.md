@@ -1,29 +1,33 @@
 # VibeCoding 实时直播流：桌面 Agent 过程经后端 WS 中继到手机端
 
 日期：2026-08-28
-状态：已实现（v2：协议复用通用 host 通道 `/ws/host`）
+状态：已实现（v3：全端并入唯一通道 `/ws/host`，legacy 端点已删除）
 
-## 0. v2 变更：通用 Host 通道（多插件复用）
+## 0. 架构终态：全系统唯一 WS 通道 `/ws/host`
 
-v1 中插件自持一条 `/ws/vibecoding` WS。v2 重构为**全插件共享 host 单通道**：
+v1 插件自持 `/ws/vibecoding`；v2 桌面并入 `/ws/host` 但保留 legacy 端点；**v3 彻底并入**：
 
-- 后端新增 `core/wschannel/`：`/ws/host?token=&device_id=&device_name=`。
-  消息信封带 `channel` 命名空间；后端插件调用
-  `host_channel.register(channel, on_message, on_connect, on_disconnect)` 注册自己的协议处理器，
-  由通用 hub 解析分发（用户说想象中的样子，就是这个）。
-- host（Electron 主进程）`backendChannel.ts` 持有唯一 WS（取代原 notificationCenter 专用连接）：
-  - `channel:send(channel, msg)` / `channel:subscribe(channel)` / `channel:status` 三个桥接 handler
-    （`plugin/host.ts`），任何插件均可上报/订阅；
-  - 下行按 channel 订阅表路由到对应插件进程（`executeCommand('channelMessage', {channel, msg})`）；
-  - `notifications` 为 host 内建 channel → 直接弹系统通知；
-  - `notify_user` 双路 fanout：legacy `/ws/notifications`（手机继续用）+ host channel（桌面）。
-- vibecoding 成为第一个租户：插件 `channelClient.ts` 只做 signal 转发（不再持 WS、无 ws/crypto 依赖）；
-  后端 `VibecodingHub` 桌面侧连通性全部委托 `host_channel`，自己只管 mobile 连接 + 任务注册表。
-- 旧 `/ws/vibecoding?role=desktop` 已移除；`role=mobile` 端点与协议不变（手机端零改动）。
-- device_id 升级为 host 级（config `hostDeviceId`），所有插件共享同一设备身份。
+- `/ws/host?token=&role=desktop|viewer` 是全系统唯一实时通道：
+  - `role=desktop`（默认）：桌面设备，要求 `device_id`，注册为该用户的执行设备；
+  - `role=viewer`：瘦客户端（手机），收 channel 广播、可发 channel 指令。
+- 所有消息（双向）都带 `channel` 命名空间信封；后端插件调用
+  `host_channel.register(channel, on_message, on_connect, on_disconnect, on_viewer_connect)`
+  注册协议处理器，hub 按 channel 解析分发。
+- **已删除**：`/ws/notifications`、`/ws/vibecoding` 两个专用端点及各自 WSManager。
+  notifications 后端只剩 `notify_user(user_id, data)` 函数 = 向 `channel:"notifications"`
+  双向广播（desktop hosts + viewers 都会收到）。
+- 移动端：新增 `host_channel_service.dart`（viewer 角色单连接、广播流、自动重连）；
+  `vibecoding_service.dart` 与 `notification_service.dart` 瘦身为 channel 消费者
+  （按 channel 过滤/解包，公开 API 不变，页面零改动）。
+- 桌面端 `backendChannel.ts` 连 `/ws/host`（默认 desktop 角色）+ `channel:*` 桥接；
+  下行按订阅表路由到插件进程（`executeCommand('channelMessage', {channel, msg})`）；
+  `notifications` 为 host 内建 channel → 直接弹系统通知。
 
-**后续任何插件**接实时后端的成本：后端 `host_channel.register("xxx", handler)` + 插件侧
-`context.signal('channel:subscribe', 'xxx')` / `context.signal('channel:send', 'xxx', msg)`，两行接入。
+**新插件接入实时通道的完整成本**：
+- 后端：`host_channel.register("xxx", handler)`；
+- 桌面插件：`context.signal('channel:subscribe','xxx')` + `context.signal('channel:send','xxx',msg)`
+  + `context.registerCommand('channelMessage', fn)`；
+- 手机：`HostChannelService().stream.where((m) => m['channel']=='xxx')`。
 
 ## 1. 背景与目标
 

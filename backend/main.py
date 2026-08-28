@@ -123,14 +123,10 @@ from plugins.schedule.backend.router import router as schedule_router
 app.include_router(schedule_router)
 
 from plugins.notifications.backend.router import router as notifications_router
-from plugins.notifications.backend.router import ws_router as notifications_ws_router
 app.include_router(notifications_router)
-app.include_router(notifications_ws_router)
 
 from plugins.vibecoding.backend.router import router as vibecoding_router
-from plugins.vibecoding.backend.router import ws_router as vibecoding_ws_router
 app.include_router(vibecoding_router)
-app.include_router(vibecoding_ws_router)
 from plugins.vibecoding.backend.router import register_host_channel
 register_host_channel()
 

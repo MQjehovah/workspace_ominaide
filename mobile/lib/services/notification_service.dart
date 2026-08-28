@@ -1,12 +1,11 @@
-import 'dart:convert';
-import 'dart:io';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 
-/// Listens to the backend notification WebSocket and surfaces new
-/// notifications to the UI via a callback.
+import 'host_channel_service.dart';
+
+/// Listens to notification pushes on the shared host channel
+/// (`channel: "notifications"`) and surfaces them to the UI via a callback.
 class NotificationService {
-  WebSocket? _socket;
-  bool _connected = false;
+  StreamSubscription<Map<String, dynamic>>? _sub;
 
   static final NotificationService _instance = NotificationService._();
   factory NotificationService() => _instance;
@@ -15,37 +14,20 @@ class NotificationService {
   /// Start listening. [onNotification] is called with title/body when a new
   /// notification arrives.
   Future<void> start(Function(String title, String body) onNotification) async {
-    if (_connected) return;
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-    final serverUrl = prefs.getString('serverUrl') ?? 'http://10.0.2.2:8000';
-    if (token == null || token.isEmpty) return;
-
-    final wsUrl = serverUrl
-        .replaceFirst('http://', 'ws://')
-        .replaceFirst('https://', 'wss://');
-
-    try {
-      _socket = await WebSocket.connect('$wsUrl/ws/notifications?token=$token');
-      _connected = true;
-      _socket!.listen((data) {
-        try {
-          final json = jsonDecode(data as String);
-          final title = (json['title'] as String?) ?? '新通知';
-          final body = (json['body'] as String?) ?? '';
-          onNotification(title, body);
-        } catch (_) {}
-      }, onDone: () => _connected = false, onError: (_) => _connected = false);
-    } catch (_) {
-      _connected = false;
-    }
+    await _sub?.cancel();
+    final host = HostChannelService();
+    await host.ensureConnected();
+    _sub = host.stream.listen((msg) {
+      if (msg['channel'] != 'notifications') return;
+      final title = (msg['title'] as String?) ?? '新通知';
+      final body = (msg['body'] as String?) ?? '';
+      onNotification(title, body);
+    });
   }
 
   void stop() {
-    try {
-      _socket?.close();
-    } catch (_) {}
-    _socket = null;
-    _connected = false;
+    _sub?.cancel();
+    _sub = null;
+    HostChannelService().stop();
   }
 }

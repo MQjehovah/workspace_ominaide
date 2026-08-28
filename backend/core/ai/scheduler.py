@@ -33,10 +33,10 @@ async def _send_briefing(user_id: int):
             await create_notification(db, user_id, "📋 每日简报", briefing[:300], "briefing", f"/api/activities?event_type=briefing")
             await db.commit()
 
-        # Push via WebSocket if manager is available
+        # Push via host channel
         try:
-            from plugins.notifications.backend.router import ws_manager
-            await ws_manager.notify_user(user_id, {"type": "new_notification", "title": "📋 每日简报"})
+            from plugins.notifications.backend.router import notify_user
+            await notify_user(user_id, {"type": "new_notification", "title": "📋 每日简报"})
         except Exception:
             pass
 
@@ -84,8 +84,8 @@ async def _check_reminders():
 
             for ev in reminded:
                 try:
-                    from plugins.notifications.backend.router import ws_manager
-                    await ws_manager.notify_user(ev.user_id, {"type": "new_notification", "title": f"⏰ 日程提醒: {ev.title}"})
+                    from plugins.notifications.backend.router import notify_user
+                    await notify_user(ev.user_id, {"type": "new_notification", "title": f"⏰ 日程提醒: {ev.title}"})
                 except Exception:
                     pass
     except Exception as e:
@@ -201,7 +201,7 @@ async def _scan_events():
                 return  # LLM decided no notification is needed
 
             from plugins.notifications.backend.service import create_notification
-            from plugins.notifications.backend.router import ws_manager
+            from plugins.notifications.backend.router import notify_user
             n = await create_notification(
                 db, last.user_id,
                 "🔔 重要事项提醒",
@@ -211,7 +211,7 @@ async def _scan_events():
             )
             await db.commit()
             try:
-                await ws_manager.notify_user(last.user_id, {
+                await notify_user(last.user_id, {
                     "type": "new_notification",
                     "id": n.id,
                     "title": "🔔 重要事项提醒",
