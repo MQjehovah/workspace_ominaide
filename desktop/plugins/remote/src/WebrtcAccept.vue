@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { newPeer, getIceServers, setCodecPreferences } from './webrtc'
+import { newPeer, getIceServers, preferCodec, applySenderParams } from './webrtc'
 
 const props = defineProps<{ data?: any; execute?: (a: string, args?: any) => Promise<any> }>()
 const viewerId = new URLSearchParams(window.location.search).get('viewer') || ''
@@ -13,14 +13,20 @@ const hasPeer = ref(false)
 let pc: RTCPeerConnection | null = null
 let stream: MediaStream | null = null
 let pendingIce: any[] = []
-let iceProcessedCount = 0
-let iceTimer: any = null
 let currentDisplay: any = null
 let currentSourceId = ''
 let currentDataChannel: any = null
 let cleanupSignal: (() => void) | null = null
+let bwTimer: any = null
+let moveTimer: any = null
+let wheelTimer: any = null
+let lastWheel = 0
+let hasPendingWheel = false
 
-const qualityConfig = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
+const qualityConfig = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 30 }
+const BITRATE_MIN = 300000
+const BITRATE_MAX = 6000000
+let currentMaxBitrate = 3000000
 let cachedSources: any[] | null = null
 let cachedDisplays: any[] | null = null
 let cacheTime = 0
@@ -54,12 +60,26 @@ function cleanup() {
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   stream = null
   pendingIce = []
-  iceProcessedCount = 0
-  if (iceTimer) { clearInterval(iceTimer); iceTimer = null }
+  if (bwTimer) { clearInterval(bwTimer); bwTimer = null }
+  if (moveTimer) { clearInterval(moveTimer); moveTimer = null }
+  if (wheelTimer) { clearTimeout(wheelTimer); wheelTimer = null }
   currentDataChannel = null
 }
 
-let lastWheelPromise = Promise.resolve()
+let pendingMove: { x: number; y: number } | null = null
+
+function flushMove() {
+  if (!pendingMove) return
+  const p = pendingMove
+  pendingMove = null
+  win.mqbox.remote.injectInput({ type: 'mouseMove', x: p.x, y: p.y }).catch(() => {})
+}
+
+function flushWheel() {
+  if (!hasPendingWheel) return
+  hasPendingWheel = false
+  win.mqbox.remote.injectInput({ type: 'wheel', deltaY: lastWheel }).catch(() => {})
+}
 
 function handleInput(ev: any) {
   try {
@@ -67,15 +87,73 @@ function handleInput(ev: any) {
       if (!currentDisplay) return
       const d = currentDisplay
       const sf = d.scaleFactor || 1
-      const x = Math.round((d.bounds.x + (Number(ev.x) || 0) * d.bounds.width) * sf)
-      const y = Math.round((d.bounds.y + (Number(ev.y) || 0) * d.bounds.height) * sf)
-      win.mqbox.remote.injectInput({ type: 'mouseMove', x, y }).catch(() => {})
+      pendingMove = {
+        x: Math.round((d.bounds.x + (Number(ev.x) || 0) * d.bounds.width) * sf),
+        y: Math.round((d.bounds.y + (Number(ev.y) || 0) * d.bounds.height) * sf),
+      }
+      flushMove()
+      if (!moveTimer) {
+        moveTimer = setInterval(() => {
+          flushMove()
+          if (!pendingMove && !hasPendingWheel) {
+            clearInterval(moveTimer)
+            moveTimer = null
+          }
+        }, 8)
+      }
     } else if (ev.type === 'wheel') {
-      lastWheelPromise = lastWheelPromise.then(() => win.mqbox.remote.injectInput(ev)).catch(() => {})
+      lastWheel = Number(ev.deltaY) || 0
+      hasPendingWheel = true
+      if (!wheelTimer) {
+        wheelTimer = setTimeout(() => { wheelTimer = null; flushWheel() }, 16)
+      }
     } else {
       win.mqbox.remote.injectInput(ev).catch(() => {})
     }
   } catch (e: any) { console.warn('[host] handleInput error:', e.message) }
+}
+
+function applyTrackSettings() {
+  const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+  if (sender?.track) (sender.track as any).contentHint = 'detail'
+  const tr = pc?.getTransceivers().find((t: any) => t.kind === 'video')
+  if (tr) (tr as any).degradationPreference = 'maintain-framerate'
+  if (sender) applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: qualityConfig.maxFrameRate })
+}
+
+function startBandwidthMonitor() {
+  clearInterval(bwTimer)
+  bwTimer = setInterval(async () => {
+    if (!pc) return
+    try {
+      const stats = await pc.getStats()
+      let lost = 0, received = 0, rtt = 0
+      stats.forEach((r: any) => {
+        if (r.type === 'remote-inbound-rtp' && r.kind === 'video') {
+          lost = r.packetsLost || 0
+          received = r.packetsReceived || 0
+        }
+        if (r.type === 'candidate-pair' && r.state === 'succeeded') rtt = r.currentRoundTripTime || 0
+      })
+      const lossRate = (lost + received) > 0 ? lost / (lost + received) : 0
+      let next = currentMaxBitrate
+      if (lossRate > 0.03 || rtt > 0.3) next = Math.max(BITRATE_MIN, Math.round(currentMaxBitrate * 0.6))
+      else if (lossRate < 0.005 && rtt < 0.15) next = Math.min(BITRATE_MAX, Math.round(currentMaxBitrate * 1.15))
+      if (next !== currentMaxBitrate) {
+        currentMaxBitrate = next
+        const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+        if (sender) applySenderParams(sender, { maxBitrate: next })
+      }
+    } catch {}
+  }, 2000)
+}
+
+function handleIce(m: any) {
+  if (!pc) return
+  if (!pc.remoteDescription) { pendingIce.push(m.payload); return }
+  const ufrag = pc.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
+  if (m.payload?.usernameFragment && m.payload.usernameFragment === ufrag) return
+  try { pc.addIceCandidate(m.payload) } catch { /* ignore */ }
 }
 
 async function startConnection() {
@@ -84,7 +162,6 @@ async function startConnection() {
     const offer = st?.hostState?.pendingOffer
     if (!offer) { status.value = '无连接请求'; return }
     pendingIce = st.hostState.pendingIce || []
-    iceProcessedCount = 0
 
     const { sources: srcList, displays: allDisplays } = await getCachedSources()
     if (!srcList.length) { status.value = '无屏幕源'; return }
@@ -105,7 +182,6 @@ async function startConnection() {
     })
 
     pc = newPeer(await getIceServers())
-    setCodecPreferences(pc)
 
     pc.ondatachannel = (e) => {
       currentDataChannel = e.channel
@@ -136,11 +212,17 @@ async function startConnection() {
     // Use addTrack to properly associate the track with a stream
     stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
 
+    // H.264 first (hardware encode) — after addTrack so the transceiver exists
+    const videoTr = pc!.getTransceivers().find((t: any) => t.kind === 'video')
+    if (videoTr) preferCodec(videoTr, 'video', 'H264')
+    applyTrackSettings()
+    startBandwidthMonitor()
+
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
     sendToChild('answer', answer)
 
-    // Add viewer ICE candidates (after both local and remote descriptions are set)
+    // Drain ICE candidates that arrived before this window opened
     const localUfrag = pc.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
     for (let i = 0; i < pendingIce.length; i++) {
       const ufrag = pendingIce[i]?.usernameFragment
@@ -148,23 +230,7 @@ async function startConnection() {
       try { await pc.addIceCandidate(pendingIce[i]) }
       catch {}
     }
-    iceProcessedCount = pendingIce.length
-    // Poll for new ICE candidates until connected
-    iceTimer = setInterval(async () => {
-      if (!pc) return
-      const st = pc.iceConnectionState
-      if (st === 'connected' || st === 'completed' || st === 'closed' || st === 'failed') return
-      const state = await props.execute?.('getState')
-      const newPending = state?.hostState?.pendingIce
-      if (newPending && newPending.length > iceProcessedCount) {
-        const ufrag = pc.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
-        for (let i = iceProcessedCount; i < newPending.length; i++) {
-          if (newPending[i]?.usernameFragment && newPending[i].usernameFragment === ufrag) continue
-          try { await pc.addIceCandidate(newPending[i]) } catch {}
-        }
-        iceProcessedCount = newPending.length
-      }
-    }, 200)
+    pendingIce = []
 
     pc.oniceconnectionstatechange = () => {
       if (!pc) return
@@ -202,6 +268,7 @@ async function switchScreen(sourceId: string) {
     if (stream) stream.getTracks().forEach(t => t.stop())
     stream = ns
     currentSourceId = sourceId
+    applyTrackSettings()
     const { sources: srcs, displays: allDisplays } = await getCachedSources()
     currentDisplay = matchDisplay(srcs.find((s: any) => s.id === sourceId), allDisplays)
     currentDataChannel?.send(JSON.stringify({ type: 'activeScreen', id: sourceId }))
@@ -216,12 +283,15 @@ function applyQualityChange() {
     if (sender && pc) sender.replaceTrack(ns.getVideoTracks()[0])
     if (stream) stream.getTracks().forEach(t => t.stop())
     stream = ns
+    applyTrackSettings()
   }).catch(() => {})
 }
 
 function disconnect() {
   sendToChild('revoked', {})
-  if (iceTimer) { clearInterval(iceTimer); iceTimer = null }
+  if (bwTimer) { clearInterval(bwTimer); bwTimer = null }
+  if (moveTimer) { clearInterval(moveTimer); moveTimer = null }
+  if (wheelTimer) { clearTimeout(wheelTimer); wheelTimer = null }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   stream = null
@@ -250,8 +320,8 @@ onMounted(() => {
   startConnection()
   window.addEventListener('beforeunload', () => { if (pc) sendToChild('revoked', {}) })
   const rm = win.mqbox?.remote?.onSignal?.(function(m: any) {
+    if (m.type === 'ice') { handleIce(m); return }
     if (m.type === 'revoked' || m.type === 'error') {
-      if (iceTimer) { clearInterval(iceTimer); iceTimer = null }
       cleanup()
       window.close()
     }

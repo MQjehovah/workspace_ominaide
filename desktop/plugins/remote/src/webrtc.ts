@@ -45,18 +45,40 @@ export async function getIceServers(): Promise<any[]> {
 }
 
 export function newPeer(iceServers?: any[]): RTCPeerConnection {
-  return new RTCPeerConnection({ iceServers: iceServers || FALLBACK_ICE })
+  return new RTCPeerConnection({
+    iceServers: iceServers || FALLBACK_ICE,
+    bundlePolicy: 'max-bundle',
+    iceCandidatePoolSize: 4,
+  })
 }
 
-export function setCodecPreferences(pc: RTCPeerConnection) {
+/**
+ * Prefer a codec family (e.g. H264) for a transceiver. MUST be called after
+ * the transceiver exists (post addTrack/addTransceiver) or it silently no-ops.
+ */
+export function preferCodec(tr: any, kind: 'video' | 'audio', mimeContains: string) {
   try {
-    const caps = (RTCRtpSender as any).getCapabilities?.('video')
-    if (!caps?.codecs) return
-    const h264 = caps.codecs.filter((c: any) => c.mimeType.includes('H264'))
-    const other = caps.codecs.filter((c: any) => !c.mimeType.includes('H264'))
-    const preferred = [...h264, ...other]
-    const tr = pc.getTransceivers?.()?.find((t: any) => t.kind === 'video')
-    if (tr?.setCodecPreferences) tr.setCodecPreferences(preferred)
+    const getter = tr?.direction === 'recvonly' ? (RTCRtpReceiver as any) : (RTCRtpSender as any)
+    const caps = getter?.getCapabilities?.(kind)
+    if (!caps?.codecs || typeof tr?.setCodecPreferences !== 'function') return
+    const upper = mimeContains.toUpperCase()
+    const keep = caps.codecs.filter((c: any) => String(c.mimeType).toUpperCase().includes(upper))
+    const rest = caps.codecs.filter((c: any) => !String(c.mimeType).toUpperCase().includes(upper))
+    tr.setCodecPreferences([...keep, ...rest])
+  } catch {}
+}
+
+/** Smooth live bitrate/framerate/scale control on a sender (billd-desk style). */
+export function applySenderParams(sender: RTCRtpSender | null, opts: { maxBitrate?: number; maxFramerate?: number; scaleResolutionDownBy?: number }) {
+  try {
+    if (!sender || !sender.track || typeof sender.setParameters !== 'function') return
+    const p = sender.getParameters()
+    if (!p.encodings || p.encodings.length === 0) p.encodings = [{}]
+    const enc = p.encodings[0]
+    if (opts.maxBitrate) enc.maxBitrate = opts.maxBitrate
+    if (opts.maxFramerate) enc.maxFramerate = opts.maxFramerate
+    if (opts.scaleResolutionDownBy) enc.scaleResolutionDownBy = opts.scaleResolutionDownBy
+    sender.setParameters(p).catch(() => {})
   } catch {}
 }
 

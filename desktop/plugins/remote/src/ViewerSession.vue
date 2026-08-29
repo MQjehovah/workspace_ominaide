@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { newPeer, getIceServers, setCodecPreferences } from './webrtc'
+import { newPeer, getIceServers, preferCodec } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; targetDeviceId?:string }>()
 const videoRef = ref<HTMLVideoElement|null>(null)
@@ -19,11 +19,9 @@ let cleanupSignal: (() => void) | null = null
 let keepaliveTimer: any = null
 let lastPong = 0
 let reconnectTimer: any = null
-let adaptTimer: any = null
 let statsTimer: any = null
 let prevStats: any = null
-let currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
-let qualityGoodSince = 0
+let currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 30 }
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
 
@@ -33,12 +31,10 @@ async function connect(hostDeviceId: string) {
   targetId = hostDeviceId
   status.value = '连接中…'
   stopKeepalive()
-  stopAdaptiveQuality()
   stopStatsMonitor()
   cancelReconnect()
   try {
     pc = newPeer(await getIceServers())
-    setCodecPreferences(pc)
 
     // Listen for signals via App.vue WS
     const rm = window.mqbox?.remote?.onSignal?.(function(m: any) {
@@ -61,12 +57,11 @@ function determineQuality() {
   const el = videoRef.value
   if (!el) return
   const w = el.clientWidth, h = el.clientHeight
-  let maxWidth = 1280, maxHeight = 720, maxFrameRate = 24
-  if (w <= 800 || h <= 600) { maxWidth = 640; maxHeight = 480; maxFrameRate = 15 }
-  else if (w <= 1024 || h <= 768) { maxWidth = 1024; maxHeight = 768; maxFrameRate = 20 }
+  let maxWidth = 1280, maxHeight = 720, maxFrameRate = 30
+  if (w <= 800 || h <= 600) { maxWidth = 640; maxHeight = 480; maxFrameRate = 20 }
+  else if (w <= 1024 || h <= 768) { maxWidth = 1024; maxHeight = 768; maxFrameRate = 24 }
   sendInput({ type: 'setQuality', maxWidth, maxHeight, maxFrameRate })
   currentQuality = { maxWidth, maxHeight, maxFrameRate }
-  qualityGoodSince = 0
 }
 
 function startKeepalive() {
@@ -89,7 +84,7 @@ function cancelReconnect() { clearTimeout(reconnectTimer); reconnectTimer = null
 
 async function startOffering() {
   if (!pc) return
-  dc = pc.createDataChannel('input', { ordered: false, maxRetransmits: 0 })
+  dc = pc.createDataChannel('input', { ordered: false, maxRetransmits: 3 })
   dc.onopen = () => { determineQuality(); startKeepalive() }
   dc.onmessage = (msg) => {
     try {
@@ -99,12 +94,17 @@ async function startOffering() {
       if (ev.type === 'activeScreen') { activeScreenId.value = ev.id; return }
     } catch { console.warn('[viewer] dc message parse error') }
   }
-  pc.addTransceiver('video', { direction: 'recvonly' })
+  const tr = pc.addTransceiver('video', { direction: 'recvonly' })
+  preferCodec(tr, 'video', 'H264')
   pc.ontrack = (e) => {
     console.log('[viewer] ontrack:', e.track?.kind, 'readyState:', e.track?.readyState)
     connected.value = true
     status.value = '已连接（可控制）'
     cancelReconnect()
+    try {
+      const receivers = pc?.getReceivers().filter((r: any) => r.track?.kind === 'video')
+      receivers?.forEach((r: any) => { r.playoutDelayHint = 0.1 })
+    } catch {}
     const stream = e.streams?.[0]
     if (!stream) return
     const attachAndPlay = (retryCount = 0) => {
@@ -118,7 +118,6 @@ async function startOffering() {
     }
     nextTick(() => attachAndPlay())
     setTimeout(() => determineQuality(), 500)
-    startAdaptiveQuality()
     startStatsMonitor()
   }
   pc.onicecandidate = (e) => {
@@ -141,44 +140,6 @@ async function startOffering() {
   props.execute?.('sendSignal', { type: 'offer', target_deviceId: targetId, payload: offer })
   status.value = '等待画面…'
 }
-
-function startAdaptiveQuality() {
-  clearInterval(adaptTimer)
-  adaptTimer = setInterval(async () => {
-    if (!pc || pc.iceConnectionState !== 'connected') return
-    try {
-      const stats = await pc.getStats()
-      let totalLost = 0, totalReceived = 0, rtt = 0
-      stats.forEach((r: any) => {
-        if (r.type === 'inbound-rtp' && r.kind === 'video') {
-          totalLost += r.packetsLost || 0
-          totalReceived += r.packetsReceived || 0
-        }
-        if (r.type === 'candidate-pair' && r.state === 'succeeded') {
-          rtt = r.currentRoundTripTime || 0
-        }
-      })
-      const lossRate = totalReceived > 0 ? totalLost / (totalLost + totalReceived) : 0
-      const highLatency = rtt > 0.3
-      const current = currentQuality
-      if (lossRate > 0.03 || highLatency) {
-        if (current.maxWidth > 800) {
-          currentQuality = { maxWidth: 800, maxHeight: 600, maxFrameRate: 15 }
-          sendInput({ type: 'setQuality', ...currentQuality })
-          qualityGoodSince = 0
-        }
-      } else if (lossRate < 0.005 && !highLatency && current.maxWidth < 1280) {
-        if (qualityGoodSince === 0) qualityGoodSince = Date.now()
-        else if (Date.now() - qualityGoodSince > 20000) {
-          currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 24 }
-          sendInput({ type: 'setQuality', ...currentQuality })
-        }
-      } else { qualityGoodSince = 0 }
-    } catch {}
-  }, 10000)
-}
-
-function stopAdaptiveQuality() { clearInterval(adaptTimer); adaptTimer = null }
 
 function startStatsMonitor() {
   clearInterval(statsTimer)
@@ -298,7 +259,6 @@ function cleanup(silent = false) {
   if (videoRef.value) videoRef.value.srcObject = null
   if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
   stopKeepalive()
-  stopAdaptiveQuality()
   stopStatsMonitor()
   cancelReconnect()
 }
