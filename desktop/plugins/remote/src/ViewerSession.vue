@@ -10,7 +10,6 @@ const screens = ref<any[]>([])
 const activeScreenId = ref('')
 const videoReady = ref(false)
 const diag = ref({ rtt: 0, fps: 0, bitrate: 0, loss: 0, jitter: 0, resolution: '', net: '' })
-const hostDiag = ref<any>(null)
 
 let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
@@ -94,7 +93,6 @@ async function startOffering() {
       if (ev.type === 'pong') { lastPong = Date.now(); return }
       if (ev.type === 'screens') { screens.value = ev.list || []; return }
       if (ev.type === 'activeScreen') { activeScreenId.value = ev.id; return }
-      if (ev.type === 'hostdiag') { hostDiag.value = ev; return }
     } catch { console.warn('[viewer] dc message parse error') }
   }
   const tr = pc.addTransceiver('video', { direction: 'recvonly' })
@@ -339,7 +337,6 @@ function sendRevokedOnUnload() {
       <div class="diag-row"><span class="diag-label">抖动</span><span class="diag-val">{{ diag.jitter }}ms</span></div>
       <div class="diag-row"><span class="diag-label">网络</span><span class="diag-val" :class="diag.net === '直连' ? 'net-direct' : 'net-relay'">{{ diag.net || '-' }}</span></div>
       <div class="diag-row" v-if="diag.resolution"><span class="diag-label">分辨率</span><span class="diag-val">{{ diag.resolution }}</span></div>
-      <div class="diag-row" v-if="hostDiag && hostDiag.capture"><span class="diag-label">采集</span><span class="diag-val">{{ hostDiag.capture.width }}×{{ hostDiag.capture.height }}</span></div>
     </div>
     <div class="toolbar" v-if="screens.length > 1">
       <button v-for="s in screens" :key="s.id" class="screen-btn" :class="{ active: s.id === activeScreenId }" @click="switchScreen(s.id)">{{ s.name }}</button>

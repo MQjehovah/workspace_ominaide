@@ -24,9 +24,10 @@ let lastWheel = 0
 let hasPendingWheel = false
 
 const qualityConfig = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 30 }
-const BITRATE_MIN = 300000
-const BITRATE_MAX = 8000000
-let currentMaxBitrate = 5000000
+let currentMaxBitrate = 4000000
+let currentSdb = 1.5
+let prevFramesEncoded = 0
+let hasPrevFrames = false
 let cachedSources: any[] | null = null
 let cachedDisplays: any[] | null = null
 let cacheTime = 0
@@ -113,6 +114,14 @@ function handleInput(ev: any) {
   } catch (e: any) { console.warn('[host] handleInput error:', e.message) }
 }
 
+function physicalSourceWidth(): number {
+  if (currentDisplay?.bounds?.width && currentDisplay?.scaleFactor) {
+    return Math.round(currentDisplay.bounds.width * currentDisplay.scaleFactor)
+  }
+  const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+  return sender?.track?.getSettings?.()?.width || 1280
+}
+
 function applyTrackSettings() {
   const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
   if (sender?.track) (sender.track as any).contentHint = 'detail'
@@ -121,38 +130,60 @@ function applyTrackSettings() {
   // shrinking resolution (a shrunken image letterboxes into black bars).
   if (tr) (tr as any).degradationPreference = 'maintain-resolution'
   if (sender) {
-    // Capture is native (no cropping). Scale via the encoder to a sane
-    // ceiling (~1080p) while preserving the source aspect ratio.
-    const sw = sender.track.getSettings?.().width || 0
-    const sdb = sw > 0 ? Math.max(1, Math.ceil(sw / 1920)) : 1
-    applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: qualityConfig.maxFrameRate, scaleResolutionDownBy: sdb })
+    currentSdb = Math.max(1, physicalSourceWidth() / 1280)
+    applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: qualityConfig.maxFrameRate, scaleResolutionDownBy: currentSdb })
   }
 }
 
-function startBandwidthMonitor() {
+/** Tiered adaptive controller: resolution + bitrate climb when network is
+ * good and the encoder keeps up, drop when it can't. Runs every 2s. */
+function startAdaptiveController() {
   clearInterval(bwTimer)
+  prevFramesEncoded = 0
+  hasPrevFrames = false
   bwTimer = setInterval(async () => {
     if (!pc) return
     try {
       const stats = await pc.getStats()
-      let lost = 0, received = 0, rtt = 0
+      let lost = 0, received = 0, rtt = 0, framesEncoded = 0
       stats.forEach((r: any) => {
         if (r.type === 'remote-inbound-rtp' && r.kind === 'video') {
           lost = r.packetsLost || 0
           received = r.packetsReceived || 0
+          rtt = r.roundTripTime || 0
         }
-        if (r.type === 'candidate-pair' && r.state === 'succeeded') rtt = r.currentRoundTripTime || 0
+        if (r.type === 'outbound-rtp' && r.kind === 'video') framesEncoded = r.framesEncoded || 0
       })
       const lossRate = (lost + received) > 0 ? lost / (lost + received) : 0
-      let next = currentMaxBitrate
-      if (lossRate > 0.03 || rtt > 0.3) next = Math.max(BITRATE_MIN, Math.round(currentMaxBitrate * 0.6))
-      else if (lossRate < 0.005 && rtt < 0.15) next = Math.min(BITRATE_MAX, Math.round(currentMaxBitrate * 1.15))
-      if (next !== currentMaxBitrate) {
-        currentMaxBitrate = next
-        const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
-        if (sender) applySenderParams(sender, { maxBitrate: next })
+      let encFps = 0
+      if (hasPrevFrames) encFps = (framesEncoded - prevFramesEncoded) / 2
+      prevFramesEncoded = framesEncoded
+      hasPrevFrames = true
+
+      const physW = physicalSourceWidth()
+      const tiers = [
+        { label: '540p', sdb: physW / 960, bitrate: 2500000 },
+        { label: '720p', sdb: physW / 1280, bitrate: 4000000 },
+        { label: '1080p', sdb: physW / 1920, bitrate: 6000000 },
+      ]
+      let t = tiers.findIndex(x => Math.abs(x.sdb - currentSdb) < 0.001)
+      if (t < 0) t = 1
+      const netGood = lossRate < 0.01 && rtt < 0.15
+      const netBad = lossRate > 0.03 || rtt > 0.3
+
+      if (encFps > 0 && encFps < 14) {
+        if (t > 0) t--
+      } else if (netGood && encFps >= 20 && t < tiers.length - 1) {
+        t++
+      } else if (netBad) {
+        if (t > 0) t--
       }
-      sendHostDiag()
+
+      const target = tiers[t]
+      currentSdb = target.sdb
+      currentMaxBitrate = target.bitrate
+      const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+      if (sender) applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: qualityConfig.maxFrameRate, scaleResolutionDownBy: currentSdb })
     } catch {}
   }, 2000)
 }
@@ -195,7 +226,6 @@ async function startConnection() {
       e.channel.onopen = () => {
         const { sources } = cachedSources ? { sources: cachedSources } : { sources: [] }
         e.channel.send(JSON.stringify({ type: 'screens', list: sources.map((s: any) => ({ id: s.id, name: s.name })) }))
-        sendHostDiag()
       }
       e.channel.onmessage = (msg) => {
         try {
@@ -243,7 +273,7 @@ async function startConnection() {
         status.value = '推流中'
         hasPeer.value = true
         applyTrackSettings()
-        startBandwidthMonitor()
+        startAdaptiveController()
         // Auto re-capture once the link stabilises: the very first capture can
         // come out with a wrong (cropped) resolution; a fresh getUserMedia +
         // replaceTrack reliably fixes it (proven by manual screen-switching).
@@ -276,22 +306,7 @@ async function reinitCapture() {
     if (stream) stream.getTracks().forEach(t => t.stop())
     stream = ns
     applyTrackSettings()
-    sendHostDiag()
   } catch (e: any) { console.warn('[host] reinitCapture error:', e.message) }
-}
-
-function sendHostDiag() {
-  try {
-    if (!currentDataChannel || currentDataChannel.readyState !== 'open') return
-    const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
-    const settings = sender?.track?.getSettings?.() || {}
-    currentDataChannel.send(JSON.stringify({
-      type: 'hostdiag',
-      capture: { width: settings.width || 0, height: settings.height || 0, frameRate: settings.frameRate || 0 },
-      maxBitrate: currentMaxBitrate,
-      codec: pc?.getSenders()[0]?.getParameters?.()?.codecs?.[0]?.mimeType || '',
-    }))
-  } catch {}
 }
 
 async function switchScreen(sourceId: string) {
@@ -306,7 +321,6 @@ async function switchScreen(sourceId: string) {
     stream = ns
     currentSourceId = sourceId
     applyTrackSettings()
-    sendHostDiag()
     const { sources: srcs, displays: allDisplays } = await getCachedSources()
     currentDisplay = matchDisplay(srcs.find((s: any) => s.id === sourceId), allDisplays)
     currentDataChannel?.send(JSON.stringify({ type: 'activeScreen', id: sourceId }))
