@@ -152,6 +152,7 @@ function startBandwidthMonitor() {
         const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
         if (sender) applySenderParams(sender, { maxBitrate: next })
       }
+      sendHostDiag()
     } catch {}
   }, 2000)
 }
@@ -194,6 +195,7 @@ async function startConnection() {
       e.channel.onopen = () => {
         const { sources } = cachedSources ? { sources: cachedSources } : { sources: [] }
         e.channel.send(JSON.stringify({ type: 'screens', list: sources.map((s: any) => ({ id: s.id, name: s.name })) }))
+        sendHostDiag()
       }
       e.channel.onmessage = (msg) => {
         try {
@@ -242,6 +244,10 @@ async function startConnection() {
         hasPeer.value = true
         applyTrackSettings()
         startBandwidthMonitor()
+        // Auto re-capture once the link stabilises: the very first capture can
+        // come out with a wrong (cropped) resolution; a fresh getUserMedia +
+        // replaceTrack reliably fixes it (proven by manual screen-switching).
+        setTimeout(() => { reinitCapture() }, 1500)
       } else if (st === 'failed') {
         connected.value = false
         hasPeer.value = false
@@ -259,6 +265,35 @@ async function startConnection() {
   }
 }
 
+async function reinitCapture() {
+  if (!pc) return
+  try {
+    const ns = await navigator.mediaDevices.getUserMedia({
+      audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: currentSourceId, maxFrameRate: qualityConfig.maxFrameRate } } as any,
+    })
+    const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+    if (sender && pc) await sender.replaceTrack(ns.getVideoTracks()[0])
+    if (stream) stream.getTracks().forEach(t => t.stop())
+    stream = ns
+    applyTrackSettings()
+    sendHostDiag()
+  } catch (e: any) { console.warn('[host] reinitCapture error:', e.message) }
+}
+
+function sendHostDiag() {
+  try {
+    if (!currentDataChannel || currentDataChannel.readyState !== 'open') return
+    const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+    const settings = sender?.track?.getSettings?.() || {}
+    currentDataChannel.send(JSON.stringify({
+      type: 'hostdiag',
+      capture: { width: settings.width || 0, height: settings.height || 0, frameRate: settings.frameRate || 0 },
+      maxBitrate: currentMaxBitrate,
+      codec: pc?.getSenders()[0]?.getParameters?.()?.codecs?.[0]?.mimeType || '',
+    }))
+  } catch {}
+}
+
 async function switchScreen(sourceId: string) {
   if (sourceId === currentSourceId) return
   try {
@@ -271,23 +306,14 @@ async function switchScreen(sourceId: string) {
     stream = ns
     currentSourceId = sourceId
     applyTrackSettings()
+    sendHostDiag()
     const { sources: srcs, displays: allDisplays } = await getCachedSources()
     currentDisplay = matchDisplay(srcs.find((s: any) => s.id === sourceId), allDisplays)
     currentDataChannel?.send(JSON.stringify({ type: 'activeScreen', id: sourceId }))
   } catch (e: any) { console.warn('[host] switchScreen error:', e.message) }
 }
 
-function applyQualityChange() {
-  navigator.mediaDevices.getUserMedia({
-    audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: currentSourceId, maxFrameRate: qualityConfig.maxFrameRate } } as any,
-  }).then(ns => {
-    const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
-    if (sender && pc) sender.replaceTrack(ns.getVideoTracks()[0])
-    if (stream) stream.getTracks().forEach(t => t.stop())
-    stream = ns
-    applyTrackSettings()
-  }).catch(() => {})
-}
+function applyQualityChange() { reinitCapture() }
 
 function disconnect() {
   sendToChild('revoked', {})
