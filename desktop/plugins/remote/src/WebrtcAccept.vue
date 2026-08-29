@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { newPeer, getIceServers, preferCodec, applySenderParams } from './webrtc'
+import { newPeer, getIceServers, applySenderParams } from './webrtc'
 
 const props = defineProps<{ data?: any; execute?: (a: string, args?: any) => Promise<any> }>()
 const viewerId = new URLSearchParams(window.location.search).get('viewer') || ''
@@ -25,8 +25,8 @@ let hasPendingWheel = false
 
 const qualityConfig = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 30 }
 const BITRATE_MIN = 300000
-const BITRATE_MAX = 6000000
-let currentMaxBitrate = 3000000
+const BITRATE_MAX = 8000000
+let currentMaxBitrate = 5000000
 let cachedSources: any[] | null = null
 let cachedDisplays: any[] | null = null
 let cacheTime = 0
@@ -117,8 +117,16 @@ function applyTrackSettings() {
   const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
   if (sender?.track) (sender.track as any).contentHint = 'detail'
   const tr = pc?.getTransceivers().find((t: any) => t.kind === 'video')
-  if (tr) (tr as any).degradationPreference = 'maintain-framerate'
-  if (sender) applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: qualityConfig.maxFrameRate })
+  // Keep the full frame even under load: prefer dropping framerate over
+  // shrinking resolution (a shrunken image letterboxes into black bars).
+  if (tr) (tr as any).degradationPreference = 'maintain-resolution'
+  if (sender) {
+    // Capture is native (no cropping). Scale via the encoder to a sane
+    // ceiling (~1080p) while preserving the source aspect ratio.
+    const sw = sender.track.getSettings?.().width || 0
+    const sdb = sw > 0 ? Math.max(1, Math.ceil(sw / 1920)) : 1
+    applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: qualityConfig.maxFrameRate, scaleResolutionDownBy: sdb })
+  }
 }
 
 function startBandwidthMonitor() {
@@ -175,8 +183,6 @@ async function startConnection() {
           chromeMediaSource: 'desktop',
           chromeMediaSourceId: srcList[0].id,
           maxFrameRate: qualityConfig.maxFrameRate,
-          maxWidth: qualityConfig.maxWidth,
-          maxHeight: qualityConfig.maxHeight,
         } as any,
       },
     })
@@ -212,12 +218,6 @@ async function startConnection() {
     // Use addTrack to properly associate the track with a stream
     stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
 
-    // H.264 first (hardware encode) — after addTrack so the transceiver exists
-    const videoTr = pc!.getTransceivers().find((t: any) => t.kind === 'video')
-    if (videoTr) preferCodec(videoTr, 'video', 'H264')
-    applyTrackSettings()
-    startBandwidthMonitor()
-
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
     sendToChild('answer', answer)
@@ -240,6 +240,8 @@ async function startConnection() {
         connected.value = true
         status.value = '推流中'
         hasPeer.value = true
+        applyTrackSettings()
+        startBandwidthMonitor()
       } else if (st === 'failed') {
         connected.value = false
         hasPeer.value = false
@@ -261,7 +263,7 @@ async function switchScreen(sourceId: string) {
   if (sourceId === currentSourceId) return
   try {
     const ns = await navigator.mediaDevices.getUserMedia({
-      audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxFrameRate: qualityConfig.maxFrameRate, maxWidth: qualityConfig.maxWidth, maxHeight: qualityConfig.maxHeight } } as any,
+      audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxFrameRate: qualityConfig.maxFrameRate } } as any,
     })
     const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
     if (sender && pc) await sender.replaceTrack(ns.getVideoTracks()[0])
@@ -277,7 +279,7 @@ async function switchScreen(sourceId: string) {
 
 function applyQualityChange() {
   navigator.mediaDevices.getUserMedia({
-    audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: currentSourceId, maxFrameRate: qualityConfig.maxFrameRate, maxWidth: qualityConfig.maxWidth, maxHeight: qualityConfig.maxHeight } } as any,
+    audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: currentSourceId, maxFrameRate: qualityConfig.maxFrameRate } } as any,
   }).then(ns => {
     const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
     if (sender && pc) sender.replaceTrack(ns.getVideoTracks()[0])

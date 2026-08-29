@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { newPeer, getIceServers, preferCodec } from './webrtc'
+import { newPeer, getIceServers } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; targetDeviceId?:string }>()
 const videoRef = ref<HTMLVideoElement|null>(null)
@@ -8,7 +8,8 @@ const status = ref('准备连接…')
 const connected = ref(false)
 const screens = ref<any[]>([])
 const activeScreenId = ref('')
-const diag = ref({ rtt: 0, fps: 0, bitrate: 0, loss: 0, jitter: 0, resolution: '' })
+const videoReady = ref(false)
+const diag = ref({ rtt: 0, fps: 0, bitrate: 0, loss: 0, jitter: 0, resolution: '', net: '' })
 
 let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
@@ -95,7 +96,6 @@ async function startOffering() {
     } catch { console.warn('[viewer] dc message parse error') }
   }
   const tr = pc.addTransceiver('video', { direction: 'recvonly' })
-  preferCodec(tr, 'video', 'H264')
   pc.ontrack = (e) => {
     console.log('[viewer] ontrack:', e.track?.kind, 'readyState:', e.track?.readyState)
     connected.value = true
@@ -114,9 +114,19 @@ async function startOffering() {
       el.srcObject = stream
       el.muted = true
       el.autoplay = true
+      el.playsInline = true
       el.play().catch(() => setTimeout(() => attachAndPlay(retryCount), 500))
     }
-    nextTick(() => attachAndPlay())
+    const waitFirstFrame = () => {
+      const el = videoRef.value
+      if (el && el.videoWidth > 0 && el.videoHeight > 0) {
+        invalidateNormCache()
+        videoReady.value = true
+        return
+      }
+      setTimeout(waitFirstFrame, 100)
+    }
+    nextTick(() => { attachAndPlay(); waitFirstFrame() })
     setTimeout(() => determineQuality(), 500)
     startStatsMonitor()
   }
@@ -150,21 +160,28 @@ function startStatsMonitor() {
       const stats = await pc.getStats()
       let rtt = 0, fps = 0, bitrate = 0, lossRate = 0, jitter = 0, w = 0, h = 0
       let bytesNow = 0, framesNow = 0, lostNow = 0
+      const candidates = new Map<string, string>()
+      let localType = '', remoteType = ''
       stats.forEach((r: any) => {
-        if (r.type === 'candidate-pair' && r.state === 'succeeded') rtt = Math.round((r.currentRoundTripTime || 0) * 1000)
+        if (r.type === 'candidate') candidates.set(r.id, r.candidateType || '')
+        if (r.type === 'candidate-pair' && r.state === 'succeeded') {
+          rtt = Math.round((r.currentRoundTripTime || 0) * 1000)
+          localType = r.localCandidateType || candidates.get(r.localCandidateId) || ''
+          remoteType = r.remoteCandidateType || candidates.get(r.remoteCandidateId) || ''
+        }
         if (r.type === 'inbound-rtp' && r.kind === 'video') {
           bytesNow = r.bytesReceived || 0
           framesNow = r.framesDecoded || 0
           lostNow = r.packetsLost || 0
           jitter = Math.round((r.jitter || 0) * 1000)
-          const m = r.codecId || ''
+          w = r.frameWidth || r.width || w
+          h = r.frameHeight || r.height || h
         }
         if (r.type === 'media-source' || (r.type === 'outbound-rtp' && r.kind === 'video')) {
-          if (r.width) { w = r.width; h = r.height }
+          if (r.width && !w) { w = r.width; h = r.height }
         }
       })
       if (prevStats) {
-        const dt = (stats as any).entries ? 2 : 2
         const dBytes = bytesNow - (prevStats.bytes || 0)
         const dFrames = framesNow - (prevStats.frames || 0)
         const dLost = lostNow - (prevStats.lost || 0)
@@ -174,7 +191,13 @@ function startStatsMonitor() {
         lossRate = total > 0 ? Math.round(dLost / total * 100) : 0
       }
       prevStats = { bytes: bytesNow, frames: framesNow, lost: lostNow }
-      diag.value = { rtt, fps, bitrate, loss: lossRate, jitter, resolution: w && h ? `${w}×${h}` : '' }
+      // host/srflx/prflx on both ends = P2P direct; relay on either side = TURN 中转
+      const relayed = localType === 'relay' || remoteType === 'relay'
+      diag.value = {
+        rtt, fps, bitrate, loss: lossRate, jitter,
+        resolution: w && h ? `${w}×${h}` : '',
+        net: relayed ? '中转' : '直连',
+      }
     } catch {}
   }, 2000)
 }
@@ -224,7 +247,8 @@ function sendInput(ev: any) {
 function normVideo(e: MouseEvent) {
   const el = e.currentTarget as HTMLVideoElement
   const cw = el.clientWidth, ch = el.clientHeight
-  const vw = el.videoWidth || cw, vh = el.videoHeight || ch
+  const vw = el.videoWidth || 0, vh = el.videoHeight || 0
+  if (!vw || !vh || !cw || !ch) return { x: 0.5, y: 0.5 }
   if (cachedNorm && cachedNorm.cw === cw && cachedNorm.ch === ch && cachedNorm.vw === vw && cachedNorm.vh === vh) {
     const x = cachedNorm.rw > 0 ? (e.offsetX - cachedNorm.ox) / cachedNorm.rw : 0
     const y = cachedNorm.rh > 0 ? (e.offsetY - cachedNorm.oy) / cachedNorm.rh : 0
@@ -257,6 +281,7 @@ function cleanup(silent = false) {
   if (pc) { try { pc.close() } catch {} ; pc = null }
   pendingIce = []
   if (videoRef.value) videoRef.value.srcObject = null
+  videoReady.value = false
   if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
   stopKeepalive()
   stopStatsMonitor()
@@ -310,6 +335,7 @@ function sendRevokedOnUnload() {
       <div class="diag-row"><span class="diag-label">网速</span><span class="diag-val">{{ diag.bitrate }}kbps</span></div>
       <div class="diag-row"><span class="diag-label">丢包</span><span class="diag-val">{{ diag.loss }}%</span></div>
       <div class="diag-row"><span class="diag-label">抖动</span><span class="diag-val">{{ diag.jitter }}ms</span></div>
+      <div class="diag-row"><span class="diag-label">网络</span><span class="diag-val" :class="diag.net === '直连' ? 'net-direct' : 'net-relay'">{{ diag.net || '-' }}</span></div>
       <div class="diag-row" v-if="diag.resolution"><span class="diag-label">分辨率</span><span class="diag-val">{{ diag.resolution }}</span></div>
     </div>
     <div class="toolbar" v-if="screens.length > 1">
@@ -318,19 +344,23 @@ function sendRevokedOnUnload() {
     <video ref="videoRef" autoplay playsinline muted class="video"
       @mousemove="onMouseMove" @mousedown="onMouseDown" @mouseup="onMouseUp"
       @wheel="onWheel" @contextmenu.prevent></video>
+    <div v-if="connected && !videoReady" class="video-placeholder">画面加载中…</div>
   </div>
 </template>
 
 <style scoped>
-.viewer { height:100vh; background:#212529; display:flex; flex-direction:column; position:relative; }
+.viewer { height:100vh; background:#212529; display:flex; flex-direction:column; position:relative; overflow:hidden; }
 .toolbar { display:flex; gap:4px; padding:6px 12px; background:rgba(0,0,0,.4); justify-content:center; flex-shrink:0; }
 .screen-btn { padding:4px 10px; border-radius:4px; border:none; background:rgba(255,255,255,.1); color:#fff; font-size:11px; cursor:pointer; }
 .screen-btn.active { background:#e91e63; color:#fff; }
 .screen-btn:hover { background:rgba(255,255,255,.2); }
-.video { flex:1; object-fit:contain; width:100%; height:100%; background:#000; cursor:none; }
+.video { flex:1; min-height:0; min-width:0; object-fit:contain; width:100%; background:#000; cursor:none; display:block; }
+.video-placeholder { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#212529; color:#888; font-size:13px; z-index:5; }
 .status { position:fixed; top:12px; left:50%; transform:translateX(-50%); margin:0; padding:6px 14px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; border-radius:16px; z-index:10; }
 .diag-card { position:fixed; top:12px; left:12px; background:rgba(0,0,0,.7); border-radius:8px; padding:8px 12px; z-index:10; font-size:11px; line-height:1.6; min-width:120px; backdrop-filter:blur(4px); }
 .diag-row { display:flex; justify-content:space-between; gap:12px; }
 .diag-label { color:#999; }
 .diag-val { color:#eee; font-family:'SF Mono',Consolas,monospace; font-variant-numeric:tabular-nums; }
+.diag-val.net-direct { color:#28a745; font-weight:600; }
+.diag-val.net-relay { color:#ff9800; font-weight:600; }
 </style>
