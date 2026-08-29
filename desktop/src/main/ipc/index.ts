@@ -11,6 +11,7 @@ import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins }
 import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
 
 let nutLoader: any = null
+let remotePowerSaveId = 0
 function getNut(): any {
   if (nutLoader) return nutLoader
   nutLoader = require('@nut-tree-fork/nut-js')
@@ -50,6 +51,26 @@ const keyMap: Record<string, string> = {
 }
 
 export function registerIpcHandlers() {
+  const { powerMonitor } = require('electron')
+  powerMonitor.on('lock-screen', () => sendToAllWindows('remote:screen-locked'))
+  powerMonitor.on('unlock-screen', () => sendToAllWindows('remote:screen-unlocked'))
+  ipcMain.handle('remote:get-lock-state', () => {
+    try {
+      return powerMonitor.getSystemIdleState(1) === 'locked'
+    } catch { return false }
+  })
+  ipcMain.handle('remote:power-save', (_, active: boolean) => {
+    const { powerSaveBlocker } = require('electron')
+    try {
+      if (active) {
+        if (remotePowerSaveId === 0) remotePowerSaveId = powerSaveBlocker.start('prevent-display-sleep')
+      } else if (remotePowerSaveId !== 0) {
+        powerSaveBlocker.stop(remotePowerSaveId)
+        remotePowerSaveId = 0
+      }
+    } catch {}
+    return true
+  })
   // Config
   ipcMain.handle('config:get', async (_, key: string) => (await getConfig())?.[key])
   ipcMain.handle('config:set', async (_, key: string, value: any) => {

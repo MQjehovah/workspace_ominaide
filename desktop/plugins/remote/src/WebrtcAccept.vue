@@ -9,6 +9,7 @@ const collapsed = ref(true)
 const status = ref('连接中…')
 const connected = ref(false)
 const hasPeer = ref(false)
+const screenLocked = ref(false)
 const fileProgress = ref<{ name: string; percent: number; dir: 'in' | 'out' } | null>(null)
 
 let pc: RTCPeerConnection | null = null
@@ -132,7 +133,10 @@ function attachTrackEvents(track: any) {
   } catch {}
 }
 
+/** Windows secure desktop: injected input cannot reach the lock screen and
+ * doing so can wedge the session. Drop all input while the screen is locked. */
 function handleInput(ev: any) {
+  if (screenLocked.value) return
   kick()
   try {
     if (ev.type === 'mouseMove') {
@@ -286,6 +290,35 @@ function handleIce(m: any) {
   try { pc.addIceCandidate(m.payload) } catch { /* ignore */ }
 }
 
+// ===== Screen lock / unlock handling =====
+
+function broadcastLockState() {
+  try { currentDataChannel?.send(JSON.stringify({ type: 'lock-state', locked: screenLocked.value })) } catch {}
+}
+
+function onScreenLocked() {
+  screenLocked.value = true
+  broadcastLockState()
+  status.value = '被控端已锁定'
+}
+
+function onScreenUnlocked() {
+  screenLocked.value = false
+  framesFrozen = 0
+  lastReinitAt = 0
+  broadcastLockState()
+  status.value = '推流中'
+  setTimeout(() => { reinitCapture() }, 400)
+}
+
+function setupLockWatch() {
+  try {
+    win.mqbox.remote.getLockState?.().then((locked: boolean) => { if (locked) onScreenLocked() }).catch(() => {})
+    win.mqbox.remote.onScreenLocked?.(onScreenLocked)
+    win.mqbox.remote.onScreenUnlocked?.(onScreenUnlocked)
+  } catch {}
+}
+
 // ===== Clipboard sync =====
 
 function startClipboardSync() {
@@ -420,6 +453,7 @@ async function startConnection() {
       e.channel.onopen = () => {
         const { sources } = cachedSources ? { sources: cachedSources } : { sources: [] }
         e.channel.send(JSON.stringify({ type: 'screens', list: sources.map((s: any) => ({ id: s.id, name: s.name })) }))
+        broadcastLockState()
         startClipboardSync()
       }
       e.channel.onmessage = (msg) => {
@@ -568,6 +602,8 @@ function closeWindow(e: MouseEvent) {
 
 onMounted(() => {
   win.mqbox?.window?.resize(280, 40)
+  setupLockWatch()
+  win.mqbox.remote.setPowerSave?.(true).catch(() => {})
   startConnection()
   window.addEventListener('beforeunload', () => { if (pc) sendToChild('revoked', {}) })
   const rm = win.mqbox?.remote?.onSignal?.(function(m: any) {
@@ -581,6 +617,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  win.mqbox.remote.setPowerSave?.(false).catch(() => {})
   if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
   cleanup()
 })

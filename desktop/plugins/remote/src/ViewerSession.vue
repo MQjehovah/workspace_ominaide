@@ -11,6 +11,7 @@ const screens = ref<any[]>([])
 const activeScreenId = ref('')
 const videoReady = ref(false)
 const qualityMode = ref<'auto'|'540p'|'720p'|'1080p'>('auto')
+const hostLocked = ref(false)
 const fileUi = ref<{ name: string; percent: number; dir: 'in'|'out' } | null>(null)
 const diag = ref({ rtt: 0, fps: 0, bitrate: 0, loss: 0, jitter: 0, resolution: '', net: '' })
 
@@ -199,6 +200,7 @@ async function startOffering() {
       if (ev.type === 'pong') { lastPong = Date.now(); return }
       if (ev.type === 'screens') { screens.value = ev.list || []; return }
       if (ev.type === 'activeScreen') { activeScreenId.value = ev.id; return }
+      if (ev.type === 'lock-state') { hostLocked.value = ev.locked === true; return }
       if (ev.type === 'clipboard') {
         if (ev.text && ev.text !== lastRemoteClipboard && ev.text !== lastLocalClipboard) {
           lastRemoteClipboard = ev.text
@@ -388,14 +390,14 @@ function normVideo(e: MouseEvent) {
 
 let lastMoveTime = 0
 function onMouseMove(e: MouseEvent) { const now = Date.now(); if (now - lastMoveTime < 16) return; lastMoveTime = now; const { x, y } = normVideo(e); sendInput({ type: 'mouseMove', x, y }) }
-function onMouseDown(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseDown', button }) }
-function onMouseUp(e: MouseEvent) { const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseUp', button }) }
-function onWheel(e: WheelEvent) { sendInput({ type: 'wheel', deltaY: e.deltaY }) }
+function onMouseDown(e: MouseEvent) { if (hostLocked.value) return; const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseDown', button }) }
+function onMouseUp(e: MouseEvent) { if (hostLocked.value) return; const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left'; sendInput({ type: 'mouseUp', button }) }
+function onWheel(e: WheelEvent) { if (hostLocked.value) return; sendInput({ type: 'wheel', deltaY: e.deltaY }) }
 function isIgnoredKey(code: string): boolean { return code === 'F5' || code === 'F11' || code === 'F12' }
-function onKeyDown(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyDown', code: e.code }) }
-function onKeyUp(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyUp', code: e.code }) }
+function onKeyDown(e: KeyboardEvent) { if (!connected.value || hostLocked.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyDown', code: e.code }) }
+function onKeyUp(e: KeyboardEvent) { if (!connected.value || hostLocked.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyUp', code: e.code }) }
 
-function specialKey(key: string) { if (connected.value) sendInput({ type: 'specialKey', key }) }
+function specialKey(key: string) { if (connected.value && !hostLocked.value) sendInput({ type: 'specialKey', key }) }
 
 function onQualityChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value
@@ -414,6 +416,7 @@ function cleanup(silent = false) {
   pendingIce = []
   if (videoRef.value) videoRef.value.srcObject = null
   videoReady.value = false
+  hostLocked.value = false
   fileUi.value = null
   if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
   stopKeepalive()
@@ -492,6 +495,9 @@ function sendRevokedOnUnload() {
       @mousemove="onMouseMove" @mousedown="onMouseDown" @mouseup="onMouseUp"
       @wheel="onWheel" @contextmenu.prevent></video>
     <div v-if="connected && !videoReady" class="video-placeholder">画面加载中…</div>
+    <div v-if="connected && hostLocked" class="lock-overlay">
+      <div class="lock-box">🔒 被控端已锁定</div>
+    </div>
 
     <div v-if="connected" class="action-bar">
       <select class="quality-select" :value="qualityMode" @change="onQualityChange">
@@ -521,6 +527,8 @@ function sendRevokedOnUnload() {
 .screen-btn:hover { background:rgba(255,255,255,.2); }
 .video { flex:1; min-height:0; min-width:0; object-fit:contain; width:100%; background:#000; cursor:none; display:block; }
 .video-placeholder { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#212529; color:#888; font-size:13px; z-index:5; }
+.lock-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.6); z-index:9; }
+.lock-box { background:rgba(0,0,0,.75); border:1px solid rgba(255,255,255,.15); color:#fff; font-size:15px; padding:14px 22px; border-radius:10px; }
 .status { position:fixed; top:12px; left:50%; transform:translateX(-50%); margin:0; padding:6px 14px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; border-radius:16px; z-index:10; }
 .diag-card { position:fixed; top:12px; left:12px; background:rgba(0,0,0,.7); border-radius:8px; padding:8px 12px; z-index:10; font-size:11px; line-height:1.6; min-width:120px; backdrop-filter:blur(4px); }
 .diag-row { display:flex; justify-content:space-between; gap:12px; }

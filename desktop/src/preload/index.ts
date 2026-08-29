@@ -170,6 +170,10 @@ contextBridge.exposeInMainWorld('mqbox', {
     getAllDisplays: () => ipcRenderer.invoke('remote:get-all-displays'),
     injectInput: (event: any) => ipcRenderer.invoke('remote:inject', event),
     saveFile: (name: string, data: ArrayBuffer) => ipcRenderer.invoke('remote:save-file', { name, data }),
+    getLockState: () => ipcRenderer.invoke('remote:get-lock-state'),
+    setPowerSave: (active: boolean) => ipcRenderer.invoke('remote:power-save', active),
+    onScreenLocked: (cb: () => void) => { ipcRenderer.on('remote:screen-locked', () => cb()) },
+    onScreenUnlocked: (cb: () => void) => { ipcRenderer.on('remote:screen-unlocked', () => cb()) },
     onControlRequest: (cb: (info: any) => void) => {
       ipcRenderer.on('remote:control-request', (_e, info) => cb(info))
     },
