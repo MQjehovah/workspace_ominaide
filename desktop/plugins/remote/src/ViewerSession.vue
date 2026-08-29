@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { newPeer, getIceServers } from './webrtc'
 
 const props = defineProps<{ data?:any; execute?:(a:string,args?:any)=>Promise<any>; refresh?:()=>void; close?:()=>void; targetDeviceId?:string }>()
 const videoRef = ref<HTMLVideoElement|null>(null)
+const viewerWrapRef = ref<HTMLDivElement|null>(null)
 const status = ref('准备连接…')
 const connected = ref(false)
 const screens = ref<any[]>([])
 const activeScreenId = ref('')
 const videoReady = ref(false)
+const qualityMode = ref<'auto'|'540p'|'720p'|'1080p'>('auto')
+const fileUi = ref<{ name: string; percent: number; dir: 'in'|'out' } | null>(null)
 const diag = ref({ rtt: 0, fps: 0, bitrate: 0, loss: 0, jitter: 0, resolution: '', net: '' })
 
 let pc: RTCPeerConnection | null = null
 let dc: RTCDataChannel | null = null
+let fileDc: RTCDataChannel | null = null
 let pendingIce: any[] = []
 let connectionEnded = false
 let targetId = ''
@@ -22,9 +26,18 @@ let lastPong = 0
 let reconnectTimer: any = null
 let statsTimer: any = null
 let prevStats: any = null
-let currentQuality = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 30 }
+let clipboardTimer: any = null
+let lastLocalClipboard = ''
+let lastRemoteClipboard = ''
+let lastFrameDecSample = 0
+let decFrozen = 0
+let lastRefreshAt = 0
+let resizeObserver: ResizeObserver | null = null
+let resizeTimer: any = null
 let cachedNorm: { cw: number; ch: number; vw: number; vh: number; scale: number; rw: number; rh: number; ox: number; oy: number } | null = null
 function invalidateNormCache() { cachedNorm = null }
+
+const FILE_CHUNK = 64 * 1024
 
 async function connect(hostDeviceId: string) {
   console.log('[viewer] connect to:', hostDeviceId)
@@ -37,14 +50,11 @@ async function connect(hostDeviceId: string) {
   try {
     pc = newPeer(await getIceServers())
 
-    // Listen for signals via App.vue WS
     const rm = window.mqbox?.remote?.onSignal?.(function(m: any) {
-      console.log('[viewer] onSignal:', m.type)
       onSignal(m)
     })
     cleanupSignal = typeof rm === 'function' ? rm : null
 
-    console.log('[viewer] sending requestControl target:', targetId)
     props.execute?.('sendSignal', { type: 'requestControl', target_deviceId: targetId, name: 'OmniAide 桌面端' })
     status.value = '等待被控端授权…'
   } catch (e: any) {
@@ -54,15 +64,23 @@ async function connect(hostDeviceId: string) {
   }
 }
 
+function applyQuality() {
+  if (qualityMode.value === 'auto') {
+    determineQuality()
+  } else {
+    const height = Number(qualityMode.value.replace('p', ''))
+    sendInput({ type: 'setQuality', maxWidth: Math.round(height * 16 / 9), maxHeight: height, maxFrameRate: 30, auto: false })
+  }
+}
+
 function determineQuality() {
-  const el = videoRef.value
+  const el = viewerWrapRef.value
   if (!el) return
   const w = el.clientWidth, h = el.clientHeight
-  let maxWidth = 1280, maxHeight = 720, maxFrameRate = 30
-  if (w <= 800 || h <= 600) { maxWidth = 640; maxHeight = 480; maxFrameRate = 20 }
-  else if (w <= 1024 || h <= 768) { maxWidth = 1024; maxHeight = 768; maxFrameRate = 24 }
-  sendInput({ type: 'setQuality', maxWidth, maxHeight, maxFrameRate })
-  currentQuality = { maxWidth, maxHeight, maxFrameRate }
+  let maxHeight = 720, maxFrameRate = 30
+  if (w <= 800 || h <= 600) { maxHeight = 480; maxFrameRate = 20 }
+  else if (w <= 1024 || h <= 768) { maxHeight = 576; maxFrameRate = 24 }
+  sendInput({ type: 'setQuality', maxWidth: Math.round(maxHeight * 16 / 9), maxHeight, maxFrameRate, auto: true })
 }
 
 function startKeepalive() {
@@ -72,7 +90,6 @@ function startKeepalive() {
     if (dc?.readyState === 'open') {
       try { dc.send(JSON.stringify({ type: 'ping' })) } catch {}
       if (Date.now() - lastPong > 45000) {
-        console.log('[viewer] keepalive timeout')
         status.value = '控制通道无响应'
       }
     }
@@ -80,24 +97,120 @@ function startKeepalive() {
 }
 
 function stopKeepalive() { clearInterval(keepaliveTimer); keepaliveTimer = null }
-
 function cancelReconnect() { clearTimeout(reconnectTimer); reconnectTimer = null }
+
+function startClipboardSync() {
+  clearInterval(clipboardTimer)
+  clipboardTimer = setInterval(async () => {
+    if (!dc || dc.readyState !== 'open') return
+    try {
+      const text = (await window.mqbox.clipboard.readText()) || ''
+      if (text && text !== lastLocalClipboard && text !== lastRemoteClipboard) {
+        lastLocalClipboard = text
+        try { dc.send(JSON.stringify({ type: 'clipboard', text })) } catch {}
+      }
+    } catch {}
+  }, 1500)
+}
+
+function stopClipboardSync() { clearInterval(clipboardTimer); clipboardTimer = null }
+
+function setupFileChannel(ch: RTCDataChannel) {
+  fileDc = ch
+  ch.binaryType = 'arraybuffer'
+  if (typeof (ch as any).bufferedAmountLowThreshold === 'number') (ch as any).bufferedAmountLowThreshold = 4 * 1024 * 1024
+  let recv: { name: string; size: number; buf: Uint8Array; received: number } | null = null
+  ch.onmessage = (msg: any) => {
+    try {
+      if (typeof msg.data === 'string') {
+        const ev = JSON.parse(msg.data)
+        if (ev.type === 'file-meta') {
+          recv = { name: ev.name, size: ev.size || 0, buf: new Uint8Array(ev.size || 0), received: 0 }
+          fileUi.value = { name: ev.name, percent: 0, dir: 'in' }
+        } else if (ev.type === 'file-done') {
+          if (recv) {
+            window.mqbox.remote.saveFile(recv.name, recv.buf.buffer as ArrayBuffer)
+              .then((r: any) => { status.value = r?.ok ? `已保存: ${r.path || ''}` : '保存失败' })
+              .catch(() => { status.value = '保存失败' })
+          }
+          recv = null
+          fileUi.value = null
+        } else if (ev.type === 'file-cancel') {
+          recv = null
+          fileUi.value = null
+        }
+        return
+      }
+      if (recv && msg.data instanceof ArrayBuffer) {
+        const chunk = new Uint8Array(msg.data)
+        recv.buf.set(chunk, recv.received)
+        recv.received += chunk.byteLength
+        fileUi.value = recv.size ? { name: recv.name, percent: Math.min(1, recv.received / recv.size), dir: 'in' } : null
+      }
+    } catch { console.warn('[viewer] file dc error') }
+  }
+}
+
+async function sendFileOverDc(ch: RTCDataChannel, file: File, onProgress: (p: number) => void) {
+  const id = 'f' + Date.now().toString(36)
+  const size = file.size
+  try {
+    ch.send(JSON.stringify({ type: 'file-meta', id, name: file.name, size }))
+    const buf = new Uint8Array(await file.arrayBuffer())
+    let sent = 0
+    while (sent < size) {
+      if (ch.bufferedAmount > 4 * 1024 * 1024) {
+        await new Promise<void>((res) => ch.addEventListener('bufferedamountlow', () => res(), { once: true }))
+      }
+      const chunk = buf.subarray(sent, sent + FILE_CHUNK)
+      ch.send(chunk)
+      sent += chunk.byteLength
+      onProgress(size ? sent / size : 1)
+    }
+    ch.send(JSON.stringify({ type: 'file-done', id }))
+  } catch (e: any) { console.warn('[viewer] sendFile error:', e.message) }
+}
+
+function pickFileToSend() {
+  if (!fileDc || fileDc.readyState !== 'open') { status.value = '文件通道未就绪'; return }
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.onchange = () => {
+    const f = input.files?.[0]
+    if (f) {
+      sendFileOverDc(fileDc!, f, (p) => {
+        fileUi.value = { name: f.name, percent: p, dir: 'out' }
+        if (p >= 1) fileUi.value = null
+      })
+    }
+  }
+  input.click()
+}
 
 async function startOffering() {
   if (!pc) return
   dc = pc.createDataChannel('input', { ordered: false, maxRetransmits: 3 })
-  dc.onopen = () => { determineQuality(); startKeepalive() }
+  fileDc = pc.createDataChannel('file', { ordered: true })
+  setupFileChannel(fileDc)
+  dc.onopen = () => { determineQuality(); startKeepalive(); startClipboardSync() }
   dc.onmessage = (msg) => {
     try {
       const ev = JSON.parse(msg.data)
       if (ev.type === 'pong') { lastPong = Date.now(); return }
       if (ev.type === 'screens') { screens.value = ev.list || []; return }
       if (ev.type === 'activeScreen') { activeScreenId.value = ev.id; return }
+      if (ev.type === 'clipboard') {
+        if (ev.text && ev.text !== lastRemoteClipboard && ev.text !== lastLocalClipboard) {
+          lastRemoteClipboard = ev.text
+          lastLocalClipboard = ev.text
+          window.mqbox.clipboard.writeText(ev.text).catch(() => {})
+        }
+        return
+      }
     } catch { console.warn('[viewer] dc message parse error') }
   }
   const tr = pc.addTransceiver('video', { direction: 'recvonly' })
   pc.ontrack = (e) => {
-    console.log('[viewer] ontrack:', e.track?.kind, 'readyState:', e.track?.readyState)
     connected.value = true
     status.value = '已连接（可控制）'
     cancelReconnect()
@@ -120,6 +233,8 @@ async function startOffering() {
     const waitFirstFrame = () => {
       const el = videoRef.value
       if (el && el.videoWidth > 0 && el.videoHeight > 0) {
+        el.setAttribute('resolution-width', String(el.videoWidth))
+        el.setAttribute('resolution-height', String(el.videoHeight))
         invalidateNormCache()
         videoReady.value = true
         return
@@ -127,7 +242,7 @@ async function startOffering() {
       setTimeout(waitFirstFrame, 100)
     }
     nextTick(() => { attachAndPlay(); waitFirstFrame() })
-    setTimeout(() => determineQuality(), 500)
+    setTimeout(() => { if (qualityMode.value === 'auto') determineQuality() }, 500)
     startStatsMonitor()
   }
   pc.onicecandidate = (e) => {
@@ -138,7 +253,6 @@ async function startOffering() {
   pc.oniceconnectionstatechange = () => {
     if (!pc) return
     const st = pc.iceConnectionState
-    console.log('[viewer] ICE state:', st)
     if (st === 'connected') { cancelReconnect(); status.value = '已连接（可控制）' }
     else if (st === 'disconnected' && !connectionEnded) { status.value = '连接中断，等待恢复…' }
     else if (st === 'failed' && !connectionEnded) { status.value = '连接失败，重连中…'; connected.value = false; scheduleReconnect() }
@@ -191,12 +305,22 @@ function startStatsMonitor() {
         lossRate = total > 0 ? Math.round(dLost / total * 100) : 0
       }
       prevStats = { bytes: bytesNow, frames: framesNow, lost: lostNow }
-      // host/srflx/prflx on both ends = P2P direct; relay on either side = TURN 中转
       const relayed = localType === 'relay' || remoteType === 'relay'
       diag.value = {
         rtt, fps, bitrate, loss: lossRate, jitter,
         resolution: w && h ? `${w}×${h}` : '',
         net: relayed ? '中转' : '直连',
+      }
+
+      // Decoder-stall watchdog: if the host capture freezes (e.g. after screen
+      // lock/unlock) ask the host to re-initialize its capture.
+      if (framesNow === lastFrameDecSample) decFrozen++
+      else decFrozen = 0
+      lastFrameDecSample = framesNow
+      if (decFrozen >= 5 && Date.now() - lastRefreshAt > 15000) {
+        lastRefreshAt = Date.now()
+        decFrozen = 0
+        sendInput({ type: 'refresh' })
       }
     } catch {}
   }, 2000)
@@ -219,15 +343,14 @@ function onSignal(m: any) {
     (async () => {
       try {
         await pc!.setRemoteDescription({ type: 'answer', sdp: m.payload.sdp })
-        for (const c of pendingIce) { try { await pc!.addIceCandidate(c) } catch { console.warn('[viewer] addIce error') } }
+        for (const c of pendingIce) { try { await pc!.addIceCandidate(c) } catch {} }
         pendingIce = []
-        console.log('[viewer] answer set, iceState:', pc!.iceConnectionState)
       } catch (e: any) { console.log('[viewer] answer error:', e.message) }
     })()
   } else if (m.type === 'ice') {
     const localUfrag = pc?.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
     if (m.payload?.usernameFragment && m.payload.usernameFragment === localUfrag) {
-    } else if (pc && pc.remoteDescription) { try { pc.addIceCandidate(m.payload) } catch { console.warn('[viewer] addIce error') } }
+    } else if (pc && pc.remoteDescription) { try { pc.addIceCandidate(m.payload) } catch {} }
     else if (pc && !pc.remoteDescription) pendingIce.push(m.payload)
   } else if (m.type === 'error') {
     status.value = '被控端错误: ' + (m.message || '未知')
@@ -235,7 +358,7 @@ function onSignal(m: any) {
 }
 
 function switchScreen(sourceId: string) {
-  if (dc && dc.readyState === 'open') { try { dc.send(JSON.stringify({type:'switchScreen',sourceId})) } catch { console.warn('[viewer] switchScreen send error') } }
+  if (dc && dc.readyState === 'open') { try { dc.send(JSON.stringify({type:'switchScreen',sourceId})) } catch {} }
 }
 
 function sendInput(ev: any) {
@@ -272,19 +395,30 @@ function isIgnoredKey(code: string): boolean { return code === 'F5' || code === 
 function onKeyDown(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyDown', code: e.code }) }
 function onKeyUp(e: KeyboardEvent) { if (!connected.value || !e.code || isIgnoredKey(e.code)) return; e.preventDefault(); sendInput({ type: 'keyUp', code: e.code }) }
 
+function specialKey(key: string) { if (connected.value) sendInput({ type: 'specialKey', key }) }
+
+function onQualityChange(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  qualityMode.value = (v === '540p' || v === '720p' || v === '1080p' ? v : 'auto') as any
+  applyQuality()
+}
+
 function cleanup(silent = false) {
   connected.value = false
   if (!silent && !connectionEnded && targetId && pc) {
     props.execute?.('sendSignal', { type: 'revoked', target_deviceId: targetId })
   }
   if (dc) { try { dc.close() } catch {} ; dc = null }
+  if (fileDc) { try { fileDc.close() } catch {} ; fileDc = null }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   pendingIce = []
   if (videoRef.value) videoRef.value.srcObject = null
   videoReady.value = false
+  fileUi.value = null
   if (cleanupSignal) { cleanupSignal(); cleanupSignal = null }
   stopKeepalive()
   stopStatsMonitor()
+  stopClipboardSync()
   cancelReconnect()
 }
 
@@ -293,7 +427,6 @@ function scheduleReconnect() {
   clearTimeout(reconnectTimer)
   reconnectTimer = setTimeout(() => {
     if (connectionEnded) return
-    console.log('[viewer] reconnecting...')
     cleanup(true)
     if (targetId) connect(targetId)
   }, 3000)
@@ -301,11 +434,24 @@ function scheduleReconnect() {
 
 function backToMenu() { connectionEnded = false; cleanup(); props.close?.() }
 
+function setupResizeObserver() {
+  if (resizeObserver || !viewerWrapRef.value) return
+  resizeObserver = new ResizeObserver(() => {
+    clearTimeout(resizeTimer)
+    resizeTimer = setTimeout(() => {
+      invalidateNormCache()
+      if (connected.value && qualityMode.value === 'auto') determineQuality()
+    }, 500)
+  })
+  resizeObserver.observe(viewerWrapRef.value)
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('resize', invalidateNormCache)
   window.addEventListener('beforeunload', sendRevokedOnUnload)
+  setupResizeObserver()
   if (props.targetDeviceId && props.targetDeviceId !== 'undefined' && props.targetDeviceId !== '') {
     connect(props.targetDeviceId)
   }
@@ -316,6 +462,7 @@ onUnmounted(() => {
   window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('resize', invalidateNormCache)
   window.removeEventListener('beforeunload', sendRevokedOnUnload)
+  if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
   cleanup()
 })
 
@@ -327,7 +474,7 @@ function sendRevokedOnUnload() {
 </script>
 
 <template>
-  <div class="viewer" tabindex="0">
+  <div class="viewer" ref="viewerWrapRef" tabindex="0">
     <p class="status">{{ status }}</p>
     <div v-if="connected" class="diag-card">
       <div class="diag-row"><span class="diag-label">延迟</span><span class="diag-val">{{ diag.rtt }}ms</span></div>
@@ -345,6 +492,24 @@ function sendRevokedOnUnload() {
       @mousemove="onMouseMove" @mousedown="onMouseDown" @mouseup="onMouseUp"
       @wheel="onWheel" @contextmenu.prevent></video>
     <div v-if="connected && !videoReady" class="video-placeholder">画面加载中…</div>
+
+    <div v-if="connected" class="action-bar">
+      <select class="quality-select" :value="qualityMode" @change="onQualityChange">
+        <option value="auto">自适应</option>
+        <option value="540p">540p</option>
+        <option value="720p">720p</option>
+        <option value="1080p">1080p</option>
+      </select>
+      <button class="act-btn" title="显示桌面" @click="specialKey('desktop')">🖥 桌面</button>
+      <button class="act-btn" title="任务管理器" @click="specialKey('taskmanager')">⚙ 任务</button>
+      <button class="act-btn" title="锁定" @click="specialKey('lock')">🔒 锁屏</button>
+      <button class="act-btn" title="发送文件" @click="pickFileToSend">📤 文件</button>
+    </div>
+    <div v-if="fileUi" class="file-bar">
+      <span class="file-name">{{ fileUi.name }}</span>
+      <div class="file-progress"><div class="file-progress-inner" :style="{ width: (fileUi.percent * 100) + '%' }"></div></div>
+      <span class="file-pct">{{ Math.round(fileUi.percent * 100) }}%</span>
+    </div>
   </div>
 </template>
 
@@ -363,4 +528,15 @@ function sendRevokedOnUnload() {
 .diag-val { color:#eee; font-family:'SF Mono',Consolas,monospace; font-variant-numeric:tabular-nums; }
 .diag-val.net-direct { color:#28a745; font-weight:600; }
 .diag-val.net-relay { color:#ff9800; font-weight:600; }
+
+.action-bar { display:flex; gap:6px; padding:6px 12px; background:rgba(0,0,0,.55); justify-content:center; align-items:center; flex-shrink:0; z-index:8; }
+.quality-select { background:#2d2d2d; color:#fff; border:1px solid #444; border-radius:4px; font-size:11px; padding:2px 4px; }
+.act-btn { padding:4px 8px; border-radius:4px; border:none; background:rgba(255,255,255,.12); color:#fff; font-size:11px; cursor:pointer; white-space:nowrap; }
+.act-btn:hover { background:rgba(255,255,255,.25); }
+
+.file-bar { position:fixed; bottom:46px; left:50%; transform:translateX(-50%); width:min(70%, 420px); display:flex; align-items:center; gap:8px; background:rgba(0,0,0,.75); border-radius:8px; padding:6px 10px; z-index:20; }
+.file-name { color:#ddd; font-size:11px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.file-progress { flex:1; height:6px; background:#333; border-radius:3px; overflow:hidden; }
+.file-progress-inner { height:100%; background:#4caf50; transition:width .15s; }
+.file-pct { color:#eee; font-size:11px; font-variant-numeric:tabular-nums; }
 </style>

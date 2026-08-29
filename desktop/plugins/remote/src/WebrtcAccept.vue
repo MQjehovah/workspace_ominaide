@@ -9,6 +9,7 @@ const collapsed = ref(true)
 const status = ref('连接中…')
 const connected = ref(false)
 const hasPeer = ref(false)
+const fileProgress = ref<{ name: string; percent: number; dir: 'in' | 'out' } | null>(null)
 
 let pc: RTCPeerConnection | null = null
 let stream: MediaStream | null = null
@@ -16,18 +17,44 @@ let pendingIce: any[] = []
 let currentDisplay: any = null
 let currentSourceId = ''
 let currentDataChannel: any = null
+let fileChannel: any = null
 let cleanupSignal: (() => void) | null = null
 let bwTimer: any = null
 let moveTimer: any = null
 let wheelTimer: any = null
 let lastWheel = 0
 let hasPendingWheel = false
+let clipboardTimer: any = null
+let lastLocalClipboard = ''
+let lastRemoteClipboard = ''
 
 const qualityConfig = { maxWidth: 1280, maxHeight: 720, maxFrameRate: 30 }
+const dispQuality = ref('720p')
 let currentMaxBitrate = 4000000
-let currentSdb = 1.5
 let prevFramesEncoded = 0
 let hasPrevFrames = false
+let currentTierIndex = 1
+let lastDir = 0
+let dirSamples = 0
+let lastTierChangeAt = 0
+let staticFpsActive = false
+let qualityLocked = false
+let qualityLockHeight = 720
+let qualityLockFps = 30
+let lastInputAt = 0
+let lastFrameSample = 0
+let framesFrozen = 0
+let lastReinitAt = 0
+const TIER_COOLDOWN_MS = 10000
+const UPGRADE_SAMPLES = 3
+const DOWNGRADE_SAMPLES = 1
+const STATIC_IDLE_MS = 5000
+const TIERS = [
+  { label: '540p', height: 540, bitrate: 2500000 },
+  { label: '720p', height: 720, bitrate: 4000000 },
+  { label: '1080p', height: 1080, bitrate: 6000000 },
+]
+const FILE_CHUNK = 64 * 1024
 let cachedSources: any[] | null = null
 let cachedDisplays: any[] | null = null
 let cacheTime = 0
@@ -64,7 +91,9 @@ function cleanup() {
   if (bwTimer) { clearInterval(bwTimer); bwTimer = null }
   if (moveTimer) { clearInterval(moveTimer); moveTimer = null }
   if (wheelTimer) { clearTimeout(wheelTimer); wheelTimer = null }
+  if (clipboardTimer) { clearInterval(clipboardTimer); clipboardTimer = null }
   currentDataChannel = null
+  fileChannel = null
 }
 
 let pendingMove: { x: number; y: number } | null = null
@@ -82,7 +111,29 @@ function flushWheel() {
   win.mqbox.remote.injectInput({ type: 'wheel', deltaY: lastWheel }).catch(() => {})
 }
 
+/** Any viewer input wakes the stream from static (low-fps) mode. */
+function kick() {
+  lastInputAt = Date.now()
+  if (staticFpsActive) {
+    staticFpsActive = false
+    if (!qualityLocked) applyTrackSettings(TIERS[currentTierIndex].height, 30)
+  }
+}
+
+/** Watch for capture track mute/unmute (screen lock pauses desktop capture). */
+function attachTrackEvents(track: any) {
+  try {
+    track.addEventListener('mute', () => {})
+    track.addEventListener('unmute', () => {
+      if (Date.now() - lastReinitAt < 3000) return
+      lastReinitAt = Date.now()
+      reinitCapture()
+    })
+  } catch {}
+}
+
 function handleInput(ev: any) {
+  kick()
   try {
     if (ev.type === 'mouseMove') {
       if (!currentDisplay) return
@@ -122,25 +173,26 @@ function physicalSourceWidth(): number {
   return sender?.track?.getSettings?.()?.width || 1280
 }
 
-function applyTrackSettings() {
+/** Smooth quality control: applyConstraints on the existing track (no re-capture). */
+function applyTrackSettings(height: number, frameRate: number) {
   const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
   if (sender?.track) (sender.track as any).contentHint = 'detail'
   const tr = pc?.getTransceivers().find((t: any) => t.kind === 'video')
-  // Keep the full frame even under load: prefer dropping framerate over
-  // shrinking resolution (a shrunken image letterboxes into black bars).
   if (tr) (tr as any).degradationPreference = 'maintain-resolution'
-  if (sender) {
-    currentSdb = Math.max(1, physicalSourceWidth() / 1280)
-    applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: qualityConfig.maxFrameRate, scaleResolutionDownBy: currentSdb })
+  if (sender?.track) {
+    try { sender.track.applyConstraints({ height: { ideal: height }, frameRate: { ideal: frameRate } }).catch(() => {}) } catch {}
+    applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: frameRate, scaleResolutionDownBy: 1 })
+    dispQuality.value = height >= 1000 ? '1080p' : height >= 700 ? '720p' : '540p'
   }
 }
 
-/** Tiered adaptive controller: resolution + bitrate climb when network is
- * good and the encoder keeps up, drop when it can't. Runs every 2s. */
+/** Tiered adaptive controller + static-idle fps reduction. Runs every 2s. */
 function startAdaptiveController() {
   clearInterval(bwTimer)
   prevFramesEncoded = 0
   hasPrevFrames = false
+  lastDir = 0
+  dirSamples = 0
   bwTimer = setInterval(async () => {
     if (!pc) return
     try {
@@ -160,30 +212,68 @@ function startAdaptiveController() {
       prevFramesEncoded = framesEncoded
       hasPrevFrames = true
 
-      const physW = physicalSourceWidth()
-      const tiers = [
-        { label: '540p', sdb: physW / 960, bitrate: 2500000 },
-        { label: '720p', sdb: physW / 1280, bitrate: 4000000 },
-        { label: '1080p', sdb: physW / 1920, bitrate: 6000000 },
-      ]
-      let t = tiers.findIndex(x => Math.abs(x.sdb - currentSdb) < 0.001)
-      if (t < 0) t = 1
-      const netGood = lossRate < 0.01 && rtt < 0.15
-      const netBad = lossRate > 0.03 || rtt > 0.3
-
-      if (encFps > 0 && encFps < 14) {
-        if (t > 0) t--
-      } else if (netGood && encFps >= 20 && t < tiers.length - 1) {
-        t++
-      } else if (netBad) {
-        if (t > 0) t--
+      // Frame-production watchdog: screen lock pauses desktop capture and it
+      // often does not resume after unlock. Force a fresh capture when no
+      // frames are being encoded for ~8s (throttled to once/15s).
+      if (framesEncoded === lastFrameSample) framesFrozen++
+      else framesFrozen = 0
+      lastFrameSample = framesEncoded
+      if (framesFrozen >= 4 && Date.now() - lastReinitAt > 15000) {
+        lastReinitAt = Date.now()
+        framesFrozen = 0
+        console.warn('[host] frames frozen, re-initializing capture')
+        reinitCapture()
+        return
       }
 
-      const target = tiers[t]
-      currentSdb = target.sdb
-      currentMaxBitrate = target.bitrate
-      const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
-      if (sender) applySenderParams(sender, { maxBitrate: currentMaxBitrate, maxFramerate: qualityConfig.maxFrameRate, scaleResolutionDownBy: currentSdb })
+      if (qualityLocked) {
+        // Manual quality: only adapt bitrate, keep resolution/fps untouched.
+        let next = currentMaxBitrate
+        if (lossRate > 0.03 || rtt > 0.3) next = Math.max(1200000, Math.round(currentMaxBitrate * 0.6))
+        else if (lossRate < 0.005 && rtt < 0.15) next = Math.min(8000000, Math.round(currentMaxBitrate * 1.1))
+        if (next !== currentMaxBitrate) {
+          currentMaxBitrate = next
+          const sender = pc?.getSenders().find((s: any) => s.track?.kind === 'video')
+          if (sender) applySenderParams(sender, { maxBitrate: next })
+        }
+        return
+      }
+
+      const netGood = lossRate < 0.01 && rtt < 0.15
+      const netBad = lossRate > 0.03 || rtt > 0.3
+      let desired = currentTierIndex
+      if (encFps > 0 && encFps < 12) desired = currentTierIndex - 1
+      else if (netBad) desired = currentTierIndex - 1
+      else if (netGood && encFps >= 24 && currentTierIndex < TIERS.length - 1) desired = currentTierIndex + 1
+      desired = Math.max(0, Math.min(TIERS.length - 1, desired))
+
+      const dir = desired > currentTierIndex ? 1 : desired < currentTierIndex ? -1 : 0
+      let tierChanged = false
+      if (dir !== 0 && dir === lastDir) {
+        dirSamples++
+        const need = dir > 0 ? UPGRADE_SAMPLES : DOWNGRADE_SAMPLES
+        if (dirSamples >= need && Date.now() - lastTierChangeAt >= TIER_COOLDOWN_MS) {
+          currentTierIndex = desired
+          currentMaxBitrate = TIERS[currentTierIndex].bitrate
+          lastTierChangeAt = Date.now()
+          dirSamples = 0
+          tierChanged = true
+        }
+      } else {
+        lastDir = dir
+        dirSamples = dir !== 0 ? 1 : 0
+      }
+
+      // Static-idle fps reduction
+      const idle = Date.now() - lastInputAt > STATIC_IDLE_MS
+      const fpsTarget = idle ? 6 : 30
+      const shouldIdle = idle && !staticFpsActive
+      const shouldWake = !idle && staticFpsActive
+
+      if (tierChanged || shouldIdle || shouldWake) {
+        staticFpsActive = idle
+        applyTrackSettings(TIERS[currentTierIndex].height, fpsTarget)
+      }
     } catch {}
   }, 2000)
 }
@@ -194,6 +284,108 @@ function handleIce(m: any) {
   const ufrag = pc.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
   if (m.payload?.usernameFragment && m.payload.usernameFragment === ufrag) return
   try { pc.addIceCandidate(m.payload) } catch { /* ignore */ }
+}
+
+// ===== Clipboard sync =====
+
+function startClipboardSync() {
+  clearInterval(clipboardTimer)
+  clipboardTimer = setInterval(async () => {
+    if (!currentDataChannel || currentDataChannel.readyState !== 'open') return
+    try {
+      const text = (await win.mqbox.clipboard.readText()) || ''
+      if (text && text !== lastLocalClipboard && text !== lastRemoteClipboard) {
+        lastLocalClipboard = text
+        try { currentDataChannel.send(JSON.stringify({ type: 'clipboard', text })) } catch {}
+      }
+    } catch {}
+  }, 1500)
+}
+
+// ===== File transfer over reliable datachannel =====
+
+interface FileRecv {
+  id: string
+  name: string
+  size: number
+  buf: Uint8Array
+  received: number
+}
+let fileRecv: FileRecv | null = null
+
+async function sendFileOverDc(dc: any, file: File, onProgress: (p: number) => void) {
+  if (!dc || dc.readyState !== 'open') { status.value = '文件通道未就绪'; return }
+  const id = 'f' + Date.now().toString(36)
+  const size = file.size
+  try {
+    dc.send(JSON.stringify({ type: 'file-meta', id, name: file.name, size }))
+    const buf = new Uint8Array(await file.arrayBuffer())
+    let sent = 0
+    while (sent < size) {
+      if (dc.bufferedAmount > 4 * 1024 * 1024) {
+        await new Promise<void>((res) => dc.addEventListener('bufferedamountlow', () => res(), { once: true }))
+      }
+      const chunk = buf.subarray(sent, sent + FILE_CHUNK)
+      dc.send(chunk)
+      sent += chunk.byteLength
+      onProgress(size ? sent / size : 1)
+    }
+    dc.send(JSON.stringify({ type: 'file-done', id }))
+  } catch (e: any) {
+    console.warn('[host] sendFile error:', e.message)
+  }
+}
+
+function setupFileChannel(dc: any) {
+  fileChannel = dc
+  dc.binaryType = 'arraybuffer'
+  if (typeof dc.bufferedAmountLowThreshold === 'number') dc.bufferedAmountLowThreshold = 4 * 1024 * 1024
+  dc.onmessage = (msg: any) => {
+    try {
+      if (typeof msg.data === 'string') {
+        const ev = JSON.parse(msg.data)
+        if (ev.type === 'file-meta') {
+          fileRecv = { id: ev.id, name: ev.name, size: ev.size || 0, buf: new Uint8Array(ev.size || 0), received: 0 }
+          fileProgress.value = { name: ev.name, percent: 0, dir: 'in' }
+        } else if (ev.type === 'file-done') {
+          if (fileRecv) {
+            win.mqbox.remote.saveFile(fileRecv.name, fileRecv.buf.buffer as ArrayBuffer)
+              .then((r: any) => { status.value = r?.ok ? `已保存: ${r.path || ''}` : '保存失败' })
+              .catch(() => { status.value = '保存失败' })
+          }
+          fileRecv = null
+          fileProgress.value = null
+        } else if (ev.type === 'file-cancel') {
+          fileRecv = null
+          fileProgress.value = null
+        }
+        return
+      }
+      if (fileRecv && msg.data instanceof ArrayBuffer) {
+        const chunk = new Uint8Array(msg.data)
+        fileRecv.buf.set(chunk, fileRecv.received)
+        fileRecv.received += chunk.byteLength
+        fileProgress.value = fileRecv.size
+          ? { name: fileRecv.name, percent: Math.min(1, fileRecv.received / fileRecv.size), dir: 'in' }
+          : null
+      }
+    } catch (e: any) { console.warn('[host] file dc error:', e.message) }
+  }
+}
+
+function pickFileToSend() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.onchange = () => {
+    const f = input.files?.[0]
+    if (f && fileChannel && fileChannel.readyState === 'open') {
+      sendFileOverDc(fileChannel, f, (p) => {
+        fileProgress.value = { name: f.name, percent: p, dir: 'out' }
+        if (p >= 1) fileProgress.value = null
+      })
+    }
+  }
+  input.click()
 }
 
 async function startConnection() {
@@ -218,65 +410,79 @@ async function startConnection() {
         } as any,
       },
     })
+    attachTrackEvents(stream.getVideoTracks()[0])
 
     pc = newPeer(await getIceServers())
 
     pc.ondatachannel = (e) => {
+      if (e.channel.label === 'file') { setupFileChannel(e.channel); return }
       currentDataChannel = e.channel
       e.channel.onopen = () => {
         const { sources } = cachedSources ? { sources: cachedSources } : { sources: [] }
         e.channel.send(JSON.stringify({ type: 'screens', list: sources.map((s: any) => ({ id: s.id, name: s.name })) }))
+        startClipboardSync()
       }
       e.channel.onmessage = (msg) => {
         try {
           const ev = JSON.parse(msg.data)
           if (ev.type === 'ping') { try { e.channel.send(JSON.stringify({ type: 'pong' })) } catch {}; return }
           if (ev.type === 'switchScreen') { switchScreen(ev.sourceId); return }
-          if (ev.type === 'setQuality') { Object.assign(qualityConfig, ev); applyQualityChange(); return }
+          if (ev.type === 'refresh') { reinitCapture(); return }
+          if (ev.type === 'setQuality') {
+            qualityLocked = ev.auto !== true
+            if (qualityLocked) {
+              qualityLockHeight = ev.maxHeight || qualityConfig.maxHeight
+              qualityLockFps = ev.maxFrameRate || 30
+              dispQuality.value = qualityLockHeight >= 1000 ? '1080p' : qualityLockHeight >= 700 ? '720p' : '540p'
+              applyTrackSettings(qualityLockHeight, qualityLockFps)
+            } else {
+              currentTierIndex = 1
+              staticFpsActive = false
+            }
+            return
+          }
+          if (ev.type === 'clipboard') {
+            if (ev.text && ev.text !== lastRemoteClipboard && ev.text !== lastLocalClipboard) {
+              lastRemoteClipboard = ev.text
+              lastLocalClipboard = ev.text
+              win.mqbox.clipboard.writeText(ev.text).catch(() => {})
+            }
+            return
+          }
           handleInput(ev)
         } catch (e: any) { console.warn('[host] dc message error:', e.message) }
       }
     }
 
-    // Standard WebRTC flow
     pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        sendToChild('ice', e.candidate.toJSON())
-      }
+      if (e.candidate) sendToChild('ice', e.candidate.toJSON())
     }
 
     await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
-
-    // Use addTrack to properly associate the track with a stream
     stream.getTracks().forEach(t => pc!.addTrack(t, stream!))
 
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
     sendToChild('answer', answer)
 
-    // Drain ICE candidates that arrived before this window opened
     const localUfrag = pc.localDescription?.sdp?.match(/a=ice-ufrag:(\S+)/)?.[1]
     for (let i = 0; i < pendingIce.length; i++) {
       const ufrag = pendingIce[i]?.usernameFragment
       if (ufrag && ufrag === localUfrag) continue
-      try { await pc.addIceCandidate(pendingIce[i]) }
-      catch {}
+      try { await pc.addIceCandidate(pendingIce[i]) } catch {}
     }
     pendingIce = []
 
     pc.oniceconnectionstatechange = () => {
       if (!pc) return
       const st = pc.iceConnectionState
-      console.log('[host] ICE state:', st)
       if (st === 'connected' || st === 'completed') {
         connected.value = true
         status.value = '推流中'
         hasPeer.value = true
-        applyTrackSettings()
+        lastInputAt = Date.now()
+        applyTrackSettings(TIERS[currentTierIndex].height, 30)
         startAdaptiveController()
-        // Auto re-capture once the link stabilises: the very first capture can
-        // come out with a wrong (cropped) resolution; a fresh getUserMedia +
-        // replaceTrack reliably fixes it (proven by manual screen-switching).
         setTimeout(() => { reinitCapture() }, 1500)
       } else if (st === 'failed') {
         connected.value = false
@@ -305,7 +511,9 @@ async function reinitCapture() {
     if (sender && pc) await sender.replaceTrack(ns.getVideoTracks()[0])
     if (stream) stream.getTracks().forEach(t => t.stop())
     stream = ns
-    applyTrackSettings()
+    attachTrackEvents(ns.getVideoTracks()[0])
+    const h = qualityLocked ? qualityLockHeight : TIERS[currentTierIndex].height
+    applyTrackSettings(h, qualityLockFps || 30)
   } catch (e: any) { console.warn('[host] reinitCapture error:', e.message) }
 }
 
@@ -319,21 +527,22 @@ async function switchScreen(sourceId: string) {
     if (sender && pc) await sender.replaceTrack(ns.getVideoTracks()[0])
     if (stream) stream.getTracks().forEach(t => t.stop())
     stream = ns
+    attachTrackEvents(ns.getVideoTracks()[0])
     currentSourceId = sourceId
-    applyTrackSettings()
+    const h = qualityLocked ? qualityLockHeight : TIERS[currentTierIndex].height
+    applyTrackSettings(h, qualityLockFps || 30)
     const { sources: srcs, displays: allDisplays } = await getCachedSources()
     currentDisplay = matchDisplay(srcs.find((s: any) => s.id === sourceId), allDisplays)
     currentDataChannel?.send(JSON.stringify({ type: 'activeScreen', id: sourceId }))
   } catch (e: any) { console.warn('[host] switchScreen error:', e.message) }
 }
 
-function applyQualityChange() { reinitCapture() }
-
 function disconnect() {
   sendToChild('revoked', {})
   if (bwTimer) { clearInterval(bwTimer); bwTimer = null }
   if (moveTimer) { clearInterval(moveTimer); moveTimer = null }
   if (wheelTimer) { clearTimeout(wheelTimer); wheelTimer = null }
+  if (clipboardTimer) { clearInterval(clipboardTimer); clipboardTimer = null }
   if (pc) { try { pc.close() } catch {} ; pc = null }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
   stream = null
@@ -348,7 +557,7 @@ function disconnect() {
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value
-  const h = collapsed.value ? 40 : 130
+  const h = collapsed.value ? 40 : 160
   win.mqbox?.window?.resize(280, h)
 }
 
@@ -393,9 +602,13 @@ onUnmounted(() => {
       </div>
       <div class="body">
         <div class="row"><span class="label">状态</span><span class="val" :class="{ ok: connected }">{{ status }}</span></div>
-        <div class="row" v-if="hasPeer"><span class="label">分辨率</span><span class="val">{{ qualityConfig.maxWidth }}×{{ qualityConfig.maxHeight }}</span></div>
+        <div class="row"><span class="label">分辨率</span><span class="val">{{ dispQuality }}</span></div>
+        <div class="row" v-if="fileProgress"><span class="label">{{ fileProgress.dir === 'in' ? '接收' : '发送' }} {{ fileProgress.name }}</span><span class="val">{{ Math.round(fileProgress.percent * 100) }}%</span></div>
       </div>
-      <button v-if="hasPeer" class="disconnect-btn" @click="disconnect">断开</button>
+      <div class="panel-actions">
+        <button v-if="hasPeer" class="mini-btn" @click="pickFileToSend">发文件</button>
+        <button v-if="hasPeer" class="mini-btn danger" @click="disconnect">断开</button>
+      </div>
     </div>
   </div>
 </template>
@@ -422,10 +635,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; backg
 
 .body { padding:0 12px 8px; display:flex; flex-direction:column; gap:4px; -webkit-app-region:no-drag; }
 .row { display:flex; justify-content:space-between; font-size:11px; }
-.label { color:#888; }
+.label { color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px; }
 .val { color:#ccc; }
 .val.ok { color:#28a745; }
 
-.disconnect-btn { margin:0 12px 8px; width:calc(100% - 24px); padding:5px; border:none;border-radius:6px;background:#c62828;color:#fff;font-size:11px;cursor:pointer; -webkit-app-region:no-drag; }
-.disconnect-btn:hover { background:#e53935; }
+.panel-actions { display:flex; gap:8px; padding:0 12px 8px; -webkit-app-region:no-drag; }
+.mini-btn { flex:1; padding:5px; border:none;border-radius:6px;background:#2d2d2d;color:#ccc;font-size:11px;cursor:pointer; }
+.mini-btn:hover { background:#3a3a3a; color:#fff; }
+.mini-btn.danger { background:#c62828; color:#fff; }
+.mini-btn.danger:hover { background:#e53935; }
 </style>

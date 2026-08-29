@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('mqbox', {
   },
   clipboard: {
     writeImage: (dataUrl: string) => ipcRenderer.invoke('clipboard:write-image', dataUrl),
+    readText: () => ipcRenderer.invoke('clipboard:read-text'),
+    writeText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
   },
   player: {
     // Audio control commands (from Page.vue or any renderer)
@@ -167,6 +169,7 @@ contextBridge.exposeInMainWorld('mqbox', {
     getScreenSize: () => ipcRenderer.invoke('remote:screen-size'),
     getAllDisplays: () => ipcRenderer.invoke('remote:get-all-displays'),
     injectInput: (event: any) => ipcRenderer.invoke('remote:inject', event),
+    saveFile: (name: string, data: ArrayBuffer) => ipcRenderer.invoke('remote:save-file', { name, data }),
     onControlRequest: (cb: (info: any) => void) => {
       ipcRenderer.on('remote:control-request', (_e, info) => cb(info))
     },

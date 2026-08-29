@@ -19,6 +19,14 @@ function getNut(): any {
 
 const buttonMap: Record<string, string> = { left: 'LEFT', right: 'RIGHT', middle: 'MIDDLE' }
 
+const specialKeyMap: Record<string, string[]> = {
+  desktop: ['LeftSuper', 'D'],
+  explorer: ['LeftSuper', 'E'],
+  lock: ['LeftSuper', 'L'],
+  minimize: ['LeftSuper', 'Down'],
+  taskmanager: ['LeftControl', 'LeftShift', 'Esc'],
+}
+
 const keyMap: Record<string, string> = {
   KeyA: 'A', KeyB: 'B', KeyC: 'C', KeyD: 'D', KeyE: 'E', KeyF: 'F', KeyG: 'G', KeyH: 'H', KeyI: 'I', KeyJ: 'J',
   KeyK: 'K', KeyL: 'L', KeyM: 'M', KeyN: 'N', KeyO: 'O', KeyP: 'P', KeyQ: 'Q', KeyR: 'R', KeyS: 'S', KeyT: 'T',
@@ -455,6 +463,30 @@ export function registerIpcHandlers() {
     try { await copyImage(dataUrl); return true } catch { return false }
   })
 
+  ipcMain.handle('clipboard:read-text', async () => {
+    try { return require('electron').clipboard.readText() } catch { return '' }
+  })
+
+  ipcMain.handle('clipboard:write-text', async (_, text: string) => {
+    try { require('electron').clipboard.writeText(String(text || '')); return true } catch { return false }
+  })
+
+  ipcMain.handle('remote:save-file', async (_, payload: { name?: string; data?: ArrayBuffer | Uint8Array }) => {
+    try {
+      const { app, dialog } = require('electron')
+      const { writeFileSync } = require('fs')
+      const { join } = require('path')
+      const name = String(payload?.name || 'remote-file').replace(/[\\/:*?"<>|]/g, '_')
+      const result = await dialog.showSaveDialog({ defaultPath: join(app.getPath('downloads'), name) })
+      if (result.canceled || !result.filePath) return { ok: false, reason: 'canceled' }
+      const bytes = payload?.data instanceof ArrayBuffer ? new Uint8Array(payload.data) : (payload?.data || new Uint8Array())
+      writeFileSync(result.filePath, Buffer.from(bytes))
+      return { ok: true, path: result.filePath }
+    } catch (e: any) {
+      return { ok: false, reason: e?.message || String(e) }
+    }
+  })
+
   ipcMain.handle('remote:get-sources', async () => {
     try {
       const { desktopCapturer } = require('electron')
@@ -512,6 +544,16 @@ export function registerIpcHandlers() {
       } else if (ev.type === 'keyUp') {
         const k = keyMap[ev.code]
         if (k && nut.Key[k] !== undefined) await nut.keyboard.releaseKey(nut.Key[k])
+      } else if (ev.type === 'specialKey') {
+        const combo = specialKeyMap[ev.key]
+        if (combo && combo.length) {
+          const keys = combo.map((k: string) => nut.Key[k]).filter((k: any) => k !== undefined)
+          if (keys.length) {
+            await nut.keyboard.pressKey(...keys)
+            await new Promise(r => setTimeout(r, 60))
+            await nut.keyboard.releaseKey(...keys)
+          }
+        }
       }
       return { ok: true }
     } catch (e: any) {
