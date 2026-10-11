@@ -61,7 +61,7 @@ async function checkRemoteAutoConnect() {
       const deviceId = await window.mqbox.plugin.execute('remote', 'getDeviceId')
       const hostName = await window.mqbox.plugin.execute('remote', 'getHostName')
       if (!deviceId) { console.log('[app] auto-connect: no deviceId'); return }
-      const serverUrl = await window.mqbox.config.get('serverUrl') || 'http://localhost:8000'
+      const serverUrl = await window.mqbox.config.get('serverUrl') || 'https://mqgeek.com/ominaide'
       const token = await window.mqbox.config.get('token') || ''
       window.mqbox.remote.connectDirectly({ serverUrl, token, deviceId, name: hostName })
     }
@@ -139,7 +139,7 @@ function remoteWsReconnect() {
   var cfg = window.mqbox && window.mqbox.config
   if (!cfg || !remoteWsDeviceId) { console.log('[app] reconnect: skip'); return }
   Promise.all([cfg.get('serverUrl'), cfg.get('token'), cfg.get('deviceName')]).then(function(values) {
-    var serverUrl = values[0] || 'http://localhost:8000'
+    var serverUrl = values[0] || 'https://mqgeek.com/ominaide'
     var token = values[1] || ''
     var name = values[2] || ''
     var url = serverUrl.replace(/^http/, 'ws') + '/ws/remote'

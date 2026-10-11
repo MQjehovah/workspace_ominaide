@@ -206,7 +206,7 @@ function loadAIConfig() {
 }
 
 async function serverUrl(): Promise<string> {
-  try { return await (window as any).mqbox?.config?.get('serverUrl') || 'http://localhost:8000' } catch { return 'http://localhost:8000' }
+  try { return await (window as any).mqbox?.config?.get('serverUrl') || 'https://mqgeek.com/ominaide' } catch { return 'https://mqgeek.com/ominaide' }
 }
 
 function onWrapperClick() {
@@ -607,7 +607,7 @@ watch(() => props.modelValue, (val) => {
 
 async function uploadFileViaApi(file: File): Promise<string | null> {
   try {
-    const serverUrl = await (window as any).mqbox?.config?.get('serverUrl') || 'http://localhost:8000'
+    const serverUrl = await (window as any).mqbox?.config?.get('serverUrl') || 'https://mqgeek.com/ominaide'
     const token = await (window as any).mqbox?.config?.get('token') || ''
     const form = new FormData()
     form.append('file', file)

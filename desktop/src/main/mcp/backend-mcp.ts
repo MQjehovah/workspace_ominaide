@@ -15,7 +15,7 @@ export interface BackendClientHandle {
 
 async function fetchBackend(path: string, init?: RequestInit): Promise<Response> {
   const cfg = await getConfig()
-  const base = String(cfg.serverUrl || 'http://localhost:8000').replace(/\/+$/, '')
+  const base = String(cfg.serverUrl || 'https://mqgeek.com/ominaide').replace(/\/+$/, '')
   const token = cfg.token || ''
   const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) || {} }
   headers['Content-Type'] = 'application/json'

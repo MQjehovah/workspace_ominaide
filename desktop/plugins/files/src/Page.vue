@@ -401,7 +401,7 @@ function handleFileSelect(e: Event) {
 }
 
 async function uploadFiles(list: File[]) {
-  const serverUrl = await window.mqbox?.config.get('serverUrl') || 'http://localhost:8000'
+  const serverUrl = await window.mqbox?.config.get('serverUrl') || 'https://mqgeek.com/ominaide'
   const token = await window.mqbox?.config.get('token') || ''
   for (const file of list) {
     const item = { name: file.name, status: 'uploading', statusText: '上传中...' }

@@ -218,7 +218,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('plugin:list-marketplace', async () => {
     try {
       const cfg = await getConfig()
-      const base = cfg.serverUrl || 'http://localhost:8000'
+      const base = cfg.serverUrl || 'https://mqgeek.com/ominaide'
       const res = await axios.get(`${base}/api/plugins/marketplace`, {
         headers: { Authorization: 'Bearer ' + (cfg.token || '') }
       })
@@ -228,7 +228,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('plugin:install-from-market', async (_, pluginId: string) => {
     try {
       const cfg = await getConfig()
-      const base = cfg.serverUrl || 'http://localhost:8000'
+      const base = cfg.serverUrl || 'https://mqgeek.com/ominaide'
       const url = `${base}/api/plugins/marketplace/${pluginId}/download`
       const res = await axios.get(url, {
         responseType: 'stream',
@@ -321,7 +321,7 @@ export function registerIpcHandlers() {
     try {
       const c = await getConfig()
       if (!c.refresh_token) return false
-      const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api/auth/refresh`,
+      const res = await axios.post(`${c.serverUrl || 'https://mqgeek.com/ominaide'}/api/auth/refresh`,
         { refresh_token: c.refresh_token },
         { headers: { Authorization: 'Bearer ' + (c.token || '') } }
       )
@@ -336,7 +336,7 @@ export function registerIpcHandlers() {
 
   async function apiRequest(method: string, path: string, body?: any) {
     const c = await getConfig()
-    const baseUrl = c.serverUrl || 'http://localhost:8000'
+    const baseUrl = c.serverUrl || 'https://mqgeek.com/ominaide'
     const headers: any = { Authorization: 'Bearer ' + (c.token || '') }
     if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json'
     try {
@@ -642,7 +642,7 @@ export function registerIpcHandlers() {
         return
       }
       const cfg = await getConfig()
-      const serverUrl = cfg.serverUrl || 'http://localhost:8000'
+      const serverUrl = cfg.serverUrl || 'https://mqgeek.com/ominaide'
       const token = cfg.token || ''
       const src = state.currentTrack.source === 'cloud'
         ? `${serverUrl}/api/files/${state.currentTrack.fileId}/stream?token=${encodeURIComponent(token)}`

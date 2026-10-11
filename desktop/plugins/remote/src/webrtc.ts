@@ -6,7 +6,7 @@ const FALLBACK_ICE = [
 
 export async function getServer(): Promise<{ serverUrl: string; token: string }> {
   const w = window as any
-  const serverUrl = (await w.mqbox.config.get('serverUrl')) || 'http://localhost:8000'
+  const serverUrl = (await w.mqbox.config.get('serverUrl')) || 'https://mqgeek.com/ominaide'
   const token = (await w.mqbox.config.get('token')) || ''
   return { serverUrl, token }
 }

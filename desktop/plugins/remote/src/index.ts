@@ -254,7 +254,7 @@ export default {
 }
 
 async function getServerUrl(): Promise<string> {
-  try { return (await pluginCtx.config.get('serverUrl')) || 'http://localhost:8000' } catch { return 'http://localhost:8000' }
+  try { return (await pluginCtx.config.get('serverUrl')) || 'https://mqgeek.com/ominaide' } catch { return 'https://mqgeek.com/ominaide' }
 }
 
 async function getToken(): Promise<string> {

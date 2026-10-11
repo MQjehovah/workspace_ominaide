@@ -33,7 +33,7 @@ function saveState(localDir: string, state: Record<string, number>) {
 
 async function api() {
   const c = await getConfig()
-  return { serverUrl: c.serverUrl || 'http://localhost:8000', token: c.token || '' }
+  return { serverUrl: c.serverUrl || 'https://mqgeek.com/ominaide', token: c.token || '' }
 }
 
 async function loadPairs() {

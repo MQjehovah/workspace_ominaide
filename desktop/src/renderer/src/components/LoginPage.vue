@@ -35,7 +35,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-const serverUrl = ref('http://localhost:8000')
+const serverUrl = ref('https://mqgeek.com/ominaide')
 const username = ref('')
 const password = ref('')
 const loading = ref(false)

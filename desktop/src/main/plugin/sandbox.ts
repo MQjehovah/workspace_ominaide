@@ -35,7 +35,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     try {
       const c = await getConfig()
       if (!c.refresh_token) return false
-      const res = await axios.post(`${c.serverUrl || 'http://localhost:8000'}/api/auth/refresh`, 
+      const res = await axios.post(`${c.serverUrl || 'https://mqgeek.com/ominaide'}/api/auth/refresh`, 
         { refresh_token: c.refresh_token },
         { headers: { Authorization: 'Bearer ' + (c.token || '') } }
       )
@@ -50,7 +50,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
 
   async function apiFetch(method: 'get' | 'post' | 'put' | 'delete', path: string, body?: any) {
     const c = await getConfig()
-    const baseUrl = c.serverUrl || 'http://localhost:8000'
+    const baseUrl = c.serverUrl || 'https://mqgeek.com/ominaide'
     const headers: any = { Authorization: 'Bearer ' + (c.token || '') }
     if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json'
     try {
@@ -176,7 +176,7 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
 }
 
 // Shared store across sandboxes
-const store: { serverUrl: string; token: string } = { serverUrl: 'http://localhost:8000', token: '' }
+const store: { serverUrl: string; token: string } = { serverUrl: 'https://mqgeek.com/ominaide', token: '' }
 
 export function setAuth(serverUrl: string, token: string) {
   store.serverUrl = serverUrl

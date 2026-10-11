@@ -341,9 +341,9 @@ function showToast(msg: string) {
 async function serverUrl(): Promise<string> {
   try {
     const w = window as any
-    if (w.mqbox?.config?.get) return (await w.mqbox.config.get('serverUrl')) || 'http://localhost:8000'
+    if (w.mqbox?.config?.get) return (await w.mqbox.config.get('serverUrl')) || 'https://mqgeek.com/ominaide'
   } catch { /* ignore */ }
-  return localStorage.getItem('server_url') || 'http://localhost:8000'
+  return localStorage.getItem('server_url') || 'https://mqgeek.com/ominaide'
 }
 
 async function getToken(): Promise<string> {

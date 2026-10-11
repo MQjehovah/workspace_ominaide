@@ -55,7 +55,7 @@ export function channelStatus() {
 export async function startBackendChannel(): Promise<void> {
   const cfg = await getConfig()
   const token = cfg.token || ''
-  const serverUrl = cfg.serverUrl || 'http://localhost:8000'
+  const serverUrl = cfg.serverUrl || 'https://mqgeek.com/ominaide'
   const signature = `${serverUrl}|${token}`
 
   if (!token) {

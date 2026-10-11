@@ -152,7 +152,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
   proc.registerBridgeHandler('api:get', async ([path]) => {
     const cfg = await getConfig()
-    const res = await axios.get(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, {
+    const res = await axios.get(`${cfg.serverUrl || 'https://mqgeek.com/ominaide'}/api${path}`, {
       headers: { Authorization: 'Bearer ' + (cfg.token || '') },
       timeout: 15000,
     })
@@ -162,7 +162,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
   proc.registerBridgeHandler('api:post', async ([path, body]) => {
     const cfg = await getConfig()
     try {
-      const res = await axios.post(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
+      const res = await axios.post(`${cfg.serverUrl || 'https://mqgeek.com/ominaide'}/api${path}`, body, {
         headers: { Authorization: 'Bearer ' + (cfg.token || ''), 'Content-Type': 'application/json' },
         timeout: 15000,
       })
@@ -174,7 +174,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
   proc.registerBridgeHandler('api:put', async ([path, body]) => {
     const cfg = await getConfig()
-    const res = await axios.put(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, body, {
+    const res = await axios.put(`${cfg.serverUrl || 'https://mqgeek.com/ominaide'}/api${path}`, body, {
       headers: { Authorization: 'Bearer ' + (cfg.token || ''), 'Content-Type': 'application/json' },
       timeout: 15000,
     })
@@ -183,7 +183,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
   proc.registerBridgeHandler('api:delete', async ([path]) => {
     const cfg = await getConfig()
-    const res = await axios.delete(`${cfg.serverUrl || 'http://localhost:8000'}/api${path}`, {
+    const res = await axios.delete(`${cfg.serverUrl || 'https://mqgeek.com/ominaide'}/api${path}`, {
       headers: { Authorization: 'Bearer ' + (cfg.token || '') },
       timeout: 15000,
     })

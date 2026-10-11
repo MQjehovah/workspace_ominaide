@@ -46,7 +46,7 @@ let pluginCtx: any = null
 
 async function getServerConfig(): Promise<{ serverUrl: string; token: string }> {
   try {
-    let serverUrl = 'http://localhost:8000'
+    let serverUrl = 'https://mqgeek.com/ominaide'
     let token = ''
     if (pluginCtx?.config) {
       serverUrl = (await pluginCtx.config.get('serverUrl')) || serverUrl
@@ -54,7 +54,7 @@ async function getServerConfig(): Promise<{ serverUrl: string; token: string }> 
     }
     return { serverUrl, token }
   } catch {
-    return { serverUrl: 'http://localhost:8000', token: '' }
+    return { serverUrl: 'https://mqgeek.com/ominaide', token: '' }
   }
 }
 
