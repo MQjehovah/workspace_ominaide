@@ -1,31 +1,7 @@
-from qdrant_client import QdrantClient
-from qdrant_client.models import (
-    PointStruct, VectorParams, Distance,
-    Filter, FieldCondition, MatchValue,
-)
-from core.config.settings import settings
+"""File embedding index backed by pgvector (previously Qdrant)."""
+from core.ai import vector_store
 
 COLLECTION_NAME = "file_embeddings"
-VECTOR_SIZE = 1536
-
-_client: QdrantClient | None = None
-
-
-def get_qdrant() -> QdrantClient:
-    global _client
-    if _client is None:
-        _client = QdrantClient(url=settings.qdrant_url)
-        _ensure_collection()
-    return _client
-
-
-def _ensure_collection():
-    collections = _client.get_collections().collections
-    if not any(c.name == COLLECTION_NAME for c in collections):
-        _client.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
-        )
 
 
 async def index_file(
@@ -36,27 +12,27 @@ async def index_file(
     file_size: int = 0,
 ):
     from core.ai.embeddings import generate_embedding
+    from datetime import datetime
 
     vector = await generate_embedding(content)
     if vector is None:
         return False
 
-    client = get_qdrant()
-    client.upsert(
-        collection_name=COLLECTION_NAME,
-        points=[
-            PointStruct(
-                id=file_id,
-                vector=vector,
-                payload={
-                    "user_id": user_id,
-                    "file_id": file_id,
-                    "filename": filename,
-                    "file_size": file_size,
-                    "indexed_at": __import__("datetime").datetime.now().isoformat(),
-                },
-            )
-        ],
+    await vector_store.upsert(
+        COLLECTION_NAME,
+        doc_key=str(file_id),
+        user_id=user_id,
+        embedding=vector,
+        source_type="file",
+        source_id=file_id,
+        title=filename,
+        content=content[:500],
+        metadata={
+            "file_id": file_id,
+            "filename": filename,
+            "file_size": file_size,
+            "indexed_at": datetime.now().isoformat(),
+        },
     )
     return True
 
@@ -72,31 +48,19 @@ async def search_similar(
     if vector is None:
         return []
 
-    client = get_qdrant()
-
-    must_conditions = [FieldCondition(key="user_id", match=MatchValue(value=user_id))]
-
-    results = client.search(
-        collection_name=COLLECTION_NAME,
-        query_vector=vector,
-        query_filter=Filter(must=must_conditions),
-        limit=limit,
+    hits = await vector_store.search(
+        COLLECTION_NAME, user_id, vector, limit=limit
     )
-
     return [
         {
-            "file_id": r.payload.get("file_id"),
-            "filename": r.payload.get("filename"),
-            "file_size": r.payload.get("file_size"),
-            "score": round(r.score, 4),
+            "file_id": h["metadata"].get("file_id", h["source_id"]),
+            "filename": h["title"],
+            "file_size": h["metadata"].get("file_size"),
+            "score": h["score"],
         }
-        for r in results
+        for h in hits
     ]
 
 
 async def delete_file_index(file_id: int):
-    client = get_qdrant()
-    client.delete(
-        collection_name=COLLECTION_NAME,
-        points_selector=[file_id],
-    )
+    await vector_store.delete(COLLECTION_NAME, str(file_id))

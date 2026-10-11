@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] | None = None
     images: list[str] | None = None
+    session_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -34,3 +35,22 @@ class TranslateRequest(BaseModel):
 class TranslateResponse(BaseModel):
     text: str
     translated: str
+
+
+class AsrResponse(BaseModel):
+    text: str
+
+
+class TtsRequest(BaseModel):
+    text: str
+    voice: str | None = None
+    model: str | None = None
+    format: str | None = None
+
+
+class SessionItem(BaseModel):
+    session_id: str
+    title: str | None = None
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}

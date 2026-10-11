@@ -8,7 +8,7 @@ _RANDOM_SECRET = secrets.token_urlsafe(48)
 
 
 class Settings(BaseSettings):
-    database_url: str = "mysql+aiomysql://omniaide:omniaide_pass@mysql:3306/omniaide"
+    database_url: str = "postgresql+asyncpg://omniaide:omniaide_pass@postgres:5432/omniaide"
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "omniaide_minio"
     minio_secret_key: str = "omniaide_minio_secret"
@@ -23,6 +23,28 @@ class Settings(BaseSettings):
     embedding_base_url: str = "https://api.openai.com/v1"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
+    # Speech services (ASR / TTS). Defaults wrap Zhipu bigmodel, which is what the
+    # SmartAssistant firmware calls directly today. Keys fall back to llm_api_key.
+    asr_api_key: str = ""
+    asr_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    asr_model: str = "glm-asr"
+    tts_api_key: str = ""
+    tts_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    tts_model: str = "glm-tts"
+    tts_voice: str = "tongtong"
+    tts_format: str = "wav"
+    # Personal-assistant agent persona + conversation memory
+    assistant_system_prompt: str = (
+        "你是 OmniAide，一个私有化部署的个人 AI 助手，只服务于当前用户。"
+        "你可以访问并使用用户的个人数据（文件、笔记、日程、邮件、通知、活动记录等），"
+        "也能调用工具替用户完成查询与操作。\n"
+        "行为准则：\n"
+        "1. 主动、简洁、准确地用中文回答；语音场景下尽量简短口语化。\n"
+        "2. 需要用户数据时优先调用工具检索，不要凭空猜测。\n"
+        "3. 涉及创建、修改或删除等操作时先确认关键参数，不确定时向用户澄清。\n"
+        "4. 保护隐私，不泄露与请求无关的信息。"
+    )
+    chat_history_limit: int = 20
     jwt_secret: str = _RANDOM_SECRET
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30

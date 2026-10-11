@@ -31,18 +31,17 @@ async def build_context(user_id: int, query: str = "") -> str | None:
 
     if settings.memory_layer_enabled:
         try:
-            from qdrant_client import QdrantClient
             from core.ai.embeddings import generate_embedding
-            host = settings.qdrant_url.replace("http://","").split(":")[0]
-            port = int(settings.qdrant_url.split(":")[-1])
-            qc = QdrantClient(host=host, port=port)
-            if any(c.name == "entities" for c in qc.get_collections().collections):
-                vec = await generate_embedding(query)
-                if vec:
-                    hits = qc.search("entities", query_vector=vec, limit=5, query_filter={"must": [{"key": "user_id", "match": {"value": user_id}}]})
-                    if hits:
-                        related = [f"{h.payload.get('name','')}({h.payload.get('type','')})" for h in hits]
-                        parts.append("【相关实体】\n" + ", ".join(related))
+            from core.ai import vector_store
+            vec = await generate_embedding(query)
+            if vec:
+                hits = await vector_store.search("entities", user_id, vec, limit=5)
+                if hits:
+                    related = [
+                        f"{h.get('title', '')}({h.get('metadata', {}).get('type', '')})"
+                        for h in hits
+                    ]
+                    parts.append("【相关实体】\n" + ", ".join(related))
         except Exception:
             pass
 

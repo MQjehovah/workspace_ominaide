@@ -124,20 +124,13 @@ async def unified_search_tool(user_id: int, args: dict) -> dict:
     if not q:
         return {"results": []}
     from core.ai.embeddings import generate_embedding
-    from qdrant_client import QdrantClient
-    from core.config.settings import settings
-    host = settings.qdrant_url.replace("http://", "").split(":")[0]
-    port = int(settings.qdrant_url.split(":")[-1])
-    client = QdrantClient(host=host, port=port)
+    from core.ai import vector_store
     vector = await generate_embedding(q)
     if vector is None:
         return {"results": []}
-    filter_cond = {"must": [{"key": "user_id", "match": {"value": user_id}}]}
     types = args.get("types")
-    if types:
-        filter_cond["must"].append({"key": "source_type", "match": {"any": types}})
-    results = client.search(collection_name="omnidocs", query_vector=vector, limit=10, query_filter=filter_cond)
-    return {"results": [{"type": p.payload.get("source_type"), "title": p.payload.get("title"), "snippet": p.payload.get("content", "")[:200], "score": p.score} for p in results]}
+    hits = await vector_store.search("omnidocs", user_id, vector, limit=10, source_types=types)
+    return {"results": [{"type": h.get("source_type"), "title": h.get("title"), "snippet": (h.get("content") or "")[:200], "score": h.get("score")} for h in hits]}
 
 
 async def list_activities(user_id: int, args: dict) -> dict:

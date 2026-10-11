@@ -31,36 +31,29 @@ async def search(req: SearchRequest, user: dict = Depends(get_current_user)):
         return SearchResponse(results=[])
     try:
         from core.ai.embeddings import generate_embedding
-        from qdrant_client import QdrantClient
+        from core.ai import vector_store
 
-        host = settings.qdrant_url.replace("http://", "").split(":")[0]
-        port = int(settings.qdrant_url.split(":")[-1])
-        client = QdrantClient(host=host, port=port)
         vector = await generate_embedding(req.q)
         if vector is None:
             return SearchResponse(results=[])
 
-        filter_cond = {"must": [{"key": "user_id", "match": {"value": user["id"]}}]}
-        if req.types:
-            filter_cond["must"].append({"key": "source_type", "match": {"any": req.types}})
-
-        results = client.search(
-            collection_name="omnidocs",
-            query_vector=vector,
+        hits = await vector_store.search(
+            "omnidocs",
+            user["id"],
+            vector,
             limit=req.top_k,
-            query_filter=filter_cond,
+            source_types=req.types,
         )
 
         items = []
-        for r in results:
-            p = r.payload
+        for h in hits:
             items.append(SearchResult(
-                type=p.get("source_type", "unknown"),
-                title=p.get("title", ""),
-                snippet=p.get("content", "")[:200],
-                score=r.score,
-                source_id=p.get("source_id"),
-                link=f"/{p.get('source_type', '')}/{p.get('source_id', '')}",
+                type=h.get("source_type") or "unknown",
+                title=h.get("title") or "",
+                snippet=(h.get("content") or "")[:200],
+                score=h.get("score", 0.0),
+                source_id=h.get("source_id"),
+                link=f"/{h.get('source_type', '')}/{h.get('source_id', '')}",
             ))
         return SearchResponse(results=items)
     except Exception as e:
