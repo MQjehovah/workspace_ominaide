@@ -479,9 +479,26 @@ def _rrf(rankings: list[list[int]], k: int = 60) -> dict[int, float]:
     return dict(scores)
 
 
+_COMPLEX_MARKERS = (
+    "和", "与", "以及", "或", "还是", "怎么", "如何", "为什么",
+    "区别", "对比", "哪些", "什么", "分别", "总结", "所有", "包括",
+)
+
+
+def _needs_rewrite(query: str) -> bool:
+    """Skip the rewrite LLM call for short, simple questions."""
+    q = (query or "").strip()
+    if not q:
+        return False
+    if len(q) >= 30:
+        return True
+    return len(q) >= int(getattr(settings, "notes_rag_query_rewrite_min_len", 20) or 20) \
+        and any(m in q for m in _COMPLEX_MARKERS)
+
+
 async def _rewrite_queries(query: str) -> list[str]:
     """Cheap query expansion for longer questions; never blocks retrieval."""
-    if not settings.llm_api_key or len(query.strip()) < 12:
+    if not settings.llm_api_key or not _needs_rewrite(query):
         return []
     try:
         from openai import AsyncOpenAI
@@ -655,12 +672,86 @@ async def hybrid_search(
             "content": (body or "")[:1200],
             "context": c.get("context") or "",
             "chunk_index": c.get("chunk_index") or 0,
+            "chunks": [{
+                "chunk_index": c.get("chunk_index") or 0,
+                "content": (body or "")[:2000],
+                "context": c.get("context") or "",
+            }],
             "score": round(float(rel.get(nid, 0.0)), 4),
             "sources": sorted(sources.get(nid, set())),
             "updated_at": n.updated_at.isoformat() if n.updated_at else None,
             "link": f"/notes/{nid}",
         })
     return results
+
+
+async def _judge_sufficiency(question: str, results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Ask the LLM whether the retrieved evidence is enough to answer."""
+    if not results:
+        return {"sufficient": False, "followup_query": question}
+    parts = []
+    for i, r in enumerate(results[:8], 1):
+        text = (r.get("content") or r.get("snippet") or "")[:500]
+        parts.append(f"[{i}] 《{r.get('title') or ''}》\n{text}")
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+        resp = await client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": (
+                    "你是知识库检索评估器。判断给出的笔记片段是否足以回答用户问题。\n"
+                    "如果足够，返回 {\"sufficient\": true}；如果不足，返回 "
+                    "{\"sufficient\": false, \"followup_query\": \"一个用于补充检索的中文问题\"}。\n"
+                    "只返回 JSON，不要其他内容。"
+                )},
+                {"role": "user", "content": f"问题：{question}\n\n片段：\n" + "\n\n".join(parts)},
+            ],
+            temperature=0.0,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        m = re.search(r"\{.*\}", raw, re.S)
+        if not m:
+            return {"sufficient": True}
+        data = json.loads(m.group(0))
+        return data if isinstance(data, dict) else {"sufficient": True}
+    except Exception as e:
+        print(f"[notes.rag] sufficiency judge error: {e}")
+        return {"sufficient": True}
+
+
+async def _retrieve_agentic(
+    db: AsyncSession, user_id: int, question: str, *, top_k: int | None = None
+) -> list[dict[str, Any]]:
+    """Retrieve, judge sufficiency, then run follow-up searches (agentic RAG)."""
+    hops = 1
+    if getattr(settings, "notes_rag_agentic_enabled", True):
+        hops = max(1, int(getattr(settings, "notes_rag_agentic_hops", 2) or 2))
+    if not settings.llm_api_key:
+        hops = 1
+
+    merged: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    query = question
+    for hop in range(hops):
+        more = await hybrid_search(db, user_id, query, top_k=top_k)
+        for item in more:
+            nid = item.get("note_id")
+            if nid not in seen:
+                seen.add(nid)
+                merged.append(item)
+        if hop >= hops - 1:
+            break
+        decision = await _judge_sufficiency(question, merged)
+        if decision.get("sufficient") is True:
+            break
+        followup = str(decision.get("followup_query") or "").strip()
+        if not followup or followup == query:
+            break
+        query = followup
+
+    limit = int(top_k or getattr(settings, "notes_rag_top_k", 8) or 8)
+    return merged[:max(limit, 1)]
 
 
 async def ask_notes(
@@ -671,7 +762,7 @@ async def ask_notes(
     top_k: int | None = None,
 ) -> dict[str, Any]:
     """Cited RAG answer grounded strictly in the user's notes."""
-    results = await hybrid_search(db, user_id, question, top_k=top_k)
+    results = await _retrieve_agentic(db, user_id, question, top_k=top_k)
     if not results:
         return {
             "answer": "你的笔记里没有找到与这个问题相关的内容。",
@@ -713,6 +804,10 @@ async def ask_notes(
                 "note_id": r["note_id"],
                 "title": r["title"],
                 "snippet": r["snippet"],
+                "content": r.get("content") or "",
+                "context": r.get("context") or "",
+                "chunk_index": r.get("chunk_index") or 0,
+                "chunks": r.get("chunks") or [],
                 "score": r["score"],
                 "link": r["link"],
             }

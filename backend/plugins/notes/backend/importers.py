@@ -103,6 +103,56 @@ def extract_document(filename: str, data: bytes) -> tuple[str, str]:
         except Exception as e:
             raise ImportFailed(f"Word 解析失败: {e}")
 
+    if ext in (".xlsx", ".xlsm"):
+        try:
+            import openpyxl
+        except Exception as e:
+            raise ImportFailed(f"Excel 解析组件缺失: {e}")
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+            parts: list[str] = []
+            for ws in wb.worksheets:
+                rows = []
+                for row in ws.iter_rows(values_only=True):
+                    cells = [str(v).strip() if v is not None else "" for v in row]
+                    if any(cells):
+                        rows.append("| " + " | ".join(cells) + " |")
+                if rows:
+                    parts.append(f"## {ws.title}\n\n" + "\n".join(rows))
+            wb.close()
+            if not parts:
+                raise ImportFailed("Excel 没有可提取内容")
+            return title, _clean("\n\n".join(parts))[:MAX_TEXT_CHARS]
+        except ImportFailed:
+            raise
+        except Exception as e:
+            raise ImportFailed(f"Excel 解析失败: {e}")
+
+    if ext == ".pptx":
+        try:
+            from pptx import Presentation
+        except Exception as e:
+            raise ImportFailed(f"PPT 解析组件缺失: {e}")
+        try:
+            prs = Presentation(io.BytesIO(data))
+            parts = []
+            for i, slide in enumerate(prs.slides, 1):
+                texts = []
+                for shape in slide.shapes:
+                    if getattr(shape, "has_text_frame", False):
+                        t = shape.text.strip()
+                        if t:
+                            texts.append(t)
+                if texts:
+                    parts.append(f"## 第 {i} 页\n\n" + "\n".join(texts))
+            if not parts:
+                raise ImportFailed("PPT 没有可提取文字")
+            return title, _clean("\n\n".join(parts))[:MAX_TEXT_CHARS]
+        except ImportFailed:
+            raise
+        except Exception as e:
+            raise ImportFailed(f"PPT 解析失败: {e}")
+
     if ext in (".html", ".htm"):
         return title, _clean(_html_text(_decode_text(data)))[:MAX_TEXT_CHARS]
 

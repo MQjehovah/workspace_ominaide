@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     notes_rag_top_k: int = 8
     notes_rag_recall_k: int = 30
     notes_rag_mmr_lambda: float = 0.7
+    # Only rewrite sufficiently complex queries (saves an LLM call on short asks).
+    notes_rag_query_rewrite_min_len: int = 20
+    # Agentic retrieval: judge sufficiency and run follow-up searches.
+    notes_rag_agentic_enabled: bool = True
+    notes_rag_agentic_hops: int = 2
     # Proactive morning briefing (server local time).
     morning_brief_enabled: bool = True
     morning_brief_hour: int = 7

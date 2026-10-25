@@ -224,8 +224,9 @@ function canImportKb(file: FileItem) {
   if (file.is_folder) return false
   const mime = (file.mime_type || '').toLowerCase()
   if (mime.startsWith('audio/') || mime.startsWith('video/') || mime.startsWith('text/')) return true
-  if (mime.includes('pdf') || mime.includes('word') || mime.includes('wordprocessingml')) return true
-  return /\.(pdf|docx|txt|md|markdown|html|htm|mp3|wav|m4a|aac|flac|ogg|opus|webm|mp4)$/i.test(file.original_name)
+  if (mime.includes('pdf') || mime.includes('word') || mime.includes('wordprocessingml')
+    || mime.includes('spreadsheetml') || mime.includes('presentationml')) return true
+  return /\.(pdf|docx|xlsx|xlsm|pptx|txt|md|markdown|html|htm|mp3|wav|m4a|aac|flac|ogg|opus|webm|mp4)$/i.test(file.original_name)
 }
 
 function segmentPath(index: number) {

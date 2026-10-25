@@ -6,7 +6,7 @@
         <el-upload
           :http-request="importFile"
           :show-file-list="false"
-          accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm,.mp4"
+          accept=".pdf,.docx,.xlsx,.xlsm,.pptx,.txt,.md,.markdown,.html,.htm,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm,.mp4"
         >
           <el-button size="small" :icon="Upload">导入文件</el-button>
         </el-upload>
@@ -43,6 +43,7 @@
             <div class="editor-header">
               <el-input v-model="noteTitle" placeholder="无标题" class="title-input" @input="autoSave" />
               <div style="display:flex;gap:8px">
+                <el-button size="small" @click="openHistory">历史</el-button>
                 <el-button size="small" type="primary" @click="saveNote">保存</el-button>
                 <el-popconfirm title="确定删除？" @confirm="deleteNote">
                   <template #reference>
@@ -78,9 +79,12 @@
           <div v-if="ragSources.length" class="rag-sources">
             <div class="rag-section-title">参考来源</div>
             <div v-for="s in ragSources" :key="s.index" class="rag-source" @click="openSource(s.note_id)">
-              <span class="rag-index">[{{ s.index }}]</span>
-              <span class="rag-source-title">{{ s.title }}</span>
-              <span class="rag-score">{{ Math.round((s.score || 0) * 100) }}%</span>
+              <div style="display:flex;gap:6px">
+                <span class="rag-index">[{{ s.index }}]</span>
+                <span class="rag-source-title">{{ s.title }}</span>
+                <span class="rag-score">{{ Math.round((s.score || 0) * 100) }}%</span>
+              </div>
+              <div class="rag-quote" :title="s.context || ''">{{ s.content || s.snippet }}</div>
             </div>
           </div>
         </template>
@@ -113,13 +117,35 @@
         <el-button type="primary" :loading="urlImporting" @click="importUrl">导入</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="historyOpen" title="历史版本" width="640px">
+      <el-table :data="versions" v-loading="versionLoading" size="small" max-height="420">
+        <el-table-column prop="version" label="版本" width="80" />
+        <el-table-column prop="title" label="标题" show-overflow-tooltip />
+        <el-table-column prop="created_at" label="时间" width="180" />
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <el-button size="small" text @click="previewVersion(row)">查看</el-button>
+            <el-button size="small" text type="warning" @click="restoreVersion(row)">恢复</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!versionLoading && !versions.length" description="还没有历史版本" :image-size="60" />
+    </el-dialog>
+
+    <el-dialog v-model="versionPreviewOpen" :title="versionPreview ? '版本 ' + versionPreview.version : '版本预览'" width="720px">
+      <div v-if="versionPreview" style="max-height:65vh;overflow:auto">
+        <div style="font-weight:600;margin-bottom:8px">{{ versionPreview.title }}</div>
+        <pre class="version-pre">{{ versionPreview.content }}</pre>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { Link, Plus, Upload } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '@/api/client'
 import TipTapEditor from './TipTapEditor.vue'
 import TreeNode from './TreeNode.vue'
@@ -144,6 +170,11 @@ const reindexing = ref(false)
 const urlOpen = ref(false)
 const urlInput = ref('')
 const urlImporting = ref(false)
+const historyOpen = ref(false)
+const versionLoading = ref(false)
+const versions = ref<any[]>([])
+const versionPreviewOpen = ref(false)
+const versionPreview = ref<any | null>(null)
 
 function openRag(mode: 'search' | 'ask') {
   ragMode.value = mode
@@ -310,6 +341,46 @@ async function importUrl() {
   }
 }
 
+async function openHistory() {
+  if (!currentId.value) return
+  historyOpen.value = true
+  versionLoading.value = true
+  versions.value = []
+  try {
+    const res = await client.get(`/plugins/notes/${currentId.value}/versions`)
+    versions.value = res.data?.versions || []
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '读取历史版本失败')
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+async function previewVersion(v: any) {
+  if (!currentId.value) return
+  try {
+    const res = await client.get(`/plugins/notes/${currentId.value}/versions/${v.id}`)
+    versionPreview.value = res.data
+    versionPreviewOpen.value = true
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '读取版本失败')
+  }
+}
+
+async function restoreVersion(v: any) {
+  if (!currentId.value) return
+  try {
+    await ElMessageBox.confirm(`恢复到版本 ${v.version}？当前内容会先保存为一个新版本。`, '恢复历史版本', { type: 'warning' })
+    await client.post(`/plugins/notes/${currentId.value}/versions/${v.id}/restore`)
+    historyOpen.value = false
+    await loadTree()
+    await openNote(currentId.value)
+    ElMessage.success('已恢复')
+  } catch (e: any) {
+    if (e !== 'cancel') ElMessage.error(e?.response?.data?.detail || '恢复失败')
+  }
+}
+
 onMounted(loadTree)
 </script>
 
@@ -328,7 +399,9 @@ onMounted(loadTree)
 .rag-results { display: flex; flex-direction: column; gap: 10px; }
 .rag-result-head { display: flex; justify-content: space-between; gap: 8px; }
 .rag-snippet { color: #606266; font-size: 13px; line-height: 1.6; margin-top: 6px; }
+.rag-quote { color: #606266; font-size: 12px; line-height: 1.55; margin-top: 6px; max-height: 72px; overflow: hidden; border-left: 3px solid #dcdfe6; padding-left: 8px; }
 .rag-tags { display: flex; gap: 6px; margin-top: 8px; }
+.version-pre { white-space: pre-wrap; word-break: break-word; line-height: 1.6; font-size: 13px; background: #f7f8fa; padding: 12px; border-radius: 8px; }
 
 .notes-layout { display: flex; height: calc(100vh - 180px); gap: 16px; }
 .sidebar-panel { width: 240px; flex-shrink: 0; border: 1px solid #dcdfe6; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }

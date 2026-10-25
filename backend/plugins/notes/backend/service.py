@@ -133,7 +133,9 @@ async def snapshot_version(db: AsyncSession, user_id: int, note_id: int, note: P
         select(NoteVersion.id).where(NoteVersion.note_id == note_id).order_by(NoteVersion.version.desc()).offset(50)
     )
     for old_id in r2.scalars().all():
-        await db.delete(old_id)
+        old = await db.get(NoteVersion, old_id)
+        if old:
+            await db.delete(old)
 
 
 async def list_versions(db: AsyncSession, user_id: int, note_id: int) -> list[dict]:
@@ -207,6 +209,9 @@ async def delete_note(db: AsyncSession, user_id: int, note_id: int):
         frontier = [c.id for c in rows]
         all_ids.extend(frontier)
 
+    from plugins.notes.backend.models import NoteVersion
+    from sqlalchemy import delete as _delete
+    await db.execute(_delete(NoteVersion).where(NoteVersion.note_id.in_(all_ids)))
     await delete_note_rag(db, all_ids)
     for nid in all_ids:
         if nid != note.id:
