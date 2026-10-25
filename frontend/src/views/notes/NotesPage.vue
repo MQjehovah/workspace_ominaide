@@ -1,68 +1,134 @@
 <template>
-  <div class="page-wrapper">
-    <div class="page-header">
-      <h2>笔记</h2>
-      <div class="header-actions">
-        <el-upload
-          :http-request="importFile"
-          :show-file-list="false"
-          accept=".pdf,.docx,.xlsx,.xlsm,.pptx,.txt,.md,.markdown,.html,.htm,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm,.mp4"
-        >
-          <el-button size="small" :icon="Upload">导入文件</el-button>
-        </el-upload>
-        <el-button size="small" :icon="Link" @click="urlOpen = true">网页导入</el-button>
-        <el-button size="small" @click="openRag('search')">语义搜索</el-button>
-        <el-button size="small" type="primary" @click="openRag('ask')">知识库问答</el-button>
-        <el-button size="small" plain :loading="reindexing" @click="reindexNotes">重建索引</el-button>
+  <div class="notes-page">
+    <header class="notes-topbar">
+      <div class="notes-heading">
+        <div class="notes-title">笔记</div>
+        <div class="notes-sub">{{ treeCount }} 个节点 · {{ saveStatus }}</div>
       </div>
-    </div>
-    <div class="page-card">
-      <div class="page-card-body" style="padding:0">
-        <div class="notes-layout">
-          <div class="sidebar-panel">
-            <div class="sidebar-header">
-              <span class="sidebar-title">全部笔记</span>
-              <el-button size="small" circle :icon="Plus" @click="createNote" />
-            </div>
-            <div v-if="loading" v-loading="true" style="height:100%" />
-            <div v-else class="note-list">
-              <TreeNode
-                v-for="node in tree"
-                :key="node.id"
-                :node="node"
-                :current-id="currentId"
-                :depth="0"
-                @select="openNote"
-                @create-child="createChildNote"
-                @delete="deleteNode"
-              />
-              <el-empty v-if="!tree.length" description="暂无笔记" :image-size="60" />
+      <div class="notes-actions">
+        <el-dropdown trigger="click" @command="handleImportCommand">
+          <el-button :icon="Upload">导入</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="file">上传文档 / 音频</el-dropdown-item>
+              <el-dropdown-item command="url">从网页导入</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button :icon="Search" @click="openRag('search')">语义搜索</el-button>
+        <el-button type="primary" :icon="ChatDotRound" @click="openRag('ask')">知识库问答</el-button>
+        <el-dropdown trigger="click" @command="handleMoreCommand">
+          <el-button :icon="MoreFilled" />
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="reindex" :icon="Refresh">重建索引</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
+    </header>
+
+    <div class="notes-body">
+      <aside class="notes-sidebar">
+        <div class="sidebar-top">
+          <div class="sidebar-title-row">
+            <span>全部笔记</span>
+            <div class="sidebar-tools">
+              <el-tooltip content="新建文件夹" placement="bottom">
+                <el-button text circle :icon="FolderAdd" @click="createFolder" />
+              </el-tooltip>
+              <el-tooltip content="新建笔记" placement="bottom">
+                <el-button text circle :icon="Plus" @click="createNote" />
+              </el-tooltip>
             </div>
           </div>
-          <div class="editor-panel" v-if="currentId">
-            <div class="editor-header">
-              <el-input v-model="noteTitle" placeholder="无标题" class="title-input" @input="autoSave" />
-              <div style="display:flex;gap:8px;align-items:center">
-                <span class="muted">{{ saveStatus }}</span>
-                <el-button size="small" @click="openHistory">历史</el-button>
-                <el-button size="small" type="primary" @click="saveNote">保存</el-button>
-                <el-popconfirm title="确定删除？" @confirm="deleteNote">
-                  <template #reference>
-                    <el-button size="small" type="danger" plain>删除</el-button>
-                  </template>
-                </el-popconfirm>
-              </div>
+          <el-input
+            v-model="sidebarQuery"
+            placeholder="搜索标题或内容"
+            clearable
+            :prefix-icon="Search"
+            @input="onSidebarSearch"
+          />
+        </div>
+
+        <div class="note-list" v-loading="loading || noteSearchLoading">
+          <template v-if="sidebarQuery.trim()">
+            <div
+              v-for="n in noteSearchResults"
+              :key="n.id"
+              class="search-result"
+              :class="{ active: currentId === n.id }"
+              @click="openSearchResult(n)"
+            >
+              <div class="search-result-title">{{ n.title || '无标题' }}</div>
+              <div class="search-result-meta">{{ (n.updated_at || '').slice(0, 16).replace('T', ' ') }}</div>
             </div>
-            <TipTapEditor :key="currentId" v-model="noteContent" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
+            <el-empty v-if="!noteSearchLoading && !noteSearchResults.length" description="没有匹配的笔记" :image-size="50" />
+          </template>
+          <template v-else>
+            <TreeNode
+              v-for="node in tree"
+              :key="node.id"
+              :node="node"
+              :current-id="currentId"
+              :depth="0"
+              @select="openNote"
+              @create-child="createChildNote"
+              @delete="deleteNode"
+            />
+            <el-empty v-if="!tree.length" description="暂无笔记" :image-size="60" />
+          </template>
+        </div>
+
+        <div class="sidebar-foot">{{ treeCount }} 个节点 · {{ saveStatus }}</div>
+      </aside>
+
+      <main class="notes-main" v-if="currentId">
+        <div class="note-head">
+          <div class="note-title-block">
+            <el-input v-model="noteTitle" placeholder="无标题" class="title-input" @input="autoSave" />
+            <div class="note-meta">
+              <span>{{ saveStatus }}</span>
+              <span>{{ noteCharCount }} 字</span>
+            </div>
           </div>
-          <div v-else class="empty-state">
-            <el-empty description="选择或创建一篇笔记" :image-size="80" />
+          <div class="note-actions">
+            <el-button text :icon="Clock" @click="openHistory">历史</el-button>
+            <el-button text :icon="Download" @click="exportMarkdown">导出</el-button>
+            <el-button type="primary" @click="saveNote">保存</el-button>
+            <el-dropdown trigger="click" @command="(cmd: string) => handleMoreCommand(cmd, true)">
+              <el-button text :icon="MoreFilled" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="rag-ask" :icon="ChatDotRound">知识库问答</el-dropdown-item>
+                  <el-dropdown-item command="rag-search" :icon="Search">语义搜索</el-dropdown-item>
+                  <el-dropdown-item command="delete" :icon="Delete" divided>删除笔记</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </div>
-      </div>
+        <div class="note-editor-shell">
+          <TipTapEditor ref="editorRef" :key="currentId" v-model="noteContent" @update:model-value="autoSave" />
+        </div>
+      </main>
+
+      <main v-else class="notes-empty">
+        <el-empty description="选择一篇笔记，或新建开始">
+          <el-button type="primary" :icon="Plus" @click="createNote">新建笔记</el-button>
+        </el-empty>
+      </main>
     </div>
 
-    <el-drawer v-model="ragOpen" :title="ragMode === 'ask' ? '知识库问答' : '语义搜索'" size="480px">
+    <input
+      ref="fileInputRef"
+      type="file"
+      class="hidden-file"
+      accept=".pdf,.docx,.xlsx,.xlsm,.pptx,.txt,.md,.markdown,.html,.htm,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm,.mp4"
+      @change="onFileInput"
+    />
+
+    <el-drawer v-model="ragOpen" :title="ragMode === 'ask' ? '知识库问答' : '语义搜索'" size="520px">
       <div class="rag-panel">
         <el-input
           v-model="ragQuery"
@@ -144,8 +210,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { Link, Plus, Upload } from '@element-plus/icons-vue'
+import { computed, onMounted, ref } from 'vue'
+import { ChatDotRound, Clock, Delete, Download, FolderAdd, Link, MoreFilled, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '@/api/client'
 import TipTapEditor from './TipTapEditor.vue'
@@ -157,6 +223,12 @@ const noteTitle = ref('')
 const noteContent = ref('')
 const loading = ref(true)
 const saveStatus = ref('已保存')
+const editorRef = ref<any>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const sidebarQuery = ref('')
+const noteSearchResults = ref<any[]>([])
+const noteSearchLoading = ref(false)
+let sidebarSearchTimer: ReturnType<typeof setTimeout> | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
 // ---- Notes RAG ----
@@ -313,23 +385,36 @@ async function deleteNode(id: number) {
   } catch (e) { console.error(e) }
 }
 
-async function importFile(options: any) {
-  const { file, onSuccess, onError } = options
+async function doImportFile(file: File) {
   const form = new FormData()
   form.append('file', file)
   try {
     const res = await client.post('/plugins/notes/import/file', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 120000,
+      timeout: 180000,
     })
     ElMessage.success(`已导入：${res.data?.title || file.name}`)
     await loadTree()
     if (res.data?.id) await openNote(res.data.id)
-    onSuccess?.(res.data)
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '导入失败')
-    onError?.(e)
   }
+}
+
+function triggerFileImport() {
+  fileInputRef.value?.click()
+}
+
+async function onFileInput(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) await doImportFile(file)
+}
+
+function handleImportCommand(cmd: string) {
+  if (cmd === 'file') triggerFileImport()
+  else if (cmd === 'url') urlOpen.value = true
 }
 
 async function importUrl() {
@@ -390,36 +475,170 @@ async function restoreVersion(v: any) {
   }
 }
 
+const treeCount = computed(() => flattenTree(tree.value).length)
+const noteCharCount = computed(() => (noteContent.value || '').replace(/\s/g, '').length)
+
+async function createFolder() {
+  try {
+    const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', {
+      inputPattern: /\S+/,
+      inputErrorMessage: '名称不能为空',
+    })
+    await client.post('/plugins/notes', { title: value.trim(), content: '', is_folder: true })
+    await loadTree()
+    ElMessage.success('文件夹已创建')
+  } catch { /* cancelled */ }
+}
+
+function onSidebarSearch() {
+  if (sidebarSearchTimer) clearTimeout(sidebarSearchTimer)
+  sidebarSearchTimer = setTimeout(async () => {
+    const q = sidebarQuery.value.trim()
+    if (!q) {
+      noteSearchResults.value = []
+      return
+    }
+    noteSearchLoading.value = true
+    try {
+      const res = await client.get('/plugins/notes/search', { params: { q } })
+      noteSearchResults.value = Array.isArray(res.data) ? res.data : []
+    } catch {
+      noteSearchResults.value = []
+    } finally {
+      noteSearchLoading.value = false
+    }
+  }, 350)
+}
+
+async function openSearchResult(n: any) {
+  sidebarQuery.value = ''
+  noteSearchResults.value = []
+  await openNote(n.id)
+}
+
+function exportMarkdown() {
+  const text = editorRef.value?.getMarkdown?.() || noteContent.value || ''
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `${(noteTitle.value || 'note').replace(/[\\/:*?"<>|]+/g, '_')}.md`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+async function handleMoreCommand(cmd: string, inEditor = false) {
+  if (cmd === 'reindex') {
+    await reindexNotes()
+  } else if (cmd === 'rag-ask') {
+    openRag('ask')
+  } else if (cmd === 'rag-search') {
+    openRag('search')
+  } else if (cmd === 'delete' && inEditor) {
+    await deleteNote()
+  }
+}
+
 onMounted(loadTree)
 </script>
 
 <style scoped>
-.page-header { display: flex; align-items: center; justify-content: space-between; }
-.header-actions { display: flex; gap: 8px; }
+.notes-page {
+  height: calc(100vh - var(--header-height));
+  margin: -20px -24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-content-bg);
+  color: #1f2937;
+}
+.notes-topbar {
+  height: 64px;
+  flex: 0 0 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 22px;
+  border-bottom: 1px solid #e8ecf1;
+  background: rgba(255, 255, 255, 0.96);
+}
+.notes-heading { min-width: 0; }
+.notes-title { font-size: 19px; font-weight: 700; letter-spacing: .2px; }
+.notes-sub { font-size: 12px; color: #8b95a5; margin-top: 2px; }
+.notes-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.notes-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+  padding: 16px 20px 20px;
+}
+.notes-sidebar {
+  width: 260px;
+  flex: 0 0 260px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e5eaf1;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.sidebar-top { padding: 14px 14px 12px; border-bottom: 1px solid #eef2f6; }
+.sidebar-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600; color: #4b5563; }
+.sidebar-tools { display: flex; gap: 2px; }
+.note-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+.sidebar-foot { padding: 10px 14px; border-top: 1px solid #eef2f6; color: #9aa3b2; font-size: 11px; }
+.search-result { padding: 10px 10px; border-radius: 9px; cursor: pointer; }
+.search-result:hover { background: #f3f7fc; }
+.search-result.active { background: #eaf3ff; }
+.search-result-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-result-meta { font-size: 11px; color: #9aa3b2; margin-top: 3px; }
+.notes-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e5eaf1;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.note-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 24px 12px;
+  border-bottom: 1px solid #eef2f6;
+}
+.note-title-block { flex: 1; min-width: 0; }
+.title-input :deep(.el-input__inner) { font-size: 26px; font-weight: 700; border: none; padding: 0; line-height: 1.35; color: #111827; }
+.title-input :deep(.el-input__wrapper) { border: none; box-shadow: none !important; padding: 0; background: transparent; }
+.note-meta { display: flex; gap: 10px; margin-top: 6px; color: #9aa3b2; font-size: 12px; }
+.note-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; padding-top: 4px; }
+.note-editor-shell { flex: 1; min-height: 0; overflow: hidden; padding: 0 22px 8px; }
+.notes-empty { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #e5eaf1; border-radius: 14px; }
+.hidden-file { display: none; }
 .rag-panel { display: flex; flex-direction: column; gap: 12px; }
-.rag-answer { white-space: pre-wrap; line-height: 1.7; padding: 12px; background: #f5f7fa; border-radius: 8px; }
+.rag-answer { white-space: pre-wrap; line-height: 1.75; padding: 14px; background: #f7f9fc; border: 1px solid #edf1f6; border-radius: 10px; }
 .rag-section-title { font-size: 13px; font-weight: 600; color: #606266; margin-bottom: 8px; }
-.rag-sources { display: flex; flex-direction: column; gap: 6px; }
-.rag-source, .rag-result { cursor: pointer; border: 1px solid #ebeef5; border-radius: 8px; padding: 10px 12px; transition: border-color .15s, background .15s; }
-.rag-source:hover, .rag-result:hover { border-color: #409eff; background: #f5f9ff; }
-.rag-index { color: #409eff; margin-right: 6px; }
+.rag-sources, .rag-results { display: flex; flex-direction: column; gap: 8px; }
+.rag-source, .rag-result { cursor: pointer; border: 1px solid #edf1f6; border-radius: 10px; padding: 10px 12px; transition: border-color .15s, background .15s; }
+.rag-source:hover, .rag-result:hover { border-color: #b9d6ff; background: #f7fbff; }
+.rag-index { color: #2f80ed; margin-right: 6px; }
 .rag-source-title { font-weight: 600; }
-.rag-score { float: right; color: #909399; font-size: 12px; }
-.rag-results { display: flex; flex-direction: column; gap: 10px; }
+.rag-score { float: right; color: #9aa3b2; font-size: 12px; }
 .rag-result-head { display: flex; justify-content: space-between; gap: 8px; }
 .rag-snippet { color: #606266; font-size: 13px; line-height: 1.6; margin-top: 6px; }
-.rag-quote { color: #606266; font-size: 12px; line-height: 1.55; margin-top: 6px; max-height: 72px; overflow: hidden; border-left: 3px solid #dcdfe6; padding-left: 8px; }
+.rag-quote { color: #606266; font-size: 12px; line-height: 1.55; margin-top: 6px; max-height: 72px; overflow: hidden; border-left: 3px solid #dce6f2; padding-left: 8px; }
 .rag-tags { display: flex; gap: 6px; margin-top: 8px; }
 .version-pre { white-space: pre-wrap; word-break: break-word; line-height: 1.6; font-size: 13px; background: #f7f8fa; padding: 12px; border-radius: 8px; }
-
-.notes-layout { display: flex; height: calc(100vh - 180px); gap: 16px; }
-.sidebar-panel { width: 240px; flex-shrink: 0; border: 1px solid #dcdfe6; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
-.sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #dcdfe6; }
-.sidebar-title { font-size: 14px; font-weight: 600; }
-.note-list { flex: 1; overflow-y: auto; }
-.editor-panel { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px; }
-.editor-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.title-input :deep(.el-input__inner) { font-size: 24px; font-weight: 700; border: none; padding-left: 0; box-shadow: none; }
-.title-input :deep(.el-input__wrapper) { border: none; box-shadow: none !important; padding: 0; }
-.empty-state { flex: 1; display: flex; align-items: center; justify-content: center; }
+@media (max-width: 980px) {
+  .notes-sidebar { width: 220px; flex-basis: 220px; }
+  .notes-actions .el-button span { display: none; }
+  .note-actions .el-button span { display: none; }
+}
 </style>
