@@ -112,6 +112,8 @@ int lastUnread = -1;                // 上次未读数（变了才重拉列表�
 volatile int  evtLastId = 0;
 volatile bool evtNewNotif = false;
 volatile bool evtNewTimer = false;
+volatile bool evtNewBriefing = false;
+volatile int  evtBriefingId = 0;
 volatile uint32_t evtTimerEnd = 0;          // millis() 到期时刻，0=无计时器
 volatile char evtTimerLabel[48] = "计时器";
 
@@ -734,9 +736,11 @@ static void pollDeviceEvents() {
                          evs[i].title[0] ? evs[i].title : "计时器");
                 evtTimerEnd = millis() + (uint32_t)evs[i].value * 1000UL;
                 evtNewTimer = true;
+            } else if (!strcmp(evs[i].type, "briefing")) {
+                evtNewBriefing = true;
+                evtBriefingId = evs[i].id;
             } else if (!strcmp(evs[i].type, "notification") ||
-                       !strcmp(evs[i].type, "reminder") ||
-                       !strcmp(evs[i].type, "briefing")) {
+                       !strcmp(evs[i].type, "reminder")) {
                 evtNewNotif = true;
             }
             Serial.printf("[EVT] #%d %s %s\n", evs[i].id, evs[i].type, evs[i].title);
@@ -1056,6 +1060,43 @@ cleanup:
     setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
 }
 
+static void briefingTick() {
+    if (!evtNewBriefing) return;
+    if (!screenOn) setScreenOn(true);
+    if (state != ST_READY || musicActive) return;
+
+    evtNewBriefing = false;
+    char title[64], body[1024];
+    int notifId = 0;
+    if (!oa.fetchLatestBriefing(title, sizeof(title), body, sizeof(body), notifId)) {
+        Serial.println("[BRIEF] no briefing fetched");
+        return;
+    }
+
+    Serial.printf("[BRIEF] %s (%u chars)\n", title, (unsigned)strlen(body));
+    srPause();
+    setState(ST_VOICE, "晨间简报 ...", 0xffd740);
+    ui::busy("正在生成简报语音 ...");
+
+    uint32_t rate = 24000;
+    size_t off = 0, dlen = 0;
+    bool ok = oa.speakText(body, ttsBuf, TTS_MAX_BYTES, rate, off, dlen);
+    if (ok) {
+        ui::chatAppend("assistant", body);
+        setState(ST_PLAY, "播报简报 ...", 0x00e5ff);
+        ui::busy("播报简报 ...");
+        playWav(rate, ttsBuf + off, dlen);
+    } else {
+        Serial.println("[BRIEF] TTS failed");
+        setState(ST_ERR, "简报语音失败", 0xff5252);
+    }
+
+    ui::busy(nullptr);
+    setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+    delay(500);
+    srResume();
+}
+
 static void musicTask(void*) {
     for (;;) {
         if (musicCmd == 1 && !musicActive) {
@@ -1197,6 +1238,7 @@ void loop() {
     clockTick();
     powerKeyTick();
     oaTick();
+    briefingTick();
 
     // Music controls: KEY3 = stop, BOOT = next track.
     if (musicActive) {

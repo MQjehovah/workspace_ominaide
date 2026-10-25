@@ -7,14 +7,16 @@
 - PUT  /api/device/gestures 修改手势映射
 """
 import asyncio
+import io
 import os
 import tempfile
 import time as _time
+import wave
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -111,6 +113,86 @@ async def device_brief(user: dict = Depends(get_current_user),
         "server_time": now.strftime("%Y-%m-%d %H:%M"),
         **({"weather": weather} if weather else {}),
     }
+
+
+# ---------------- morning briefing (proactive speech) ----------------
+
+@router.get("/briefing")
+async def device_latest_briefing(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Latest morning briefing for the device to display/speak."""
+    from sqlalchemy import select
+    from plugins.notifications.backend.models import Notification
+
+    row = await db.execute(
+        select(Notification).where(
+            Notification.user_id == user["id"],
+            Notification.type == "briefing",
+        ).order_by(Notification.created_at.desc()).limit(1)
+    )
+    n = row.scalar_one_or_none()
+    if not n:
+        return {"briefing": None}
+    return {
+        "briefing": {
+            "id": n.id,
+            "title": n.title,
+            "body": n.body or "",
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+        }
+    }
+
+
+class DeviceTTSRequest(BaseModel):
+    text: str
+
+
+@router.post("/tts")
+async def device_tts(
+    req: DeviceTTSRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Synthesize arbitrary assistant text into a WAV for the device."""
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(400, detail="text is empty")
+    if len(text) > 2000:
+        text = text[:2000]
+    try:
+        from plugins.chat.backend.voice_stream import tts_pcm
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(
+            api_key=settings.tts_api_key or settings.llm_api_key,
+            base_url=settings.tts_base_url,
+        )
+        pcm, rate = await tts_pcm(text, client)
+        if not pcm:
+            raise RuntimeError("empty TTS")
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            w.writeframes(pcm)
+        return Response(
+            content=buf.getvalue(),
+            media_type="audio/wav",
+            headers={"X-Audio-Rate": str(rate), "Cache-Control": "no-store"},
+        )
+    except Exception as e:
+        raise HTTPException(502, detail=f"TTS failed: {e}")
+
+
+@router.post("/briefing/trigger")
+async def trigger_briefing(
+    user: dict = Depends(get_current_user),
+):
+    """Manual trigger for testing the proactive morning brief."""
+    from core.ai.scheduler import _send_briefing
+    asyncio.create_task(_send_briefing(user["id"]))
+    return {"ok": True, "detail": "briefing task started"}
 
 
 # ---------------- music (device playback) ----------------

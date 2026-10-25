@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
@@ -7,6 +7,7 @@ from core.events.recorder import record_event
 from plugins.notes.backend.schemas import NoteCreate, NoteUpdate, NoteResponse
 from plugins.notes.backend import service as notes_service
 from plugins.notes.backend import rag as notes_rag
+from plugins.notes.backend import importers
 
 router = APIRouter(prefix="/api/plugins/notes", tags=["notes-plugin"])
 
@@ -28,6 +29,69 @@ class RagAskRequest(BaseModel):
 
 class RagReindexRequest(BaseModel):
     limit: int = 200
+
+
+class ImportUrlRequest(BaseModel):
+    url: str
+    parent_id: int | None = None
+    title: str | None = None
+
+
+@router.post("/import/file", response_model=NoteResponse, status_code=201)
+async def import_file(
+    file: UploadFile = File(...),
+    parent_id: int | None = Form(None),
+    title: str | None = Form(None),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a PDF/Word/HTML/text file as an indexed note."""
+    data = await file.read()
+    try:
+        extracted_title, text = importers.extract_document(file.filename or "imported", data)
+    except importers.ImportFailed as e:
+        raise HTTPException(400, detail=str(e))
+    if not text.strip():
+        raise HTTPException(400, detail="没有提取到文字")
+    note = await notes_service.create_note(
+        db, user["id"],
+        NoteCreate(
+            title=(title or extracted_title)[:200],
+            content=text,
+            parent_id=parent_id,
+        ),
+    )
+    await record_event(db, user["id"], "note.imported", "note", note.id,
+                       f"导入知识: {note.title}")
+    return NoteResponse.model_validate(note)
+
+
+@router.post("/import/url", response_model=NoteResponse, status_code=201)
+async def import_url(
+    req: ImportUrlRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch a web page (or PDF link) and save its text as an indexed note."""
+    try:
+        extracted_title, text = await importers.fetch_url(req.url.strip())
+    except importers.ImportFailed as e:
+        raise HTTPException(400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(502, detail=f"网页抓取失败: {e}")
+    if not text.strip():
+        raise HTTPException(400, detail="网页没有可提取正文")
+    note = await notes_service.create_note(
+        db, user["id"],
+        NoteCreate(
+            title=(req.title or extracted_title)[:200],
+            content=text,
+            parent_id=req.parent_id,
+        ),
+    )
+    await record_event(db, user["id"], "note.imported", "note", note.id,
+                       f"网页导入: {note.title}")
+    return NoteResponse.model_validate(note)
 
 
 @router.get("/tree")

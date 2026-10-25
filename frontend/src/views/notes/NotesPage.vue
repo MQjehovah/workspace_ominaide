@@ -3,6 +3,14 @@
     <div class="page-header">
       <h2>笔记</h2>
       <div class="header-actions">
+        <el-upload
+          :http-request="importFile"
+          :show-file-list="false"
+          accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm"
+        >
+          <el-button size="small" :icon="Upload">导入文件</el-button>
+        </el-upload>
+        <el-button size="small" :icon="Link" @click="urlOpen = true">网页导入</el-button>
         <el-button size="small" @click="openRag('search')">语义搜索</el-button>
         <el-button size="small" type="primary" @click="openRag('ask')">知识库问答</el-button>
         <el-button size="small" plain :loading="reindexing" @click="reindexNotes">重建索引</el-button>
@@ -94,12 +102,23 @@
         </template>
       </div>
     </el-drawer>
+
+    <el-dialog v-model="urlOpen" title="从网页导入" width="520px">
+      <el-input v-model="urlInput" placeholder="https://example.com/article" clearable />
+      <div style="color:#909399;font-size:12px;margin-top:8px">
+        支持普通网页和 PDF 链接；正文会保存为笔记并自动进入知识库索引。
+      </div>
+      <template #footer>
+        <el-button @click="urlOpen = false">取消</el-button>
+        <el-button type="primary" :loading="urlImporting" @click="importUrl">导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { Link, Plus, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import client from '@/api/client'
 import TipTapEditor from './TipTapEditor.vue'
@@ -122,6 +141,9 @@ const ragSources = ref<any[]>([])
 const ragResults = ref<any[]>([])
 const ragSearched = ref(false)
 const reindexing = ref(false)
+const urlOpen = ref(false)
+const urlInput = ref('')
+const urlImporting = ref(false)
 
 function openRag(mode: 'search' | 'ask') {
   ragMode.value = mode
@@ -249,6 +271,43 @@ async function deleteNode(id: number) {
     if (currentId.value === id) { currentId.value = null; noteTitle.value = ''; noteContent.value = '' }
     await loadTree()
   } catch (e) { console.error(e) }
+}
+
+async function importFile(options: any) {
+  const { file, onSuccess, onError } = options
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    const res = await client.post('/plugins/notes/import/file', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    ElMessage.success(`已导入：${res.data?.title || file.name}`)
+    await loadTree()
+    if (res.data?.id) await openNote(res.data.id)
+    onSuccess?.(res.data)
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '导入失败')
+    onError?.(e)
+  }
+}
+
+async function importUrl() {
+  const url = urlInput.value.trim()
+  if (!url) return
+  urlImporting.value = true
+  try {
+    const res = await client.post('/plugins/notes/import/url', { url }, { timeout: 120000 })
+    ElMessage.success(`已导入：${res.data?.title || '网页'}`)
+    urlOpen.value = false
+    urlInput.value = ''
+    await loadTree()
+    if (res.data?.id) await openNote(res.data.id)
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '网页导入失败')
+  } finally {
+    urlImporting.value = false
+  }
 }
 
 onMounted(loadTree)

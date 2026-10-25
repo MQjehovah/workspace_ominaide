@@ -109,6 +109,10 @@ public:
     bool streamMusic(int fileId, OaMusicPcmCb cb, void* ud,
                      volatile bool* stop, volatile bool* next);
     void resetHttp();       // 音乐/长连接结束后强制下次 HTTP 重新建连
+    bool fetchLatestBriefing(char* title, size_t titleMax,
+                             char* body, size_t bodyMax, int& notifId);
+    bool speakText(const char* text, uint8_t* wavBuf, size_t wavCap,
+                   uint32_t& rate, size_t& off, size_t& dataLen);
 
     bool loggedIn() const { return _ok; }
     uint32_t lastBriefMs = 0;

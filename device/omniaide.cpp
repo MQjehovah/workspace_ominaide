@@ -500,6 +500,78 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
     return transcript[0] || reply[0];
 }
 
+// ---------------- 晨间简报 / 文本播报 ----------------
+
+bool OmniAide::fetchLatestBriefing(char* title, size_t titleMax,
+                                   char* body, size_t bodyMax, int& notifId) {
+    title[0] = body[0] = 0;
+    notifId = 0;
+    if (!configured() || (!_ok && !login())) return false;
+    char* scratch = bigScratch(8192);
+    if (!scratch) return false;
+    String url = String(_url) + "/api/device/briefing";
+    int code = httpReq(url.c_str(), "GET", "", _token, scratch, 8192);
+    if (code == 401) {
+        if (!login()) return false;
+        code = httpReq(url.c_str(), "GET", "", _token, scratch, 8192);
+    }
+    if (code != 200) return false;
+    JsonDocument doc;
+    if (deserializeJson(doc, scratch)) return false;
+    JsonObject b = doc["briefing"];
+    if (b.isNull()) return false;
+    notifId = b["id"] | 0;
+    snprintf(title, titleMax, "%s", b["title"] | "晨间简报");
+    snprintf(body, bodyMax, "%s", b["body"] | "");
+    return body[0] != 0;
+}
+
+bool OmniAide::speakText(const char* text, uint8_t* wavBuf, size_t wavCap,
+                         uint32_t& rate, size_t& off, size_t& dataLen) {
+    rate = 24000; off = 0; dataLen = 0;
+    if (!configured() || (!text || !text[0])) return false;
+    if (!_ok && !login()) return false;
+
+    JsonDocument doc;
+    doc["text"] = text;
+    String payload;
+    serializeJson(doc, payload);
+
+    String url = String(_url) + "/api/device/tts";
+    HTTPClient http;
+    http.setTimeout(60000);
+    http.setConnectTimeout(5000);
+    http.setReuse(false);
+    bool began;
+    if (strncmp(url.c_str(), "https", 5) == 0) {
+        tlsConfig();
+        tlsClient.setTimeout(60000);
+        began = http.begin(tlsClient, url);
+    } else {
+        began = http.begin(url);
+    }
+    if (!began) return false;
+    http.addHeader("Authorization", (String("Bearer ") + _token).c_str());
+    http.addHeader("Content-Type", "application/json");
+    const char* hdrs[] = {"X-Audio-Rate"};
+    http.collectHeaders(hdrs, 1);
+    Serial.printf("%s TTS %u chars...\n", TAG, (unsigned)strlen(text));
+    int code = http.POST((uint8_t*)payload.c_str(), payload.length());
+    if (code != 200) {
+        http.end();
+        tlsClient.stop();
+        return false;
+    }
+    String rh = http.header("X-Audio-Rate");
+    if (rh.toInt() > 0) rate = (uint32_t)rh.toInt();
+    PsramBufStream bs(wavBuf, wavCap);
+    int written = http.writeToStream(&bs);
+    http.end();
+    tlsClient.stop();
+    if (written <= 44) return false;
+    return wavParse(wavBuf, (size_t)written, rate, off, dataLen);
+}
+
 // ---------------- 设备音乐 ----------------
 
 void OmniAide::resetHttp() {

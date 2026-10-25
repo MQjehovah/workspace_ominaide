@@ -11,34 +11,136 @@ _sent_today: set[int] = set()  # track which user_ids got briefing today
 
 
 async def _send_briefing(user_id: int):
-    """Generate briefing via agent and save as notification."""
+    """Build a data-grounded morning brief and push it to web + device."""
     try:
-        from core.ai.agent import run_agent
-        from plugins.chat.backend.memory import build_context
-
-        ctx = await build_context(user_id)
-        messages = []
-        if ctx:
-            messages.append({"role": "system", "content": ctx})
-        messages.append({"role": "system", "content": "你是一个主动的个人AI助理。用户请求每日简报。请调用工具获取相关信息（先调用 get_weather 查天气），然后生成一段友好、简洁的简报，包括今日天气与穿衣/带伞建议、今日日程、未读通知和新文章。用中文。如果今天没有待办事项和未读通知，就简短问候。"})
-        messages.append({"role": "user", "content": "帮我生成今天的每日简报"})
-
-        briefing = await run_agent(user_id, messages)
-
-        # Save as notification
-        from plugins.notifications.backend.service import create_notification
+        from datetime import datetime, timedelta
+        from sqlalchemy import select, func
+        from core.config.settings import settings
         from core.database.session import async_session
+        from plugins.schedule.backend.models import Event
+        from plugins.todo.backend.models import PluginTodoItem
+        from plugins.notifications.backend.models import Notification
+        from plugins.rss.backend.models import Entry, Feed
+        from plugins.notifications.backend.service import create_notification
+
+        now = datetime.now()
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
 
         async with async_session() as db:
-            await create_notification(db, user_id, "📋 每日简报", briefing[:300], "briefing", f"/api/activities?event_type=briefing")
-            await db.commit()
+            events = list((await db.execute(
+                select(Event).where(
+                    Event.user_id == user_id,
+                    Event.start_time >= day_start,
+                    Event.start_time < day_end,
+                ).order_by(Event.start_time)
+            )).scalars().all())
 
-        # Push via host channel
+            todos = list((await db.execute(
+                select(PluginTodoItem).where(
+                    PluginTodoItem.user_id == user_id,
+                    PluginTodoItem.status != "done",
+                ).order_by(PluginTodoItem.priority.desc(), PluginTodoItem.due_date.asc()).limit(6)
+            )).scalars().all())
+
+            unread = (await db.execute(
+                select(func.count(Notification.id)).where(
+                    Notification.user_id == user_id,
+                    Notification.read == False,
+                )
+            )).scalar() or 0
+
+            since = now - timedelta(hours=24)
+            rss = list((await db.execute(
+                select(Entry).join(Feed, Entry.feed_id == Feed.id).where(
+                    Feed.user_id == user_id,
+                    Entry.published >= since,
+                    Entry.read == False,
+                ).order_by(Entry.published.desc()).limit(5)
+            )).scalars().all())
+
+        weather = None
         try:
-            from plugins.notifications.backend.router import notify_user
-            await notify_user(user_id, {"type": "new_notification", "title": "📋 每日简报"})
+            from plugins.device.backend.router import _current_weather
+            weather = await _current_weather()
         except Exception:
             pass
+
+        wmo = {
+            0: "晴", 1: "晴间多云", 2: "多云", 3: "阴", 45: "雾", 48: "雾凇",
+            51: "小毛雨", 53: "毛雨", 55: "大毛雨", 61: "小雨", 63: "中雨",
+            65: "大雨", 71: "小雪", 73: "中雪", 75: "大雪", 80: "阵雨",
+            81: "强阵雨", 82: "暴雨", 95: "雷雨", 96: "雷雨冰雹",
+        }
+        weather_text = "未配置天气"
+        if weather:
+            weather_text = f"{weather.get('temp')}℃，{wmo.get(int(weather.get('code') or -1), '天气未知')}"
+
+        ev_lines = [
+            f"{e.start_time.strftime('%H:%M')} {e.title}" for e in events
+        ] or ["今天没有日程"]
+        todo_lines = [t.title for t in todos] or ["没有未完成待办"]
+        rss_lines = [e.title for e in rss] or ["没有新的订阅文章"]
+
+        data = (
+            f"日期：{now.strftime('%Y-%m-%d 星期') + '日一二三四五六'[now.weekday()]}\n"
+            f"天气：{weather_text}\n"
+            f"今日日程：{'；'.join(ev_lines)}\n"
+            f"未完成待办：{'；'.join(todo_lines)}\n"
+            f"未读通知：{unread} 条\n"
+            f"新订阅文章：{'；'.join(rss_lines)}"
+        )
+
+        briefing = ""
+        if settings.llm_api_key:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+            resp = await client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {"role": "system", "content": (
+                        "你是用户的私人助理，正在生成每天早上主动播报的晨间简报。\n"
+                        "根据给定数据写 3-6 句中文口语化简报：先问候，结合天气给出穿衣/带伞建议，"
+                        "再概括今日日程和最重要的 1-2 个待办，最后用一句提醒今天最先要做的事。\n"
+                        "要求：不要 Markdown、不要标题、不要列表、不要编造数据；没有数据就自然略过。"
+                    )},
+                    {"role": "user", "content": data},
+                ],
+                temperature=0.4,
+            )
+            briefing = (resp.choices[0].message.content or "").strip()
+        if not briefing:
+            briefing = (
+                f"早上好。今天{weather_text}。"
+                f"今日日程：{'；'.join(ev_lines)}。"
+                f"待办：{'；'.join(todo_lines)}。"
+            )
+
+        async with async_session() as db:
+            n = await create_notification(
+                db, user_id, "☀️ 晨间简报", briefing[:4000], "briefing", "/notes"
+            )
+            await db.commit()
+            nid = n.id
+
+        # Web/desktop notification channel.
+        try:
+            from core.wschannel.hub import host_channel
+            await host_channel.broadcast(user_id, "notifications", {
+                "type": "new_notification", "id": nid,
+                "title": "☀️ 晨间简报", "body": briefing,
+            })
+        except Exception:
+            pass
+
+        # Device: a compact event, the device fetches the full body + TTS.
+        try:
+            from plugins.device.backend.events import publish_device_event
+            await publish_device_event(user_id, "briefing", {
+                "id": nid, "title": "☀️ 晨间简报",
+            })
+        except Exception as e:
+            print(f"[scheduler] briefing device push error: {e}")
 
         _sent_today.add(user_id)
     except Exception as e:
@@ -367,7 +469,10 @@ async def scheduler_loop():
                 _last_daily_scan_date = today_key
                 await _daily_event_analysis()
 
-            if now.hour == BRIEFING_HOUR and now.minute == BRIEFING_MINUTE:
+            from core.config.settings import settings as _settings
+            if (_settings.morning_brief_enabled
+                    and now.hour == _settings.morning_brief_hour
+                    and now.minute == _settings.morning_brief_minute):
                 # Collect users who have recent activity (active in last 7 days)
                 try:
                     from sqlalchemy import select, func

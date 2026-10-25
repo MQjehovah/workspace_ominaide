@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     notes_rag_top_k: int = 8
     notes_rag_recall_k: int = 30
     notes_rag_mmr_lambda: float = 0.7
+    # Proactive morning briefing (server local time).
+    morning_brief_enabled: bool = True
+    morning_brief_hour: int = 7
+    morning_brief_minute: int = 30
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     cors_origins: str = '["*","http://localhost:3000","http://localhost:5173","http://localhost:5000","http://localhost:8080","app://."]'
