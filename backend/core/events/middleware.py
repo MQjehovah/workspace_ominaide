@@ -72,6 +72,7 @@ SKIP_PATHS = (
     '/api/music/',          # music plugin records own events
     '/api/search',          # search is a read operation
     '/api/activities',      # activity reporting is itself an event
+    '/api/device/',         # device polling/gestures are high-frequency, not user activity
 )
 
 

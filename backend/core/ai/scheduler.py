@@ -212,7 +212,9 @@ MAX_EVENTS_PER_BATCH = 40  # cap for a single LLM batch (prevent prompt overflow
 async def _fetch_new_events(db, cursor, limit=MAX_EVENTS_PER_BATCH):
     from sqlalchemy import select, or_, and_
     from core.events.models import UserActivity
-    q = select(UserActivity).order_by(UserActivity.id).limit(limit)
+    q = select(UserActivity).where(
+        ~UserActivity.event_type.like("device.%")
+    ).order_by(UserActivity.id).limit(limit)
     if cursor:
         cursor_ts, cursor_id = cursor
         q = q.where(or_(

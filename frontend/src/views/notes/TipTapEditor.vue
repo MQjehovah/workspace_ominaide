@@ -25,13 +25,34 @@
       </template>
 
       <span class="sep">|</span>
+      <button @click.stop="toggleFind" :class="{ active: findOpen }" title="查找替换">查找</button>
+      <button @click.stop="exportMarkdown" title="导出 Markdown">导出</button>
+      <button @click.stop="attachInputRef?.click()" title="插入附件">附件</button>
+
+      <span class="sep">|</span>
       <button class="ai-toolbar-btn" :class="{ active: showAi }" @click.stop="triggerAi" title="AI 编辑 (Ctrl+Shift+I)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 3c.5 0 1 .4 1 1 0 .5.4 1 1 1s1 .4 1 1c0 .5-.4 1-1 1s-1 .4-1 1c0 .5-.4 1-1 1s-1-.4-1-1c0-.5-.4-1-1-1s-1-.4-1-1c0-.5.4-1 1-1s1-.4 1-1c0-.5.4-1 1-1z"/><path d="M8 14c.5 0 1 .4 1 1 0 .5.4 1 1 1s1 .4 1 1-.4 1-1 1-1 .4-1 1-.4 1-1 1-1-.4-1-1-.4-1-1-1-1-.4-1-1 .4-1 1-1 1-.4 1-1 .4-1 1-1z"/><path d="M16 14c.5 0 1 .4 1 1 0 .5.4 1 1 1s1 .4 1 1-.4 1-1 1-1 .4-1 1-.4 1-1 1-1-.4-1-1-.4-1-1-1-1-.4-1-1 .4-1 1-1 1-.4 1-1 .4-1 1-1z"/></svg>
         AI
       </button>
     </div>
 
+    <div v-if="findOpen" class="find-bar" @click.stop>
+      <input ref="findInputRef" v-model="findQuery" class="find-input" placeholder="查找" @input="refreshMatches" @keydown.enter.prevent="findNext($event.shiftKey ? -1 : 1)" @keydown.esc.prevent="findOpen = false" />
+      <input v-model="replaceQuery" class="find-input" placeholder="替换为" />
+      <button @click="findNext(-1)">上一个</button>
+      <button @click="findNext(1)">下一个</button>
+      <button @click="replaceCurrent">替换</button>
+      <button @click="replaceAll">全部替换</button>
+      <span class="find-count">{{ findMatches.length ? `${findIndex + 1}/${findMatches.length}` : '0/0' }}</span>
+      <button @click="findOpen = false">关闭</button>
+    </div>
+
+    <input ref="attachInputRef" type="file" style="display:none" @change="onAttachFile" />
     <editor-content :editor="editor" class="editor-content" style="min-height:300px" />
+    <div class="editor-footer">
+      <span>{{ charCount }} 字符 · {{ wordCount }} 词</span>
+      <span v-if="saveState">{{ saveState }}</span>
+    </div>
 
     <Teleport to="body">
       <div v-if="showAi" class="ai-overlay" @click="closeAi" @keydown.escape="closeAi"></div>
@@ -86,7 +107,7 @@ import { defaultMarkdownParser, defaultMarkdownSerializer } from 'prosemirror-ma
 import client from '@/api/client'
 import { apiUrl } from '@/api/base'
 
-const props = defineProps<{ modelValue: string }>()
+const props = defineProps<{ modelValue: string; title?: string; saveState?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const editorExtensions = [
@@ -100,6 +121,16 @@ const editorExtensions = [
   TableCell,
   TableHeader,
 ]
+
+const findOpen = ref(false)
+const findQuery = ref('')
+const replaceQuery = ref('')
+const findMatches = ref<{ from: number; to: number }[]>([])
+const findIndex = ref(0)
+const findInputRef = ref<HTMLInputElement | null>(null)
+const attachInputRef = ref<HTMLInputElement | null>(null)
+const charCount = ref(0)
+const wordCount = ref(0)
 
 const showAi = ref(false)
 const aiInstruction = ref('')
@@ -309,6 +340,90 @@ function insertTable() {
   editor.value?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
 }
 
+function toggleFind() {
+  findOpen.value = !findOpen.value
+  if (findOpen.value) {
+    nextTick(() => {
+      findInputRef.value?.focus()
+      refreshMatches()
+    })
+  }
+}
+
+function updateStats() {
+  const text = editor.value?.state.doc.textContent || ''
+  charCount.value = text.replace(/\s/g, '').length
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).length
+  const latin = (text.match(/[A-Za-z0-9_]+/g) || []).length
+  wordCount.value = cjk + latin
+}
+
+function collectMatches() {
+  const ed = editor.value
+  const q = findQuery.value.trim().toLowerCase()
+  if (!ed || !q) return []
+  const out: { from: number; to: number }[] = []
+  ed.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) return
+    const text = node.text.toLowerCase()
+    let idx = 0
+    while ((idx = text.indexOf(q, idx)) !== -1) {
+      out.push({ from: pos + idx, to: pos + idx + q.length })
+      idx += q.length
+    }
+  })
+  return out
+}
+
+function refreshMatches() {
+  findMatches.value = collectMatches()
+  if (findIndex.value >= findMatches.value.length) findIndex.value = 0
+}
+
+function findNext(dir = 1) {
+  refreshMatches()
+  if (!findMatches.value.length) return
+  findIndex.value = (findIndex.value + dir + findMatches.value.length) % findMatches.value.length
+  const m = findMatches.value[findIndex.value]
+  editor.value?.chain().focus().setTextSelection({ from: m.from, to: m.to }).scrollIntoView().run()
+}
+
+function replaceCurrent() {
+  if (!editor.value) return
+  refreshMatches()
+  if (!findMatches.value.length) return
+  const m = findMatches.value[findIndex.value]
+  editor.value.chain().focus().insertContentAt({ from: m.from, to: m.to }, replaceQuery.value).run()
+  nextTick(refreshMatches)
+}
+
+function replaceAll() {
+  if (!editor.value) return
+  const matches = collectMatches()
+  if (!matches.length) return
+  const { state, view } = editor.value
+  const tr = state.tr
+  const replacement = replaceQuery.value
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const m = matches[i]
+    if (replacement) tr.replaceWith(m.from, m.to, state.schema.text(replacement))
+    else tr.delete(m.from, m.to)
+  }
+  view.dispatch(tr)
+  nextTick(refreshMatches)
+}
+
+function exportMarkdown() {
+  if (!editor.value) return
+  const md = defaultMarkdownSerializer.serialize(editor.value.state.doc)
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `${(props.title || 'note').replace(/[\\\\/:*?"<>|]+/g, '_')}.md`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
 function mdToHTML(md: string): string {
   try {
     const doc = defaultMarkdownParser.parse(md)
@@ -324,11 +439,16 @@ const editor = useEditor({
     handlePaste,
     handleDrop,
   },
+  onCreate: () => {
+    updateStats()
+  },
   onUpdate: ({ editor }) => {
     try {
       const md = defaultMarkdownSerializer.serialize(editor.state.doc)
       emit('update:modelValue', md || '')
     } catch {}
+    updateStats()
+    if (findOpen.value) refreshMatches()
   },
 })
 
@@ -353,6 +473,23 @@ watch(() => props.modelValue, (val) => {
 async function uploadImage(file: File) {
   const url = await uploadFile(file)
   if (url) editor.value?.chain().focus().setImage({ src: url }).run()
+}
+
+async function insertAttachment(file: File) {
+  const url = await uploadFile(file)
+  if (!url) return
+  editor.value?.chain().focus().insertContent({
+    type: 'text',
+    text: `📎 ${file.name}`,
+    marks: [{ type: 'link', attrs: { href: url } }],
+  }).run()
+}
+
+async function onAttachFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) await insertAttachment(file)
 }
 
 async function uploadFile(file: File): Promise<string | null> {
@@ -388,7 +525,7 @@ function handleDrop(_view: any, event: DragEvent) {
   if (!files || files.length === 0) return false
   for (const file of Array.from(files)) {
     if (file.type.startsWith('image/')) uploadImage(file)
-    else uploadFile(file)
+    else insertAttachment(file)
   }
   return true
 }
@@ -405,6 +542,12 @@ onBeforeUnmount(() => {
 .toolbar button:hover { background: #ecf5ff; color: #409EFF; }
 .toolbar button.active { background: #409EFF; color: #fff; }
 .toolbar .sep { color: #dcdfe6; margin: 0 4px; font-size: 12px; }
+.find-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid #ebeef5; background: #f7f9fc; flex-wrap: wrap; font-size: 12px; }
+.find-input { width: 150px; border: 1px solid #dcdfe6; border-radius: 4px; padding: 4px 6px; font-size: 12px; outline: none; }
+.find-bar button { padding: 3px 7px; border: 1px solid #dcdfe6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; color: #606266; }
+.find-bar button:hover { color: #409EFF; border-color: #409EFF; }
+.find-count { color: #909399; min-width: 42px; text-align: center; }
+.editor-footer { display: flex; justify-content: space-between; padding: 6px 12px; border-top: 1px solid #ebeef5; color: #909399; font-size: 12px; background: #fafafa; }
 .editor-content { padding: 16px 20px; outline: none; font-size: 15px; line-height: 1.8; min-height: 300px; }
 .editor-content :deep(.ProseMirror) { outline: none !important; border: none !important; }
 .editor-content :deep(h1) { font-size: 1.8em; font-weight: 700; margin: 0.5em 0; }

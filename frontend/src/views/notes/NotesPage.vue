@@ -52,7 +52,7 @@
                 </el-popconfirm>
               </div>
             </div>
-            <TipTapEditor :key="currentId" v-model="noteContent" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
+            <TipTapEditor :key="currentId" v-model="noteContent" :title="noteTitle" :save-state="saveStatus" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
           </div>
           <div v-else class="empty-state">
             <el-empty description="选择或创建一篇笔记" :image-size="80" />
@@ -155,6 +155,7 @@ const currentId = ref<number | null>(null)
 const noteTitle = ref('')
 const noteContent = ref('')
 const loading = ref(true)
+const saveStatus = ref('已保存')
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
 // ---- Notes RAG ----
@@ -269,20 +270,27 @@ async function openNote(id: number) {
     const n = res.data
     noteTitle.value = n.title || ''
     noteContent.value = n.content || ''
+    saveStatus.value = '已保存'
   } catch (e) { console.error(e) }
 }
 
 async function saveNote() {
   if (!currentId.value) return
+  saveStatus.value = '保存中...'
   try {
     await client.put(`/plugins/notes/${currentId.value}`, {
       title: noteTitle.value, content: noteContent.value,
     })
     await loadTree()
-  } catch (e) { console.error(e) }
+    saveStatus.value = '已保存'
+  } catch (e) {
+    saveStatus.value = '保存失败'
+    console.error(e)
+  }
 }
 
 function autoSave() {
+  saveStatus.value = '编辑中...'
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(saveNote, 2000)
 }

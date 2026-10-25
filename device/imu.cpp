@@ -48,16 +48,21 @@ const char* ImuGesture::tick() {
     }
 
     // ---- 翻转：屏幕朝下（z 由正转负）保持 800ms ----
+    static bool flipLatched = false;
     if (az < -0.6f) {
-        if (!_flipArmed) { _flipArmed = true; _flipSince = millis(); }
-        else if (millis() - _flipSince > 800) {
-            _flipArmed = false;
-            firstPeak = 0; secondPeak = 0; peakCount = 0;
-            _coolDown = millis() + 3000;
-            return "flip";
+        if (!flipLatched) {
+            if (!_flipArmed) { _flipArmed = true; _flipSince = millis(); }
+            else if (millis() - _flipSince > 800) {
+                _flipArmed = false;
+                flipLatched = true;              // stay latched until face-up
+                firstPeak = 0; secondPeak = 0; peakCount = 0;
+                _coolDown = millis() + 5000;
+                return "flip";
+            }
         }
     } else {
         _flipArmed = false;
+        if (az > 0.2f) flipLatched = false;      // re-arm only when face-up
     }
 
     // ---- 双击：只有两个尖峰，且之后 300ms 基本静止 ----

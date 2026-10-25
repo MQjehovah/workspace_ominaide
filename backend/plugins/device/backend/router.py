@@ -39,6 +39,11 @@ DEVICE_TOKEN_DAYS = 90
 BRIEF_TODO_LIMIT = 8
 BRIEF_EVENT_LIMIT = 3
 
+# Throttle repeated hardware gestures so a stuck/vibrating IMU cannot toggle HA
+# dozens of times per minute.
+_gesture_last: dict[tuple[int, str], float] = {}
+GESTURE_MIN_INTERVAL = 4.0
+
 
 def _ffmpeg_exe() -> str:
     """Prefer the static ffmpeg bundled by imageio-ffmpeg (no system apt)."""
@@ -451,6 +456,12 @@ async def report_gesture(req: GestureReport, user: dict = Depends(get_current_us
     action = gesture_store.get_action(req.gesture)
     if not action:
         return {"ok": False, "detail": f"no action bound to '{req.gesture}'"}
+    label = action.get("label", req.gesture)
+    now = _time.time()
+    key = (user["id"], req.gesture)
+    if now - _gesture_last.get(key, 0.0) < GESTURE_MIN_INTERVAL:
+        return {"ok": False, "detail": "duplicate gesture ignored", "label": label}
+    _gesture_last[key] = now
 
     from core.ai.mcp.tools.plugin_tools import get_plugin_handler
     handler = get_plugin_handler(action.get("tool", ""))
@@ -460,6 +471,5 @@ async def report_gesture(req: GestureReport, user: dict = Depends(get_current_us
     resp = await handler(user["id"], action.get("args") or {})
     ok = not resp.isError
     text = resp.content[0].text if resp.content else ""
-    label = action.get("label", req.gesture)
     return {"ok": ok, "detail": ("" if ok else text[:120]),
             "label": label}
