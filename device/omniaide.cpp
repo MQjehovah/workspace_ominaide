@@ -10,6 +10,7 @@
 static const char* TAG = "[OA]";
 
 static WiFiClientSecure tlsClient;
+static WiFiClientSecure musicTls;   // 音乐播放独立 TLS（ESP-SR 停止后使用）
 
 // TLS 证书校验：config.h 里填 CA 根证书则校验，留空跳过（内网/frp 场景）
 static void tlsApply(WiFiClientSecure& c) {
@@ -499,6 +500,116 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
     return transcript[0] || reply[0];
 }
 
+// ---------------- 设备音乐 ----------------
+
+void OmniAide::resetHttp() {
+    tlsClient.stop();
+}
+
+bool OmniAide::fetchMusicTracks(int playlistId, OaTrack* out, int max, int& cnt) {
+    cnt = 0;
+    if (!configured() || (!_ok && !login())) return false;
+    static char* scratch = nullptr;
+    if (!scratch) scratch = (char*)heap_caps_malloc(16384, MALLOC_CAP_SPIRAM);
+    if (!scratch) return false;
+
+    char url[192];
+    snprintf(url, sizeof(url), "%s/api/device/music/tracks?playlist_id=%d&limit=%d",
+             _url, playlistId, max);
+    HTTPClient http;
+    http.setTimeout(15000);
+    http.setConnectTimeout(5000);
+    bool began;
+    if (strncmp(url, "https", 5) == 0) {
+        tlsApply(musicTls);
+        musicTls.setTimeout(15000);
+        began = http.begin(musicTls, url);
+    } else {
+        began = http.begin(url);
+    }
+    if (!began) return false;
+    http.addHeader("Authorization", (String("Bearer ") + _token).c_str());
+    int code = http.GET();
+    if (code != 200) {
+        http.end();
+        musicTls.stop();
+        return false;
+    }
+    String body = http.getString();
+    http.end();
+    musicTls.stop();
+
+    JsonDocument doc;
+    if (deserializeJson(doc, body.c_str())) return false;
+    for (JsonVariant t : doc["tracks"].as<JsonArray>()) {
+        if (cnt >= max) break;
+        out[cnt].id = t["id"] | 0;
+        snprintf(out[cnt].name, sizeof(out[cnt].name), "%s", t["name"] | "音乐");
+        if (out[cnt].id > 0) cnt++;
+    }
+    return true;
+}
+
+bool OmniAide::streamMusic(int fileId, OaMusicPcmCb cb, void* ud,
+                           volatile bool* stop, volatile bool* next) {
+    if (!configured() || (!_ok && !login()) || fileId <= 0) return false;
+    char url[160];
+    snprintf(url, sizeof(url), "%s/api/device/music/%d.pcm", _url, fileId);
+    HTTPClient http;
+    http.setTimeout(30000);
+    http.setConnectTimeout(5000);
+    http.setReuse(false);
+    bool began;
+    if (strncmp(url, "https", 5) == 0) {
+        tlsApply(musicTls);
+        musicTls.setTimeout(30000);
+        began = http.begin(musicTls, url);
+    } else {
+        began = http.begin(url);
+    }
+    if (!began) return false;
+    http.addHeader("Authorization", (String("Bearer ") + _token).c_str());
+    int code = http.GET();
+    Serial.printf("%s music #%d HTTP %d\n", TAG, fileId, code);
+    if (code != 200) {
+        http.end();
+        musicTls.stop();
+        return false;
+    }
+    WiFiClient* stream = http.getStreamPtr();
+    if (!stream) { http.end(); musicTls.stop(); return false; }
+
+    static uint8_t* pre = nullptr;
+    const size_t PRE = 64 * 1024;             // ~1.3s @24k mono，吸收网络抖动
+    if (!pre) pre = (uint8_t*)heap_caps_malloc(PRE, MALLOC_CAP_SPIRAM);
+    if (!pre) { http.end(); musicTls.stop(); return false; }
+
+    size_t preLen = 0;
+    while (preLen < PRE && !*stop && !*next && (http.connected() || stream->available())) {
+        if (!stream->available()) { delay(2); continue; }
+        int n = stream->read(pre + preLen, PRE - preLen);
+        if (n > 0) preLen += n;
+    }
+    Serial.printf("%s music prebuffer %u\n", TAG, (unsigned)preLen);
+    if (preLen && cb) cb(pre, preLen, ud);
+    size_t total = preLen;
+
+    while (!*stop && !*next && (http.connected() || stream->available())) {
+        if (!stream->available()) { delay(2); continue; }
+        uint8_t buf[4096];
+        int n = stream->read(buf, sizeof(buf));
+        if (n > 0) {
+            total += n;
+            if (cb) cb(buf, n, ud);
+        }
+    }
+    Serial.printf("%s music done %u bytes stop=%d next=%d\n",
+                  TAG, (unsigned)total, *stop, *next);
+    http.end();
+    musicTls.stop();
+    return true;
+}
+
 // ---------------- 完成待办 ----------------
 
 bool OmniAide::completeTodo(int todoId) {
@@ -773,14 +884,15 @@ bool OmniAide::pollEvents(OaEvent* out, int max, int& cnt, int since) {
 
     JsonDocument doc;
     if (deserializeJson(doc, body.c_str())) return false;
+    lastEventId = doc["last_id"] | since;
     for (JsonVariant e : doc["events"].as<JsonArray>()) {
         if (cnt >= max) break;
         out[cnt].id = e["id"] | 0;
-        out[cnt].value = e["seconds"] | 0;
+        out[cnt].value = e["playlist_id"] | e["seconds"] | 0;
         snprintf(out[cnt].type, sizeof(out[cnt].type), "%s", e["type"] | "");
         snprintf(out[cnt].title, sizeof(out[cnt].title), "%s", e["title"] | "");
         snprintf(out[cnt].body, sizeof(out[cnt].body), "%s", e["body"] | "");
-        snprintf(out[cnt].action, sizeof(out[cnt].action), "%s", e["link"] | "");
+        snprintf(out[cnt].action, sizeof(out[cnt].action), "%s", e["action"] | e["link"] | "");
         cnt++;
     }
     return true;

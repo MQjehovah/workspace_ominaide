@@ -56,6 +56,15 @@ struct OaEvent {
     char action[32] = "";
 };
 
+// 音乐曲目
+struct OaTrack {
+    int  id = 0;
+    char name[64] = "";
+};
+
+// 音乐 PCM 回调（16bit mono 24k）
+typedef void (*OaMusicPcmCb)(const uint8_t* pcm, size_t len, void* ud);
+
 // OTA 进度回调（0..100）
 typedef void (*OaProgressCb)(int pct, void* ud);
 
@@ -95,8 +104,15 @@ public:
                         char* transcript, size_t tMax, char* reply, size_t rMax,
                         OaVoiceEventCb cb, void* ud = nullptr);
 
+    // 设备音乐：拉取曲目 / 以 24k mono PCM 流式播放
+    bool fetchMusicTracks(int playlistId, OaTrack* out, int max, int& cnt);
+    bool streamMusic(int fileId, OaMusicPcmCb cb, void* ud,
+                     volatile bool* stop, volatile bool* next);
+    void resetHttp();       // 音乐/长连接结束后强制下次 HTTP 重新建连
+
     bool loggedIn() const { return _ok; }
     uint32_t lastBriefMs = 0;
+    int lastEventId = 0;        // 服务端事件游标（用于检测后端重启后序号回退）
 
     // 最近一次语音对话的音频（voiceAsk 成功后有效）
     uint32_t voiceRate = 16000;

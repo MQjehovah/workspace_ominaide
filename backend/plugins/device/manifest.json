@@ -1,8 +1,8 @@
 {
   "name": "device",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "设备接入",
-  "description": "智能助手等硬件设备的接入网关：聚合摘要、手势事件、Home Assistant 智能家居控制（MCP）",
+  "description": "智能助手硬件接入：摘要、设备事件、Home Assistant、计时器与音乐播放",
   "icon": "Smartphone",
   "permissions": [],
   "routes": {
@@ -55,6 +55,28 @@
           "label": {"type": "string", "description": "计时器名称，如“煮面”"}
         },
         "required": ["seconds"]
+      }
+    },
+    {
+      "name": "play_device_music",
+      "description": "让用户的智能助手硬件开始播放音乐（默认播放全部音频文件，也可指定歌单）。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "playlist_id": {"type": "integer", "description": "歌单 ID；0 或不传表示全部音频"},
+          "title": {"type": "string", "description": "可选的播放提示名称"}
+        }
+      }
+    },
+    {
+      "name": "device_music_control",
+      "description": "控制智能助手硬件的音乐播放：play 开始、stop 停止、next 下一首。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {"type": "string", "enum": ["play", "stop", "next"], "description": "控制动作"}
+        },
+        "required": ["action"]
       }
     }
   ]

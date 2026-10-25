@@ -72,7 +72,33 @@ async def set_device_timer(user_id: int, args: dict) -> MCPCallResponse:
     return _resp({"ok": True, "detail": f"已开始 {human} {label}"})
 
 
+async def play_device_music(user_id: int, args: dict) -> MCPCallResponse:
+    """Ask the hardware assistant to start playing audio files/playlist."""
+    try:
+        playlist_id = int(args.get("playlist_id") or 0)
+    except Exception:
+        playlist_id = 0
+    from .events import publish_device_event
+    await publish_device_event(user_id, "music_play", {
+        "playlist_id": playlist_id,
+        "title": (args.get("title") or "音乐").strip()[:60],
+    })
+    return _resp({"ok": True, "detail": "已发送播放指令"})
+
+
+async def device_music_control(user_id: int, args: dict) -> MCPCallResponse:
+    """Control hardware music playback: play / stop / next."""
+    action = (args.get("action") or "stop").strip().lower()
+    if action not in ("play", "stop", "next"):
+        return _resp({"ok": False, "detail": "action must be play/stop/next"}, True)
+    from .events import publish_device_event
+    await publish_device_event(user_id, "music_control", {"action": action})
+    return _resp({"ok": True, "detail": f"音乐控制: {action}"})
+
+
 register_plugin_tool_handler("ha_call_service", ha_call_service)
 register_plugin_tool_handler("ha_get_state", ha_get_state)
 register_plugin_tool_handler("ha_toggle", ha_toggle)
 register_plugin_tool_handler("set_device_timer", set_device_timer)
+register_plugin_tool_handler("play_device_music", play_device_music)
+register_plugin_tool_handler("device_music_control", device_music_control)

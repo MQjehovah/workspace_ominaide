@@ -66,7 +66,7 @@ uint8_t* ttsBuf = nullptr;     // PSRAM：TTS 返回的 WAV
 char*    respBuf = nullptr;    // PSRAM：HTTP 文本响应
 const size_t RESP_MAX = 24 * 1024;
 
-enum State : uint8_t { ST_BOOT, ST_NO_WIFI, ST_READY, ST_REC, ST_VOICE, ST_PLAY, ST_ERR };
+enum State : uint8_t { ST_BOOT, ST_NO_WIFI, ST_READY, ST_REC, ST_VOICE, ST_PLAY, ST_MUSIC, ST_ERR };
 State state = ST_BOOT;
 uint8_t recPin = PIN_KEY_TALK;   // 本次录音监听的按键
 
@@ -120,6 +120,16 @@ bool srOk = false;
 volatile bool wakeFlag = false;             // ESP-SR 检测到唤醒词
 volatile bool voiceAbort = false;           // 播报中被按键/唤醒词打断
 bool voiceDeltaShown = false;               // 本轮是否已显示“语音生成中”
+
+// ---- 设备音乐 ----
+volatile bool musicActive = false;
+volatile bool musicStop = false;
+volatile bool musicNext = false;
+volatile int  musicCmd = 0;                 // 1=play 2=stop 3=next
+volatile int  musicPlaylistId = 0;
+OaTrack* musicTracks = nullptr;
+bool musicPcmLogged = false;
+bool musicWriteLogged = false;
 
 // ============================================================================
 // 音频
@@ -691,14 +701,29 @@ static void pollDeviceEvents() {
         evtLastId = cursor;
         evtCursorInit = true;
     }
-    if (millis() - tEvtPoll < 8000) return;
+    if (millis() - tEvtPoll < 4000) return;
     tEvtPoll = millis();
     OaEvent evs[4];
     int cnt = 0;
-    if (oa.pollEvents(evs, 4, cnt, evtLastId)) {
+    bool ok = oa.pollEvents(evs, 4, cnt, evtLastId);
+    if (oa.lastEventId < evtLastId) {
+        // Backend restarted: its in-memory event ids reset. Re-sync from 0
+        // on the next poll instead of waiting until the new id catches up.
+        evtLastId = 0;
+    } else if (oa.lastEventId > evtLastId) {
+        evtLastId = oa.lastEventId;
+    }
+    if (ok) {
         for (int i = 0; i < cnt; i++) {
             if (evs[i].id > evtLastId) evtLastId = evs[i].id;
-            if (!strcmp(evs[i].type, "timer") && evs[i].value > 0) {
+            if (!strcmp(evs[i].type, "music_play")) {
+                musicPlaylistId = evs[i].value;
+                musicCmd = 1;
+            } else if (!strcmp(evs[i].type, "music_control")) {
+                if (!strcmp(evs[i].action, "stop")) musicStop = true;
+                else if (!strcmp(evs[i].action, "next")) musicNext = true;
+                else if (!strcmp(evs[i].action, "play")) musicCmd = 1;
+            } else if (!strcmp(evs[i].type, "timer") && evs[i].value > 0) {
                 snprintf((char*)evtTimerLabel, sizeof(evtTimerLabel), "%s",
                          evs[i].title[0] ? evs[i].title : "计时器");
                 evtTimerEnd = millis() + (uint32_t)evs[i].value * 1000UL;
@@ -737,6 +762,9 @@ void uiCompleteTick() {
 // OmniAide tick：登录重试 + 摘要轮询 + 手势识别上报
 uint32_t tGesture = 0;
 void oaTick() {
+    // Music owns I2S/network while playing; don't run TLS polling on the other
+    // core. KEY3 stops and BOOT skips tracks locally.
+    if (musicActive) return;
 #if GESTURE_ENABLE
     if (!screenOn) return;
     if (millis() - tGesture >= 100) {
@@ -804,6 +832,10 @@ bool audioDown = false;         // 息屏时模拟电源被关闭，唤醒后需
 
 void setScreenOn(bool on) {
     if (screenOn == on) return;
+    if (!on && musicActive) {
+        musicStop = true;              // first power press stops music; press again to sleep
+        return;
+    }
     screenOn = on;
     Serial.printf("[PWR] %s\n", on ? "亮屏" : "息屏(低功耗)");
     if (on) {
@@ -933,6 +965,101 @@ void autoAskFlow() {
     askFlow();
 }
 
+// ============================================================================
+// 设备音乐
+// ============================================================================
+static void musicPcmCb(const uint8_t* pcm, size_t len, void*) {
+    if (!musicPcmLogged) {
+        musicPcmLogged = true;
+        Serial.printf("[MUSIC] pcm cb first len=%u\n", (unsigned)len);
+    }
+    const int16_t* in = (const int16_t*)pcm;
+    size_t n = len / 2;
+    static int16_t st[1024];
+    size_t o = 0;
+    for (size_t i = 0; i < n; i++) {
+        int16_t s = in[i];
+        st[o++] = s;
+        st[o++] = s;
+        if (o >= 1024) {
+            size_t w = i2s.write((uint8_t*)st, o * 2);
+            if (!musicWriteLogged && w != o * 2) {
+                musicWriteLogged = true;
+                Serial.printf("[MUSIC] i2s.write %u/%u\n", (unsigned)w, (unsigned)(o * 2));
+            }
+            o = 0;
+            if (musicStop || musicNext) return;
+        }
+    }
+    if (o) i2s.write((uint8_t*)st, o * 2);
+}
+
+static void playMusic() {
+    musicActive = true;
+    musicStop = false;
+    musicNext = false;
+    musicPcmLogged = false;
+    musicWriteLogged = false;
+    setState(ST_MUSIC, "音乐加载中 ...", 0x00e5ff);
+    ui::busy("音乐加载中 ...");
+
+    // Free ESP-SR internal RAM for HTTPS while music plays.
+    ESP_SR.end();
+    srOk = false;
+
+    if (!musicTracks)
+        musicTracks = (OaTrack*)heap_caps_malloc(sizeof(OaTrack) * 32, MALLOC_CAP_SPIRAM);
+    int cnt = 0;
+    bool ok = musicTracks && oa.fetchMusicTracks(musicPlaylistId, musicTracks, 32, cnt);
+    Serial.printf("[MUSIC] fetch ok=%d cnt=%d mem=%u\n", ok, cnt, (unsigned)ESP.getFreeHeap());
+    if (!ok || cnt == 0) {
+        setState(ST_MUSIC, "没有音乐文件", 0xff5252);
+        delay(1500);
+        goto cleanup;
+    }
+
+    // Re-assert 16k on both I2S and ES8311. TTS playback may have left the
+    // codec at 24k, which makes 16k music sound wrong.
+    digitalWrite(PIN_PA, HIGH);
+    es8311ToRate(REC_RATE);
+    i2s.end();
+    i2s.begin(I2S_MODE_STD, REC_RATE, I2S_DATA_BIT_WIDTH_16BIT,
+              I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH);
+
+    for (int i = 0; i < cnt; i++) {
+        if (musicStop || musicCmd == 2) break;
+        char label[64];
+        snprintf(label, sizeof(label), "♪ %s", musicTracks[i].name);
+        Serial.printf("[MUSIC] track %d id=%d %s\n", i, musicTracks[i].id, musicTracks[i].name);
+        setState(ST_MUSIC, label, 0x00e5ff);
+        musicNext = false;
+        oa.streamMusic(musicTracks[i].id, musicPcmCb, nullptr, &musicStop, &musicNext);
+        if (musicStop || musicCmd == 2) break;
+        musicCmd = 0;
+    }
+
+cleanup:
+    musicActive = false;
+    musicStop = false;
+    musicNext = false;
+    musicCmd = 0;
+    musicPlaylistId = 0;
+    oa.resetHttp();
+    srInit();
+    ui::busy(nullptr);
+    setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+}
+
+static void musicTask(void*) {
+    for (;;) {
+        if (musicCmd == 1 && !musicActive) {
+            musicCmd = 0;
+            playMusic();
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -1040,6 +1167,9 @@ void setup() {
     setState(ST_READY, strlen(cfgSsid) ? "按住 KEY3 或说 Hi ESP" : "未配置网络", 0x4caf50);
     ui::bootDone();                            // 撤开机画面 → 时钟/待办/对话三页
 
+    // Music player task (core 0; ESP-SR is stopped while music plays).
+    xTaskCreatePinnedToCore(musicTask, "music", 10240, nullptr, 1, nullptr, 0);
+
     Serial.println("=== 就绪：按住 KEY3 或说 Hi ESP，松开发问 ===");
 }
 
@@ -1061,6 +1191,12 @@ void loop() {
     clockTick();
     powerKeyTick();
     oaTick();
+
+    // Music controls: KEY3 = stop, BOOT = next track.
+    if (musicActive) {
+        if (digitalRead(PIN_KEY_TALK) == LOW) musicStop = true;
+        if (digitalRead(PIN_KEY_BOOT) == LOW) musicNext = true;
+    }
 
     // 计时器开始 / 到期（本地倒计时，断网也能走完）
     if (evtNewTimer) {

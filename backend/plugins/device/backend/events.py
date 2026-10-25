@@ -27,11 +27,15 @@ class DeviceEventBus:
 
     async def publish(self, user_id: int, kind: str, data: dict | None = None) -> dict:
         async with self._lock:
-            self._seq[user_id] += 1
+            # Use wall-clock seconds as the base so event ids stay monotonic
+            # across backend restarts; a per-process counter would reset to 1
+            # and devices holding an older cursor would never see new events.
+            now = int(time.time())
+            self._seq[user_id] = max(self._seq.get(user_id, 0) + 1, now)
             event = {
                 "id": self._seq[user_id],
                 "type": kind,
-                "ts": int(time.time()),
+                "ts": now,
                 **(data or {}),
             }
             self._events[user_id].append(event)

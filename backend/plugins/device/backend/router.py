@@ -6,12 +6,16 @@
 - GET  /api/device/gestures 查看手势映射
 - PUT  /api/device/gestures 修改手势映射
 """
+import asyncio
+import os
+import tempfile
 import time as _time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +36,15 @@ router = APIRouter(prefix="/api/device", tags=["device"])
 DEVICE_TOKEN_DAYS = 90
 BRIEF_TODO_LIMIT = 8
 BRIEF_EVENT_LIMIT = 3
+
+
+def _ffmpeg_exe() -> str:
+    """Prefer the static ffmpeg bundled by imageio-ffmpeg (no system apt)."""
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
 
 
 # ---------------- auth ----------------
@@ -98,6 +111,134 @@ async def device_brief(user: dict = Depends(get_current_user),
         "server_time": now.strftime("%Y-%m-%d %H:%M"),
         **({"weather": weather} if weather else {}),
     }
+
+
+# ---------------- music (device playback) ----------------
+
+@router.get("/music/tracks")
+async def device_music_tracks(
+    playlist_id: int = Query(0),
+    limit: int = Query(50, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return audio tracks for the device; playlist_id=0 means all audio files."""
+    from sqlalchemy import select
+    from plugins.files.backend.models import File
+
+    uid = user["id"]
+    if playlist_id:
+        from plugins.music.backend.models import Playlist, PlaylistItem
+        pl = (await db.execute(
+            select(Playlist).where(Playlist.id == playlist_id, Playlist.user_id == uid)
+        )).scalar_one_or_none()
+        if not pl:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+        rows = await db.execute(
+            select(File)
+            .join(PlaylistItem, PlaylistItem.file_id == File.id)
+            .where(
+                PlaylistItem.playlist_id == playlist_id,
+                File.user_id == uid,
+                File.status == "active",
+            )
+            .order_by(PlaylistItem.position)
+            .limit(limit)
+        )
+    else:
+        rows = await db.execute(
+            select(File)
+            .where(
+                File.user_id == uid,
+                File.status == "active",
+                File.mime_type.like("audio/%"),
+            )
+            .order_by(File.created_at.desc())
+            .limit(limit)
+        )
+    files = list(rows.scalars().all())
+    return {"tracks": [
+        {"id": f.id, "name": f.original_name, "mime": f.mime_type}
+        for f in files
+    ]}
+
+
+@router.get("/music/{file_id}.pcm")
+async def device_music_pcm(
+    file_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Transcode any audio file to raw s16le 24kHz mono for the device."""
+    from core.minio.client import minio_client
+    from plugins.files.backend import service as file_service
+
+    if not minio_client:
+        raise HTTPException(status_code=503, detail="MinIO unavailable")
+    record = await file_service.get_file(db, user["id"], file_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found")
+    if not (record.mime_type or "").startswith("audio/"):
+        raise HTTPException(status_code=400, detail="Not an audio file")
+
+    def _download() -> str:
+        obj = minio_client.get_object(record.bucket, record.object_key)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".media")
+        try:
+            while True:
+                chunk = obj.read(1024 * 1024)
+                if not chunk:
+                    break
+                tmp.write(chunk)
+        finally:
+            tmp.close()
+        return tmp.name
+
+    try:
+        src_path = await asyncio.to_thread(_download)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"download failed: {e}")
+
+    out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pcm")
+    out_path = out_tmp.name
+    out_tmp.close()
+
+    def _cleanup():
+        for path in (src_path, out_path):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y",
+            "-i", src_path, "-vn", "-f", "s16le", "-acodec", "pcm_s16le",
+            "-ac", "1", "-ar", "16000", out_path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        _cleanup()
+        raise HTTPException(status_code=503, detail="ffmpeg not installed")
+
+    await proc.wait()
+    if proc.returncode != 0:
+        _cleanup()
+        raise HTTPException(status_code=502, detail="audio transcode failed")
+
+    # FileResponse gives Content-Length (not chunked). HTTPClient on the device
+    # then reads raw s16le bytes without HTTP chunk framing mixed into the PCM.
+    return FileResponse(
+        out_path,
+        media_type="application/octet-stream",
+        headers={
+            "X-Audio-Rate": "16000",
+            "X-Audio-Channels": "1",
+            "Cache-Control": "no-store",
+        },
+        background=BackgroundTask(_cleanup),
+    )
 
 
 # ---------------- realtime events (long-poll) ----------------
