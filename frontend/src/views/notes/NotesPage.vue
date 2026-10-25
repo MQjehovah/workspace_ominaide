@@ -543,8 +543,8 @@ onMounted(loadTree)
 
 <style scoped>
 .notes-page {
-  height: calc(100vh - var(--header-height));
-  margin: -20px -24px;
+  height: calc(100vh - var(--header-height) - 40px);
+  margin: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -565,7 +565,7 @@ onMounted(loadTree)
 .notes-heading { min-width: 0; }
 .notes-title { font-size: 19px; font-weight: 700; letter-spacing: .2px; }
 .notes-sub { font-size: 12px; color: #8b95a5; margin-top: 2px; }
-.notes-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.notes-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .notes-body {
   flex: 1;
   min-height: 0;
@@ -610,7 +610,8 @@ onMounted(loadTree)
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 12px 18px;
   padding: 18px 24px 12px;
   border-bottom: 1px solid #eef2f6;
 }
@@ -618,8 +619,8 @@ onMounted(loadTree)
 .title-input :deep(.el-input__inner) { font-size: 26px; font-weight: 700; border: none; padding: 0; line-height: 1.35; color: #111827; }
 .title-input :deep(.el-input__wrapper) { border: none; box-shadow: none !important; padding: 0; background: transparent; }
 .note-meta { display: flex; gap: 10px; margin-top: 6px; color: #9aa3b2; font-size: 12px; }
-.note-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; padding-top: 4px; }
-.note-editor-shell { flex: 1; min-height: 0; overflow: hidden; padding: 0 22px 8px; }
+.note-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex: 0 1 auto; flex-wrap: wrap; padding-top: 4px; }
+.note-editor-shell { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 0 20px 8px; }
 .notes-empty { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #e5eaf1; border-radius: 14px; }
 .hidden-file { display: none; }
 .rag-panel { display: flex; flex-direction: column; gap: 12px; }
