@@ -220,6 +220,7 @@ static void srResume() {
 static void onSrEvent(sr_event_t event, int command_id, int phrase_id) {
     if (event == SR_EVENT_WAKEWORD || event == SR_EVENT_WAKEWORD_CHANNEL) {
         wakeFlag = true;
+        Serial.println("[SR] WAKEWORD");
     } else if (event == SR_EVENT_TIMEOUT) {
         srResume();
     }
@@ -231,6 +232,7 @@ static bool srInit() {
     // MultiNet is compiled out; only WakeNet ("Hi ESP") is used.
     srOk = ESP_SR.begin(i2s, nullptr, 0, SR_CHANNELS_STEREO, SR_MODE_WAKEWORD, "MM");
     Serial.printf("[SR] %s\n", srOk ? "wakeword ready (Hi ESP)" : "init FAILED");
+    Serial.flush();
     return srOk;
 #else
     return false;
@@ -981,7 +983,27 @@ void setup() {
     else {
         beepTest();                            // 开机自检音：听到"哔"= 扬声器链路正常
         Serial.println("[AUDIO] ok");
+
+        // 麦克风自检：采 300ms，打印环境峰值（0 表示 I2S 麦克风通道没数据）
+        {
+            static uint8_t pchunk[4096];
+            int peak = 0;
+            uint32_t pt0 = millis();
+            while (millis() - pt0 < 300) {
+                size_t n = i2s.readBytes((char*)pchunk, sizeof(pchunk));
+                int16_t* s = (int16_t*)pchunk;
+                for (size_t i = 0; i + 1 < n / 2; i += 2) {
+                    int v = ((int)s[i] + s[i + 1]) / 2;
+                    int a = abs(v);
+                    if (a > peak) peak = a;
+                }
+            }
+            Serial.printf("[MIC] ambient peak=%d\n", peak);
+        }
+
         srInit();                              // 唤醒词（Hi ESP）
+        Serial.printf("[MEM] free=%u max=%u psram=%u\n",
+                      ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getFreePsram());
     }
 
     // WiFi
@@ -1092,3 +1114,4 @@ void loop() {
         break;    // ASR/LLM/TTS/PLAY 在 askFlow 内同步执行
     }
 }
+

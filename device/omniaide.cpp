@@ -76,7 +76,11 @@ static int httpReq(const char* url, const char* method, const char* body,
     } else {
         ok = http.begin(url);
     }
-    if (!ok) return -1;
+    if (!ok) {
+        Serial.printf("[HTTP] begin fail free=%u max=%u url=%.80s\n",
+                      ESP.getFreeHeap(), ESP.getMaxAllocHeap(), url);
+        return -1;
+    }
     if (token) http.addHeader("Authorization", (String("Bearer ") + token).c_str());
     int code;
     if (strcmp(method, "GET") == 0) {
@@ -103,7 +107,8 @@ bool OmniAide::login() {
     String url = String(_url) + "/api/device/auth";
     int code = httpReq(url.c_str(), "POST", req, nullptr, resp, sizeof(resp));
     if (code != 200) {
-        Serial.printf("%s login HTTP %d: %.160s\n", TAG, code, resp);
+        Serial.printf("%s login HTTP %d: %.160s free=%u max=%u url=%.80s\n",
+                      TAG, code, resp, ESP.getFreeHeap(), ESP.getMaxAllocHeap(), _url);
         _ok = false;
         return false;
     }
