@@ -43,6 +43,7 @@
 import { ref, nextTick } from 'vue'
 import { Delete, Close, Promotion, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { apiUrl } from '@/api/base'
 
 const open = ref(false)
 const loading = ref(false)
@@ -59,7 +60,7 @@ async function send() {
   scrollBottom()
   try {
     const token = localStorage.getItem('token') || ''
-    const resp = await fetch('/api/chat/stream', {
+    const resp = await fetch(apiUrl('/chat/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ message: text }),

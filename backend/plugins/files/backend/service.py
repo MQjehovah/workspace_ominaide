@@ -16,6 +16,19 @@ UPLOAD_URL_EXPIRY = 600
 DOWNLOAD_URL_EXPIRY = 1800
 
 
+def _normalize_path(path: str | None) -> str:
+    p = (path or "/").strip()
+    if not p.startswith("/"):
+        p = "/" + p
+    return p.rstrip("/") or "/"
+
+
+def _join_path(parent: str | None, name: str) -> str:
+    parent = _normalize_path(parent)
+    name = (name or "").strip("/")
+    return f"{parent.rstrip('/')}/{name}" if parent != "/" else f"/{name}"
+
+
 def _generate_object_key(user_id: int, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
     unique = uuid.uuid4().hex
@@ -228,6 +241,24 @@ async def permanent_delete(db: AsyncSession, user_id: int, file_id: int):
     await db.flush()
 
 
+async def _rewrite_descendant_paths(
+    db: AsyncSession, user_id: int, old_path: str, new_path: str, exclude_id: int | None = None
+) -> None:
+    """Move every descendant of a renamed/moved folder to the new prefix."""
+    old_prefix = old_path.rstrip("/")
+    rows = await db.execute(
+        select(File).where(
+            File.user_id == user_id,
+            or_(File.folder_path == old_prefix, File.folder_path.like(f"{old_prefix}/%")),
+        )
+    )
+    for child in rows.scalars().all():
+        if exclude_id is not None and child.id == exclude_id:
+            continue
+        suffix = (child.folder_path or "").rstrip("/")[len(old_prefix):]
+        child.folder_path = f"{new_path.rstrip('/')}{suffix}" or "/"
+
+
 async def rename_file(db: AsyncSession, user_id: int, file_id: int, new_name: str) -> File:
     result = await db.execute(
         select(File).where(File.id == file_id, File.user_id == user_id)
@@ -235,6 +266,13 @@ async def rename_file(db: AsyncSession, user_id: int, file_id: int, new_name: st
     file_record = result.scalar_one_or_none()
     if not file_record:
         raise ValueError("File not found")
+    new_name = (new_name or "").strip()
+    if not new_name:
+        raise ValueError("Empty name")
+    if file_record.is_folder:
+        old_path = _join_path(file_record.folder_path, file_record.original_name)
+        new_path = _join_path(file_record.folder_path, new_name)
+        await _rewrite_descendant_paths(db, user_id, old_path, new_path, exclude_id=file_record.id)
     file_record.original_name = new_name
     await db.flush()
     await db.refresh(file_record)
@@ -248,6 +286,13 @@ async def move_file(db: AsyncSession, user_id: int, file_id: int, new_folder_pat
     file_record = result.scalar_one_or_none()
     if not file_record:
         raise ValueError("File not found")
+    new_folder_path = _normalize_path(new_folder_path)
+    if file_record.is_folder:
+        old_path = _join_path(file_record.folder_path, file_record.original_name)
+        if new_folder_path == old_path or new_folder_path.startswith(old_path + "/"):
+            raise ValueError("Cannot move a folder into itself")
+        new_path = _join_path(new_folder_path, file_record.original_name)
+        await _rewrite_descendant_paths(db, user_id, old_path, new_path, exclude_id=file_record.id)
     file_record.folder_path = new_folder_path
     await db.flush()
     await db.refresh(file_record)

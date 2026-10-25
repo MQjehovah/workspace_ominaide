@@ -255,7 +255,7 @@ bool OmniAide::voiceAsk(const uint8_t* pcm, size_t pcmLen, uint32_t sampleRate,
     memcpy(body + n, wav, wavLen);
     n += wavLen;
     n += snprintf((char*)body + n, bodyCap - n,
-        "\r\n--%s\r\nContent-Disposition: form-data; name=\"session_id\"\r\n\r\ndefault\r\n"
+        "\r\n--%s\r\nContent-Disposition: form-data; name=\"session_id\"\r\n\r\nsmart-assistant\r\n"
         "--%s--\r\n", B, B);
     free(wav);
 
@@ -368,7 +368,7 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
     memcpy(body + n, wav, wavLen);
     n += wavLen;
     n += snprintf((char*)body + n, bodyCap - n,
-        "\r\n--%s\r\nContent-Disposition: form-data; name=\"session_id\"\r\n\r\ndefault\r\n"
+        "\r\n--%s\r\nContent-Disposition: form-data; name=\"session_id\"\r\n\r\nsmart-assistant\r\n"
         "--%s--\r\n", B, B);
     free(wav);
 
@@ -531,7 +531,7 @@ bool OmniAide::fetchChatHistory(OaChatMsg* msgs, int max, int& cnt) {
     char* scratch = bigScratch(12288);
     if (!scratch) return false;
 
-    String url = String(_url) + "/api/chat/history?session_id=default&limit=8";
+    String url = String(_url) + "/api/chat/history?session_id=smart-assistant&limit=8";
     int code = httpReq(url.c_str(), "GET", "", _token, scratch, 12288);
     if (code == 401) {
         if (!login()) return false;

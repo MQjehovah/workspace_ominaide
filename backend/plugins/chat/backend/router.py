@@ -66,11 +66,14 @@ async def load_history(user_id: int, session_id: str, limit: int) -> list[dict]:
         return [{"role": m.role, "content": m.content} for m in rows]
 
 
-async def resolve_history(req: ChatRequest, user_id: int) -> list[dict]:
+async def resolve_history(req: ChatRequest, user_id: int, limit: int | None = None) -> list[dict]:
     """Client-provided history wins; otherwise auto-load from the session store."""
     if req.history is not None:
         return [{"role": m.role, "content": m.content} for m in req.history]
-    return await load_history(user_id, req.session_id or DEFAULT_SESSION, settings.chat_history_limit)
+    return await load_history(
+        user_id, req.session_id or DEFAULT_SESSION,
+        limit or settings.chat_history_limit,
+    )
 
 
 def _user_content(req: ChatRequest):
@@ -84,7 +87,14 @@ def _user_content(req: ChatRequest):
     return parts if len(parts) > 1 else req.message
 
 
-async def build_messages(req: ChatRequest, user_id: int, *, persona: bool = True, extra_system: str | None = None) -> list[dict]:
+async def build_messages(
+    req: ChatRequest,
+    user_id: int,
+    *,
+    persona: bool = True,
+    extra_system: str | None = None,
+    history_limit: int | None = None,
+) -> list[dict]:
     messages: list[dict] = []
     if persona and settings.assistant_system_prompt:
         messages.append({"role": "system", "content": settings.assistant_system_prompt})
@@ -93,7 +103,7 @@ async def build_messages(req: ChatRequest, user_id: int, *, persona: bool = True
     ctx = await build_context(user_id, req.message)
     if ctx:
         messages.append({"role": "system", "content": ctx})
-    messages.extend(await resolve_history(req, user_id))
+    messages.extend(await resolve_history(req, user_id, limit=history_limit))
     messages.append({"role": "user", "content": _user_content(req)})
     return messages
 
@@ -331,7 +341,7 @@ async def voice(
 
     req = ChatRequest(message=transcript, session_id=session_id or DEFAULT_SESSION)
     try:
-        messages = await build_messages(req, user["id"], extra_system=VOICE_STYLE)
+        messages = await build_messages(req, user["id"], extra_system=VOICE_STYLE, history_limit=6)
         reply = await run_agent(user["id"], messages, max_turns=30)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Agent failed: {e}")
@@ -409,25 +419,13 @@ async def voice_stream(
 
     sid = session_id or DEFAULT_SESSION
     req = ChatRequest(message=transcript, session_id=sid)
-    messages = await build_messages(req, user["id"], extra_system=VOICE_STYLE)
+    messages = await build_messages(req, user["id"], extra_system=VOICE_STYLE, history_limit=6)
     await save_message(user["id"], "user", transcript, sid)
 
     out_q: asyncio.Queue = asyncio.Queue(maxsize=64)
-    sent_q: asyncio.Queue = asyncio.Queue()
     reply_parts: list[str] = []
-    futures: dict[int, asyncio.Future] = {}
-    next_seq = 0
-    producer_done = asyncio.Event()
 
-    def enqueue_sentence(sentence: str) -> None:
-        nonlocal next_seq
-        seq = next_seq
-        next_seq += 1
-        futures[seq] = asyncio.get_running_loop().create_future()
-        sent_q.put_nowait((seq, sentence))
-
-    async def producer():
-        buf = ""
+    async def supervisor():
         try:
             async for ev in iter_agent_events(
                 run_agent_stream(user["id"], messages, max_turns=30)
@@ -439,73 +437,40 @@ async def voice_stream(
                         continue
                     reply_parts.append(text)
                     await out_q.put({"t": "delta", "text": text})
-                    sents, buf = take_sentences(buf + text)
-                    for sentence in sents:
-                        enqueue_sentence(sentence)
                 elif typ in ("tool_call", "tool_result"):
                     await out_q.put({"t": "status", "text": "正在执行工具..."})
-        finally:
-            sents, _ = take_sentences(buf, flush=True)
-            for sentence in sents:
-                enqueue_sentence(sentence)
-            producer_done.set()
-            for _ in range(2):
-                sent_q.put_nowait(None)
+        except Exception as e:
+            await out_q.put({"t": "status", "text": f"处理失败：{e}"[:120]})
 
-    async def tts_worker():
-        client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
-        while True:
-            item = await sent_q.get()
-            if item is None:
-                break
-            seq, sentence = item
-            fut = futures.get(seq)
-            try:
-                pcm, rate = await tts_pcm(sentence, client, voice)
-                if fut is not None and not fut.done():
-                    fut.set_result((pcm, rate))
-            except Exception:
-                if fut is not None and not fut.done():
-                    fut.set_exception(RuntimeError("tts failed"))
+        reply = "".join(reply_parts).strip() or "已执行。"
 
-    async def emitter():
-        seq = 0
-        while True:
-            if producer_done.is_set() and seq >= next_seq:
-                break
-            fut = futures.get(seq)
-            if fut is None:
-                await asyncio.sleep(0.01)
-                continue
-            try:
-                result = await fut
-            except Exception:
-                result = None
-            futures.pop(seq, None)
-            if result is None:
-                await out_q.put({"t": "status", "text": "语音合成失败"})
-            else:
-                pcm, rate = result
+        # One TTS call for the whole reply. Sentence-level parallel TTS can
+        # skip a sentence when a provider request fails; a single call keeps
+        # prosody and guarantees the device gets the complete audio.
+        if reply:
+            client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
+            pcm = None
+            rate = 24000
+            for attempt in range(3):
+                try:
+                    pcm, rate = await tts_pcm(reply, client, voice)
+                    if pcm:
+                        break
+                except Exception:
+                    if attempt < 2:
+                        await out_q.put({"t": "status", "text": "语音合成重试..."})
+                        await asyncio.sleep(0.4 * (attempt + 1))
+            if pcm:
                 for i in range(0, len(pcm), 6000):
                     await out_q.put({
                         "t": "audio",
                         "rate": rate,
                         "pcm": base64.b64encode(pcm[i:i + 6000]).decode(),
                     })
-            seq += 1
+            else:
+                await out_q.put({"t": "status", "text": "语音合成失败"})
 
-    async def supervisor():
-        tasks = [
-            asyncio.create_task(producer()),
-            asyncio.create_task(emitter()),
-            asyncio.create_task(tts_worker()),
-            asyncio.create_task(tts_worker()),
-        ]
-        try:
-            await asyncio.gather(*tasks)
-        except Exception as e:
-            await out_q.put({"t": "status", "text": f"处理失败：{e}"[:120]})
-        reply = "".join(reply_parts).strip() or "已执行。"
+        print(f"[voice_stream] reply={reply!r} pcm={len(pcm) if pcm else 0}", flush=True)
         await save_message(user["id"], "assistant", reply, sid)
         await out_q.put({"t": "done", "reply": reply})
 

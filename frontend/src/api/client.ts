@@ -1,6 +1,7 @@
 import axios from 'axios'
+import { API_BASE, appUrl } from './base'
 
-const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE || '/api' })
+const client = axios.create({ baseURL: API_BASE })
 
 client.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
@@ -13,7 +14,7 @@ client.interceptors.response.use(
   error => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      window.location.href = appUrl('login')
     }
     return Promise.reject(error)
   }

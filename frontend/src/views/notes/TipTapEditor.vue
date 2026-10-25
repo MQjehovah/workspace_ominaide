@@ -84,6 +84,7 @@ import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table
 import { renderToHTMLString } from '@tiptap/static-renderer/pm/html-string'
 import { defaultMarkdownParser, defaultMarkdownSerializer } from 'prosemirror-markdown'
 import client from '@/api/client'
+import { apiUrl } from '@/api/base'
 
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -363,8 +364,7 @@ async function uploadFile(file: File): Promise<string | null> {
     })
     const data = res.data
     if (!data?.object_key) return null
-    const serverUrl = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
-    return `${serverUrl}/api/files/note/${data.object_key}`
+    return apiUrl(`/files/note/${data.object_key}`)
   } catch {
     return null
   }

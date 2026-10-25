@@ -887,44 +887,25 @@ static bool onVoiceEvent(const char* type, const char* text,
 void askFlow() {
     static char transcript[512], reply[1024];
 
-    setState(ST_VOICE, "对话中 ...", 0xffd740);            // 黄
-    ui::busy("对话中 ...");
+    setState(ST_VOICE, "语音生成中 ...", 0xffd740);
+    ui::busy("语音生成中 ...");
     voiceAbort = false;
-    voiceDeltaShown = false;
-    playPcmReset();
-    bool ok = oa.voiceAskStream(recBuf, recLen, REC_RATE,
-                                transcript, sizeof(transcript),
-                                reply, sizeof(reply), onVoiceEvent);
+    srPause();
 
-    // 兼容还没部署 /api/chat/voice/stream 的后端：自动回退到旧的非流式接口
-    if (!ok && !transcript[0] && !reply[0] && !voiceAbort) {
-        Serial.println("[OA] stream unavailable, fallback to /api/chat/voice");
-        srPause();
-        ok = oa.voiceAsk(recBuf, recLen, REC_RATE, ttsBuf, TTS_MAX_BYTES,
-                         transcript, sizeof(transcript), reply, sizeof(reply))
-             && (transcript[0] || reply[0]);
-        if (ok && oa.voiceData > 0) {
-            setState(ST_PLAY, "播报中 ...", 0x00e5ff);
-            ui::busy("播报中 ...");
-            playWav(oa.voiceRate, ttsBuf + oa.voiceOff, oa.voiceData);
-        }
+    // Stable path: full WAV from /api/chat/voice. PCM streaming playback on
+    // this codec still shows repeat/reverse artifacts, so keep it off for now.
+    bool ok = oa.voiceAsk(recBuf, recLen, REC_RATE, ttsBuf, TTS_MAX_BYTES,
+                          transcript, sizeof(transcript), reply, sizeof(reply))
+              && (transcript[0] || reply[0]);
+    if (ok && oa.voiceData > 0) {
+        setState(ST_PLAY, "播报中 ...", 0x00e5ff);
+        ui::busy("播报中 ...");
+        playWav(oa.voiceRate, ttsBuf + oa.voiceOff, oa.voiceData);
     }
     ui::busy(nullptr);
 
     if (transcript[0]) ui::chatAppend("user", transcript);
     if (reply[0]) ui::chatAppend("assistant", reply);
-
-    if (voiceAbort) {
-        // 唤醒词打断：立即进入下一轮聆听；按键打断：等用户重新按键
-        if (wakeFlag) {
-            setState(ST_READY, "我在听 ...", 0xffd740);
-        } else {
-            setState(ST_READY, "已停止", 0xffd740);
-        }
-        delay(500);
-        srResume();
-        return;
-    }
 
     if (!ok && !transcript[0] && !reply[0]) {
         setState(ST_ERR, "对话失败", 0xff5252);
