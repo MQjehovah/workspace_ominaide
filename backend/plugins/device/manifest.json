@@ -44,6 +44,18 @@
         },
         "required": ["entity_id"]
       }
+    },
+    {
+      "name": "set_device_timer",
+      "description": "在用户的智能助手硬件上启动一个本地倒计时/计时器（如“定个 10 分钟计时器”）。到点设备会响铃并提示。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "seconds": {"type": "integer", "description": "倒计时秒数，1..86400"},
+          "label": {"type": "string", "description": "计时器名称，如“煮面”"}
+        },
+        "required": ["seconds"]
+      }
     }
   ]
 }

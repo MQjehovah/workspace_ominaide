@@ -10,12 +10,15 @@
 static const char* TAG = "[OA]";
 
 static WiFiClientSecure tlsClient;
+static WiFiClientSecure evtTls;   // 事件长轮询独立 TLS 连接，避免和主循环抢同一个 client
 
 // TLS 证书校验：config.h 里填 CA 根证书则校验，留空跳过（内网/frp 场景）
-static void tlsConfig() {
-    if (strlen(TLS_CA_CERT)) tlsClient.setCACert(TLS_CA_CERT);
-    else                     tlsClient.setInsecure();
+static void tlsApply(WiFiClientSecure& c) {
+    if (strlen(TLS_CA_CERT)) c.setCACert(TLS_CA_CERT);
+    else                     c.setInsecure();
 }
+
+static void tlsConfig() { tlsApply(tlsClient); }
 
 void OmniAide::setEndpoint(const char* url, const char* user, const char* pass) {
     snprintf(_url, sizeof(_url), "%s", url ? url : "");
@@ -248,7 +251,7 @@ bool OmniAide::voiceAsk(const uint8_t* pcm, size_t pcmLen, uint32_t sampleRate,
     memcpy(body + n, wav, wavLen);
     n += wavLen;
     n += snprintf((char*)body + n, bodyCap - n,
-        "\r\n--%s\r\nContent-Disposition: form-data; name=\"session_id\"\r\n\r\nsmart-assistant\r\n"
+        "\r\n--%s\r\nContent-Disposition: form-data; name=\"session_id\"\r\n\r\ndefault\r\n"
         "--%s--\r\n", B, B);
     free(wav);
 
@@ -341,7 +344,7 @@ bool OmniAide::fetchChatHistory(OaChatMsg* msgs, int max, int& cnt) {
     char* scratch = bigScratch(12288);
     if (!scratch) return false;
 
-    String url = String(_url) + "/api/chat/history?session_id=smart-assistant&limit=8";
+    String url = String(_url) + "/api/chat/history?session_id=default&limit=8";
     int code = httpReq(url.c_str(), "GET", "", _token, scratch, 12288);
     if (code == 401) {
         if (!login()) return false;
@@ -502,6 +505,98 @@ int OmniAide::fetchUnreadCount() {
     JsonDocument doc;
     if (deserializeJson(doc, resp)) return -1;
     return doc["count"] | 0;
+}
+
+bool OmniAide::fetchEventCursor(int& out) {
+    out = 0;
+    if (!configured() || !_ok) return false;
+    static char* resp = nullptr;
+    if (!resp) resp = (char*)heap_caps_malloc(512, MALLOC_CAP_SPIRAM);
+    if (!resp) return false;
+    String url = String(_url) + "/api/device/events?since=-1&wait=0";
+    HTTPClient http;
+    http.setTimeout(8000);
+    http.setConnectTimeout(5000);
+    bool began;
+    if (strncmp(url.c_str(), "https", 5) == 0) {
+        tlsApply(evtTls);
+        evtTls.setTimeout(8000);
+        began = http.begin(evtTls, url);
+    } else {
+        began = http.begin(url);
+    }
+    if (!began) return false;
+    http.addHeader("Authorization", (String("Bearer ") + _token).c_str());
+    int code = http.GET();
+    if (code != 200) {
+        http.end();
+        return false;
+    }
+    String s = http.getString();
+    http.end();
+    JsonDocument doc;
+    if (deserializeJson(doc, s.c_str())) return false;
+    out = doc["last_id"] | 0;
+    return true;
+}
+
+bool OmniAide::pollEvents(OaEvent* out, int max, int& cnt, int since) {
+    cnt = 0;
+    if (!configured() || !_ok) return false;
+
+    static char* resp = nullptr;
+    static const size_t CAP = 8192;
+    if (!resp) resp = (char*)heap_caps_malloc(CAP, MALLOC_CAP_SPIRAM);
+    if (!resp) return false;
+
+    char url[192];
+    snprintf(url, sizeof(url), "%s/api/device/events?since=%d&wait=%d",
+             _url, since, OA_EVENT_LONGPOLL_S);
+
+    int code = -1;
+    String body;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        HTTPClient http;
+        http.setTimeout((OA_EVENT_LONGPOLL_S + 12) * 1000);   // 长轮询：等待 + 余量
+        http.setConnectTimeout(5000);
+        bool began;
+        if (strncmp(url, "https", 5) == 0) {
+            tlsApply(evtTls);
+            evtTls.setTimeout((OA_EVENT_LONGPOLL_S + 12) * 1000);
+            began = http.begin(evtTls, url);
+        } else {
+            began = http.begin(url);
+        }
+        if (!began) return false;
+        http.addHeader("Authorization", (String("Bearer ") + _token).c_str());
+        code = http.GET();
+        if (code == 200) {
+            body = http.getString();
+            http.end();
+            break;
+        }
+        http.end();
+        if (code == 401 && attempt == 0 && login()) continue;
+        break;
+    }
+    if (code != 200) {
+        Serial.printf("%s events HTTP %d\n", TAG, code);
+        return false;
+    }
+
+    JsonDocument doc;
+    if (deserializeJson(doc, body.c_str())) return false;
+    for (JsonVariant e : doc["events"].as<JsonArray>()) {
+        if (cnt >= max) break;
+        out[cnt].id = e["id"] | 0;
+        out[cnt].value = e["seconds"] | 0;
+        snprintf(out[cnt].type, sizeof(out[cnt].type), "%s", e["type"] | "");
+        snprintf(out[cnt].title, sizeof(out[cnt].title), "%s", e["title"] | "");
+        snprintf(out[cnt].body, sizeof(out[cnt].body), "%s", e["body"] | "");
+        snprintf(out[cnt].action, sizeof(out[cnt].action), "%s", e["link"] | "");
+        cnt++;
+    }
+    return true;
 }
 
 bool OmniAide::markNotifRead(int id) {

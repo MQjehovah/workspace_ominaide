@@ -79,6 +79,7 @@ bool popSettingReq(SettingReq& out);                   // 主循环轮询取走�
 void chatClear();
 void chatAppend(const char* role, const char* text);  // role: "user" / "assistant"
 void showChatPage();                                  // 录音开始时切到对话页
+void showNotifPage();                                 // 实时提醒到达时切到消息页
 
 // ---- 录音/处理覆盖层（线程安全）----
 void recShow(bool on);                                // 显示/隐藏录音音量条区

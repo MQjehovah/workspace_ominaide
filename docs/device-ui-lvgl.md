@@ -12,6 +12,8 @@ bash scripts/build_device.sh smart_assistant upload COM5      # 编译并烧录
 - LVGL 9.2.3 随仓库内置在 `device/libraries/lvgl`（只保留 src，约 800 文件），
   构建脚本会把它和 `device/libraries/lv_conf.h` 同步到 `Documents/Arduino/libraries/`
   （arduino-cli 只搜索全局库目录）。
+- 真实 WiFi / 后端账号不再写进 `config.h`：复制 `device/config.local.h.example`
+  为 `device/config.local.h`（已 gitignore），或用设备「设置 → 配网」写入 NVS。
 - 中文字体用 `lv_font_conv` 从黑体生成（`device/font_cn20.c`，20px、ASCII+GB2312 一级汉字、
   2bpp 压缩，约 290KB flash）；时钟数字 `device/font_num92.c`（92px）。
 
@@ -21,6 +23,7 @@ bash scripts/build_device.sh smart_assistant upload COM5      # 编译并烧录
 |------|----|------|
 | `loopTask`（Arduino loop） | 1 | 状态机：录音、HTTP（语音/摘要/手势/完成待办）、电源键、NTP |
 | `lvgl`（ui.cpp 内创建） | 1 | 持续 `lv_timer_handler()`，录音/上传阻塞时界面照常渲染 |
+| `oa_events`（长轮询） | 0 | `GET /api/device/events` 25s 长轮询；只置事件标志，UI/提示音由 loopTask 执行 |
 
 所有跨任务 UI 更新走 `ui.h` 公开接口，内部互斥锁保护；触摸点击回调运行在
 LVGL 任务持锁上下文，只允许直接改控件 + 写请求队列（如待办完成）。
@@ -39,7 +42,8 @@ LVGL 任务持锁上下文，只允许直接改控件 + 写请求队列（如待
 | 功能 | 接口 |
 |------|------|
 | 登录（90 天 token，401 自动重登） | `POST /api/device/auth` |
-| 摘要轮询（60s：待办+日程） | `GET /api/device/brief` |
+| 摘要轮询（60s 兜底：待办+日程） | `GET /api/device/brief` |
+| 实时事件长轮询（通知/提醒/简报，25s） | `GET /api/device/events?since=&wait=` |
 | 手势上报（MCP → Home Assistant） | `POST /api/device/gesture` |
 | 语音问答（录音上传 → 回答+TTS WAV） | `POST /api/chat/voice` |
 | 完成待办（设备端新增能力） | `PUT /api/items/{id}` |

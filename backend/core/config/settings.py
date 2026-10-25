@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
     intelligence_layer_enabled: bool = True
+    # Notes RAG: chunking + hybrid retrieval (vector + BM25 + RRF + MMR)
+    notes_rag_enabled: bool = True
+    notes_chunk_size: int = 600
+    notes_chunk_overlap: int = 80
+    notes_rag_top_k: int = 8
+    notes_rag_recall_k: int = 30
+    notes_rag_mmr_lambda: float = 0.7
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     cors_origins: str = '["*","http://localhost:3000","http://localhost:5173","http://localhost:5000","http://localhost:8080","app://."]'

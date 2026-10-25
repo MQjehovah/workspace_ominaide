@@ -10,7 +10,7 @@ import time as _time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,7 @@ from plugins.schedule.backend import service as schedule_service
 
 from . import gesture_store
 from . import ha
+from .events import device_events
 
 router = APIRouter(prefix="/api/device", tags=["device"])
 
@@ -42,6 +43,12 @@ class DeviceLoginRequest(BaseModel):
 
 class GestureReport(BaseModel):
     gesture: str  # flip | shake | double_tap | pickup
+
+
+class DevicePush(BaseModel):
+    title: str
+    body: str | None = None
+    kind: str = "notification"
 
 
 @router.post("/auth")
@@ -91,6 +98,51 @@ async def device_brief(user: dict = Depends(get_current_user),
         "server_time": now.strftime("%Y-%m-%d %H:%M"),
         **({"weather": weather} if weather else {}),
     }
+
+
+# ---------------- realtime events (long-poll) ----------------
+
+@router.get("/events")
+async def device_events_poll(
+    since: int = Query(0),
+    wait: int = Query(25, ge=0, le=30),
+    user: dict = Depends(get_current_user),
+):
+    """Long-poll device events (notifications, reminders, commands).
+
+    The device keeps the last event id and calls this endpoint with a 25s wait.
+    ``since=-1`` is a cursor sync: return no replay, just the current last id
+    (used on boot so old notifications don't fire again).
+    """
+    uid = user["id"]
+    if since < 0:
+        return {"events": [], "last_id": device_events.last_id(uid),
+                "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    events = device_events.since(uid, since)
+    if not events and wait > 0:
+        events = await device_events.wait(uid, since, wait)
+    last_id = events[-1]["id"] if events else since
+    return {
+        "events": events,
+        "last_id": last_id,
+        "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+@router.post("/push")
+async def device_push(
+    req: DevicePush,
+    user: dict = Depends(get_current_user),
+):
+    """Push a short message to the user's hardware assistant (web/mobile -> device)."""
+    from .events import publish_device_event
+    if not req.title.strip():
+        raise HTTPException(status_code=400, detail="title is required")
+    event = await publish_device_event(user["id"], req.kind or "notification", {
+        "title": req.title.strip()[:120],
+        "body": (req.body or "").strip()[:400],
+    })
+    return {"ok": True, "event": event}
 
 
 # ---------------- weather（Open-Meteo，无 key，30min 缓存） ----------------

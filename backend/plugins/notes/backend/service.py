@@ -5,11 +5,21 @@ from core.ai.indexer import index_content
 from plugins.notes.backend.models import PluginNote
 from plugins.notes.backend.schemas import NoteCreate, NoteUpdate
 from plugins.notes.backend.content_text import note_content_to_text
+from plugins.notes.backend.rag import index_note_rag, delete_note_rag
 
 
 def _index_text(content: str | None) -> str:
     """Convert stored content (JSON/markdown/html) to readable text for AI indexing."""
     return note_content_to_text(content)
+
+
+def _schedule_rag_index(user_id: int, note: PluginNote) -> None:
+    """Index chunks/terms in the background; never blocks the save request."""
+    if note.is_folder:
+        return
+    asyncio.create_task(index_note_rag(
+        user_id, note.id, note.title, note.content
+    ))
 
 
 async def create_note(db: AsyncSession, user_id: int, req: NoteCreate) -> PluginNote:
@@ -43,6 +53,7 @@ async def create_note(db: AsyncSession, user_id: int, req: NoteCreate) -> Plugin
             content=_index_text(note.content),
             metadata={"link": f"/notes/{note.id}"},
         ))
+        _schedule_rag_index(user_id, note)
 
     return note
 
@@ -97,6 +108,7 @@ async def update_note(
             content=_index_text(note.content),
             metadata={"link": f"/notes/{note.id}"},
         ))
+        _schedule_rag_index(user_id, note)
 
     return note
 
@@ -175,6 +187,7 @@ async def restore_version(db: AsyncSession, user_id: int, note_id: int, version_
             content=_index_text(note.content),
             metadata={"link": f"/notes/{note.id}"},
         ))
+        _schedule_rag_index(user_id, note)
     return note
 
 
@@ -182,12 +195,24 @@ async def delete_note(db: AsyncSession, user_id: int, note_id: int):
     note = await get_note(db, user_id, note_id)
     if not note:
         raise ValueError("Note not found")
-    # Delete children
-    children = await db.execute(
-        select(PluginNote).where(PluginNote.parent_id == note_id)
-    )
-    for child in children.scalars().all():
-        await db.delete(child)
+
+    # Collect the whole subtree so RAG chunks/terms don't outlive their notes.
+    all_ids: list[int] = [note.id]
+    frontier = [note.id]
+    while frontier:
+        children = await db.execute(
+            select(PluginNote).where(PluginNote.parent_id.in_(frontier))
+        )
+        rows = list(children.scalars().all())
+        frontier = [c.id for c in rows]
+        all_ids.extend(frontier)
+
+    await delete_note_rag(db, all_ids)
+    for nid in all_ids:
+        if nid != note.id:
+            obj = await db.get(PluginNote, nid)
+            if obj:
+                await db.delete(obj)
     await db.delete(note)
     await db.flush()
 

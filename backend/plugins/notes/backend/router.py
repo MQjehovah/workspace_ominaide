@@ -6,6 +6,7 @@ from core.auth.dependencies import get_current_user
 from core.events.recorder import record_event
 from plugins.notes.backend.schemas import NoteCreate, NoteUpdate, NoteResponse
 from plugins.notes.backend import service as notes_service
+from plugins.notes.backend import rag as notes_rag
 
 router = APIRouter(prefix="/api/plugins/notes", tags=["notes-plugin"])
 
@@ -13,6 +14,20 @@ router = APIRouter(prefix="/api/plugins/notes", tags=["notes-plugin"])
 class MoveNoteRequest(BaseModel):
     parent_id: int | None = None
     sort_order: int | None = None
+
+
+class RagSearchRequest(BaseModel):
+    q: str
+    top_k: int | None = None
+
+
+class RagAskRequest(BaseModel):
+    question: str
+    top_k: int | None = None
+
+
+class RagReindexRequest(BaseModel):
+    limit: int = 200
 
 
 @router.get("/tree")
@@ -67,6 +82,67 @@ async def search_notes(
 ):
     notes = await notes_service.search_notes(db, user["id"], q)
     return [NoteResponse.model_validate(n) for n in notes]
+
+
+@router.post("/rag/search")
+async def rag_search(
+    req: RagSearchRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hybrid semantic + keyword search over the note knowledge base."""
+    await notes_rag.ensure_indexed(user["id"])
+    results = await notes_rag.hybrid_search(
+        db, user["id"], req.q, top_k=req.top_k
+    )
+    return {"query": req.q, "results": results}
+
+
+@router.post("/rag/ask")
+async def rag_ask(
+    req: RagAskRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ask a question and get a cited answer grounded in the user's notes."""
+    try:
+        await notes_rag.ensure_indexed(user["id"])
+        return await notes_rag.ask_notes(
+            db, user["id"], req.question, top_k=req.top_k
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/rag/reindex")
+async def rag_reindex(
+    req: RagReindexRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Backfill chunks/embeddings/terms for existing notes."""
+    return await notes_rag.reindex_all(user["id"], limit=req.limit)
+
+
+@router.get("/rag/status")
+async def rag_status(
+    user: dict = Depends(get_current_user),
+):
+    return await notes_rag.rag_status(user["id"])
+
+
+@router.get("/{note_id}/similar")
+async def similar_notes(
+    note_id: int,
+    limit: int = Query(5, ge=1, le=20),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await notes_service.get_note(db, user["id"], note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"results": await notes_rag.similar_notes(
+        db, user["id"], note_id, top_k=limit
+    )}
 
 
 @router.get("/{note_id}", response_model=NoteResponse)

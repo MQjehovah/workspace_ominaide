@@ -565,4 +565,11 @@ void showChatPage() {
     uii::unlock();
 }
 
+void showNotifPage() {
+    if (!s_ready) return;
+    uii::lock();
+    lv_tileview_set_tile_by_index(s_tv, 2, 0, LV_ANIM_ON);
+    uii::unlock();
+}
+
 }  // namespace ui

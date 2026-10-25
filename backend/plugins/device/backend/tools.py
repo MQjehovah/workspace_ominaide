@@ -53,6 +53,26 @@ async def ha_toggle(user_id: int, args: dict) -> MCPCallResponse:
     return _resp(result, not result["ok"])
 
 
+async def set_device_timer(user_id: int, args: dict) -> MCPCallResponse:
+    """Start a local countdown timer on the user's hardware assistant."""
+    try:
+        seconds = int(args.get("seconds") or 0)
+    except Exception:
+        seconds = 0
+    if seconds < 1 or seconds > 24 * 3600:
+        return _resp({"ok": False, "detail": "seconds must be 1..86400"}, True)
+    label = (args.get("label") or "计时器").strip()[:40]
+    from .events import publish_device_event
+    await publish_device_event(user_id, "timer", {
+        "seconds": seconds,
+        "title": label,
+    })
+    mins = seconds // 60
+    human = f"{mins} 分钟" if mins and seconds % 60 == 0 else f"{seconds} 秒"
+    return _resp({"ok": True, "detail": f"已开始 {human} {label}"})
+
+
 register_plugin_tool_handler("ha_call_service", ha_call_service)
 register_plugin_tool_handler("ha_get_state", ha_get_state)
 register_plugin_tool_handler("ha_toggle", ha_toggle)
+register_plugin_tool_handler("set_device_timer", set_device_timer)

@@ -34,6 +34,8 @@
         <input v-model="title" class="title-input" placeholder="无标题" @input="markDirty" />
         <div class="header-actions">
           <span class="save-status" :class="{ dirty: saveStatus === '未保存' }">{{ saveStatus }}</span>
+          <button class="save-btn" @click="openRag('ask')" title="基于笔记知识库问答">问答</button>
+          <button class="save-btn" @click="openRag('search')" title="语义搜索笔记">搜索</button>
           <button class="save-btn" :disabled="!currentId" @click="exportMarkdown" title="导出为 Markdown">导出</button>
           <button class="save-btn" :disabled="!currentId" @click="openHistory" title="版本历史">历史</button>
           <button class="save-btn" :disabled="!currentId" @click="doSave">保存 (Ctrl+S)</button>
@@ -69,6 +71,45 @@
         </div>
       </div>
     </div>
+
+    <div v-if="ragOpen" class="history-overlay" @click.self="ragOpen = false">
+      <div class="history-modal rag-modal">
+        <div class="history-hd">
+          <span>{{ ragMode === 'ask' ? '知识库问答' : '语义搜索' }}</span>
+          <button class="history-close" @click="ragOpen = false">✕</button>
+        </div>
+        <div class="rag-body">
+          <textarea
+            v-if="ragMode === 'ask'"
+            v-model="ragQuery"
+            class="rag-input"
+            rows="3"
+            placeholder="问一个问题，例如：Q3 预算的结论是什么？"
+            @keydown.ctrl.enter="runRag"
+          />
+          <input
+            v-else
+            v-model="ragQuery"
+            class="rag-input"
+            placeholder="输入关键词或自然语言描述"
+            @keyup.enter="runRag"
+          />
+          <button class="save-btn rag-run" :disabled="ragLoading" @click="runRag">
+            {{ ragLoading ? '检索中…' : (ragMode === 'ask' ? '基于我的笔记回答' : '搜索笔记') }}
+          </button>
+          <div v-if="ragAnswer" class="rag-answer">{{ ragAnswer }}</div>
+          <div v-for="s in ragSources" :key="'s' + s.index" class="rag-item" @click="openSource(s.note_id)">
+            <div class="rag-item-hd"><b>[{{ s.index }}] {{ s.title }}</b><span>{{ Math.round((s.score || 0) * 100) }}%</span></div>
+            <div class="rag-snippet">{{ s.snippet }}</div>
+          </div>
+          <div v-for="r in ragResults" :key="'r' + r.note_id" class="rag-item" @click="openSource(r.note_id)">
+            <div class="rag-item-hd"><b>{{ r.title }}</b><span>{{ Math.round((r.score || 0) * 100) }}%</span></div>
+            <div class="rag-snippet">{{ r.snippet }}</div>
+          </div>
+          <div v-if="ragSearched && !ragResults.length && !ragSources.length" class="rag-empty">没有找到相关笔记</div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -88,6 +129,57 @@ let suppressDirty = false
 const historyOpen = ref(false)
 const versions = ref<any[]>([])
 const selectedVersion = ref<any>(null)
+
+// ---- Notes RAG (hybrid search + cited Q&A) ----
+const ragOpen = ref(false)
+const ragMode = ref<'ask' | 'search'>('ask')
+const ragQuery = ref('')
+const ragLoading = ref(false)
+const ragAnswer = ref('')
+const ragSources = ref<any[]>([])
+const ragResults = ref<any[]>([])
+const ragSearched = ref(false)
+
+function openRag(mode: 'ask' | 'search') {
+  ragMode.value = mode
+  ragOpen.value = true
+  ragAnswer.value = ''
+  ragSources.value = []
+  ragResults.value = []
+  ragSearched.value = false
+}
+
+async function runRag() {
+  const q = ragQuery.value.trim()
+  if (!q || ragLoading.value) return
+  ragLoading.value = true
+  ragAnswer.value = ''
+  ragSources.value = []
+  ragResults.value = []
+  ragSearched.value = false
+  try {
+    if (ragMode.value === 'ask') {
+      const res = await window.mqbox?.api.post('/plugins/notes/rag/ask', { question: q }) || {}
+      ragAnswer.value = res.answer || ''
+      ragSources.value = res.sources || []
+    } else {
+      const res = await window.mqbox?.api.post('/plugins/notes/rag/search', { q }) || {}
+      ragResults.value = res.results || []
+      ragSearched.value = true
+    }
+  } catch (e) {
+    console.error('[notes] RAG failed:', e)
+    ragAnswer.value = '检索失败，请稍后再试。'
+  } finally {
+    ragLoading.value = false
+  }
+}
+
+function openSource(noteId: number) {
+  if (!noteId) return
+  ragOpen.value = false
+  openNote(noteId)
+}
 
 function fmtVersionTime(iso: string): string {
   if (!iso) return ''
@@ -457,5 +549,17 @@ onUnmounted(() => {
 .history-preview { border-top:1px solid #e5e7eb; max-height:240px; display:flex; flex-direction:column; }
 .history-preview-hd { display:flex; justify-content:space-between; align-items:center; padding:8px 16px; font-size:12px; color:#6b7280; }
 .history-preview-body { flex:1; overflow-y:auto; padding:8px 16px 16px; font-size:13px; color:#374151; white-space:pre-wrap; word-break:break-word; }
+.rag-modal { width:600px; }
+.rag-body { flex:1; overflow-y:auto; padding:14px 16px 18px; display:flex; flex-direction:column; gap:10px; }
+.rag-input { width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #e0e0e0; border-radius:8px; font-size:13px; outline:none; resize:vertical; font-family:inherit; }
+.rag-input:focus { border-color:#6366f1; }
+.rag-run { align-self:flex-end; }
+.rag-answer { white-space:pre-wrap; line-height:1.7; font-size:13px; color:#374151; background:#f5f7fa; border-radius:8px; padding:10px 12px; }
+.rag-item { border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; cursor:pointer; transition:border-color .15s, background .15s; }
+.rag-item:hover { border-color:#6366f1; background:#f5f3ff; }
+.rag-item-hd { display:flex; justify-content:space-between; gap:8px; font-size:13px; color:#374151; }
+.rag-item-hd span { color:#9ca3af; font-size:11px; flex-shrink:0; }
+.rag-snippet { margin-top:6px; font-size:12px; color:#6b7280; line-height:1.6; }
+.rag-empty { text-align:center; color:#9ca3af; font-size:13px; padding:20px; }
 .empty-area { flex:1; display:flex; align-items:center; justify-content:center; color:#ccc; font-size:14px; }
 </style>

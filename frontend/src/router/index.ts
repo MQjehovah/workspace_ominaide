@@ -40,6 +40,11 @@ const router = createRouter({
           component: () => import('@/views/notes/NotesPage.vue')
         },
         {
+          path: 'device',
+          name: 'Device',
+          component: () => import('@/views/Device.vue')
+        },
+        {
           path: 'apps/:pluginName/:pathMatch(.*)*',
           name: 'PluginHost',
           component: () => import('@/core/layout/PluginHost.vue')

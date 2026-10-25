@@ -9,10 +9,18 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
 async def notify_user(user_id: int, data: dict):
-    """Push a notification to every client of the user over the shared
-    host channel (`channel: "notifications"`)."""
+    """Push a notification to every client of the user.
+
+    - desktop / web / mobile: shared host channel (`channel: "notifications"`)
+    - hardware devices: device long-poll bus (low-latency, battery friendly)
+    """
     from core.wschannel.hub import host_channel
     await host_channel.broadcast(user_id, "notifications", data)
+    try:
+        from plugins.device.backend.events import publish_device_event
+        await publish_device_event(user_id, "notification", data)
+    except Exception:
+        pass
 
 
 @router.get("", response_model=list[NotificationResponse])

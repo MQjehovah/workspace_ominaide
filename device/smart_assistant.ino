@@ -107,6 +107,13 @@ OaChatMsg* oaHist = nullptr;        // PSRAM：历史条目缓冲
 OaNotif* oaNotifs = nullptr;        // PSRAM：通知条目缓冲
 int lastUnread = -1;                // 上次未读数（变了才重拉列表）
 
+// ---- 实时事件（独立长轮询任务，避免阻塞录音/触摸）----
+volatile int  evtLastId = 0;
+volatile bool evtNewNotif = false;
+volatile bool evtNewTimer = false;
+volatile uint32_t evtTimerEnd = 0;          // millis() 到期时刻，0=无计时器
+volatile char evtTimerLabel[48] = "计时器";
+
 // ============================================================================
 // 音频
 // ============================================================================
@@ -482,6 +489,45 @@ void refreshNotifs() {
     if (oa.fetchNotifications(oaNotifs, 8, cnt)) ui::setNotifs((const ui::Notif*)oaNotifs, cnt);
 }
 
+// 设备实时事件：后台长轮询，只置标志；真正的 UI/提示音由 loopTask 处理
+static void eventPollTask(void*) {
+    static bool cursorInit = false;
+    for (;;) {
+        if (!screenOn || !wifiOk || !oa.loggedIn()) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
+        if (!cursorInit) {
+            int cursor = 0;
+            if (!oa.fetchEventCursor(cursor)) {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
+            evtLastId = cursor;
+            cursorInit = true;
+        }
+        OaEvent evs[4];
+        int cnt = 0;
+        if (oa.pollEvents(evs, 4, cnt, evtLastId)) {
+            for (int i = 0; i < cnt; i++) {
+                if (evs[i].id > evtLastId) evtLastId = evs[i].id;
+                if (!strcmp(evs[i].type, "timer") && evs[i].value > 0) {
+                    snprintf((char*)evtTimerLabel, sizeof(evtTimerLabel), "%s",
+                             evs[i].title[0] ? evs[i].title : "计时器");
+                    evtTimerEnd = millis() + (uint32_t)evs[i].value * 1000UL;
+                    evtNewTimer = true;
+                } else if (!strcmp(evs[i].type, "notification") ||
+                           !strcmp(evs[i].type, "reminder") ||
+                           !strcmp(evs[i].type, "briefing")) {
+                    evtNewNotif = true;
+                }
+                Serial.printf("[EVT] #%d %s %s\n", evs[i].id, evs[i].type, evs[i].title);
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
+}
+
 // 消息页点击已读 / 全部已读 → 主循环异步调后端后刷新
 void uiNotifTick() {
     int id;
@@ -754,6 +800,10 @@ void setup() {
 
     setState(ST_READY, strlen(cfgSsid) ? "按住 KEY3 说话" : "未配置网络", 0x4caf50);
     ui::bootDone();                            // 撤开机画面 → 时钟/待办/对话三页
+
+    // 实时事件长轮询（独立任务，录音/触摸不受阻塞）
+    xTaskCreatePinnedToCore(eventPollTask, "oa_events", 10240, nullptr, 1, nullptr, 0);
+
     Serial.println("=== 就绪：按住 KEY3 说话，松开发问 ===");
 }
 
@@ -775,6 +825,35 @@ void loop() {
     clockTick();
     powerKeyTick();
     oaTick();
+
+    // 计时器开始 / 到期（本地倒计时，断网也能走完）
+    if (evtNewTimer) {
+        evtNewTimer = false;
+        char l[64];
+        snprintf(l, sizeof(l), "计时开始 · %s", (const char*)evtTimerLabel);
+        ui::setState(l, 0x00e5ff);
+    }
+    if (evtTimerEnd && (int32_t)(millis() - evtTimerEnd) >= 0) {
+        evtTimerEnd = 0;
+        char l[64];
+        snprintf(l, sizeof(l), "计时结束 · %s", (const char*)evtTimerLabel);
+        ui::setState(l, 0xff5252);
+        if (state == ST_READY) {
+            for (int i = 0; i < 2; i++) { playChime(); delay(120); }
+        }
+    }
+
+    // 实时事件到达：刷新通知、提示音；空闲时自动切到消息页
+    if (evtNewNotif) {
+        evtNewNotif = false;
+        refreshNotifs();
+        lastUnread = oa.fetchUnreadCount();
+        ui::setUnread(lastUnread);
+        ui::setState("有新通知", 0xffd740);
+        if (chimeOn) playChime();
+        if (state == ST_READY) ui::showNotifPage();
+    }
+
     uiCompleteTick();
     uiNotifTick();
     settingsTick();

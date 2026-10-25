@@ -19,6 +19,7 @@ dist/
 # Environment
 .env
 *.local
+device/config.local.h
 
 # OS
 .DS_Store

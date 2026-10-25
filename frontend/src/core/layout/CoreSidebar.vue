@@ -29,6 +29,10 @@
         <el-icon><Document /></el-icon>
         <span>笔记</span>
       </el-menu-item>
+      <el-menu-item index="/device">
+        <el-icon><Cellphone /></el-icon>
+        <span>智能设备</span>
+      </el-menu-item>
 
       <div class="menu-divider"></div>
       <div class="menu-label" v-if="!collapsed">管理</div>
@@ -61,7 +65,7 @@
 
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts } from '@element-plus/icons-vue'
+import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()

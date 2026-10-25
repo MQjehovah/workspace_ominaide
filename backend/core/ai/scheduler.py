@@ -54,7 +54,9 @@ async def _check_reminders():
     from core.database.session import async_session
 
     now = datetime.now()
-    window = now + timedelta(minutes=15)
+    # Honour remind_before up to 24h (the old 15-minute window silently ignored
+    # reminders configured for 30/60/1440 minutes before the event).
+    window = now + timedelta(hours=24)
     try:
         async with async_session() as db:
             r = await db.execute(
@@ -327,6 +329,16 @@ async def _daily_event_analysis():
                 pr.preferences = _json.dumps(prefs, ensure_ascii=False)
             await db.commit()
             print(f"[scheduler] daily analysis done ({len(events)} events, {len(merged['projects'])} projects)")
+
+            # Turn the dormant insight engine on: mine 30-day patterns and store
+            # them in profile.preferences.insights for proactive suggestions.
+            if settings.intelligence_layer_enabled and user_ids:
+                from core.ai.insights import discover_insights
+                for uid in sorted(user_ids):
+                    try:
+                        await discover_insights(uid)
+                    except Exception as e:
+                        print(f"[scheduler] insights error for user {uid}: {e}")
     except Exception as e:
         print(f"[scheduler] daily analysis error: {e}")
 

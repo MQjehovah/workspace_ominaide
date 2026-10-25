@@ -1,28 +1,45 @@
 /**
  * config.h —— 智能助手（SmartAssistant）固件配置
  *
- * 使用前填三样：WIFI_SSID / WIFI_PASS / ZAI_API_KEY（智谱 bigmodel 的 API Key，
- * https://open.bigmodel.cn → 右上角控制台 → API Keys）
+ * 安全约定：本文件不保存任何真实 WiFi / 账号 / API Key。
+ * 真实配置放在 device/config.local.h（已被 .gitignore 忽略），或通过
+ * 设备配网门户写入 NVS（推荐）。构建脚本会把 config.local.h 一起编译。
  */
 #pragma once
 
+// 本地私有配置（不入库）：复制 config.local.h.example -> config.local.h
+#if __has_include("config.local.h")
+#include "config.local.h"
+#endif
+
 // ==================== 设备 ====================
 #define DEVICE_NAME     "SmartAssistant"   // 蓝牙配对时显示的名字
-#define FW_VERSION      "2.1.0"            // 固件版本（设置页显示 + OTA 比对）
+#define FW_VERSION      "2.2.0"            // 固件版本（设置页显示 + OTA 比对）
 
 // TLS 证书校验：粘贴 CA 根证书（PEM）启用校验；留空跳过校验（内网/frp 场景）
+#ifndef TLS_CA_CERT
 #define TLS_CA_CERT     ""
+#endif
 
-// ==================== 联网与大模型服务 ====================
-#define WIFI_SSID       "MQjehovah"    // ← 填 WiFi 名
-#define WIFI_PASS       "Jmq88326"    // ← 填 WiFi 密码
-#define ZAI_API_KEY     "14cdadce664540f9b8de5c3d1f3f02d6.aBmGHWpRR2TDZZSB"    // ← 填智谱 API Key（格式 xxx.xxx）
+// ==================== 联网与后端（出厂为空，首次用配网门户写入 NVS）====================
+#ifndef WIFI_SSID
+#define WIFI_SSID       ""
+#endif
+#ifndef WIFI_PASS
+#define WIFI_PASS       ""
+#endif
+#ifndef OMNIAIDE_URL
+#define OMNIAIDE_URL    ""
+#endif
+#ifndef OMNIAIDE_USER
+#define OMNIAIDE_USER   ""
+#endif
+#ifndef OMNIAIDE_PASS
+#define OMNIAIDE_PASS   ""
+#endif
 
-// ==================== OmniAide 后端对接（外网 HTTPS / 内网 http 均可）====================
-#define OMNIAIDE_URL    "https://mqgeek.com/ominaide"   // 外网（frp→nginx→后端）；内网备用 "http://192.168.2.10:8000"
-#define OMNIAIDE_USER   "admin"                         // OmniAide 应用账号（网页端登录用的）
-#define OMNIAIDE_PASS   "Jmq88326"                      // 应用密码（登录一次换 90 天 token，不做明文存储外传）
-#define OA_BRIEF_PERIOD_MS (60UL * 1000)   // 摘要轮询周期
+#define OA_BRIEF_PERIOD_MS (60UL * 1000)   // 摘要兜底轮询周期（实时事件走 /api/device/events）
+#define OA_EVENT_LONGPOLL_S 25             // 设备事件长轮询等待秒数
 #define GESTURE_ENABLE  1                  // 0=关闭手势识别（省电调试用）
 
 // ==================== 音频 ====================

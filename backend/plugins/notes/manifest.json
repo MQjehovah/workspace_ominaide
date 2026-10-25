@@ -1,9 +1,36 @@
 {
   "name": "notes",
-  "version": "1.0.0",
+  "id": "notes",
+  "version": "1.2.0",
   "title": "笔记",
-  "description": "类 Notion 笔记系统，支持 Markdown 编辑和目录组织",
+  "displayName": "笔记",
+  "description": "Notion 风格笔记 + 知识库 RAG：分块索引、混合检索、带引用的问答",
   "icon": "Book",
   "permissions": [],
-  "routes": { "main": "/apps/notes" }
+  "routes": { "main": "/apps/notes" },
+  "tools": [
+    {
+      "name": "ask_notes",
+      "description": "基于用户笔记知识库回答问题（RAG），返回带引用来源的答案。用户询问自己笔记/知识库里的内容时优先调用。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": { "type": "string", "description": "要询问的问题" }
+        },
+        "required": ["question"]
+      }
+    },
+    {
+      "name": "search_notes_semantic",
+      "description": "在用户笔记中做语义 + 关键词混合检索，返回最相关的笔记片段与来源。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "自然语言检索词" },
+          "limit": { "type": "integer", "description": "返回条数，默认 8" }
+        },
+        "required": ["query"]
+      }
+    }
+  ]
 }

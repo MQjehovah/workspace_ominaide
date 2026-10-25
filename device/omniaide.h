@@ -46,6 +46,16 @@ struct OaFirmware {
     char version[24] = "";
 };
 
+// 实时事件（长轮询）
+struct OaEvent {
+    int  id = 0;
+    int  value = 0;       // 计时器：秒数
+    char type[24] = "";
+    char title[64] = "";
+    char body[224] = "";
+    char action[32] = "";
+};
+
 // OTA 进度回调（0..100）
 typedef void (*OaProgressCb)(int pct, void* ud);
 
@@ -61,6 +71,8 @@ public:
     bool fetchTodaySchedule(OaBrief& out);                          // 全天日程覆盖 out.events
     bool fetchNotifications(OaNotif* msgs, int max, int& cnt);      // 最新通知
     int  fetchUnreadCount();                                        // 未读数，-1 失败
+    bool pollEvents(OaEvent* out, int max, int& cnt, int since);    // 实时事件长轮询（25s）
+    bool fetchEventCursor(int& out);                                // 开机同步游标，避免重放旧通知
     bool markNotifRead(int id);                                     // 单条已读
     bool markAllNotifsRead();                                       // 全部已读
     bool fetchHeadlines(OaHeadline* out, int max, int& cnt);        // RSS 资讯头条
