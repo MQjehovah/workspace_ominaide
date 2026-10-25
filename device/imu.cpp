@@ -26,16 +26,25 @@ const char* ImuGesture::tick() {
 
     float mag = sqrtf(ax * ax + ay * ay + az * az);
 
-    // ---- 双击：两次 >2.3g 尖峰，间隔 80~450ms ----
-    static uint32_t lastPeak = 0;
+    // ---- 尖峰计数：3 个以上尖峰优先判定为摇一摇 ----
+    // 之前先判双击，连续晃动会被误判成 double_tap，结果去开关显示器挂灯。
+    static uint32_t firstPeak = 0, secondPeak = 0;
+    static int peakCount = 0;
     if (mag > 2.3f) {
         uint32_t now = millis();
-        if (lastPeak && now - lastPeak > 80 && now - lastPeak < 450) {
-            lastPeak = 0;
-            _coolDown = now + 2500;
-            return "double_tap";
+        if (!firstPeak || now - firstPeak > 600) {
+            firstPeak = now;
+            secondPeak = 0;
+            peakCount = 1;
+        } else {
+            peakCount++;
+            if (peakCount == 2) secondPeak = now;
+            if (peakCount >= 3) {
+                firstPeak = 0; secondPeak = 0; peakCount = 0;
+                _coolDown = now + 3000;
+                return "shake";
+            }
         }
-        lastPeak = now;
     }
 
     // ---- 翻转：屏幕朝下（z 由正转负）保持 800ms ----
@@ -43,6 +52,7 @@ const char* ImuGesture::tick() {
         if (!_flipArmed) { _flipArmed = true; _flipSince = millis(); }
         else if (millis() - _flipSince > 800) {
             _flipArmed = false;
+            firstPeak = 0; secondPeak = 0; peakCount = 0;
             _coolDown = millis() + 3000;
             return "flip";
         }
@@ -50,7 +60,14 @@ const char* ImuGesture::tick() {
         _flipArmed = false;
     }
 
-    // ---- 摇一摇：持续剧烈晃动 500ms（加速度模长波动 >3g）----
+    // ---- 双击：只有两个尖峰，且之后 300ms 基本静止 ----
+    if (peakCount == 2 && secondPeak && millis() - secondPeak > 300 && mag < 1.8f) {
+        firstPeak = 0; secondPeak = 0; peakCount = 0;
+        _coolDown = millis() + 2500;
+        return "double_tap";
+    }
+
+    // ---- 摇一摇：持续剧烈晃动 500ms（加速度模长波动 >3g） ----
     static float magMax = 0, magMin = 99;
     if (mag > magMax) magMax = mag;
     if (mag < magMin) magMin = mag;
@@ -60,6 +77,7 @@ const char* ImuGesture::tick() {
         bool shook = (magMax - magMin) > 3.0f && magMax > 2.5f;
         magMax = 0; magMin = 99; shakeWin = millis();
         if (shook) {
+            firstPeak = 0; secondPeak = 0; peakCount = 0;
             _coolDown = millis() + 3000;
             return "shake";
         }
