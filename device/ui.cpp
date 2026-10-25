@@ -123,7 +123,7 @@ static void lvglTask(void*) {
         uint32_t next = lv_timer_handler();
         uii::unlock();
         if (next < 5) next = 5;
-        if (next > 16) next = 16;   // allow 60fps animations, not just 30fps
+        if (next > 33) next = 33;   // QSPI 在 60fps 下易出现撕裂/横纹，稳定 30fps
         vTaskDelay(pdMS_TO_TICKS(next));
     }
 }
@@ -316,6 +316,24 @@ static void buildSplash() {
     lv_obj_align(v, LV_ALIGN_CENTER, 0, 40);
 }
 
+// 滑动/切页结束后延迟做一次整屏重绘，消除 QSPI 局刷残留的黑色横纹/缺失块
+static lv_timer_t* s_refreshTimer = nullptr;
+
+static void refreshScreenCb(lv_timer_t* t) {
+    s_refreshTimer = nullptr;
+    lv_obj_invalidate(lv_screen_active());
+    lv_refr_now(nullptr);
+    lv_timer_del(t);
+}
+
+static void refreshTileAfterScroll(lv_event_t*) {
+    if (s_refreshTimer) {
+        lv_timer_reset(s_refreshTimer);
+    } else {
+        s_refreshTimer = lv_timer_create(refreshScreenCb, 90, nullptr);
+    }
+}
+
 // ==================== 根布局 ====================
 static void buildRoot() {
     s_root = lv_obj_create(NULL);
@@ -340,6 +358,7 @@ static void buildRoot() {
     lv_obj_set_style_bg_opa(s_tv, LV_OPA_COVER, 0);
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_pad_all(s_tv, 0, 0);
+    lv_obj_set_style_anim_duration(s_tv, 0, 0);   // 页面不再滑动动画，避免 QSPI 局刷撕裂
 
     lv_obj_t* tileClock = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_HOR);
     lv_obj_t* tileTodo  = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_HOR);
@@ -356,10 +375,13 @@ static void buildRoot() {
     uii::chatInit(tileChat);
     uii::settingsInit(tileSet);
 
+    lv_obj_add_event_cb(s_tv, refreshTileAfterScroll, LV_EVENT_SCROLL_END, nullptr);
+    lv_obj_add_event_cb(s_tv, refreshTileAfterScroll, LV_EVENT_VALUE_CHANGED, nullptr);
+
     // 铃铛点击 → 消息页（s_tv 已创建；事件回调在 LVGL 任务内，直接切页不取锁）
     lv_obj_add_event_cb(s_bellBox, [](lv_event_t* e) {
         lv_obj_t* tv = (lv_obj_t*)lv_event_get_user_data(e);
-        lv_tileview_set_tile_by_index(tv, 2, 0, LV_ANIM_ON);
+        lv_tileview_set_tile_by_index(tv, 2, 0, LV_ANIM_OFF);
     }, LV_EVENT_CLICKED, s_tv);
 
     buildStateBar(s_root);
@@ -381,14 +403,12 @@ bool init(Arduino_GFX* gfx, TouchDrvInterface* tp, int w, int h) {
     s_disp = lv_display_create(s_w, s_h);
     lv_display_set_flush_cb(s_disp, flush_cb);
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
-    // 20 行局部渲染缓冲：480*20*2 = 19KB，内部 DMA RAM。
-    // 24 行会导致 WiFi/TLS 登录内存不足，20 行是当前 SR+TLS 的安全上限。
-    size_t bufSize = (size_t)s_w * 20 * 2;
-    // Internal DMA RAM is much faster than PSRAM for QSPI refresh. ESP-SR
-    // event polling now runs in loopTask, so this leaves enough TLS headroom.
-    uint8_t* buf = (uint8_t*)heap_caps_malloc(bufSize, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    // 全屏 PSRAM 渲染缓冲：QSPI 局刷在滑动后会出现跳行/黑纹，改为整屏刷新。
+    // 不占内部 RAM，TLS/ESP-SR 内存不受影响。
+    size_t bufSize = (size_t)s_w * s_h * 2;
+    uint8_t* buf = (uint8_t*)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
     if (!buf) return false;
-    lv_display_set_buffers(s_disp, buf, nullptr, bufSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(s_disp, buf, nullptr, bufSize, LV_DISPLAY_RENDER_MODE_FULL);
 
     lv_indev_t* indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
@@ -654,14 +674,14 @@ void showPortal(const char* apName) {
 void showChatPage() {
     if (!s_ready) return;
     uii::lock();
-    lv_tileview_set_tile_by_index(s_tv, 3, 0, LV_ANIM_ON);
+    lv_tileview_set_tile_by_index(s_tv, 3, 0, LV_ANIM_OFF);
     uii::unlock();
 }
 
 void showNotifPage() {
     if (!s_ready) return;
     uii::lock();
-    lv_tileview_set_tile_by_index(s_tv, 2, 0, LV_ANIM_ON);
+    lv_tileview_set_tile_by_index(s_tv, 2, 0, LV_ANIM_OFF);
     uii::unlock();
 }
 

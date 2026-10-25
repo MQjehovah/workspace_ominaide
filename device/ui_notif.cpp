@@ -52,11 +52,9 @@ void notifInit(lv_obj_t* tile) {
     // 通知列表（滚动）
     s_list = lv_obj_create(tile);
     lv_obj_remove_style_all(s_list);
-    lv_obj_set_width(s_list, lv_pct(100));
-    lv_obj_set_height(s_list, 0);              // 高度由 flex_grow 填满剩余空间
+    lv_obj_set_size(s_list, lv_pct(100), 340);  // 固定可用高度，内部滚动
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s_list, 12, 0);
-    lv_obj_set_flex_grow(s_list, 1);
     lv_obj_add_flag(s_list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
