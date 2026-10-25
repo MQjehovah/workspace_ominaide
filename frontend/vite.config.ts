@@ -6,7 +6,10 @@ export default defineConfig({
   base: process.env.VITE_BASE || '/',
   plugins: [vue()],
   resolve: {
-    alias: { '@': path.resolve(__dirname, 'src') }
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+      '@omniaide/editor': path.resolve(__dirname, 'src/components/editor/index.ts'),
+    }
   },
   server: {
     port: 3000,

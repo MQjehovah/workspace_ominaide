@@ -11,7 +11,10 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
     "noEmit": true,
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@omniaide/editor": ["./src/components/editor/index.ts"]
+    }
   },
   "include": ["env.d.ts", "src/**/*.ts", "src/**/*.vue"],
   "references": [{ "path": "./tsconfig.node.json" }]

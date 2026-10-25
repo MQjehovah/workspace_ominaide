@@ -42,7 +42,8 @@
           <div class="editor-panel" v-if="currentId">
             <div class="editor-header">
               <el-input v-model="noteTitle" placeholder="无标题" class="title-input" @input="autoSave" />
-              <div style="display:flex;gap:8px">
+              <div style="display:flex;gap:8px;align-items:center">
+                <span class="muted">{{ saveStatus }}</span>
                 <el-button size="small" @click="openHistory">历史</el-button>
                 <el-button size="small" type="primary" @click="saveNote">保存</el-button>
                 <el-popconfirm title="确定删除？" @confirm="deleteNote">
@@ -52,7 +53,7 @@
                 </el-popconfirm>
               </div>
             </div>
-            <TipTapEditor :key="currentId" v-model="noteContent" :title="noteTitle" :save-state="saveStatus" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
+            <TipTapEditor :key="currentId" v-model="noteContent" @update:model-value="autoSave" placeholder="开始写点什么..." min-height="400px" />
           </div>
           <div v-else class="empty-state">
             <el-empty description="选择或创建一篇笔记" :image-size="80" />

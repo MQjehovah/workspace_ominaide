@@ -117,6 +117,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import TipTapEditor from './TipTapEditor.vue'
 import TreeNode from './TreeNode.vue'
+import { normalizeStoredContent } from './normalizeNote'
 
 const tree = ref<any[]>([])
 const currentId = ref<number | null>(null)
@@ -217,7 +218,7 @@ async function restoreVersion(v: any) {
     const res = await window.mqbox?.api.post(`/plugins/notes/${currentId.value}/versions/${v.id}/restore`, {})
     if (res?.content !== undefined) {
       title.value = res.title || ''
-      content.value = res.content || ''
+      content.value = normalizeStoredContent(res.content)
       historyOpen.value = false
       showSaved()
     }
@@ -240,20 +241,11 @@ async function doSave() {
     saveStatus.value = '保存失败: API 不可用'
     return
   }
-  // Authoritative content source: native TipTap JSON read directly from the editor.
-  let toSave = content.value
-  try {
-    if (editorRef.value?.getJSONContent) {
-      const fromEditor = editorRef.value.getJSONContent()
-      if (fromEditor || !content.value) toSave = fromEditor
-    }
-  } catch (e) {
-    console.warn('[notes] getJSONContent failed, using content.value:', e)
-  }
+  // Shared editor uses Markdown as the canonical format.
+  const toSave = content.value
   try {
     const res = await mq.api.put(`/plugins/notes/${currentId.value}`, { title: title.value, content: toSave })
     console.log('[notes] save OK, resp:', res?.id || res)
-    if (editorRef.value?.getJSONContent) content.value = toSave
     showSaved()
     await loadTree()
   } catch (e) {
@@ -379,7 +371,7 @@ async function openNote(id: number) {
   try {
     const res = await window.mqbox?.api.get(`/plugins/notes/${id}`) || {}
     title.value = res.title || ''
-    content.value = res.content || ''
+    content.value = normalizeStoredContent(res.content)
     saveStatus.value = ''
   } catch (e) {
     console.error('[notes] open note failed:', e)
