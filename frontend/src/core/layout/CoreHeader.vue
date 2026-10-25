@@ -72,13 +72,14 @@ function connectWebSocket() {
   const token = localStorage.getItem('token')
   if (!token) return
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?token=${encodeURIComponent(token)}`)
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '')
+  ws = new WebSocket(`${proto}://${window.location.host}${base}/ws/host?role=viewer&token=${encodeURIComponent(token)}`)
   ws.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data)
-      if (data && data.id) {
-        notifications.value.unshift(data)
-        unreadCount.value += 1
+      if (data?.channel === 'notifications' || data?.type === 'new_notification') {
+        fetchUnreadCount()
+        fetchNotifications()
       }
     } catch { /* ignore */ }
   }

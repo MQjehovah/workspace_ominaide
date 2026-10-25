@@ -1,4 +1,6 @@
 import logging
+from urllib.parse import urlsplit, urlunsplit
+
 from minio import Minio
 from urllib3 import PoolManager, Timeout
 from core.config.settings import settings
@@ -22,6 +24,26 @@ try:
 except Exception as e:
     logger.warning("MinIO client init failed (will retry): %s", e)
     minio_client = None
+
+
+def public_minio_url(url: str) -> str:
+    """Rewrite an internal presigned MinIO URL to the public reverse-proxy path.
+
+    The presigned signature is bound to Host ``minio:9000`` and the bare object
+    path. nginx exposes it as ``https://mqgeek.com/minio/<bucket>/<key>``, sets
+    ``Host: minio:9000`` and strips ``/minio`` before proxying to MinIO, so the
+    signature still validates.
+    """
+    base = (settings.minio_public_url or "").strip().rstrip("/")
+    if not base or not url:
+        return url
+    try:
+        src = urlsplit(url)
+        pub = urlsplit(base)
+        path = f"{pub.path.rstrip('/')}{src.path}"
+        return urlunsplit((pub.scheme or src.scheme, pub.netloc, path, src.query, src.fragment))
+    except Exception:
+        return url
 
 
 async def ensure_buckets():

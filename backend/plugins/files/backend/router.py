@@ -8,6 +8,7 @@ from core.auth.dependencies import get_current_user
 from core.auth.jwt import decode_access_token
 from core.config.settings import settings
 from core.events.recorder import record_event
+from core.minio.client import public_minio_url
 from plugins.files.backend.schemas import (
     UploadUrlRequest, UploadUrlResponse, ConfirmUploadRequest,
     UpdateTagsRequest, FileQueryParams, FileResponse, FileListResponse,
@@ -72,9 +73,7 @@ async def get_temp_upload_url(
     upload_url = minio_client.presigned_put_object(
         "user-files", object_key, expires=timedelta(seconds=600)
     )
-    # Replace internal MinIO host with public server URL
-    public_host = os.environ.get("PUBLIC_HOST", "mqgeek.com")
-    upload_url = upload_url.replace("minio:9000", f"{public_host}:9000")
+    upload_url = public_minio_url(upload_url)
     return {"upload_url": upload_url, "object_key": object_key}
 
 

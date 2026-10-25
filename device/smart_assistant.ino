@@ -340,7 +340,8 @@ static bool playPcm16k(const uint8_t* data, size_t len, uint32_t rate) {
         return true;
     }
 
-    double step = (double)REC_RATE / (double)rate;
+    // 输入 24k -> 输出 16k：每个输出样本对应 1.5 个输入样本。
+    double step = (double)rate / (double)REC_RATE;
     for (size_t i = 0; i < n; i++) {
         int16_t s = in[i];
         if (!pcmHave) { pcmPrev = s; pcmHave = true; continue; }

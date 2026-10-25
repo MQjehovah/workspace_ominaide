@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from minio import Minio
 from core.ai.indexer import index_content
 from core.config.settings import settings
-from core.minio.client import minio_client
+from core.minio.client import minio_client, public_minio_url
 from plugins.files.backend.models import File
 from plugins.files.backend.schemas import UploadUrlRequest, FileQueryParams, CreateFolderRequest
 
@@ -70,7 +70,7 @@ async def generate_upload_url(
     else:
         upload_url = ""
 
-    return upload_url, file_record.id, object_key
+    return public_minio_url(upload_url), file_record.id, object_key
 
 
 async def confirm_upload(db: AsyncSession, user_id: int, file_id: int) -> File:
@@ -149,11 +149,12 @@ async def get_file(db: AsyncSession, user_id: int, file_id: int) -> File | None:
 async def get_download_url(file_record: File) -> str:
     if not minio_client:
         return ""
-    return minio_client.presigned_get_object(
+    url = minio_client.presigned_get_object(
         file_record.bucket,
         file_record.object_key,
         expires=timedelta(seconds=DOWNLOAD_URL_EXPIRY),
     )
+    return public_minio_url(url)
 
 
 async def update_tags(

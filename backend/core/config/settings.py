@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     minio_access_key: str = "omniaide_minio"
     minio_secret_key: str = "omniaide_minio_secret"
     minio_public: bool = False
+    # Public base URL used to rewrite presigned MinIO URLs, e.g.
+    # https://mqgeek.com/minio (nginx strips /minio and keeps Host=minio:9000).
+    minio_public_url: str = ""
     qdrant_url: str = "http://qdrant:6333"
     redis_url: str = "redis://redis:6379/0"
     llm_provider: str = "openai"

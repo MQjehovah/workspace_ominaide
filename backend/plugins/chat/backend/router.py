@@ -415,6 +415,16 @@ async def voice_stream(
     out_q: asyncio.Queue = asyncio.Queue(maxsize=64)
     sent_q: asyncio.Queue = asyncio.Queue()
     reply_parts: list[str] = []
+    futures: dict[int, asyncio.Future] = {}
+    next_seq = 0
+    producer_done = asyncio.Event()
+
+    def enqueue_sentence(sentence: str) -> None:
+        nonlocal next_seq
+        seq = next_seq
+        next_seq += 1
+        futures[seq] = asyncio.get_running_loop().create_future()
+        sent_q.put_nowait((seq, sentence))
 
     async def producer():
         buf = ""
@@ -430,37 +440,69 @@ async def voice_stream(
                     reply_parts.append(text)
                     await out_q.put({"t": "delta", "text": text})
                     sents, buf = take_sentences(buf + text)
-                    for s in sents:
-                        await sent_q.put(s)
+                    for sentence in sents:
+                        enqueue_sentence(sentence)
                 elif typ in ("tool_call", "tool_result"):
                     await out_q.put({"t": "status", "text": "正在执行工具..."})
         finally:
             sents, _ = take_sentences(buf, flush=True)
-            for s in sents:
-                await sent_q.put(s)
-            await sent_q.put(None)
+            for sentence in sents:
+                enqueue_sentence(sentence)
+            producer_done.set()
+            for _ in range(2):
+                sent_q.put_nowait(None)
 
     async def tts_worker():
         client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
         while True:
-            sentence = await sent_q.get()
-            if sentence is None:
+            item = await sent_q.get()
+            if item is None:
                 break
+            seq, sentence = item
+            fut = futures.get(seq)
             try:
                 pcm, rate = await tts_pcm(sentence, client, voice)
+                if fut is not None and not fut.done():
+                    fut.set_result((pcm, rate))
             except Exception:
-                await out_q.put({"t": "status", "text": "语音合成失败"})
+                if fut is not None and not fut.done():
+                    fut.set_exception(RuntimeError("tts failed"))
+
+    async def emitter():
+        seq = 0
+        while True:
+            if producer_done.is_set() and seq >= next_seq:
+                break
+            fut = futures.get(seq)
+            if fut is None:
+                await asyncio.sleep(0.01)
                 continue
-            for i in range(0, len(pcm), 6000):
-                await out_q.put({
-                    "t": "audio",
-                    "rate": rate,
-                    "pcm": base64.b64encode(pcm[i:i + 6000]).decode(),
-                })
+            try:
+                result = await fut
+            except Exception:
+                result = None
+            futures.pop(seq, None)
+            if result is None:
+                await out_q.put({"t": "status", "text": "语音合成失败"})
+            else:
+                pcm, rate = result
+                for i in range(0, len(pcm), 6000):
+                    await out_q.put({
+                        "t": "audio",
+                        "rate": rate,
+                        "pcm": base64.b64encode(pcm[i:i + 6000]).decode(),
+                    })
+            seq += 1
 
     async def supervisor():
+        tasks = [
+            asyncio.create_task(producer()),
+            asyncio.create_task(emitter()),
+            asyncio.create_task(tts_worker()),
+            asyncio.create_task(tts_worker()),
+        ]
         try:
-            await asyncio.gather(producer(), tts_worker())
+            await asyncio.gather(*tasks)
         except Exception as e:
             await out_q.put({"t": "status", "text": f"处理失败：{e}"[:120]})
         reply = "".join(reply_parts).strip() or "已执行。"
