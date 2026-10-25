@@ -316,24 +316,6 @@ static void buildSplash() {
     lv_obj_align(v, LV_ALIGN_CENTER, 0, 40);
 }
 
-// 滑动/切页结束后延迟做一次整屏重绘，消除 QSPI 局刷残留的黑色横纹/缺失块
-static lv_timer_t* s_refreshTimer = nullptr;
-
-static void refreshScreenCb(lv_timer_t* t) {
-    s_refreshTimer = nullptr;
-    lv_obj_invalidate(lv_screen_active());
-    lv_refr_now(nullptr);
-    lv_timer_del(t);
-}
-
-static void refreshTileAfterScroll(lv_event_t*) {
-    if (s_refreshTimer) {
-        lv_timer_reset(s_refreshTimer);
-    } else {
-        s_refreshTimer = lv_timer_create(refreshScreenCb, 90, nullptr);
-    }
-}
-
 // ==================== 根布局 ====================
 static void buildRoot() {
     s_root = lv_obj_create(NULL);
@@ -374,9 +356,6 @@ static void buildRoot() {
     uii::notifInit(tileNotif);
     uii::chatInit(tileChat);
     uii::settingsInit(tileSet);
-
-    lv_obj_add_event_cb(s_tv, refreshTileAfterScroll, LV_EVENT_SCROLL_END, nullptr);
-    lv_obj_add_event_cb(s_tv, refreshTileAfterScroll, LV_EVENT_VALUE_CHANGED, nullptr);
 
     // 铃铛点击 → 消息页（s_tv 已创建；事件回调在 LVGL 任务内，直接切页不取锁）
     lv_obj_add_event_cb(s_bellBox, [](lv_event_t* e) {
@@ -423,7 +402,7 @@ bool init(Arduino_GFX* gfx, TouchDrvInterface* tp, int w, int h) {
 
     // ESP-SR now runs on core 0; give LVGL a higher priority on core 1 so
     // touch/scroll/clock stay responsive while HTTP runs in loopTask.
-    xTaskCreatePinnedToCore(lvglTask, "lvgl", 8192, nullptr, 4, nullptr, 1);
+    xTaskCreatePinnedToCore(lvglTask, "lvgl", 12288, nullptr, 4, nullptr, 1);
     lv_timer_create(pulseTimer, 700, nullptr);
     s_ready = true;
     return true;
