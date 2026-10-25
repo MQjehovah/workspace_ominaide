@@ -6,7 +6,7 @@
         <el-upload
           :http-request="importFile"
           :show-file-list="false"
-          accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm"
+          accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm,.mp4"
         >
           <el-button size="small" :icon="Upload">导入文件</el-button>
         </el-upload>

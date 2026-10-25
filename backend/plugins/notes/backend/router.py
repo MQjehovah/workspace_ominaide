@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
@@ -31,6 +32,12 @@ class RagReindexRequest(BaseModel):
     limit: int = 200
 
 
+class ImportLibraryRequest(BaseModel):
+    file_id: int
+    parent_id: int | None = None
+    title: str | None = None
+
+
 class ImportUrlRequest(BaseModel):
     url: str
     parent_id: int | None = None
@@ -45,10 +52,21 @@ async def import_file(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Import a PDF/Word/HTML/text file as an indexed note."""
+    """Import a PDF/Word/HTML/text/audio file as an indexed note."""
     data = await file.read()
+    filename = file.filename or "imported"
+    ctype = (file.content_type or "").lower()
+    ext = Path(filename).suffix.lower()
+    audio = ctype.startswith("audio/") or ctype.startswith("video/") or ext in {
+        ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm", ".mp4",
+    }
     try:
-        extracted_title, text = importers.extract_document(file.filename or "imported", data)
+        if audio:
+            text = await importers.transcribe_audio(filename, data, ctype)
+            extracted_title = Path(filename).stem or "语音转写"
+            text = f"## 语音转写\n\n{text}"
+        else:
+            extracted_title, text = importers.extract_document(filename, data)
     except importers.ImportFailed as e:
         raise HTTPException(400, detail=str(e))
     if not text.strip():
@@ -63,6 +81,58 @@ async def import_file(
     )
     await record_event(db, user["id"], "note.imported", "note", note.id,
                        f"导入知识: {note.title}")
+    return NoteResponse.model_validate(note)
+
+
+@router.post("/import/library", response_model=NoteResponse, status_code=201)
+async def import_library_file(
+    req: ImportLibraryRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extract an existing file-library item (PDF/Word/text/audio) into notes."""
+    from core.minio.client import minio_client
+    from plugins.files.backend import service as files_service
+
+    if not minio_client:
+        raise HTTPException(503, detail="MinIO unavailable")
+    record = await files_service.get_file(db, user["id"], req.file_id)
+    if not record:
+        raise HTTPException(404, detail="File not found")
+    filename = record.original_name or "imported"
+    mime = (record.mime_type or "").lower()
+    ext = Path(filename).suffix.lower()
+    try:
+        obj = minio_client.get_object(record.bucket, record.object_key)
+        data = obj.read()
+    except Exception as e:
+        raise HTTPException(502, detail=f"读取文件失败: {e}")
+
+    audio = mime.startswith("audio/") or mime.startswith("video/") or ext in {
+        ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm", ".mp4",
+    }
+    try:
+        if audio:
+            text = await importers.transcribe_audio(filename, data, mime)
+            extracted_title = Path(filename).stem or "语音转写"
+            text = f"## 语音转写\n\n{text}"
+        else:
+            extracted_title, text = importers.extract_document(filename, data)
+    except importers.ImportFailed as e:
+        raise HTTPException(400, detail=str(e))
+    if not text.strip():
+        raise HTTPException(400, detail="没有提取到文字")
+
+    note = await notes_service.create_note(
+        db, user["id"],
+        NoteCreate(
+            title=(req.title or extracted_title)[:200],
+            content=text,
+            parent_id=req.parent_id,
+        ),
+    )
+    await record_event(db, user["id"], "note.imported", "note", note.id,
+                       f"文件库导入: {note.title}")
     return NoteResponse.model_validate(note)
 
 

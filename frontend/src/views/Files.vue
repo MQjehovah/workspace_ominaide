@@ -85,6 +85,7 @@
                     <template v-else>
                       <el-dropdown-item command="rename" :icon="Edit">重命名</el-dropdown-item>
                       <el-dropdown-item command="move" :icon="Rank">移动</el-dropdown-item>
+                      <el-dropdown-item command="kb" :icon="Reading" v-if="canImportKb(file)">加入知识库</el-dropdown-item>
                       <el-dropdown-item command="download" :icon="Download" v-if="!file.is_folder">下载</el-dropdown-item>
                       <el-dropdown-item command="delete" :icon="Delete" divided>移到回收站</el-dropdown-item>
                     </template>
@@ -135,6 +136,7 @@
                   <template v-else>
                     <el-dropdown-item command="rename" :icon="Edit">重命名</el-dropdown-item>
                     <el-dropdown-item command="move" :icon="Rank">移动</el-dropdown-item>
+                    <el-dropdown-item command="kb" :icon="Reading" v-if="canImportKb(row)">加入知识库</el-dropdown-item>
                     <el-dropdown-item command="download" :icon="Download" v-if="!row.is_folder">下载</el-dropdown-item>
                     <el-dropdown-item command="delete" :icon="Delete" divided>移到回收站</el-dropdown-item>
                   </template>
@@ -216,6 +218,14 @@ const iconMap: Record<string, any> = {
 function getIconComponent(file: FileItem) {
   if (file.is_folder) return Folder
   return iconMap[store.getFileIcon(file.mime_type)] || Document
+}
+
+function canImportKb(file: FileItem) {
+  if (file.is_folder) return false
+  const mime = (file.mime_type || '').toLowerCase()
+  if (mime.startsWith('audio/') || mime.startsWith('video/') || mime.startsWith('text/')) return true
+  if (mime.includes('pdf') || mime.includes('word') || mime.includes('wordprocessingml')) return true
+  return /\.(pdf|docx|txt|md|markdown|html|htm|mp3|wav|m4a|aac|flac|ogg|opus|webm|mp4)$/i.test(file.original_name)
 }
 
 function segmentPath(index: number) {
@@ -347,6 +357,13 @@ async function handleCommand(cmd: string, file: FileItem) {
       ElMessage.success('已彻底删除')
       await loadFiles()
     } catch { /* cancelled */ }
+  } else if (cmd === 'kb') {
+    try {
+      const res = await client.post('/plugins/notes/import/library', { file_id: file.id }, { timeout: 180000 })
+      ElMessage.success(`已加入知识库：${res.data?.title || file.original_name}`)
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.detail || '加入知识库失败')
+    }
   } else if (cmd === 'download') {
     downloadFile(file)
   }

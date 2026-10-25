@@ -12,6 +12,8 @@ import io
 import re
 from pathlib import Path
 
+from core.config.settings import settings
+
 MAX_IMPORT_BYTES = 20 * 1024 * 1024
 MAX_TEXT_CHARS = 300_000
 
@@ -171,3 +173,27 @@ def title_from_text(text: str, fallback: str = "导入笔记") -> str:
         if line:
             return line[:80]
     return fallback
+
+
+async def transcribe_audio(filename: str, data: bytes, mime: str | None = None) -> str:
+    """Transcribe an audio/video file via the configured ASR provider."""
+    if len(data) > 25 * 1024 * 1024:
+        raise ImportFailed("音频超过 25MB 限制")
+    api_key = settings.asr_api_key or settings.llm_api_key
+    if not api_key:
+        raise ImportFailed("未配置 ASR API Key")
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=api_key, base_url=settings.asr_base_url)
+        tr = await client.audio.transcriptions.create(
+            model=settings.asr_model,
+            file=(filename or "audio.mp3", data, mime or "application/octet-stream"),
+        )
+        text = (getattr(tr, "text", "") or "").strip()
+        if not text:
+            raise ImportFailed("没有识别到语音内容")
+        return text[:MAX_TEXT_CHARS]
+    except ImportFailed:
+        raise
+    except Exception as e:
+        raise ImportFailed(f"语音转写失败: {e}")
