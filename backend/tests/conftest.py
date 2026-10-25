@@ -1,6 +1,11 @@
 import os
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_app.db"
+# 残留的旧测试库会让"首个注册用户=管理员"失效（admin 用例 403），每次会话先清掉
+try:
+    os.remove("./test_app.db")
+except OSError:
+    pass
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["LLM_API_KEY"] = ""
 os.environ["MINIO_ENDPOINT"] = "localhost:9000"

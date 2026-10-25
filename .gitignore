@@ -36,3 +36,6 @@ backend/_test.db
 backend/_final_test.db
 
 desktop_plugins/
+
+# Device firmware OTA artifacts (rebuilt via build_device.sh publish)
+backend/data/device_firmware/

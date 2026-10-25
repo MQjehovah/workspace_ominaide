@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 30
     jwt_refresh_secret: str = _RANDOM_SECRET
     jwt_refresh_expire_days: int = 7
+    ha_base_url: str = ""          # Home Assistant 地址，例 http://192.168.2.10:8123
+    device_firmware_dir: str = "data/device_firmware"   # 设备固件下发目录（version.txt + firmware.bin）
+    weather_lat: str = ""          # 天气经纬度（Open-Meteo，无 key），例 "31.23"
+    weather_lon: str = ""          # 例 "121.47"；留空 = 不下发天气
+    ha_token: str = ""             # HA 长期访问令牌
     mail_encryption_key: str = ""
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True

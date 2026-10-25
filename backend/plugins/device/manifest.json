@@ -1,0 +1,49 @@
+{
+  "name": "device",
+  "version": "1.0.0",
+  "title": "设备接入",
+  "description": "智能助手等硬件设备的接入网关：聚合摘要、手势事件、Home Assistant 智能家居控制（MCP）",
+  "icon": "Smartphone",
+  "permissions": [],
+  "routes": {
+    "main": "/apps/device"
+  },
+  "tools": [
+    {
+      "name": "ha_call_service",
+      "description": "调用 Home Assistant 服务（控制智能家居：开/关灯、开关、场景、脚本等）",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {"type": "string", "description": "服务域，如 light/switch/climate/script/input_boolean/fan/cover"},
+          "service": {"type": "string", "description": "服务名，如 toggle/turn_on/turn_off"},
+          "entity_id": {"type": "string", "description": "实体 ID，如 light.desk_lamp"},
+          "data": {"type": "object", "description": "附加参数（如亮度、色温），可省略"}
+        },
+        "required": ["domain", "service"]
+      }
+    },
+    {
+      "name": "ha_get_state",
+      "description": "查询 Home Assistant 实体的当前状态（如灯是否开着、当前温度）",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entity_id": {"type": "string", "description": "实体 ID，如 light.desk_lamp"}
+        },
+        "required": ["entity_id"]
+      }
+    },
+    {
+      "name": "ha_toggle",
+      "description": "翻转一个 Home Assistant 实体（开关灯/插座/勿扰开关等，script 则执行）",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entity_id": {"type": "string", "description": "实体 ID，如 light.desk_lamp"}
+        },
+        "required": ["entity_id"]
+      }
+    }
+  ]
+}

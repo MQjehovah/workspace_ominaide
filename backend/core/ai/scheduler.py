@@ -20,7 +20,7 @@ async def _send_briefing(user_id: int):
         messages = []
         if ctx:
             messages.append({"role": "system", "content": ctx})
-        messages.append({"role": "system", "content": "你是一个主动的个人AI助理。用户请求每日简报。请调用工具获取相关信息，然后生成一段友好、简洁的简报，总结今日日程、未读通知和新文章。用中文。如果今天没有待办事项和未读通知，就简短问候。"})
+        messages.append({"role": "system", "content": "你是一个主动的个人AI助理。用户请求每日简报。请调用工具获取相关信息（先调用 get_weather 查天气），然后生成一段友好、简洁的简报，包括今日天气与穿衣/带伞建议、今日日程、未读通知和新文章。用中文。如果今天没有待办事项和未读通知，就简短问候。"})
         messages.append({"role": "user", "content": "帮我生成今天的每日简报"})
 
         briefing = await run_agent(user_id, messages)

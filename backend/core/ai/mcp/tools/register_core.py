@@ -4,9 +4,18 @@ from core.ai.mcp.registry import tool_registry
 from core.ai.mcp.core import MCPTool
 from core.ai.mcp.tools.files import search_files, list_files, get_file_info, get_file_download
 from core.ai.mcp.tools.context_tool import get_system_context
+from core.ai.mcp.tools.knowledge import TOOLS as KNOWLEDGE_TOOLS
+from core.ai.mcp.tools.personal import TOOLS as PERSONAL_TOOLS
+from core.ai.mcp.tools.productivity import TOOLS as PRODUCTIVITY_TOOLS
 
 
 def register_core_tools():
+    for tool, handler in KNOWLEDGE_TOOLS:
+        tool_registry.register(tool, handler)
+    for tool, handler in PERSONAL_TOOLS:
+        tool_registry.register(tool, handler)
+    for tool, handler in PRODUCTIVITY_TOOLS:
+        tool_registry.register(tool, handler)
     tool_registry.register(
         MCPTool(
             name="search_files",
