@@ -288,6 +288,7 @@ bool OmniAide::voiceAsk(const uint8_t* pcm, size_t pcmLen, uint32_t sampleRate,
         String s = http.getString();
         Serial.printf("%s voice err: %.200s\n", TAG, s.c_str());
         http.end();
+        tlsClient.stop();
         if (code == 401 && login()) return voiceAsk(pcm, pcmLen, sampleRate,
                                                     wavBuf, wavCap, transcript, tMax, reply, rMax);
         return false;
@@ -397,6 +398,7 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
         String s = http.getString();
         Serial.printf("%s voice stream err HTTP %d: %.200s\n", TAG, code, s.c_str());
         http.end();
+        tlsClient.stop();
         return false;
     }
 
@@ -467,6 +469,7 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
         }
     }
     http.end();
+    tlsClient.stop();
     Serial.printf("%s voice stream done: T=%s R=%u\n", TAG, transcript, (unsigned)strlen(reply));
     return transcript[0] || reply[0];
 }

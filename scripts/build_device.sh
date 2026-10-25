@@ -37,6 +37,11 @@ if [ -d "$SRC/libraries/lvgl" ]; then
     cp -r "$SRC/libraries/lvgl" "$SKETCHBOOK/lvgl"
     cp "$SRC/libraries/lv_conf.h" "$SKETCHBOOK/lv_conf.h"
 fi
+# Local ESP_SR patch: pin detect/handler to core 0 so LVGL on core 1 stays smooth.
+if [ -d "$SRC/libraries/ESP_SR" ]; then
+    rm -rf "$SKETCHBOOK/ESP_SR"
+    cp -r "$SRC/libraries/ESP_SR" "$SKETCHBOOK/ESP_SR"
+fi
 
 FQBN="esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=esp_sr_16,PSRAM=opi,FlashMode=qio,USBMode=hwcdc,CDCOnBoot=cdc,UploadSpeed=921600"
 # ESP-SR: only WakeNet is used (no MultiNet command detection). Disabling

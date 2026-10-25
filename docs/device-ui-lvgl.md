@@ -17,6 +17,12 @@ bash scripts/build_device.sh smart_assistant upload COM5      # 编译并烧录
 - 唤醒词使用 ESP-SR（WakeNet `Hi ESP`）。构建必须使用 `PartitionScheme=esp_sr_16`，
   并由 `device/partitions.csv` 提供 4MB app 分区 + 0xC10000 的 3.9MB 模型分区；
   构建脚本会关闭 MultiNet（只保留 WakeNet），避免 mn7 FST 崩溃。
+- `device/libraries/ESP_SR` 是本地补丁版：detect/handler 任务固定到 core 0，
+  让 LVGL 独占 core 1，避免界面被唤醒词检测拖慢。构建脚本会同步到 sketchbook。
+- ESP-SR 占内部 RAM 较多。推荐设备使用内网 HTTP 后端
+  （如 `OMNIAIDE_URL=http://192.168.2.10:8000`），这样保留 40 行 LVGL 绘制缓冲；
+  远端 HTTPS 需要把 `ui.cpp` 的 draw buffer 降到约 10 行，否则 TLS 可能连接失败。
+- 后端未部署 `/api/chat/voice/stream` 时，固件会自动回退到 `/api/chat/voice`。
 - 中文字体用 `lv_font_conv` 从黑体生成（`device/font_cn20.c`，20px、ASCII+GB2312 一级汉字、
   2bpp 压缩，约 290KB flash）；时钟数字 `device/font_num92.c`（92px）。
 
@@ -27,7 +33,7 @@ bash scripts/build_device.sh smart_assistant upload COM5      # 编译并烧录
 | `loopTask`（Arduino loop） | 1 | 状态机：录音、HTTP（语音/摘要/手势/完成待办）、电源键、NTP |
 | `lvgl`（ui.cpp 内创建） | 1 | 持续 `lv_timer_handler()`，录音/上传阻塞时界面照常渲染 |
 | `oa_events`（长轮询） | 0 | `GET /api/device/events` 25s 长轮询；只置事件标志，UI/提示音由 loopTask 执行 |
-| `SR Feed/Detect/Handler`（ESP-SR） | 0/1 | 持续读 16k 麦克风；唤醒词事件只置 `wakeFlag`，录音前 `pause()`、播报时 `resume()` |
+| `SR Feed/Detect/Handler`（ESP-SR） | 0 | 持续读 16k 麦克风；唤醒词事件只置 `wakeFlag`，录音前 `pause()`、播报时 `resume()`；补丁版固定 core 0，避免抢占 LVGL |
 
 所有跨任务 UI 更新走 `ui.h` 公开接口，内部互斥锁保护；触摸点击回调运行在
 LVGL 任务持锁上下文，只允许直接改控件 + 写请求队列（如待办完成）。

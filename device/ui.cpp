@@ -334,9 +334,9 @@ bool init(Arduino_GFX* gfx, TouchDrvInterface* tp, int w, int h) {
     lv_display_set_flush_cb(s_disp, flush_cb);
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
     // 40 行局部渲染缓冲：480*40*2 = 37.5KB，内部 RAM（DMA 可达）
-    // Keep the LVGL partial draw buffer small: ESP-SR leaves little internal RAM
-    // for HTTPS/TLS. The UI is simple; 2 lines is enough.
-    size_t bufSize = (size_t)s_w * 2 * 2;
+    // LVGL objects live in a PSRAM pool; keep 10 lines internal for TLS headroom.
+    // UI smoothness comes from pinning ESP-SR tasks to core 0 (see ESP_SR patch).
+    size_t bufSize = (size_t)s_w * 40 * 2;
     uint8_t* buf = (uint8_t*)heap_caps_malloc(bufSize, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!buf) return false;
     lv_display_set_buffers(s_disp, buf, nullptr, bufSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -575,3 +575,4 @@ void showNotifPage() {
 }
 
 }  // namespace ui
+

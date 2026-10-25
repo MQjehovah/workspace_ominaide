@@ -860,6 +860,20 @@ void askFlow() {
     bool ok = oa.voiceAskStream(recBuf, recLen, REC_RATE,
                                 transcript, sizeof(transcript),
                                 reply, sizeof(reply), onVoiceEvent);
+
+    // 兼容还没部署 /api/chat/voice/stream 的后端：自动回退到旧的非流式接口
+    if (!ok && !transcript[0] && !reply[0] && !voiceAbort) {
+        Serial.println("[OA] stream unavailable, fallback to /api/chat/voice");
+        srPause();
+        ok = oa.voiceAsk(recBuf, recLen, REC_RATE, ttsBuf, TTS_MAX_BYTES,
+                         transcript, sizeof(transcript), reply, sizeof(reply))
+             && (transcript[0] || reply[0]);
+        if (ok && oa.voiceData > 0) {
+            setState(ST_PLAY, "播报中 ...", 0x00e5ff);
+            ui::busy("播报中 ...");
+            playWav(oa.voiceRate, ttsBuf + oa.voiceOff, oa.voiceData);
+        }
+    }
     ui::busy(nullptr);
 
     if (transcript[0]) ui::chatAppend("user", transcript);
@@ -983,23 +997,6 @@ void setup() {
     else {
         beepTest();                            // 开机自检音：听到"哔"= 扬声器链路正常
         Serial.println("[AUDIO] ok");
-
-        // 麦克风自检：采 300ms，打印环境峰值（0 表示 I2S 麦克风通道没数据）
-        {
-            static uint8_t pchunk[4096];
-            int peak = 0;
-            uint32_t pt0 = millis();
-            while (millis() - pt0 < 300) {
-                size_t n = i2s.readBytes((char*)pchunk, sizeof(pchunk));
-                int16_t* s = (int16_t*)pchunk;
-                for (size_t i = 0; i + 1 < n / 2; i += 2) {
-                    int v = ((int)s[i] + s[i + 1]) / 2;
-                    int a = abs(v);
-                    if (a > peak) peak = a;
-                }
-            }
-            Serial.printf("[MIC] ambient peak=%d\n", peak);
-        }
 
         srInit();                              // 唤醒词（Hi ESP）
         Serial.printf("[MEM] free=%u max=%u psram=%u\n",

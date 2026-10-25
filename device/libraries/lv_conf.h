@@ -8,9 +8,13 @@
 #define LV_CONF_H
 
 /* ==================== 内存 ====================
- * 用系统 malloc：小对象走内部 RAM，>16KB 的大块自动落 PSRAM
- * （arduino-esp32 开 PSRAM 时 sdkconfig: SPIRAM_USE_MALLOC, ALWAYSINTERNAL=16K） */
-#define LV_USE_STDLIB_MALLOC        LV_STDLIB_CLIB
+ * ESP-SR 会占用大量内部 RAM。LVGL 的对象/样式/字体缓存改用内置分配器，
+ * 内存池放在 PSRAM，给 HTTPS/TLS 留出内部 RAM。*/
+#define LV_USE_STDLIB_MALLOC        LV_STDLIB_BUILTIN
+#define LV_MEM_SIZE                 (128 * 1024U)
+#define LV_MEM_ADR                  0
+#define LV_MEM_POOL_INCLUDE         <esp_heap_caps.h>
+#define LV_MEM_POOL_ALLOC(x)        heap_caps_malloc(x, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 
 /* ==================== 字体 ====================
  * montserrat_16 仅作图标符号字体（FontAwesome 子集：WiFi/电池/充电等）；
