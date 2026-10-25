@@ -24,7 +24,7 @@ struct OaNotif {
     int  id = 0;
     bool unread = false;
     char title[64] = "";
-    char body[224] = "";
+    char body[384] = "";
     char time[12] = "";     // "MM-DD HH:MM"
 };
 
