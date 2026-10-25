@@ -406,14 +406,25 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
 
     static char* lineBuf = nullptr;
     static uint8_t* audioBuf = nullptr;
-    const size_t LINE_CAP = 16384, AUDIO_CAP = 16384;
+    static uint8_t* pcmBuf = nullptr;
+    const size_t LINE_CAP = 16384, AUDIO_CAP = 16384, PCM_CAP = TTS_MAX_BYTES;
     if (!lineBuf) lineBuf = (char*)heap_caps_malloc(LINE_CAP, MALLOC_CAP_SPIRAM);
     if (!audioBuf) audioBuf = (uint8_t*)heap_caps_malloc(AUDIO_CAP, MALLOC_CAP_SPIRAM);
-    if (!lineBuf || !audioBuf) { http.end(); return false; }
+    if (!pcmBuf) pcmBuf = (uint8_t*)heap_caps_malloc(PCM_CAP, MALLOC_CAP_SPIRAM);
+    if (!lineBuf || !audioBuf || !pcmBuf) { http.end(); return false; }
 
     size_t ll = 0;
+    size_t accLen = 0;
+    uint32_t pcmRate = 0;
     bool finished = false;
     uint32_t lastData = millis();
+    auto flushPcm = [&]() -> bool {
+        if (!accLen) return true;
+        bool ok = true;
+        if (cb) ok = cb("audio", nullptr, pcmBuf, accLen, pcmRate, ud);
+        accLen = 0;
+        return ok;
+    };
     auto appendReply = [&](const char* s) {
         size_t cur = strlen(reply);
         size_t add = strlen(s);
@@ -436,9 +447,23 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
             const char* b64 = doc["pcm"] | "";
             uint32_t rate = doc["rate"] | 24000;
             size_t dlen = b64decode(b64, audioBuf, AUDIO_CAP);
-            if (dlen && cb && !cb("audio", nullptr, audioBuf, dlen, rate, ud)) {
-                finished = true;
-                return false;
+            if (dlen) {
+                if (accLen == 0) {
+                    pcmRate = rate;
+                    if (cb) cb("status", "语音生成中...", nullptr, 0, 0, ud);
+                } else if (rate != pcmRate) {
+                    if (!flushPcm()) { finished = true; return false; }
+                    pcmRate = rate;
+                }
+                size_t space = PCM_CAP - accLen;
+                if (dlen > space) {
+                    if (!flushPcm()) { finished = true; return false; }
+                    pcmRate = rate;
+                    space = PCM_CAP;
+                }
+                size_t copy = dlen < space ? dlen : space;
+                memcpy(pcmBuf + accLen, audioBuf, copy);
+                accLen += copy;
             }
         } else if (!strcmp(t, "status")) {
             if (cb) return cb("status", doc["text"] | "", nullptr, 0, 0, ud);
@@ -469,6 +494,7 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
     }
     http.end();
     tlsClient.stop();
+    flushPcm();
     Serial.printf("%s voice stream done: T=%s R=%u\n", TAG, transcript, (unsigned)strlen(reply));
     return transcript[0] || reply[0];
 }

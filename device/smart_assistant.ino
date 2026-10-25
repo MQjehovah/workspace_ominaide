@@ -119,6 +119,7 @@ volatile char evtTimerLabel[48] = "计时器";
 bool srOk = false;
 volatile bool wakeFlag = false;             // ESP-SR 检测到唤醒词
 volatile bool voiceAbort = false;           // 播报中被按键/唤醒词打断
+bool voiceDeltaShown = false;               // 本轮是否已显示“语音生成中”
 
 // ============================================================================
 // 音频
@@ -317,20 +318,35 @@ static bool bargeRequested() {
     return false;
 }
 
+// Audio playback runs in loopTask; temporarily raise its priority above LVGL
+// so I2S writes are not preempted mid-buffer (LVGL still runs when write blocks).
+struct PlaybackPrioGuard {
+    UBaseType_t old;
+    PlaybackPrioGuard() {
+        TaskHandle_t h = xTaskGetCurrentTaskHandle();
+        old = uxTaskPriorityGet(h);
+        vTaskPrioritySet(h, 5);
+    }
+    ~PlaybackPrioGuard() {
+        vTaskPrioritySet(xTaskGetCurrentTaskHandle(), old);
+    }
+};
+
 static bool playPcm16k(const uint8_t* data, size_t len, uint32_t rate) {
+    PlaybackPrioGuard prio;
     if (!g_audioOk) return true;
     if (bargeRequested()) return false;
     if (!rate) rate = 16000;
     const int16_t* in = (const int16_t*)data;
     size_t n = len / 2;
-    static int16_t st[512];
+    static int16_t st[1024];
     size_t o = 0;
 
     if (rate == REC_RATE) {
         for (size_t i = 0; i < n; i++) {
             st[o++] = in[i];
             st[o++] = in[i];
-            if (o >= 512) {
+            if (o >= 1024) {
                 i2s.write((uint8_t*)st, o * 2);
                 o = 0;
                 if (bargeRequested()) return false;
@@ -349,7 +365,7 @@ static bool playPcm16k(const uint8_t* data, size_t len, uint32_t rate) {
             int16_t v = (int16_t)((double)pcmPrev + (double)(s - pcmPrev) * pcmFrac);
             st[o++] = v;
             st[o++] = v;
-            if (o >= 512) {
+            if (o >= 1024) {
                 i2s.write((uint8_t*)st, o * 2);
                 o = 0;
                 if (bargeRequested()) return false;
@@ -853,6 +869,14 @@ static bool onVoiceEvent(const char* type, const char* text,
         }
         return playPcm16k(pcm, len, rate);
     }
+    if (!strcmp(type, "delta")) {
+        if (!voiceDeltaShown) {
+            voiceDeltaShown = true;
+            setState(ST_VOICE, "语音生成中 ...", 0xffd740);
+            ui::busy("语音生成中 ...");
+        }
+        return true;
+    }
     if (!strcmp(type, "status") && text && text[0]) {
         setState(ST_VOICE, text, 0xffd740);
         ui::busy(text);
@@ -866,6 +890,7 @@ void askFlow() {
     setState(ST_VOICE, "对话中 ...", 0xffd740);            // 黄
     ui::busy("对话中 ...");
     voiceAbort = false;
+    voiceDeltaShown = false;
     playPcmReset();
     bool ok = oa.voiceAskStream(recBuf, recLen, REC_RATE,
                                 transcript, sizeof(transcript),
