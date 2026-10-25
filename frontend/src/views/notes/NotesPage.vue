@@ -417,7 +417,7 @@ onMounted(loadTree)
 .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #dcdfe6; }
 .sidebar-title { font-size: 14px; font-weight: 600; }
 .note-list { flex: 1; overflow-y: auto; }
-.editor-panel { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+.editor-panel { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px; }
 .editor-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .title-input :deep(.el-input__inner) { font-size: 24px; font-weight: 700; border: none; padding-left: 0; box-shadow: none; }
 .title-input :deep(.el-input__wrapper) { border: none; box-shadow: none !important; padding: 0; }

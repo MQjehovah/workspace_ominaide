@@ -3794,6 +3794,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .tiptap-editor {
   width: 100%;
+  height: 100%;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
   position: relative;
 }
 
@@ -3976,12 +3980,16 @@ onBeforeUnmount(() => {
 }
 
 .editor-content {
-  min-height: 400px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .editor-content :deep(.ProseMirror) {
   outline: none;
-  min-height: 400px;
+  min-height: 100%;
   font-size: 16px;
   line-height: 1.78;
   color: #1f2937;
