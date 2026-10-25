@@ -24,23 +24,28 @@ static lv_obj_t* s_tv = nullptr;            // tileview：时钟/待办/对话 �
 static lv_obj_t* s_splash = nullptr;
 
 // 状态栏控件
-static lv_obj_t* s_battBar = nullptr;
+static lv_obj_t* s_battIcon = nullptr;      // 电池图标 + 百分比，不再用进度条
 static lv_obj_t* s_battLabel = nullptr;
 static lv_obj_t* s_chgIcon = nullptr;
 static lv_obj_t* s_oaDot = nullptr;
 static lv_obj_t* s_wifiIcon = nullptr;
-static lv_obj_t* s_bellIcon = nullptr;      // 通知铃铛（点击跳消息页）
-static lv_obj_t* s_unreadLabel = nullptr;   // 未读角标数字
+static lv_obj_t* s_bellBox = nullptr;       // 铃铛容器（角标绝对定位，避免挤占 flex）
+static lv_obj_t* s_bellIcon = nullptr;
+static lv_obj_t* s_unreadBadge = nullptr;   // 未读角标
 
 // 底部状态行
 static lv_obj_t* s_stateLabel = nullptr;
 
 // 时钟页控件
 static lv_obj_t* s_timeLabel = nullptr;
-static lv_obj_t* s_secLabel = nullptr;
 static lv_obj_t* s_dateLabel = nullptr;
 static lv_obj_t* s_newsLabel = nullptr;
 static lv_obj_t* s_weatherLabel = nullptr;
+
+// 首页快捷对话卡
+static lv_obj_t* s_quickUser = nullptr;
+static lv_obj_t* s_quickReply = nullptr;
+static char s_lastReply[256] = "";
 
 // 充电脉冲动画相位
 static bool s_pulseOn = false;
@@ -51,6 +56,7 @@ static bool s_ready = false;
 // ---- 主题色 ----
 static const uint32_t COL_BG      = 0x000000;
 static const uint32_t COL_SILVER  = 0xc8ccd0;
+static const uint32_t COL_WHITE   = 0xf2f4f6;
 static const uint32_t COL_GRAY    = 0x808488;
 static const uint32_t COL_CYAN    = 0x00e5ff;
 static const uint32_t COL_GREEN   = 0x4caf50;
@@ -117,7 +123,7 @@ static void lvglTask(void*) {
         uint32_t next = lv_timer_handler();
         uii::unlock();
         if (next < 5) next = 5;
-        if (next > 33) next = 33;
+        if (next > 16) next = 16;   // allow 60fps animations, not just 30fps
         vTaskDelay(pdMS_TO_TICKS(next));
     }
 }
@@ -141,28 +147,27 @@ static void buildStatusBar(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(bar, 0, 0);
     lv_obj_set_style_radius(bar, 0, 0);
-    lv_obj_set_style_pad_left(bar, 32, 0);   // 避开屏幕圆角
-    lv_obj_set_style_pad_right(bar, 32, 0);
-    lv_obj_set_style_pad_column(bar, 8, 0);
+    lv_obj_set_style_pad_left(bar, 24, 0);   // 避开屏幕圆角
+    lv_obj_set_style_pad_right(bar, 24, 0);
+    lv_obj_set_style_pad_column(bar, 6, 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    // 电池条 + 百分比 + 充电图标
-    s_battBar = lv_bar_create(bar);
-    lv_bar_set_range(s_battBar, 0, 100);
-    lv_obj_set_size(s_battBar, 44, 16);
-    lv_obj_set_style_bg_color(s_battBar, lv_color_hex(0x20242a), 0);
-    lv_obj_set_style_bg_opa(s_battBar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(s_battBar, lv_color_hex(COL_GREEN), 0);
-    lv_obj_set_style_border_width(s_battBar, 2, 0);
-    lv_obj_set_style_radius(s_battBar, 4, 0);
-    lv_obj_set_style_bg_color(s_battBar, lv_color_hex(COL_GREEN), LV_PART_INDICATOR);
-    lv_bar_set_value(s_battBar, 0, LV_ANIM_OFF);
+    // 电池：图标 + 百分比 + 充电符号（固定宽度，避免和右侧角标互相挤压）
+    s_battIcon = uii::makeLabel(bar, LV_SYMBOL_BATTERY_FULL, &lv_font_montserrat_16, COL_GREEN);
+    lv_obj_set_width(s_battIcon, 22);
+    lv_obj_set_style_text_align(s_battIcon, LV_TEXT_ALIGN_CENTER, 0);
 
-    s_battLabel = uii::makeLabel(bar, "--", &cn20, COL_GREEN);
+    // 用 16px 数字字体，固定 46px 足够显示 100%；cn20 太宽会被省略成 10...
+    s_battLabel = uii::makeLabel(bar, "--", &lv_font_montserrat_16, COL_GREEN);
+    lv_obj_set_width(s_battLabel, 46);
+    lv_obj_set_style_text_align(s_battLabel, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_battLabel, LV_LABEL_LONG_DOT);
 
     s_chgIcon = uii::makeLabel(bar, LV_SYMBOL_CHARGE, &lv_font_montserrat_16, COL_YELLOW);
+    lv_obj_set_width(s_chgIcon, 16);
+    lv_obj_set_style_text_align(s_chgIcon, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_add_flag(s_chgIcon, LV_OBJ_FLAG_HIDDEN);
 
     // 弹性空隙
@@ -170,23 +175,40 @@ static void buildStatusBar(lv_obj_t* parent) {
     lv_obj_remove_style_all(spacer);
     lv_obj_set_flex_grow(spacer, 1);
 
-    // 后端连接：OA + 圆点
-    uii::makeLabel(bar, "OA", &cn20, COL_GRAY);
+    // 后端连接圆点（不再放 “OA” 文字，减少拥挤）
     s_oaDot = lv_obj_create(bar);
     lv_obj_remove_style_all(s_oaDot);
-    lv_obj_set_size(s_oaDot, 12, 12);
+    lv_obj_set_size(s_oaDot, 10, 10);
     lv_obj_set_style_radius(s_oaDot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(s_oaDot, lv_color_hex(COL_ORANGE), 0);
     lv_obj_set_style_bg_opa(s_oaDot, LV_OPA_COVER, 0);
 
     // WiFi 图标
     s_wifiIcon = uii::makeLabel(bar, LV_SYMBOL_CLOSE, &lv_font_montserrat_16, COL_RED);
+    lv_obj_set_width(s_wifiIcon, 18);
+    lv_obj_set_style_text_align(s_wifiIcon, LV_TEXT_ALIGN_CENTER, 0);
 
-    // 通知铃铛 + 未读角标（点击回调在 buildRoot 末尾注册，那时 s_tv 才有效）
-    s_bellIcon = uii::makeLabel(bar, LV_SYMBOL_BELL, &lv_font_montserrat_16, COL_GRAY);
-    lv_obj_add_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);      // 未登录前隐藏
-    lv_obj_add_flag(s_bellIcon, LV_OBJ_FLAG_CLICKABLE);
-    s_unreadLabel = uii::makeLabel(bar, "", &cn20, COL_RED);
+    // 铃铛容器：角标绝对定位在右上角，不再和铃铛/未读数在 flex 里互相重叠
+    s_bellBox = lv_obj_create(bar);
+    lv_obj_remove_style_all(s_bellBox);
+    lv_obj_set_size(s_bellBox, 30, 30);
+    lv_obj_clear_flag(s_bellBox, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_bellBox, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_bellBox, LV_OBJ_FLAG_HIDDEN);   // 未登录前隐藏
+
+    s_bellIcon = uii::makeLabel(s_bellBox, LV_SYMBOL_BELL, &lv_font_montserrat_16, COL_GRAY);
+    lv_obj_center(s_bellIcon);
+
+    s_unreadBadge = uii::makeLabel(s_bellBox, "", &lv_font_montserrat_16, COL_WHITE);
+    lv_obj_set_style_bg_color(s_unreadBadge, lv_color_hex(COL_RED), 0);
+    lv_obj_set_style_bg_opa(s_unreadBadge, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_unreadBadge, 8, 0);
+    lv_obj_set_style_pad_left(s_unreadBadge, 3, 0);
+    lv_obj_set_style_pad_right(s_unreadBadge, 3, 0);
+    lv_obj_set_style_pad_top(s_unreadBadge, 0, 0);
+    lv_obj_set_style_pad_bottom(s_unreadBadge, 0, 0);
+    lv_obj_align(s_unreadBadge, LV_ALIGN_TOP_RIGHT, 3, -2);
+    lv_obj_add_flag(s_unreadBadge, LV_OBJ_FLAG_HIDDEN);
 
     // 分隔线
     lv_obj_t* line = lv_obj_create(parent);
@@ -209,34 +231,60 @@ static void buildStateBar(lv_obj_t* parent) {
 
 // ==================== 时钟页 ====================
 static void buildClockTile(lv_obj_t* tile) {
-    // 大号 HH:MM：整屏宽度 + 文本居中（独立于秒标签，避免整体偏移）
+    // 大号 HH:MM：整屏宽度 + 文本居中（不再显示秒）
     s_timeLabel = uii::makeLabel(tile, "--:--", &num92, 0xf2f4f6);
     lv_obj_set_width(s_timeLabel, s_w);
     lv_obj_set_style_text_align(s_timeLabel, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(s_timeLabel, 0, 64);
-
-    // 秒：x/y 在 setTime 里按时间文本实测宽度定位（贴在大字右下）
-    s_secLabel = uii::makeLabel(tile, "", &cn20, COL_CYAN);
+    lv_obj_set_pos(s_timeLabel, 0, 54);
 
     s_dateLabel = uii::makeLabel(tile, "", &cn20, COL_SILVER);
     lv_obj_set_width(s_dateLabel, s_w);
-    lv_obj_set_y(s_dateLabel, 168);
+    lv_obj_set_y(s_dateLabel, 160);
     lv_obj_set_style_text_align(s_dateLabel, LV_TEXT_ALIGN_CENTER, 0);
 
     // 天气（setBrief 带出，无数据时隐藏）
     s_weatherLabel = uii::makeLabel(tile, "", &cn20, 0x8ec9e8);
     lv_obj_set_width(s_weatherLabel, s_w);
-    lv_obj_set_y(s_weatherLabel, 196);
+    lv_obj_set_y(s_weatherLabel, 188);
     lv_obj_set_style_text_align(s_weatherLabel, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_add_flag(s_weatherLabel, LV_OBJ_FLAG_HIDDEN);
 
-    // RSS 资讯轮播：单行滚动，setHeadlines 填充，定时器每 8s 换条
+    // RSS 头条：静态单行省略，避免圆形滚动持续重绘拖低帧率
     s_newsLabel = uii::makeLabel(tile, "", &cn20, 0x6a8a9a);
     lv_obj_set_width(s_newsLabel, s_w - 32);
-    lv_obj_set_pos(s_newsLabel, 16, 236);
-    lv_label_set_long_mode(s_newsLabel, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_pos(s_newsLabel, 16, 218);
+    lv_label_set_long_mode(s_newsLabel, LV_LABEL_LONG_DOT);
     lv_obj_add_flag(s_newsLabel, LV_OBJ_FLAG_HIDDEN);
     lv_timer_create(newsTimer, 8000, nullptr);
+
+    // 首页快捷对话卡：最近一轮问答直接显示在时钟页，不需要切到对话页
+    lv_obj_t* card = lv_obj_create(tile);
+    lv_obj_set_size(card, s_w - 32, 140);
+    lv_obj_set_pos(card, 16, 252);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x12151b), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x252a32), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_radius(card, 14, 0);
+    lv_obj_set_style_pad_all(card, 12, 0);
+    lv_obj_set_style_pad_row(card, 4, 0);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* title = uii::makeLabel(card, "最近对话", &cn20, COL_GRAY);
+    lv_obj_set_width(title, lv_pct(100));
+
+    s_quickUser = uii::makeLabel(card, "说 Hi ESP 或按住 KEY3 开始对话", &cn20, COL_CYAN);
+    lv_obj_set_width(s_quickUser, lv_pct(100));
+    lv_label_set_long_mode(s_quickUser, LV_LABEL_LONG_DOT);
+
+    s_quickReply = uii::makeLabel(card, "最近一轮问答会显示在这里", &cn20, COL_WHITE);
+    lv_obj_set_width(s_quickReply, lv_pct(100));
+    lv_label_set_long_mode(s_quickReply, LV_LABEL_LONG_DOT);
+
+    lv_obj_t* hint = uii::makeLabel(card, "左右滑动查看待办 / 消息 / 完整对话", &cn20, 0x5a6068);
+    lv_obj_set_width(hint, lv_pct(100));
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_DOT);
 }
 
 // ==================== 开机画面 ====================
@@ -309,7 +357,7 @@ static void buildRoot() {
     uii::settingsInit(tileSet);
 
     // 铃铛点击 → 消息页（s_tv 已创建；事件回调在 LVGL 任务内，直接切页不取锁）
-    lv_obj_add_event_cb(s_bellIcon, [](lv_event_t* e) {
+    lv_obj_add_event_cb(s_bellBox, [](lv_event_t* e) {
         lv_obj_t* tv = (lv_obj_t*)lv_event_get_user_data(e);
         lv_tileview_set_tile_by_index(tv, 2, 0, LV_ANIM_ON);
     }, LV_EVENT_CLICKED, s_tv);
@@ -333,13 +381,11 @@ bool init(Arduino_GFX* gfx, TouchDrvInterface* tp, int w, int h) {
     s_disp = lv_display_create(s_w, s_h);
     lv_display_set_flush_cb(s_disp, flush_cb);
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
-    // 40 行局部渲染缓冲：480*40*2 = 37.5KB，内部 RAM（DMA 可达）
-    // LVGL objects live in a PSRAM pool; keep 10 lines internal for TLS headroom.
-    // UI smoothness comes from pinning ESP-SR tasks to core 0 (see ESP_SR patch).
+    // 20 行局部渲染缓冲：480*20*2 = 19KB，内部 DMA RAM。
+    // 24 行会导致 WiFi/TLS 登录内存不足，20 行是当前 SR+TLS 的安全上限。
     size_t bufSize = (size_t)s_w * 20 * 2;
     // Internal DMA RAM is much faster than PSRAM for QSPI refresh. ESP-SR
-    // event polling now runs in loopTask, so we no longer keep a second TLS
-    // client/task; this leaves enough headroom for the 40-line buffer.
+    // event polling now runs in loopTask, so this leaves enough TLS headroom.
     uint8_t* buf = (uint8_t*)heap_caps_malloc(bufSize, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!buf) return false;
     lv_display_set_buffers(s_disp, buf, nullptr, bufSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -373,7 +419,16 @@ void bootDone() {
 
 void setState(const char* text, uint32_t color) {
     if (!s_ready) return;
+    if (!text) text = "";
+    static char lastText[64] = "";
+    static uint32_t lastColor = 0xffffffff;
     uii::lock();
+    if (!strcmp(lastText, text) && lastColor == color) {
+        uii::unlock();
+        return;
+    }
+    snprintf(lastText, sizeof(lastText), "%s", text);
+    lastColor = color;
     lv_label_set_text(s_stateLabel, text);
     lv_obj_set_style_text_color(s_stateLabel, lv_color_hex(color), 0);
     uii::unlock();
@@ -381,33 +436,52 @@ void setState(const char* text, uint32_t color) {
 
 void setBattery(int pct, bool charging, bool pmuOk) {
     if (!s_ready) return;
+    static int lastPct = -999;
+    static bool lastChg = false, lastPmu = true;
     uii::lock();
+    if (pct == lastPct && charging == lastChg && pmuOk == lastPmu) {
+        uii::unlock();
+        return;
+    }
+    lastPct = pct;
+    lastChg = charging;
+    lastPmu = pmuOk;
+
     if (!pmuOk) {
-        lv_obj_add_flag(s_battBar, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(s_battIcon, LV_SYMBOL_WARNING);
+        lv_obj_set_style_text_color(s_battIcon, lv_color_hex(COL_RED), 0);
         lv_label_set_text(s_battLabel, "PMU!");
         lv_obj_set_style_text_color(s_battLabel, lv_color_hex(COL_RED), 0);
     } else if (pct < 0) {
-        lv_obj_add_flag(s_battBar, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(s_battIcon, LV_SYMBOL_BATTERY_EMPTY);
+        lv_obj_set_style_text_color(s_battIcon, lv_color_hex(COL_GREEN), 0);
         lv_label_set_text(s_battLabel, "USB");
         lv_obj_set_style_text_color(s_battLabel, lv_color_hex(COL_GREEN), 0);
     } else {
-        lv_obj_clear_flag(s_battBar, LV_OBJ_FLAG_HIDDEN);
+        const char* sym = pct >= 90 ? LV_SYMBOL_BATTERY_FULL
+                        : pct >= 65 ? LV_SYMBOL_BATTERY_3
+                        : pct >= 40 ? LV_SYMBOL_BATTERY_2
+                        : pct >= 15 ? LV_SYMBOL_BATTERY_1
+                        : LV_SYMBOL_BATTERY_EMPTY;
+        lv_label_set_text(s_battIcon, sym);
+        uint32_t c = pct > 50 ? COL_GREEN : (pct > 20 ? COL_YELLOW : COL_RED);
+        lv_obj_set_style_text_color(s_battIcon, lv_color_hex(c), 0);
         char b[8];
         snprintf(b, sizeof(b), "%d%%", pct);
         lv_label_set_text(s_battLabel, b);
-        uint32_t c = pct > 50 ? COL_GREEN : (pct > 20 ? COL_YELLOW : COL_RED);
         lv_obj_set_style_text_color(s_battLabel, lv_color_hex(c), 0);
-        lv_obj_set_style_bg_color(s_battBar, lv_color_hex(c), LV_PART_INDICATOR);
-        lv_obj_set_style_border_color(s_battBar, lv_color_hex(c), 0);
-        lv_bar_set_value(s_battBar, pct, LV_ANIM_OFF);
     }
-    if (charging) lv_obj_clear_flag(s_chgIcon, LV_OBJ_FLAG_HIDDEN);
-    else          lv_obj_add_flag(s_chgIcon, LV_OBJ_FLAG_HIDDEN);
+    if (charging && pmuOk) lv_obj_clear_flag(s_chgIcon, LV_OBJ_FLAG_HIDDEN);
+    else                 lv_obj_add_flag(s_chgIcon, LV_OBJ_FLAG_HIDDEN);
     uii::unlock();
 }
 
 void setWifi(bool ok, int bars) {
     if (!s_ready) return;
+    static int last = -1;
+    int key = ok ? (100 + bars) : 0;
+    if (key == last) return;
+    last = key;
     uii::lock();
     if (!ok) {
         lv_label_set_text(s_wifiIcon, LV_SYMBOL_CLOSE);
@@ -422,6 +496,9 @@ void setWifi(bool ok, int bars) {
 
 void setOa(bool loggedIn) {
     if (!s_ready) return;
+    static int last = -1;
+    if ((int)loggedIn == last) return;
+    last = loggedIn;
     uii::lock();
     lv_obj_set_style_bg_color(s_oaDot,
         lv_color_hex(loggedIn ? COL_CYAN : COL_ORANGE), 0);
@@ -430,19 +507,25 @@ void setOa(bool loggedIn) {
 
 void setUnread(int n) {
     if (!s_ready) return;
+    static int last = -2;
+    if (n == last) return;
+    last = n;
     uii::lock();
-    if (n < 0) {                       // 未登录：隐藏铃铛
-        lv_obj_add_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(s_unreadLabel, "");
+    if (n < 0) {
+        lv_obj_add_flag(s_bellBox, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_unreadBadge, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(s_unreadBadge, "");
     } else {
-        lv_obj_clear_flag(s_bellIcon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_bellBox, LV_OBJ_FLAG_HIDDEN);
         if (n == 0) {
-            lv_label_set_text(s_unreadLabel, "");
+            lv_obj_add_flag(s_unreadBadge, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(s_unreadBadge, "");
             lv_obj_set_style_text_color(s_bellIcon, lv_color_hex(COL_GRAY), 0);
         } else {
             char b[8];
             snprintf(b, sizeof(b), n > 9 ? "9+" : "%d", n);
-            lv_label_set_text(s_unreadLabel, b);
+            lv_label_set_text(s_unreadBadge, b);
+            lv_obj_clear_flag(s_unreadBadge, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_text_color(s_bellIcon, lv_color_hex(COL_YELLOW), 0);
         }
     }
@@ -452,30 +535,33 @@ void setUnread(int n) {
 void setTime(const struct tm& ti) {
     if (!s_ready) return;
     bool valid = (ti.tm_year + 1900) >= 2024;
-    char buf[40];
-    if (valid) strftime(buf, sizeof(buf), "%H:%M", &ti);
-    else       snprintf(buf, sizeof(buf), "--:--");
-
-    uii::lock();
-    lv_label_set_text(s_timeLabel, buf);
-    lv_obj_set_style_text_color(s_timeLabel,
-        lv_color_hex(valid ? 0xf2f4f6 : COL_GRAY), 0);
+    char timeBuf[8];
+    char dateBuf[40];
     if (valid) {
-        // 秒贴在大字右下：x 按实测宽度算，y 对齐大字基线（line_height-base_line≈顶部偏移）
-        lv_point_t sz;
-        lv_text_get_size(&sz, buf, &num92, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-        lv_obj_set_pos(s_secLabel, (s_w + sz.x) / 2 + 14,
-                       64 + num92.line_height - 18);
-        strftime(buf, sizeof(buf), "%S", &ti);
-        lv_label_set_text(s_secLabel, buf);
+        strftime(timeBuf, sizeof(timeBuf), "%H:%M", &ti);
         static const char* WD[] = {"日", "一", "二", "三", "四", "五", "六"};
-        snprintf(buf, sizeof(buf), "%04d-%02d-%02d 星期%s",
+        snprintf(dateBuf, sizeof(dateBuf), "%04d-%02d-%02d 星期%s",
                  ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday, WD[ti.tm_wday]);
     } else {
-        lv_label_set_text(s_secLabel, "");
-        snprintf(buf, sizeof(buf), "等待时间同步 ...");
+        snprintf(timeBuf, sizeof(timeBuf), "--:--");
+        snprintf(dateBuf, sizeof(dateBuf), "等待时间同步 ...");
     }
-    lv_label_set_text(s_dateLabel, buf);
+
+    static char lastTime[8] = "";
+    static char lastDate[40] = "";
+    if (!strcmp(lastTime, timeBuf) && !strcmp(lastDate, dateBuf)) return;
+
+    uii::lock();
+    if (strcmp(lastTime, timeBuf)) {
+        snprintf(lastTime, sizeof(lastTime), "%s", timeBuf);
+        lv_label_set_text(s_timeLabel, timeBuf);
+        lv_obj_set_style_text_color(s_timeLabel,
+            lv_color_hex(valid ? 0xf2f4f6 : COL_GRAY), 0);
+    }
+    if (strcmp(lastDate, dateBuf)) {
+        snprintf(lastDate, sizeof(lastDate), "%s", dateBuf);
+        lv_label_set_text(s_dateLabel, dateBuf);
+    }
     uii::unlock();
 }
 
@@ -580,4 +666,41 @@ void showNotifPage() {
 }
 
 }  // namespace ui
+
+// ---- 首页快捷对话卡（ui_chat.cpp 通过 ui_internal.h 调用）----
+namespace uii {
+
+void quickChat(const char* role, const char* text) {
+    if (!s_ready || !s_quickUser || !s_quickReply || !text) return;
+    uii::lock();
+    if (role && !strcmp(role, "user")) {
+        s_lastReply[0] = 0;
+        lv_label_set_text_fmt(s_quickUser, "你：%s", text);
+        lv_label_set_text(s_quickReply, "正在思考 ...");
+    } else {
+        snprintf(s_lastReply, sizeof(s_lastReply), "%s", text);
+        lv_label_set_text(s_quickReply, text);
+    }
+    uii::unlock();
+}
+
+void quickStatus(const char* text) {
+    if (!s_ready || !s_quickReply) return;
+    uii::lock();
+    if (text) lv_label_set_text(s_quickReply, text);
+    else lv_label_set_text(s_quickReply,
+        s_lastReply[0] ? s_lastReply : "最近一轮问答会显示在这里");
+    uii::unlock();
+}
+
+void quickClear() {
+    if (!s_ready || !s_quickUser) return;
+    uii::lock();
+    s_lastReply[0] = 0;
+    lv_label_set_text(s_quickUser, "说 Hi ESP 或按住 KEY3 开始对话");
+    lv_label_set_text(s_quickReply, "最近一轮问答会显示在这里");
+    uii::unlock();
+}
+
+}  // namespace uii
 

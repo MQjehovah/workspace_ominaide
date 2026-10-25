@@ -89,6 +89,7 @@ void chatClear() {
     uii::lock();
     lv_obj_clean(s_scroll);
     uii::unlock();
+    uii::quickClear();
 }
 
 void chatAppend(const char* role, const char* text) {
@@ -131,6 +132,7 @@ void chatAppend(const char* role, const char* text) {
     scrollEnd();
 
     uii::unlock();
+    uii::quickChat(role, text);
 }
 
 void recShow(bool on) {
@@ -147,6 +149,7 @@ void recShow(bool on) {
         lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
     }
     uii::unlock();
+    uii::quickStatus(on ? "正在聆听 ..." : nullptr);
 }
 
 void recUpdate(int peak, uint32_t secs) {
@@ -176,6 +179,7 @@ void busy(const char* text) {
         lv_label_set_text(s_ovText, text);
     }
     uii::unlock();
+    uii::quickStatus(text);
 }
 
 }  // namespace ui

@@ -401,7 +401,6 @@ static bool recordAuto() {
     bool speech = false;
 
     srPause();
-    ui::showChatPage();
     ui::recShow(true);
     ui::busy("我在听...");
 
@@ -535,6 +534,13 @@ void batteryTick() {
         battPct = -1;
         charging = pmu.isCharging();
     }
+    static int lastPct = -999;
+    static bool lastChg = false;
+    if (battPct != lastPct || charging != lastChg) {
+        Serial.printf("[BATT] pct=%d chg=%d pmu=%d\n", battPct, (int)charging, (int)pmuOk);
+        lastPct = battPct;
+        lastChg = charging;
+    }
     ui::setBattery(battPct, charging, pmuOk);
 }
 
@@ -563,7 +569,7 @@ void clockInit() {
 uint32_t tClock = 0;
 void clockTick() {
     if (!screenOn) return;
-    if (millis() - tClock < 250) return;
+    if (millis() - tClock < 1000) return;
     tClock = millis();
     time_t now = time(nullptr);
     struct tm ti;
@@ -1243,8 +1249,7 @@ void loop() {
             if (!wifiOk) { setState(ST_ERR, "未连接网络", 0xff5252); }
             else if (recBuf) {
                 setState(ST_REC, "录音中 0s", 0xff5252);
-                ui::showChatPage();
-            }
+                        }
         }
         break;
     case ST_REC:

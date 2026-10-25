@@ -20,4 +20,9 @@ void notifInit(lv_obj_t* tile);
 void chatInit(lv_obj_t* tile);
 void settingsInit(lv_obj_t* tile);
 
+// 首页快捷对话卡（ui.cpp 实现，内部加锁）
+void quickChat(const char* role, const char* text);
+void quickStatus(const char* text);      // nullptr = 恢复最近一条回复
+void quickClear();
+
 }  // namespace uii
