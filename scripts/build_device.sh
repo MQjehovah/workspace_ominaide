@@ -35,12 +35,19 @@ SKETCHBOOK="$(cygpath -u "$HOME")/Documents/Arduino/libraries"
 if [ -d "$SRC/libraries/lvgl" ]; then
     rm -rf "$SKETCHBOOK/lvgl"
     cp -r "$SRC/libraries/lvgl" "$SKETCHBOOK/lvgl"
-    cp "$SRC/libraries/lv_conf.h" "$SKETCHBOOK/lv_conf.h"
+    if ! cmp -s "$SRC/libraries/lv_conf.h" "$SKETCHBOOK/lv_conf.h"; then
+        cp "$SRC/libraries/lv_conf.h" "$SKETCHBOOK/lv_conf.h"
+    fi
 fi
 # Local ESP_SR patch: pin detect/handler to core 0 so LVGL on core 1 stays smooth.
 if [ -d "$SRC/libraries/ESP_SR" ]; then
     rm -rf "$SKETCHBOOK/ESP_SR"
     cp -r "$SRC/libraries/ESP_SR" "$SKETCHBOOK/ESP_SR"
+fi
+# Cached LVGL fonts (2.4MB cn20) so incremental builds stay fast.
+if [ -d "$SRC/libraries/omniaide_fonts" ]; then
+    rm -rf "$SKETCHBOOK/omniaide_fonts"
+    cp -r "$SRC/libraries/omniaide_fonts" "$SKETCHBOOK/omniaide_fonts"
 fi
 
 FQBN="esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=esp_sr_16,PSRAM=opi,FlashMode=qio,USBMode=hwcdc,CDCOnBoot=cdc,UploadSpeed=921600"
