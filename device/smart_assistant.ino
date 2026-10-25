@@ -210,8 +210,12 @@ static void srPause() {
     if (srOk) ESP_SR.pause();
 }
 
+static volatile uint32_t gWakeMuteUntil = 0;
+
 static void srResume() {
     if (srOk) {
+        // TTS 尾音/回声可能误触发唤醒词，恢复后先静默 1.2 秒。
+        gWakeMuteUntil = millis() + 1200;
         ESP_SR.setMode(SR_MODE_WAKEWORD);
         ESP_SR.resume();
     }
@@ -219,6 +223,12 @@ static void srResume() {
 
 static void onSrEvent(sr_event_t event, int command_id, int phrase_id) {
     if (event == SR_EVENT_WAKEWORD || event == SR_EVENT_WAKEWORD_CHANNEL) {
+        // 立体声会同时产生 WAKEWORD + WAKEWORD_CHANNEL；加去抖避免一次唤醒
+        // 触发两轮对话。
+        if (millis() < gWakeMuteUntil) return;
+        static uint32_t lastWake = 0;
+        if (millis() - lastWake < 2000) return;
+        lastWake = millis();
         wakeFlag = true;
         Serial.println("[SR] WAKEWORD");
     } else if (event == SR_EVENT_TIMEOUT) {
@@ -652,42 +662,37 @@ void refreshNotifs() {
     if (oa.fetchNotifications(oaNotifs, 8, cnt)) ui::setNotifs((const ui::Notif*)oaNotifs, cnt);
 }
 
-// 设备实时事件：后台长轮询，只置标志；真正的 UI/提示音由 loopTask 处理
-static void eventPollTask(void*) {
-    static bool cursorInit = false;
-    for (;;) {
-        if (!screenOn || !wifiOk || !oa.loggedIn()) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
-        }
-        if (!cursorInit) {
-            int cursor = 0;
-            if (!oa.fetchEventCursor(cursor)) {
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                continue;
+// 设备实时事件：在 loopTask 里短轮询（不额外占 TLS/任务栈），只置标志。
+static bool evtCursorInit = false;
+static uint32_t tEvtPoll = 0;
+
+static void pollDeviceEvents() {
+    if (!wifiOk || !oa.loggedIn()) return;
+    if (!evtCursorInit) {
+        int cursor = 0;
+        if (!oa.fetchEventCursor(cursor)) return;
+        evtLastId = cursor;
+        evtCursorInit = true;
+    }
+    if (millis() - tEvtPoll < 8000) return;
+    tEvtPoll = millis();
+    OaEvent evs[4];
+    int cnt = 0;
+    if (oa.pollEvents(evs, 4, cnt, evtLastId)) {
+        for (int i = 0; i < cnt; i++) {
+            if (evs[i].id > evtLastId) evtLastId = evs[i].id;
+            if (!strcmp(evs[i].type, "timer") && evs[i].value > 0) {
+                snprintf((char*)evtTimerLabel, sizeof(evtTimerLabel), "%s",
+                         evs[i].title[0] ? evs[i].title : "计时器");
+                evtTimerEnd = millis() + (uint32_t)evs[i].value * 1000UL;
+                evtNewTimer = true;
+            } else if (!strcmp(evs[i].type, "notification") ||
+                       !strcmp(evs[i].type, "reminder") ||
+                       !strcmp(evs[i].type, "briefing")) {
+                evtNewNotif = true;
             }
-            evtLastId = cursor;
-            cursorInit = true;
+            Serial.printf("[EVT] #%d %s %s\n", evs[i].id, evs[i].type, evs[i].title);
         }
-        OaEvent evs[4];
-        int cnt = 0;
-        if (oa.pollEvents(evs, 4, cnt, evtLastId)) {
-            for (int i = 0; i < cnt; i++) {
-                if (evs[i].id > evtLastId) evtLastId = evs[i].id;
-                if (!strcmp(evs[i].type, "timer") && evs[i].value > 0) {
-                    snprintf((char*)evtTimerLabel, sizeof(evtTimerLabel), "%s",
-                             evs[i].title[0] ? evs[i].title : "计时器");
-                    evtTimerEnd = millis() + (uint32_t)evs[i].value * 1000UL;
-                    evtNewTimer = true;
-                } else if (!strcmp(evs[i].type, "notification") ||
-                           !strcmp(evs[i].type, "reminder") ||
-                           !strcmp(evs[i].type, "briefing")) {
-                    evtNewNotif = true;
-                }
-                Serial.printf("[EVT] #%d %s %s\n", evs[i].id, evs[i].type, evs[i].title);
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
 
@@ -743,6 +748,10 @@ void oaTick() {
         }
         return;
     }
+
+    // 新通知/计时器事件短轮询（8s 节流，不额外占任务栈/TLS client）
+    pollDeviceEvents();
+
     if (millis() - oa.lastBriefMs < OA_BRIEF_PERIOD_MS) return;
     if (oa.fetchBrief(oaBrief)) {
         oa.fetchTodaySchedule(oaBrief);
@@ -836,7 +845,7 @@ static bool onVoiceEvent(const char* type, const char* text,
                          const uint8_t* pcm, size_t len,
                          uint32_t rate, void*) {
     if (!strcmp(type, "audio")) {
-        srResume();                                  // 播报中保持唤醒词可打断
+        // 播报期间保持 SR 暂停：避免 TTS 被自己的麦克风误唤醒，也减少 CPU 占用。
         if (state != ST_PLAY) {
             setState(ST_PLAY, "播报中 ...", 0x00e5ff);
             ui::busy("播报中 ...");
@@ -886,6 +895,7 @@ void askFlow() {
         } else {
             setState(ST_READY, "已停止", 0xffd740);
         }
+        delay(500);
         srResume();
         return;
     }
@@ -894,10 +904,12 @@ void askFlow() {
         setState(ST_ERR, "对话失败", 0xff5252);
         delay(1200);
         setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+        delay(500);
         srResume();
         return;
     }
     setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+    delay(500);
     srResume();
 }
 
@@ -907,6 +919,7 @@ void autoAskFlow() {
         setState(ST_ERR, "没听到声音", 0xff5252);
         delay(1000);
         setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+        delay(500);
         srResume();
         return;
     }
@@ -1019,9 +1032,6 @@ void setup() {
 
     setState(ST_READY, strlen(cfgSsid) ? "按住 KEY3 或说 Hi ESP" : "未配置网络", 0x4caf50);
     ui::bootDone();                            // 撤开机画面 → 时钟/待办/对话三页
-
-    // 实时事件长轮询（独立任务，录音/触摸不受阻塞）
-    xTaskCreatePinnedToCore(eventPollTask, "oa_events", 10240, nullptr, 1, nullptr, 0);
 
     Serial.println("=== 就绪：按住 KEY3 或说 Hi ESP，松开发问 ===");
 }

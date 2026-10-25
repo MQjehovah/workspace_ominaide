@@ -9,15 +9,15 @@
 #define WIFI_SSID       "your-wifi"
 #define WIFI_PASS       "your-wifi-password"
 
-// 推荐内网 HTTP：ESP-SR 会占用大量内部 RAM，HTTP 不占用 TLS 内存，
-// 可以把 LVGL 绘制缓冲保持在 40 行，界面最流畅。
-#define OMNIAIDE_URL    "http://192.168.2.10:8000"
+// 推荐外网 HTTPS（设备可在任何地方使用）。
+// ESP-SR 已把任务移到 core 0、LVGL 对象放 PSRAM，并保留 20 行内部绘制缓冲，
+// 因此 HTTPS 也能保持界面流畅。
+#define OMNIAIDE_URL    "https://your-server/ominaide"
 #define OMNIAIDE_USER   "your-user"
 #define OMNIAIDE_PASS   "your-password"
 
-// 外网 HTTPS 也可以，但需要把 device/ui.cpp 的 draw buffer 降到 10 行左右，
-// 否则 TLS 可能因内部 RAM 不足而连接失败。
-// #define OMNIAIDE_URL "https://your-server/ominaide"
+// 可选：内网 HTTP 更快、更省 RAM；如果只在家用，可改成：
+// #define OMNIAIDE_URL "http://192.168.2.10:8000"
 
 // 可选：填 CA 根证书启用 TLS 校验；留空跳过（内网/frp 场景）
 // #define TLS_CA_CERT  R"EOF(

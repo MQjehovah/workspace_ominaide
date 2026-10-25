@@ -10,7 +10,6 @@
 static const char* TAG = "[OA]";
 
 static WiFiClientSecure tlsClient;
-static WiFiClientSecure evtTls;   // 事件长轮询独立 TLS 连接，避免和主循环抢同一个 client
 
 // TLS 证书校验：config.h 里填 CA 根证书则校验，留空跳过（内网/frp 场景）
 static void tlsApply(WiFiClientSecure& c) {
@@ -681,9 +680,9 @@ bool OmniAide::fetchEventCursor(int& out) {
     http.setConnectTimeout(5000);
     bool began;
     if (strncmp(url.c_str(), "https", 5) == 0) {
-        tlsApply(evtTls);
-        evtTls.setTimeout(8000);
-        began = http.begin(evtTls, url);
+        tlsApply(tlsClient);
+        tlsClient.setTimeout(8000);
+        began = http.begin(tlsClient, url);
     } else {
         began = http.begin(url);
     }
@@ -712,20 +711,20 @@ bool OmniAide::pollEvents(OaEvent* out, int max, int& cnt, int since) {
     if (!resp) return false;
 
     char url[192];
-    snprintf(url, sizeof(url), "%s/api/device/events?since=%d&wait=%d",
-             _url, since, OA_EVENT_LONGPOLL_S);
+    snprintf(url, sizeof(url), "%s/api/device/events?since=%d&wait=0",
+             _url, since);
 
     int code = -1;
     String body;
     for (int attempt = 0; attempt < 2; attempt++) {
         HTTPClient http;
-        http.setTimeout((OA_EVENT_LONGPOLL_S + 12) * 1000);   // 长轮询：等待 + 余量
+        http.setTimeout(15000);
         http.setConnectTimeout(5000);
         bool began;
         if (strncmp(url, "https", 5) == 0) {
-            tlsApply(evtTls);
-            evtTls.setTimeout((OA_EVENT_LONGPOLL_S + 12) * 1000);
-            began = http.begin(evtTls, url);
+            tlsApply(tlsClient);
+            tlsClient.setTimeout((OA_EVENT_LONGPOLL_S + 12) * 1000);
+            began = http.begin(tlsClient, url);
         } else {
             began = http.begin(url);
         }
