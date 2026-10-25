@@ -38,7 +38,13 @@ if [ -d "$SRC/libraries/lvgl" ]; then
     cp "$SRC/libraries/lv_conf.h" "$SKETCHBOOK/lv_conf.h"
 fi
 
-FQBN="esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi,FlashMode=qio,USBMode=hwcdc,CDCOnBoot=cdc,UploadSpeed=921600"
+FQBN="esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=esp_sr_16,PSRAM=opi,FlashMode=qio,USBMode=hwcdc,CDCOnBoot=cdc,UploadSpeed=921600"
+# ESP-SR: only WakeNet is used (no MultiNet command detection). Disabling
+# MultiNet avoids the mn7 FST build crash and keeps the app under 4MB.
+# device/partitions.csv (copied by the core prebuild hook) gives app0/app1 4MB.
+BUILD_PROPS=(--build-property upload.maximum_size=4194304
+             --build-property compiler.c.extra_flags=-DCONFIG_SR_MN_EN_NONE
+             --build-property compiler.cpp.extra_flags=-DCONFIG_SR_MN_EN_NONE)
 
 # 中文路径会让 esp32 构建系统偶发出错：复制到纯 ASCII 临时目录再编译
 BUILD_ROOT="$(cygpath -u "$LOCALAPPDATA")/Temp/airmouse_build"
@@ -51,12 +57,12 @@ BUILD_PATH="$BUILD_ROOT/.build/$DIRNAME"
 
 case "$ACTION" in
 compile)
-    "$ACL" compile --fqbn "$FQBN" \
+    "$ACL" compile --fqbn "$FQBN" "${BUILD_PROPS[@]}" \
         --build-path "$BUILD_PATH" "$BUILD_ROOT/$DIRNAME"
     ;;
 publish)
     # 编译并发布到后端下发目录（设备 OTA 用）：backend/data/device_firmware/
-    "$ACL" compile --fqbn "$FQBN" \
+    "$ACL" compile --fqbn "$FQBN" "${BUILD_PROPS[@]}" \
         --build-path "$BUILD_PATH" "$BUILD_ROOT/$DIRNAME"
     VER=$(grep -o '#define FW_VERSION[[:space:]]*"[^"]*"' "$SRC/config.h" | sed 's/.*"\(.*\)"/\1/')
     [ -n "$VER" ] || { echo "config.h 里没有 FW_VERSION"; exit 1; }
@@ -68,7 +74,7 @@ publish)
     ;;
 upload)
     [ -n "$PORT" ] || { echo "需要串口，例如：build.sh $SKETCH upload COM5"; exit 1; }
-    "$ACL" compile --fqbn "$FQBN" \
+    "$ACL" compile --fqbn "$FQBN" "${BUILD_PROPS[@]}" \
         --build-path "$BUILD_PATH" "$BUILD_ROOT/$DIRNAME"
     "$ACL" upload -p "$PORT" --fqbn "$FQBN" --input-dir "$BUILD_PATH" "$BUILD_ROOT/$DIRNAME"
     ;;

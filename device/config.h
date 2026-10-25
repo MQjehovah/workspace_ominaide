@@ -42,6 +42,15 @@
 #define OA_EVENT_LONGPOLL_S 25             // 设备事件长轮询等待秒数
 #define GESTURE_ENABLE  1                  // 0=关闭手势识别（省电调试用）
 
+// ==================== 语音交互 ====================
+#define WAKE_WORD_ENABLE   1    // 1=启用 ESP-SR 唤醒词（"Hi ESP"）
+#define VOICE_BARGE_IN     1    // 1=播报中允许唤醒词/按键打断
+#define AUTO_RECORD_MAX_S  10   // 唤醒后最长录音秒数
+#define AUTO_RECORD_SIL_MS 850  // 静音多久自动结束
+#define WAKE_LISTEN_MS     5000 // 唤醒后等待开口的最长时间
+#define VOICE_VAD_THRESH   420  // 语音起始峰值阈值
+#define VOICE_SIL_THRESH   180  // 静音判定峰值阈值
+
 // ==================== 音频 ====================
 #define REC_RATE      16000    // 采样率：录音 16k（ASR 标准）
 #define REC_MAX_S     15       // 单次最长录音秒数

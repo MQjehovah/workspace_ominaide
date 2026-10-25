@@ -2,7 +2,7 @@
  * ============================================================================
  *  SmartAssistant · 微雪 ESP32-S3-Touch-AMOLED-2.16 随身智能助手（LVGL v2.0）
  * ============================================================================
- *  核心：按住 KEY3 说话 → ES7210 麦克风录音(16k) → 上传后端 /api/chat/voice
+ *  核心：按住 KEY3 或说 Hi ESP → ES7210 麦克风录音(16k) → 上传后端 /api/chat/voice
  *        → 服务端 agent(记忆+MCP工具+TTS) → ES8311 扬声器播报
  *  界面：LVGL 9.2。独立 lvgl 任务持续渲染（录音/HTTP 阻塞时界面不卡），
  *        三页横滑（时钟 / 待办 / 对话），状态栏（电池/WiFi/后端连接）+ 底部状态行
@@ -23,6 +23,7 @@
 #include <Preferences.h>
 #include "portal.h"
 #include "ESP_I2S.h"
+#include "ESP_SR.h"
 #include "Arduino_GFX_Library.h"
 #include "config.h"
 #include "audio_hal.h"
@@ -114,6 +115,11 @@ volatile bool evtNewTimer = false;
 volatile uint32_t evtTimerEnd = 0;          // millis() 到期时刻，0=无计时器
 volatile char evtTimerLabel[48] = "计时器";
 
+// ---- 唤醒词 / 语音打断 ----
+bool srOk = false;
+volatile bool wakeFlag = false;             // ESP-SR 检测到唤醒词
+volatile bool voiceAbort = false;           // 播报中被按键/唤醒词打断
+
 // ============================================================================
 // 音频
 // ============================================================================
@@ -199,6 +205,38 @@ static void playChime() {
     }
 }
 
+// ---- ESP-SR 唤醒词（Hi ESP）----
+static void srPause() {
+    if (srOk) ESP_SR.pause();
+}
+
+static void srResume() {
+    if (srOk) {
+        ESP_SR.setMode(SR_MODE_WAKEWORD);
+        ESP_SR.resume();
+    }
+}
+
+static void onSrEvent(sr_event_t event, int command_id, int phrase_id) {
+    if (event == SR_EVENT_WAKEWORD || event == SR_EVENT_WAKEWORD_CHANNEL) {
+        wakeFlag = true;
+    } else if (event == SR_EVENT_TIMEOUT) {
+        srResume();
+    }
+}
+
+static bool srInit() {
+#if WAKE_WORD_ENABLE
+    ESP_SR.onEvent(onSrEvent);
+    // MultiNet is compiled out; only WakeNet ("Hi ESP") is used.
+    srOk = ESP_SR.begin(i2s, nullptr, 0, SR_CHANNELS_STEREO, SR_MODE_WAKEWORD, "MM");
+    Serial.printf("[SR] %s\n", srOk ? "wakeword ready (Hi ESP)" : "init FAILED");
+    return srOk;
+#else
+    return false;
+#endif
+}
+
 // 单声道 16k 录音到 PSRAM；返回是否有效
 static bool recordOnce() {
     static const size_t CHUNK = 4096;                       // 立体声帧块
@@ -207,6 +245,7 @@ static bool recordOnce() {
     recPeak = 0;
     int peak = 0;                                           // 采样峰值，用于电平诊断
     uint32_t t0 = millis();
+    srPause();
     ui::recShow(true);
     while (digitalRead(PIN_KEY_TALK) == LOW) {
         size_t n = i2s.readBytes((char*)chunk, CHUNK);
@@ -239,6 +278,128 @@ full:
     Serial.printf("[REC] %lums %u B peak=%d/32767 (%.1fdB)\n",
                   dur, (unsigned)recLen, peak, peak ? 20 * log10f(peak / 32767.0f) : -99.0f);
     return dur >= REC_MIN_MS && recLen > REC_RATE;          // >0.5 秒音频
+}
+
+// ---- 流式 PCM 播放：24k→16k 重采样，播报中可被唤醒词/按键打断 ----
+static double pcmFrac = 0.0;
+static int16_t pcmPrev = 0;
+static bool pcmHave = false;
+
+static void playPcmReset() {
+    pcmFrac = 0.0;
+    pcmPrev = 0;
+    pcmHave = false;
+}
+
+static bool bargeRequested() {
+#if VOICE_BARGE_IN
+    if (digitalRead(PIN_KEY_TALK) == LOW) {
+        voiceAbort = true;
+        return true;
+    }
+    if (wakeFlag) {
+        voiceAbort = true;
+        return true;
+    }
+#endif
+    return false;
+}
+
+static bool playPcm16k(const uint8_t* data, size_t len, uint32_t rate) {
+    if (!g_audioOk) return true;
+    if (bargeRequested()) return false;
+    if (!rate) rate = 16000;
+    const int16_t* in = (const int16_t*)data;
+    size_t n = len / 2;
+    static int16_t st[512];
+    size_t o = 0;
+
+    if (rate == REC_RATE) {
+        for (size_t i = 0; i < n; i++) {
+            st[o++] = in[i];
+            st[o++] = in[i];
+            if (o >= 512) {
+                i2s.write((uint8_t*)st, o * 2);
+                o = 0;
+                if (bargeRequested()) return false;
+            }
+        }
+        if (o) i2s.write((uint8_t*)st, o * 2);
+        return true;
+    }
+
+    double step = (double)REC_RATE / (double)rate;
+    for (size_t i = 0; i < n; i++) {
+        int16_t s = in[i];
+        if (!pcmHave) { pcmPrev = s; pcmHave = true; continue; }
+        while (pcmFrac < 1.0) {
+            int16_t v = (int16_t)((double)pcmPrev + (double)(s - pcmPrev) * pcmFrac);
+            st[o++] = v;
+            st[o++] = v;
+            if (o >= 512) {
+                i2s.write((uint8_t*)st, o * 2);
+                o = 0;
+                if (bargeRequested()) return false;
+            }
+            pcmFrac += step;
+        }
+        pcmFrac -= 1.0;
+        pcmPrev = s;
+    }
+    if (o) i2s.write((uint8_t*)st, o * 2);
+    return true;
+}
+
+// 唤醒后自动录音：开口检测 + 静音自动结束
+static bool recordAuto() {
+    if (!recBuf) return false;
+    static const size_t CHUNK = 4096;
+    static uint8_t chunk[CHUNK];
+    recLen = 0;
+    recPeak = 0;
+    int peakAll = 0;
+    uint32_t t0 = millis(), tLastVoice = 0, tUi = 0;
+    bool speech = false;
+
+    srPause();
+    ui::showChatPage();
+    ui::recShow(true);
+    ui::busy("我在听...");
+
+    while (millis() - t0 < (uint32_t)AUTO_RECORD_MAX_S * 1000UL) {
+        size_t n = i2s.readBytes((char*)chunk, CHUNK);
+        if (!n) { delay(5); continue; }
+        int16_t* s = (int16_t*)chunk;
+        int chunkPeak = 0;
+        for (size_t i = 0; i + 1 < n / 2; i += 2) {
+            if (recLen + 2 > (size_t)REC_MAX_S * REC_RATE * 2) goto done;
+            int32_t v = ((int32_t)s[i] + s[i + 1]) >> 1;
+            int16_t m = (int16_t)constrain(v, -32768, 32767);
+            int a = abs(m);
+            if (a > chunkPeak) chunkPeak = a;
+            memcpy(recBuf + recLen, &m, 2);
+            recLen += 2;
+        }
+        if (chunkPeak > peakAll) peakAll = chunkPeak;
+        if (chunkPeak >= VOICE_VAD_THRESH) {
+            speech = true;
+            tLastVoice = millis();
+        }
+        if (millis() - tUi > 120) {
+            tUi = millis();
+            ui::recUpdate(chunkPeak, (millis() - t0) / 1000);
+        }
+        if (!speech && millis() - t0 > WAKE_LISTEN_MS) break;
+        if (speech && millis() - tLastVoice > AUTO_RECORD_SIL_MS) break;
+        if (digitalRead(PIN_KEY_TALK) == LOW) break;
+    }
+done:
+    ui::recShow(false);
+    ui::busy(nullptr);
+    recPeak = peakAll;
+    Serial.printf("[AUTO REC] %lums %u B peak=%d speech=%d\n",
+                  millis() - t0, (unsigned)recLen, peakAll, (int)speech);
+    return speech && recLen > REC_RATE / 2;
 }
 
 static void playWav(uint32_t rate, const uint8_t* data, size_t len) {
@@ -374,7 +535,7 @@ void clockTick() {
 // ============================================================================
 // 状态机 UI 辅助
 // ============================================================================
-char lastStateLabel[64] = "按住 KEY3 说话";
+char lastStateLabel[64] = "按住 KEY3 或说 Hi ESP";
 uint32_t lastStateColor = 0x4caf50;   // 绿
 
 // 用 int 而非 State 作参数：Arduino 会把函数原型插到枚举声明之前，自定义类型会编译失败
@@ -628,6 +789,7 @@ void setScreenOn(bool on) {
             Serial.println("[PWR] audio re-init done");
         }
         digitalWrite(PIN_PA, HIGH);                     // audioInit 已置高，冗余保护
+        srResume();                                     // 恢复唤醒词监听
         if (strlen(cfgSsid) && !wifiOk) {             // 唤醒回连网络（最多 6 秒）
             ui::setState("连接网络 ...", 0xffd740);        // 黄
             WiFi.mode(WIFI_STA);
@@ -648,6 +810,7 @@ void setScreenOn(bool on) {
             wifiOk = false;
             Serial.println("[PWR] WiFi off");
         }
+        srPause();                                      // 先停唤醒词，再接关闭模拟电
         pmu.disableALDO3();                             // 关模拟电：双编解码器+麦克风偏置
         audioDown = true;
         setCpuFrequencyMhz(80);                         // 降频（LVGL 仍走时，界面保留）
@@ -667,35 +830,71 @@ void powerKeyTick() {
 // ============================================================================
 // 主状态机
 // ============================================================================
+static bool onVoiceEvent(const char* type, const char* text,
+                         const uint8_t* pcm, size_t len,
+                         uint32_t rate, void*) {
+    if (!strcmp(type, "audio")) {
+        srResume();                                  // 播报中保持唤醒词可打断
+        if (state != ST_PLAY) {
+            setState(ST_PLAY, "播报中 ...", 0x00e5ff);
+            ui::busy("播报中 ...");
+        }
+        return playPcm16k(pcm, len, rate);
+    }
+    if (!strcmp(type, "status") && text && text[0]) {
+        setState(ST_VOICE, text, 0xffd740);
+        ui::busy(text);
+    }
+    return true;
+}
+
 void askFlow() {
     static char transcript[512], reply[1024];
 
     setState(ST_VOICE, "对话中 ...", 0xffd740);            // 黄
     ui::busy("对话中 ...");
-    bool ok = oa.voiceAsk(recBuf, recLen, REC_RATE, ttsBuf, TTS_MAX_BYTES,
-                          transcript, sizeof(transcript), reply, sizeof(reply))
-              && (transcript[0] || reply[0]);
+    voiceAbort = false;
+    playPcmReset();
+    bool ok = oa.voiceAskStream(recBuf, recLen, REC_RATE,
+                                transcript, sizeof(transcript),
+                                reply, sizeof(reply), onVoiceEvent);
     ui::busy(nullptr);
-    if (!ok) {
-        setState(ST_ERR, "对话失败", 0xff5252);
-        delay(1200);
-        setState(ST_READY, "按住 KEY3 说话", 0x4caf50);
+
+    if (transcript[0]) ui::chatAppend("user", transcript);
+    if (reply[0]) ui::chatAppend("assistant", reply);
+
+    if (voiceAbort) {
+        // 唤醒词打断：立即进入下一轮聆听；按键打断：等用户重新按键
+        if (wakeFlag) {
+            setState(ST_READY, "我在听 ...", 0xffd740);
+        } else {
+            setState(ST_READY, "已停止", 0xffd740);
+        }
+        srResume();
         return;
     }
 
-    // 识别 + 回答上屏（对话页气泡）
-    ui::chatAppend("user", transcript);
-    ui::chatAppend("assistant", reply);
-
-    if (oa.voiceData > 0) {
-        char l[32];
-        snprintf(l, sizeof(l), "播报中 %.1fs", oa.voiceData / 2.0f / oa.voiceRate);
-        setState(ST_PLAY, l, 0x00e5ff);                    // 青
-        ui::busy(l);
-        playWav(oa.voiceRate, ttsBuf + oa.voiceOff, oa.voiceData);
-        ui::busy(nullptr);
+    if (!ok && !transcript[0] && !reply[0]) {
+        setState(ST_ERR, "对话失败", 0xff5252);
+        delay(1200);
+        setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+        srResume();
+        return;
     }
-    setState(ST_READY, "按住 KEY3 说话", 0x4caf50);
+    setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+    srResume();
+}
+
+void autoAskFlow() {
+    setState(ST_REC, "我在听 ...", 0xff5252);
+    if (!recordAuto()) {
+        setState(ST_ERR, "没听到声音", 0xff5252);
+        delay(1000);
+        setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+        srResume();
+        return;
+    }
+    askFlow();
 }
 
 void setup() {
@@ -782,6 +981,7 @@ void setup() {
     else {
         beepTest();                            // 开机自检音：听到"哔"= 扬声器链路正常
         Serial.println("[AUDIO] ok");
+        srInit();                              // 唤醒词（Hi ESP）
     }
 
     // WiFi
@@ -798,13 +998,13 @@ void setup() {
     else              Serial.println("[IMU] QMI8658 NOT found (gestures off)");
 #endif
 
-    setState(ST_READY, strlen(cfgSsid) ? "按住 KEY3 说话" : "未配置网络", 0x4caf50);
+    setState(ST_READY, strlen(cfgSsid) ? "按住 KEY3 或说 Hi ESP" : "未配置网络", 0x4caf50);
     ui::bootDone();                            // 撤开机画面 → 时钟/待办/对话三页
 
     // 实时事件长轮询（独立任务，录音/触摸不受阻塞）
     xTaskCreatePinnedToCore(eventPollTask, "oa_events", 10240, nullptr, 1, nullptr, 0);
 
-    Serial.println("=== 就绪：按住 KEY3 说话，松开发问 ===");
+    Serial.println("=== 就绪：按住 KEY3 或说 Hi ESP，松开发问 ===");
 }
 
 void loop() {
@@ -859,6 +1059,12 @@ void loop() {
     settingsTick();
     if (!screenOn && digitalRead(PIN_KEY_TALK) == LOW) setScreenOn(true);   // 按说话键顺手亮屏
 
+    // 唤醒词：空闲时自动进入录音 → 流式对话
+    if (wakeFlag && state == ST_READY && screenOn) {
+        wakeFlag = false;
+        autoAskFlow();
+    }
+
     switch (state) {
     case ST_READY:
         if (digitalRead(PIN_KEY_TALK) == LOW) {
@@ -870,13 +1076,17 @@ void loop() {
         }
         break;
     case ST_REC:
-        if (!recordOnce()) setState(ST_READY, "按住 KEY3 说话", 0x4caf50);
-        else if (recPeak < 150) {                          // 近乎静音：提示而不是浪费 ASR
+        if (!recordOnce()) {
+            setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+            srResume();
+        } else if (recPeak < 150) {                        // 近乎静音：提示而不是浪费 ASR
             setState(ST_ERR, "没听到声音", 0xff5252);
             delay(1500);
-            setState(ST_READY, "按住 KEY3 说话", 0x4caf50);
+            setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+            srResume();
+        } else {
+            askFlow();
         }
-        else askFlow();
         break;
     default:
         break;    // ASR/LLM/TTS/PLAY 在 askFlow 内同步执行

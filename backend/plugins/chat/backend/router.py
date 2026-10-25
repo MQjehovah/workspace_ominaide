@@ -1,3 +1,5 @@
+import asyncio
+import base64
 import json
 from datetime import datetime
 from urllib.parse import quote
@@ -14,6 +16,9 @@ from plugins.chat.backend.schemas import (
     AsrResponse, TtsRequest, SessionItem,
 )
 from plugins.chat.backend.memory import build_context
+from plugins.chat.backend.voice_stream import (
+    iter_agent_events, take_sentences, tts_pcm,
+)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -357,6 +362,131 @@ async def voice(
             "X-Reply": quote(reply or "", safe=""),
             "Access-Control-Expose-Headers": "X-Transcript, X-Reply",
         },
+    )
+
+
+@router.post("/voice/stream")
+async def voice_stream(
+    file: UploadFile = File(...),
+    session_id: str = Form(DEFAULT_SESSION),
+    voice: str | None = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Low-latency voice: ASR once, then stream agent text + sentence-level TTS.
+
+    NDJSON frames:
+      {"t":"transcript","text":...}
+      {"t":"status","text":...}
+      {"t":"delta","text":...}
+      {"t":"audio","rate":24000,"pcm":"<base64 mono s16le>"}
+      {"t":"done","reply":...}
+    """
+    asr_key = settings.asr_api_key or settings.llm_api_key
+    tts_key = settings.tts_api_key or settings.llm_api_key
+    if not asr_key:
+        raise HTTPException(status_code=400, detail="ASR API key not configured")
+    if not tts_key:
+        raise HTTPException(status_code=400, detail="TTS API key not configured")
+    if not settings.llm_api_key:
+        raise HTTPException(status_code=400, detail="LLM API key not configured")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+
+    from openai import AsyncOpenAI
+    try:
+        asr_client = AsyncOpenAI(api_key=asr_key, base_url=settings.asr_base_url)
+        tr = await asr_client.audio.transcriptions.create(
+            model=settings.asr_model,
+            file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
+        )
+        transcript = (getattr(tr, "text", "") or "").strip()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ASR failed: {e}")
+    if not transcript:
+        raise HTTPException(status_code=422, detail="No speech recognized")
+
+    sid = session_id or DEFAULT_SESSION
+    req = ChatRequest(message=transcript, session_id=sid)
+    messages = await build_messages(req, user["id"], extra_system=VOICE_STYLE)
+    await save_message(user["id"], "user", transcript, sid)
+
+    out_q: asyncio.Queue = asyncio.Queue(maxsize=64)
+    sent_q: asyncio.Queue = asyncio.Queue()
+    reply_parts: list[str] = []
+
+    async def producer():
+        buf = ""
+        try:
+            async for ev in iter_agent_events(
+                run_agent_stream(user["id"], messages, max_turns=30)
+            ):
+                typ = ev.get("type")
+                if typ == "token":
+                    text = ev.get("content") or ""
+                    if not text:
+                        continue
+                    reply_parts.append(text)
+                    await out_q.put({"t": "delta", "text": text})
+                    sents, buf = take_sentences(buf + text)
+                    for s in sents:
+                        await sent_q.put(s)
+                elif typ in ("tool_call", "tool_result"):
+                    await out_q.put({"t": "status", "text": "正在执行工具..."})
+        finally:
+            sents, _ = take_sentences(buf, flush=True)
+            for s in sents:
+                await sent_q.put(s)
+            await sent_q.put(None)
+
+    async def tts_worker():
+        client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
+        while True:
+            sentence = await sent_q.get()
+            if sentence is None:
+                break
+            try:
+                pcm, rate = await tts_pcm(sentence, client, voice)
+            except Exception:
+                await out_q.put({"t": "status", "text": "语音合成失败"})
+                continue
+            for i in range(0, len(pcm), 6000):
+                await out_q.put({
+                    "t": "audio",
+                    "rate": rate,
+                    "pcm": base64.b64encode(pcm[i:i + 6000]).decode(),
+                })
+
+    async def supervisor():
+        try:
+            await asyncio.gather(producer(), tts_worker())
+        except Exception as e:
+            await out_q.put({"t": "status", "text": f"处理失败：{e}"[:120]})
+        reply = "".join(reply_parts).strip() or "已执行。"
+        await save_message(user["id"], "assistant", reply, sid)
+        await out_q.put({"t": "done", "reply": reply})
+
+    async def gen():
+        yield json.dumps({"t": "transcript", "text": transcript}, ensure_ascii=False) + "\n"
+        task = asyncio.create_task(supervisor())
+        try:
+            while True:
+                item = await out_q.get()
+                yield json.dumps(item, ensure_ascii=False) + "\n"
+                if item.get("t") == "done":
+                    break
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    return StreamingResponse(
+        gen(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

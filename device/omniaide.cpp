@@ -312,6 +312,160 @@ bool OmniAide::voiceAsk(const uint8_t* pcm, size_t pcmLen, uint32_t sampleRate,
     return true;
 }
 
+// ---------------- 流式语音（NDJSON + base64 PCM） ----------------
+
+static int b64v(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+static size_t b64decode(const char* in, uint8_t* out, size_t cap) {
+    int val = 0, bits = -8;
+    size_t o = 0;
+    for (const char* p = in; *p; p++) {
+        if (*p == '=') break;
+        int d = b64v(*p);
+        if (d < 0) continue;
+        val = (val << 6) | d;
+        bits += 6;
+        if (bits >= 0) {
+            if (o < cap) out[o++] = (uint8_t)((val >> bits) & 0xFF);
+            bits -= 8;
+        }
+    }
+    return o;
+}
+
+bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sampleRate,
+                              char* transcript, size_t tMax, char* reply, size_t rMax,
+                              OaVoiceEventCb cb, void* ud) {
+    transcript[0] = reply[0] = 0;
+    if (!configured()) return false;
+    if (!_ok && !login()) return false;
+
+    size_t wavLen = pcmLen + 44;
+    uint8_t* wav = (uint8_t*)heap_caps_malloc(wavLen, MALLOC_CAP_SPIRAM);
+    if (!wav) return false;
+    wavHeader(wav, sampleRate, pcmLen);
+    memcpy(wav + 44, pcm, pcmLen);
+
+    const char* B = "SABoundary7f3a";
+    size_t bodyCap = wavLen + 640;
+    uint8_t* body = (uint8_t*)heap_caps_malloc(bodyCap, MALLOC_CAP_SPIRAM);
+    if (!body) { free(wav); return false; }
+    int n = snprintf((char*)body, bodyCap,
+        "--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"rec.wav\"\r\n"
+        "Content-Type: audio/wav\r\n\r\n", B);
+    memcpy(body + n, wav, wavLen);
+    n += wavLen;
+    n += snprintf((char*)body + n, bodyCap - n,
+        "\r\n--%s\r\nContent-Disposition: form-data; name=\"session_id\"\r\n\r\ndefault\r\n"
+        "--%s--\r\n", B, B);
+    free(wav);
+
+    String url = String(_url) + "/api/chat/voice/stream";
+    HTTPClient http;
+    http.setTimeout(120000);
+    http.setConnectTimeout(5000);
+    http.setReuse(false);
+    if (strncmp(url.c_str(), "https", 5) == 0) {
+        tlsConfig();
+        tlsClient.setTimeout(120000);
+    }
+    bool began = (strncmp(url.c_str(), "https", 5) == 0)
+        ? http.begin(tlsClient, url)
+        : http.begin(url);
+    if (!began) { free(body); return false; }
+    http.addHeader("Authorization", (String("Bearer ") + _token).c_str());
+    char ctype[64];
+    snprintf(ctype, sizeof(ctype), "multipart/form-data; boundary=%s", B);
+    http.addHeader("Content-Type", ctype);
+
+    Serial.printf("%s voice stream upload %u B...\n", TAG, (unsigned)n);
+    int code = http.POST(body, n);
+    free(body);
+    if (code != 200) {
+        String s = http.getString();
+        Serial.printf("%s voice stream err HTTP %d: %.200s\n", TAG, code, s.c_str());
+        http.end();
+        return false;
+    }
+
+    WiFiClient* stream = http.getStreamPtr();
+    if (!stream) { http.end(); return false; }
+
+    static char* lineBuf = nullptr;
+    static uint8_t* audioBuf = nullptr;
+    const size_t LINE_CAP = 16384, AUDIO_CAP = 16384;
+    if (!lineBuf) lineBuf = (char*)heap_caps_malloc(LINE_CAP, MALLOC_CAP_SPIRAM);
+    if (!audioBuf) audioBuf = (uint8_t*)heap_caps_malloc(AUDIO_CAP, MALLOC_CAP_SPIRAM);
+    if (!lineBuf || !audioBuf) { http.end(); return false; }
+
+    size_t ll = 0;
+    bool finished = false;
+    uint32_t lastData = millis();
+    auto appendReply = [&](const char* s) {
+        size_t cur = strlen(reply);
+        size_t add = strlen(s);
+        if (cur + add >= rMax) add = rMax - 1 - cur;
+        memcpy(reply + cur, s, add);
+        reply[cur + add] = 0;
+    };
+    auto handleLine = [&](char* ln) -> bool {
+        JsonDocument doc;
+        if (deserializeJson(doc, ln)) return true;
+        const char* t = doc["t"] | "";
+        if (!strcmp(t, "transcript")) {
+            snprintf(transcript, tMax, "%s", doc["text"] | "");
+            if (cb) return cb("transcript", transcript, nullptr, 0, 0, ud);
+        } else if (!strcmp(t, "delta")) {
+            const char* d = doc["text"] | "";
+            appendReply(d);
+            if (cb) return cb("delta", d, nullptr, 0, 0, ud);
+        } else if (!strcmp(t, "audio")) {
+            const char* b64 = doc["pcm"] | "";
+            uint32_t rate = doc["rate"] | 24000;
+            size_t dlen = b64decode(b64, audioBuf, AUDIO_CAP);
+            if (dlen && cb && !cb("audio", nullptr, audioBuf, dlen, rate, ud)) {
+                finished = true;
+                return false;
+            }
+        } else if (!strcmp(t, "status")) {
+            if (cb) return cb("status", doc["text"] | "", nullptr, 0, 0, ud);
+        } else if (!strcmp(t, "done")) {
+            const char* finalReply = doc["reply"] | "";
+            if (finalReply[0]) snprintf(reply, rMax, "%s", finalReply);
+            finished = true;
+        }
+        return true;
+    };
+
+    while (!finished && (http.connected() || stream->available())) {
+        if (!stream->available()) {
+            if (millis() - lastData > 120000) break;
+            delay(2);
+            continue;
+        }
+        int c = stream->read();
+        if (c < 0) continue;
+        lastData = millis();
+        if (c == '\n') {
+            lineBuf[ll] = 0;
+            if (ll && !handleLine(lineBuf)) { finished = true; break; }
+            ll = 0;
+        } else if (ll < LINE_CAP - 1) {
+            lineBuf[ll++] = (char)c;
+        }
+    }
+    http.end();
+    Serial.printf("%s voice stream done: T=%s R=%u\n", TAG, transcript, (unsigned)strlen(reply));
+    return transcript[0] || reply[0];
+}
+
 // ---------------- 完成待办 ----------------
 
 bool OmniAide::completeTodo(int todoId) {

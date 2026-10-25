@@ -59,6 +59,12 @@ struct OaEvent {
 // OTA 进度回调（0..100）
 typedef void (*OaProgressCb)(int pct, void* ud);
 
+// 流式语音事件：type = transcript|delta|status|audio|done
+// 返回 false 表示请求中断（例如播报被唤醒词/按键打断）
+typedef bool (*OaVoiceEventCb)(const char* type, const char* text,
+                               const uint8_t* pcm, size_t len,
+                               uint32_t rate, void* ud);
+
 class OmniAide {
 public:
     void setEndpoint(const char* url, const char* user, const char* pass);
@@ -83,6 +89,11 @@ public:
     bool voiceAsk(const uint8_t* pcm, size_t pcmLen, uint32_t sampleRate,
                   uint8_t* wavBuf, size_t wavCap,
                   char* transcript, size_t tMax, char* reply, size_t rMax);
+
+    // 流式语音：ASR 一次，边生成边播报；音频通过回调按句子推送
+    bool voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sampleRate,
+                        char* transcript, size_t tMax, char* reply, size_t rMax,
+                        OaVoiceEventCb cb, void* ud = nullptr);
 
     bool loggedIn() const { return _ok; }
     uint32_t lastBriefMs = 0;
