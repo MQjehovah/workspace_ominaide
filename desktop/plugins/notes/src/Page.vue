@@ -414,37 +414,30 @@ function findNodePath(nodes: any[], id: number): any[] {
 }
 
 async function handleMove(sourceId: number, targetId: number, position: 'before' | 'after' | 'inside') {
+  if (sourceId === targetId) return
   const all = flattenTree(tree.value)
   const target = all.find((n: any) => n.id === targetId)
-  if (!target) return
   const source = all.find((n: any) => n.id === sourceId)
-  if (!source) return
+  if (!target || !source) return
 
-  let parentId: number | null = null
-  let sortOrder = 0
+  if (source.is_folder) {
+    const descendants = flattenTree([source]).map((n: any) => n.id)
+    if (descendants.includes(targetId)) return
+  }
 
+  let parentId: number | null
+  let sortOrder: number
   if (position === 'inside') {
+    if (!target.is_folder) return
     parentId = target.id
-    const siblings = (target.children || [])
-    sortOrder = siblings.length > 0 ? Math.max(...siblings.map((s: any) => s.sort_order || 0)) + 1 : 0
-  } else if (position === 'before') {
-    parentId = target.parent_id
-    const siblings = findSiblings(tree.value, target.parent_id) || []
-    const idx = siblings.indexOf(target)
-    if (idx > 0) {
-      sortOrder = siblings[idx - 1].sort_order + Math.round((target.sort_order - siblings[idx - 1].sort_order) / 2)
-    } else {
-      sortOrder = (target.sort_order || 0) - 1
-    }
+    sortOrder = (target.children || []).filter((n: any) => n.id !== sourceId).length
   } else {
-    parentId = target.parent_id
-    const siblings = findSiblings(tree.value, target.parent_id) || []
-    const idx = siblings.indexOf(target)
-    if (idx < siblings.length - 1) {
-      sortOrder = target.sort_order + Math.round((siblings[idx + 1].sort_order - target.sort_order) / 2)
-    } else {
-      sortOrder = (target.sort_order || 0) + 1
-    }
+    parentId = target.parent_id ?? null
+    const siblings = all
+      .filter((n: any) => (n.parent_id ?? null) === parentId && n.id !== sourceId)
+      .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id)
+    const idx = siblings.findIndex((n: any) => n.id === targetId)
+    sortOrder = (idx >= 0 ? idx : 0) + (position === 'after' ? 1 : 0)
   }
 
   try {

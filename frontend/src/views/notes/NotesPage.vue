@@ -3,7 +3,7 @@
     <header class="notes-topbar">
       <div class="notes-heading">
         <div class="notes-title">笔记</div>
-        <div class="notes-sub">{{ treeCount }} 个节点 · {{ saveStatus }}</div>
+        <div class="notes-sub">{{ treeCount }} 个节点 · 拖动可排序/分层</div>
       </div>
       <div class="notes-actions">
         <el-dropdown trigger="click" @command="handleImportCommand">
@@ -75,12 +75,13 @@
               @select="openNote"
               @create-child="createChildNote"
               @delete="deleteNode"
+              @move="handleMove"
             />
             <el-empty v-if="!tree.length" description="暂无笔记" :image-size="60" />
           </template>
         </div>
 
-        <div class="sidebar-foot">{{ treeCount }} 个节点 · {{ saveStatus }}</div>
+        <div class="sidebar-foot">{{ treeCount }} 个节点 · 拖动可排序/分层</div>
       </aside>
 
       <main class="notes-main" v-if="currentId">
@@ -477,6 +478,44 @@ async function restoreVersion(v: any) {
 
 const treeCount = computed(() => flattenTree(tree.value).length)
 const noteCharCount = computed(() => (noteContent.value || '').replace(/\s/g, '').length)
+
+async function handleMove(sourceId: number, targetId: number, position: 'before' | 'after' | 'inside') {
+  if (sourceId === targetId) return
+  const all = flattenTree(tree.value)
+  const source = all.find((n: any) => n.id === sourceId)
+  const target = all.find((n: any) => n.id === targetId)
+  if (!source || !target) return
+
+  if (source.is_folder) {
+    const descendants = flattenTree([source]).map((n: any) => n.id)
+    if (descendants.includes(targetId)) {
+      ElMessage.warning('不能移动到自己的子级')
+      return
+    }
+  }
+
+  let parentId: number | null
+  let index: number
+  if (position === 'inside') {
+    if (!target.is_folder) return
+    parentId = target.id
+    index = (target.children || []).filter((n: any) => n.id !== sourceId).length
+  } else {
+    parentId = target.parent_id ?? null
+    const siblings = all
+      .filter((n: any) => (n.parent_id ?? null) === parentId && n.id !== sourceId)
+      .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id)
+    const ti = siblings.findIndex((n: any) => n.id === targetId)
+    index = (ti >= 0 ? ti : 0) + (position === 'after' ? 1 : 0)
+  }
+
+  try {
+    await client.post(`/plugins/notes/${sourceId}/move`, { parent_id: parentId, sort_order: index })
+    await loadTree()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '移动失败')
+  }
+}
 
 async function createFolder() {
   try {

@@ -246,12 +246,53 @@ async def get_tree(db: AsyncSession, user_id: int) -> list[dict]:
 
 
 async def move_note(db: AsyncSession, user_id: int, note_id: int, parent_id: int | None, sort_order: int | None = None):
+    """Move/reorder a note; sort_order is the target index among siblings."""
     note = await get_note(db, user_id, note_id)
     if not note:
         raise ValueError("Note not found")
+    if parent_id == note.id:
+        raise ValueError("Cannot move a note into itself")
+
+    if parent_id is not None:
+        parent = await get_note(db, user_id, parent_id)
+        if not parent or not parent.is_folder:
+            raise ValueError("Target is not a folder")
+        if note.is_folder:
+            frontier = [note.id]
+            seen = {note.id}
+            while frontier:
+                rows = await db.execute(
+                    select(PluginNote).where(PluginNote.parent_id.in_(frontier))
+                )
+                children = list(rows.scalars().all())
+                frontier = [c.id for c in children if c.id not in seen]
+                seen.update(frontier)
+                if parent_id in seen:
+                    raise ValueError("Cannot move a folder into its descendant")
+
+    old_parent = note.parent_id
+    if old_parent != parent_id:
+        old_q = select(PluginNote).where(
+            PluginNote.user_id == user_id,
+            PluginNote.id != note_id,
+            PluginNote.parent_id.is_(None) if old_parent is None else PluginNote.parent_id == old_parent,
+        ).order_by(PluginNote.sort_order, PluginNote.id)
+        old_siblings = list((await db.execute(old_q)).scalars().all())
+        for i, item in enumerate(old_siblings):
+            item.sort_order = i
+
+    new_q = select(PluginNote).where(
+        PluginNote.user_id == user_id,
+        PluginNote.id != note_id,
+        PluginNote.parent_id.is_(None) if parent_id is None else PluginNote.parent_id == parent_id,
+    ).order_by(PluginNote.sort_order, PluginNote.id)
+    siblings = list((await db.execute(new_q)).scalars().all())
+    index = len(siblings) if sort_order is None else max(0, min(int(sort_order), len(siblings)))
+    ordered = siblings[:index] + [note] + siblings[index:]
     note.parent_id = parent_id
-    if sort_order is not None:
-        note.sort_order = sort_order
+    for i, item in enumerate(ordered):
+        item.sort_order = i
+
     await db.flush()
     await db.refresh(note)
     return note

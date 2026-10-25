@@ -5,7 +5,7 @@
     <div
       :class="['tree-item', { active: node.id === currentId && !node.is_folder, dragging: isDragging }]"
       :style="{ paddingLeft: 16 + depth * 16 + 'px' }"
-      :draggable="!node.is_folder"
+      draggable="true"
       @click="$emit('select', node.id)"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
@@ -85,19 +85,11 @@ function onDragOver(e: DragEvent) {
   const h = rect.height
 
   if (props.node.is_folder) {
-    if (y < h * 0.25) {
-      dropPos.value = 'before'
-    } else {
-      dropPos.value = 'inside'
-    }
+    if (y < h * 0.25) dropPos.value = 'before'
+    else if (y > h * 0.75) dropPos.value = 'after'
+    else dropPos.value = 'inside'
   } else {
-    if (y < h * 0.3) {
-      dropPos.value = 'before'
-    } else if (y > h * 0.7) {
-      dropPos.value = 'after'
-    } else {
-      dropPos.value = 'inside'
-    }
+    dropPos.value = y < h * 0.5 ? 'before' : 'after'
   }
 }
 
