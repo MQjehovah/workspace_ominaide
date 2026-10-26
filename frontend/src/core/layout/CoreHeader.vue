@@ -32,8 +32,8 @@
       </el-dropdown>
       <el-dropdown v-if="auth.user" trigger="click">
         <div class="user-info">
-          <el-avatar :size="28">{{ auth.user.username[0]?.toUpperCase() }}</el-avatar>
-          <span class="user-name">{{ auth.user.username }}</span>
+          <el-avatar :size="28">{{ displayName[0]?.toUpperCase() }}</el-avatar>
+          <span class="user-name">{{ displayName }}</span>
         </div>
         <template #dropdown>
           <el-dropdown-menu>
@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Setting, SwitchButton, Bell } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
@@ -62,6 +62,7 @@ defineEmits<{ 'toggle-sidebar': [] }>()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const displayName = computed(() => auth.user?.username || auth.user?.email || '用户')
 
 const notifications = ref<any[]>([])
 const unreadCount = ref(0)

@@ -49,8 +49,8 @@
     <div class="sidebar-footer">
       <el-dropdown v-if="auth.user" trigger="click" @command="handleCmd">
         <div class="user-btn">
-          <el-avatar :size="32">{{ auth.user.username[0]?.toUpperCase() }}</el-avatar>
-          <span class="user-name" v-if="!collapsed">{{ auth.user.username }}</span>
+          <el-avatar :size="32">{{ displayName[0]?.toUpperCase() }}</el-avatar>
+          <span class="user-name" v-if="!collapsed">{{ displayName }}</span>
         </div>
         <template #dropdown>
           <el-dropdown-menu>
@@ -64,6 +64,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
@@ -72,6 +73,7 @@ defineProps<{ collapsed: boolean }>()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const displayName = computed(() => auth.user?.username || auth.user?.email || '用户')
 
 function handleCmd(cmd: string) {
   if (cmd === 'settings') router.push('/settings')
