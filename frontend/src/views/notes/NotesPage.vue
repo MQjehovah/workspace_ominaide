@@ -486,18 +486,15 @@ async function handleMove(sourceId: number, targetId: number, position: 'before'
   const target = all.find((n: any) => n.id === targetId)
   if (!source || !target) return
 
-  if (source.is_folder) {
-    const descendants = flattenTree([source]).map((n: any) => n.id)
-    if (descendants.includes(targetId)) {
-      ElMessage.warning('不能移动到自己的子级')
-      return
-    }
+  const descendants = flattenTree([source]).map((n: any) => n.id)
+  if (descendants.includes(targetId)) {
+    ElMessage.warning('不能移动到自己的子级')
+    return
   }
 
   let parentId: number | null
   let index: number
   if (position === 'inside') {
-    if (!target.is_folder) return
     parentId = target.id
     index = (target.children || []).filter((n: any) => n.id !== sourceId).length
   } else {

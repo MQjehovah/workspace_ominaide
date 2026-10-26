@@ -420,15 +420,12 @@ async function handleMove(sourceId: number, targetId: number, position: 'before'
   const source = all.find((n: any) => n.id === sourceId)
   if (!target || !source) return
 
-  if (source.is_folder) {
-    const descendants = flattenTree([source]).map((n: any) => n.id)
-    if (descendants.includes(targetId)) return
-  }
+  const descendants = flattenTree([source]).map((n: any) => n.id)
+  if (descendants.includes(targetId)) return
 
   let parentId: number | null
   let sortOrder: number
   if (position === 'inside') {
-    if (!target.is_folder) return
     parentId = target.id
     sortOrder = (target.children || []).filter((n: any) => n.id !== sourceId).length
   } else {

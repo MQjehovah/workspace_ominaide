@@ -255,20 +255,20 @@ async def move_note(db: AsyncSession, user_id: int, note_id: int, parent_id: int
 
     if parent_id is not None:
         parent = await get_note(db, user_id, parent_id)
-        if not parent or not parent.is_folder:
-            raise ValueError("Target is not a folder")
-        if note.is_folder:
-            frontier = [note.id]
-            seen = {note.id}
-            while frontier:
-                rows = await db.execute(
-                    select(PluginNote).where(PluginNote.parent_id.in_(frontier))
-                )
-                children = list(rows.scalars().all())
-                frontier = [c.id for c in children if c.id not in seen]
-                seen.update(frontier)
-                if parent_id in seen:
-                    raise ValueError("Cannot move a folder into its descendant")
+        if not parent:
+            raise ValueError("Target note not found")
+        # Any note can be a tree parent; only prevent cycles.
+        frontier = [note.id]
+        seen = {note.id}
+        while frontier:
+            rows = await db.execute(
+                select(PluginNote).where(PluginNote.parent_id.in_(frontier))
+            )
+            children = list(rows.scalars().all())
+            frontier = [c.id for c in children if c.id not in seen]
+            seen.update(frontier)
+            if parent_id in seen:
+                raise ValueError("Cannot move a note into its descendant")
 
     old_parent = note.parent_id
     if old_parent != parent_id:
