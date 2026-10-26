@@ -437,6 +437,11 @@ async function handleMove(sourceId: number, targetId: number, position: 'before'
     sortOrder = (idx >= 0 ? idx : 0) + (position === 'after' ? 1 : 0)
   }
 
+  if (source.is_folder && parentId !== null) {
+    console.warn('folders cannot be nested')
+    return
+  }
+
   try {
     await window.mqbox?.api.post(`/plugins/notes/${sourceId}/move`, { parent_id: parentId, sort_order: sortOrder })
     await loadTree()

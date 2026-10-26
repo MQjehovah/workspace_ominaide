@@ -67,6 +67,7 @@ function onDragStart(e: DragEvent) {
   isDragging.value = true
   e.dataTransfer.effectAllowed = 'move'
   e.dataTransfer.setData('text/plain', String(props.node.id))
+  if (props.node.is_folder) e.dataTransfer.setData('application/x-omni-folder', '1')
 }
 
 function onDragEnd() {
@@ -83,6 +84,15 @@ function onDragOver(e: DragEvent) {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
   const y = e.clientY - rect.top
   const h = rect.height
+  const folderSource = Array.from(e.dataTransfer.types).includes('application/x-omni-folder')
+  if (folderSource) {
+    if ((props.node.parent_id ?? null) !== null) {
+      dropPos.value = null
+      return
+    }
+    dropPos.value = y < h * 0.5 ? 'before' : 'after'
+    return
+  }
 
   if (props.node.is_folder) {
     if (y < h * 0.25) dropPos.value = 'before'

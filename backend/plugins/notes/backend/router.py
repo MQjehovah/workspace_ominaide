@@ -193,7 +193,10 @@ async def create_note(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    note = await notes_service.create_note(db, user["id"], req)
+    try:
+        note = await notes_service.create_note(db, user["id"], req)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     await record_event(db, user["id"], "note.created", "note", note.id, f"创建笔记: {note.title}")
     return NoteResponse.model_validate(note)
 

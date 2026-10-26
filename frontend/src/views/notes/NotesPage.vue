@@ -506,6 +506,11 @@ async function handleMove(sourceId: number, targetId: number, position: 'before'
     index = (ti >= 0 ? ti : 0) + (position === 'after' ? 1 : 0)
   }
 
+  if (source.is_folder && parentId !== null) {
+    ElMessage.warning('文件夹不能嵌套，只能放在顶层')
+    return
+  }
+
   try {
     await client.post(`/plugins/notes/${sourceId}/move`, { parent_id: parentId, sort_order: index })
     await loadTree()
