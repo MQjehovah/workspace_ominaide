@@ -4,6 +4,7 @@
       <h1>DevOps 管理</h1>
       <div class="tabs">
         <button :class="['tab', tab === 'projects' && 'active']" @click="tab = 'projects'">📂 项目</button>
+        <button :class="['tab', tab === 'coding' && 'active']" @click="tab = 'coding'">🤖 开发</button>
         <button :class="['tab', tab === 'channels' && 'active']" @click="tab = 'channels'">🔌 通道</button>
       </div>
     </header>
@@ -29,6 +30,7 @@
           <div class="card-desc">{{ p.description || p.path }}</div>
           <div class="card-actions">
             <select v-model="toolSelMap[p.path]" class="tool-select" title="选择代理 AI 工具">
+              <option value="omniaide">omniaide</option>
               <option value="opencode">opencode</option>
               <option value="claude">claude</option>
               <option value="codex">codex</option>
@@ -58,6 +60,48 @@
       <div v-if="filteredProjects.length === 0" class="empty">
         <p v-if="projects.length === 0">未找到项目，请点击"扫描项目"</p>
         <p v-else>无匹配项目</p>
+      </div>
+    </div>
+
+    <!-- Coding Tab -->
+    <div v-if="tab === 'coding'" class="content">
+      <div class="coding-form">
+        <div class="form-row">
+          <label>项目</label>
+          <select v-model="codingProject" class="input">
+            <option v-for="p in projects" :key="p.path" :value="p.path">{{ p.name }} — {{ p.path }}</option>
+          </select>
+        </div>
+        <textarea
+          v-model="codingInput"
+          class="coding-input"
+          rows="4"
+          placeholder="描述要完成的开发任务，例如：修复登录接口在 token 过期时的空指针，并补测试"
+        ></textarea>
+        <div class="coding-actions">
+          <button class="btn primary" :disabled="codingRunning || !codingProject || !codingInput.trim()" @click="runCoding">
+            {{ codingRunning ? '⏳ 执行中...' : '▶ 开始' }}
+          </button>
+          <button v-if="codingRunning" class="btn danger" @click="stopCoding">■ 取消</button>
+          <button v-else class="btn" @click="resetThread">🆕 新会话</button>
+          <span v-if="codingTaskId" class="card-hint">任务 {{ codingTaskId }}</span>
+        </div>
+      </div>
+
+      <div class="dev-profile">
+        <span>GitHub：{{ developer?.github_username || '未配置' }}</span>
+        <span>权限：{{ (developer?.permissions || []).join(' / ') || '仅读取与修改' }}</span>
+        <button class="btn sm" @click="detectIdentity">检测本机 Git</button>
+        <button class="btn sm" @click="refreshProfile">刷新档案</button>
+      </div>
+
+      <div v-if="codingSession" class="coding-log">
+        <div class="coding-status" :class="codingSession.status">{{ codingSession.status }}</div>
+        <div v-for="(ev, i) in codingEvents" :key="i" class="coding-event">
+          <span class="ev-type">{{ ev.event }}</span>
+          <span class="ev-text">{{ eventText(ev) }}</span>
+        </div>
+        <pre v-if="codingSession.output" class="coding-output">{{ codingSession.output }}</pre>
       </div>
     </div>
 
@@ -149,6 +193,81 @@ const showAddModal = ref(false)
 const newChannel = ref<{ type: string; name: string }>({ type: 'feishu', name: '' })
 let statusPollTimer: any = null
 
+const codingProject = ref('')
+const codingInput = ref('')
+const codingTaskId = ref('')
+const codingSession = ref<any>(null)
+const codingRunning = ref(false)
+const developer = ref<any>(null)
+let codingPollTimer: any = null
+
+async function loadDeveloper() {
+  developer.value = await execute('getDeveloperProfile').catch(() => null)
+}
+
+async function refreshProfile() {
+  developer.value = await execute('refreshDeveloperProfile').catch(() => null)
+}
+
+async function detectIdentity() {
+  developer.value = await execute('detectDeveloperIdentity', { path: codingProject.value }).catch(() => null)
+}
+
+const codingEvents = computed(() => {
+  const events = codingSession.value?.events || []
+  return events.filter((e: any) => ['tool', 'file', 'milestone', 'failed'].includes(e.event))
+})
+
+function eventText(ev: any) {
+  const d = ev?.data || {}
+  if (ev?.event === 'tool') return `${d.name || ''} ${d.detail || ''}`.trim()
+  if (ev?.event === 'file') return `${d.action || ''} ${d.path || ''}`.trim()
+  if (ev?.event === 'milestone') return d.stage || ''
+  if (ev?.event === 'failed') return d.error || ''
+  return JSON.stringify(d).slice(0, 200)
+}
+
+async function runCoding() {
+  const r = await execute('runCoding', { path: codingProject.value, input: codingInput.value })
+  if (!r?.ok) {
+    alert(r?.error || '启动失败')
+    return
+  }
+  codingTaskId.value = r.taskId
+  codingRunning.value = true
+  codingSession.value = { taskId: r.taskId, status: 'running', output: '', events: [] }
+  startCodingPolling()
+}
+
+async function stopCoding() {
+  if (codingTaskId.value) await execute('cancelCoding', { taskId: codingTaskId.value })
+}
+
+async function resetThread() {
+  if (codingProject.value) await execute('resetCodingThread', { path: codingProject.value })
+  codingSession.value = null
+  codingTaskId.value = ''
+}
+
+function startCodingPolling() {
+  stopCodingPolling()
+  codingPollTimer = setInterval(async () => {
+    if (!codingTaskId.value) return
+    const s = await execute('getCodingSession', { taskId: codingTaskId.value }).catch(() => null)
+    if (s) {
+      codingSession.value = s
+      if (s.status !== 'running') {
+        codingRunning.value = false
+        stopCodingPolling()
+      }
+    }
+  }, 800)
+}
+
+function stopCodingPolling() {
+  if (codingPollTimer) { clearInterval(codingPollTimer); codingPollTimer = null }
+}
+
 const filteredProjects = computed(() => {
   if (!projectFilter.value) return projects.value
   const q = projectFilter.value.toLowerCase()
@@ -183,15 +302,17 @@ onMounted(async () => {
     execute('getChannelStatus'),
   ])
   projects.value = proj || []
-  for (const p of projects.value) toolSelMap.value[p.path] = 'opencode'
+  for (const p of projects.value) toolSelMap.value[p.path] = 'omniaide'
+  if (projects.value.length) codingProject.value = projects.value[0].path
   const b = bind || {}
   binding.value = typeof b === 'string' ? b : (b.path || '')
-  if (binding.value) toolSelMap.value[binding.value] = (typeof b === 'object' && b.tool) || 'opencode'
+  if (binding.value) toolSelMap.value[binding.value] = (typeof b === 'object' && b.tool) || 'omniaide'
   activeAgent.value = act || null
   if (activeAgent.value) toolSelMap.value[activeAgent.value.path] = activeAgent.value.tool
   channels.value = ch || []
   channelTypes.value = types || []
   channelStatus.value = status || []
+  loadDeveloper()
   startStatusPolling()
 })
 
@@ -250,7 +371,7 @@ async function testChannel(c: any) {
 }
 
 async function startAgent(p: any) {
-  const tool = toolSelMap.value[p.path] || 'opencode'
+  const tool = toolSelMap.value[p.path] || 'omniaide'
   agentRunning.value = p.path
   agentResult.value = null
   try {
@@ -281,7 +402,7 @@ function isAgentActive(p: any): boolean {
 }
 
 async function bindFeishu(p: any) {
-  const tool = toolSelMap.value[p.path] || 'opencode'
+  const tool = toolSelMap.value[p.path] || 'omniaide'
   binding.value = p.path
   await execute('bindProject', { path: p.path, tool })
 }
@@ -307,7 +428,7 @@ async function addProjectDir() {
   if (!dir) return
   await execute('addProject', { dir })
   projects.value = await execute('getProjects') || []
-  for (const p of projects.value) if (!toolSelMap.value[p.path]) toolSelMap.value[p.path] = 'opencode'
+  for (const p of projects.value) if (!toolSelMap.value[p.path]) toolSelMap.value[p.path] = 'omniaide'
 }
 
 async function pickAndScan() {
@@ -322,7 +443,7 @@ async function pickAndScan() {
   const proj = await execute('scanCustomDir', { dir })
   if (proj) {
     projects.value = proj
-    for (const p of projects.value) if (!toolSelMap.value[p.path]) toolSelMap.value[p.path] = 'opencode'
+    for (const p of projects.value) if (!toolSelMap.value[p.path]) toolSelMap.value[p.path] = 'omniaide'
   }
 }
 
@@ -336,6 +457,7 @@ function openVSCode(path: string) {
 
 onUnmounted(() => {
   stopStatusPolling()
+  stopCodingPolling()
 })
 </script>
 
@@ -415,4 +537,19 @@ onUnmounted(() => {
 .switch input:checked+.slider::before{transform:translateX(16px)}
 .btn.danger{background:#e74c3c;color:#fff;border-color:#e74c3c}
 .btn.danger:hover{background:#c0392b}
+.coding-form{border:1px solid #eee;border-radius:8px;padding:14px;margin-bottom:14px}
+.coding-form .input{width:100%}
+.coding-input{width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:6px;padding:10px 12px;font-size:12px;font-family:inherit;resize:vertical;outline:none;margin-top:8px}
+.coding-input:focus{border-color:#409EFF}
+.coding-actions{display:flex;align-items:center;gap:8px;margin-top:10px}
+.dev-profile{display:flex;align-items:center;gap:14px;font-size:11px;color:#666;margin-bottom:12px}
+.dev-profile .btn{margin-left:auto}
+.coding-log{border:1px solid #eee;border-radius:8px;padding:12px;max-height:calc(100vh - 360px);overflow-y:auto;background:#fafafa}
+.coding-status{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px;margin-bottom:8px;background:#fff8e1;color:#f39c12}
+.coding-status.done{background:#e8f5e9;color:#2e7d32}
+.coding-status.failed{background:#ffebee;color:#c62828}
+.coding-event{display:flex;gap:8px;font-size:11px;padding:2px 0;border-bottom:1px dashed #f0f0f0}
+.ev-type{flex:0 0 70px;color:#8B5CF6;font-weight:600}
+.ev-text{color:#555;word-break:break-all}
+.coding-output{font-size:11px;white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid #eee;border-radius:6px;padding:10px;margin:10px 0 0;max-height:360px;overflow-y:auto;color:#333}
 </style>

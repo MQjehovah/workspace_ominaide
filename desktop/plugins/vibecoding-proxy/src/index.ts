@@ -1,6 +1,7 @@
 import Panel from './Panel.vue'
 import Page from './Page.vue'
 import { resolve } from 'path'
+import { exec } from 'child_process'
 import { existsSync, statSync } from 'fs'
 import { scanForProjects, suggestScanDirs, addProject, removeProject, getProjects, openInFileManager, openInVSCode, initStorage, type ProjectInfo } from './utils/projectManager'
 import { startAcp, stopAcp, getAcpStatus, stopAllAcp } from './utils/acpClient'
@@ -8,12 +9,49 @@ import { checkAiTools, spawnAiProcess, cancelActiveProcess, resetSession, type A
 import { createChannelManager, CHANNEL_TYPES, type IncomingMessage } from './utils/channelManager'
 import { createVibeChannelClient, type VibeChannelClient } from './utils/channelClient'
 import { OutputParser, type ParsedEvent } from './utils/outputParser'
+import { runCodingAgent } from './utils/codingAgent'
+
+type AgentTool = AiTool | 'omniaide'
+
+interface CodingSession {
+  taskId: string
+  status: 'running' | 'done' | 'failed'
+  output: string
+  events: Array<{ event: string; data: Record<string, unknown>; ts: number }>
+  startedAt: number
+  endedAt: number | null
+}
 
 let toolsCache: Record<AiTool, boolean> = { opencode: false, claude: false, codex: false }
-let activeAgent: { path: string; tool: AiTool } | null = null
+let activeAgent: { path: string; tool: AgentTool } | null = null
 let channelManager: any = null
 let reporter: VibeChannelClient | null = null
 let taskQueue: Promise<void> = Promise.resolve()
+let pluginCtx: any = null
+let latestCodingTaskId = ''
+const codingSessions = new Map<string, CodingSession>()
+const codingCancel = new Set<string>()
+const projectThreads = new Map<string, any[]>()
+let developerProfile: any = null
+let developerProfileAt = 0
+
+async function getDeveloperProfile(): Promise<any> {
+  if (developerProfileAt && Date.now() - developerProfileAt < 300000) return developerProfile
+  try {
+    const profile = await pluginCtx.api.get('/auth/profile')
+    developerProfile = profile?.developer || null
+    developerProfileAt = Date.now()
+  } catch { }
+  return developerProfile
+}
+
+function runGit(args: string, cwd?: string): Promise<string> {
+  return new Promise((resolvePromise) => {
+    exec(`git ${args}`, { cwd, windowsHide: true }, (err, stdout) => {
+      resolvePromise(err ? '' : String(stdout).trim())
+    })
+  })
+}
 
 function newTaskId(): string {
   return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -24,14 +62,36 @@ function projectNameOf(dir: string): string {
   return parts[parts.length - 1] || dir
 }
 
-function runVibeTask(opts: { taskId: string; tool: AiTool; dir: string; input: string; source: string; reply?: (text: string) => Promise<void> }): void {
+function trackCodingEvent(taskId: string, event: string, data: Record<string, unknown>) {
+  const session = codingSessions.get(taskId)
+  if (session) {
+    session.events.push({ event, data, ts: Date.now() })
+    if (session.events.length > 500) session.events.splice(0, session.events.length - 500)
+    if (event === 'output' && typeof data.chunk === 'string') {
+      session.output = (session.output + data.chunk).slice(-60000)
+    }
+  }
+  reporter?.emit(taskId, event as any, data)
+}
+
+function snapshotCodingSession(taskId: string) {
+  const s = codingSessions.get(taskId)
+  if (!s) return null
+  return { ...s, events: s.events.slice(-200) }
+}
+
+function runVibeTask(opts: { taskId: string; tool: AgentTool; dir: string; input: string; source: string; reply?: (text: string) => Promise<void> }): void {
   taskQueue = taskQueue.then(() => executeVibeTask(opts)).catch((e: any) => {
     console.error('[vibe] task error:', e?.message || e)
   })
 }
 
-async function executeVibeTask(opts: { taskId: string; tool: AiTool; dir: string; input: string; source: string; reply?: (text: string) => Promise<void> }): Promise<void> {
+async function executeVibeTask(opts: { taskId: string; tool: AgentTool; dir: string; input: string; source: string; reply?: (text: string) => Promise<void> }): Promise<void> {
   const { taskId, tool, dir, input, source, reply } = opts
+  if (tool === 'omniaide') {
+    await executeOmniaideTask(opts)
+    return
+  }
   try {
     reporter?.emit(taskId, 'started', {
       tool, project: dir, project_name: projectNameOf(dir),
@@ -96,8 +156,56 @@ async function executeVibeTask(opts: { taskId: string; tool: AiTool; dir: string
   }
 }
 
+async function executeOmniaideTask(opts: { taskId: string; dir: string; input: string; source: string; reply?: (text: string) => Promise<void> }): Promise<void> {
+  const { taskId, dir, input, source, reply } = opts
+  latestCodingTaskId = taskId
+  codingCancel.delete(taskId)
+  codingSessions.set(taskId, {
+    taskId, status: 'running', output: '', events: [], startedAt: Date.now(), endedAt: null,
+  })
+  const emit = (event: string, data: Record<string, unknown>) => trackCodingEvent(taskId, event, data)
+  const developer = await getDeveloperProfile()
+  try {
+    const result = await runCodingAgent({
+      taskId,
+      dir,
+      input,
+      source,
+      emit,
+      developer,
+      shouldStop: () => codingCancel.has(taskId),
+      history: projectThreads.get(dir) || [],
+      onMessages: (messages) => projectThreads.set(dir, messages),
+      step: async (messages, tools) => {
+        const res = await pluginCtx.api.post('/vibecoding/agent/step', { messages, tools })
+        return res || {}
+      },
+    })
+    codingCancel.delete(taskId)
+    const session = codingSessions.get(taskId)
+    if (session) {
+      session.status = result.error ? 'failed' : 'done'
+      session.endedAt = Date.now()
+      if (result.output) session.output = result.output
+    }
+    if (reply) {
+      const text = result.error
+        ? `❌ ${result.error}`
+        : (result.output || '✅ 完成').slice(0, 3800)
+      try { await reply(text) } catch (e: any) { console.error('[vibe] reply failed:', e?.message) }
+    }
+  } catch (e: any) {
+    const session = codingSessions.get(taskId)
+    if (session) { session.status = 'failed'; session.endedAt = Date.now() }
+    reporter?.emit(taskId, 'failed', { error: e?.message || String(e), duration_ms: 0 })
+    if (reply) {
+      try { await reply(`❌ 错误: ${e?.message}`) } catch {}
+    }
+  }
+}
+
 function handleDispatch(msg: any) {
-  const tool = (msg?.tool as AiTool) || 'opencode'
+  const tool = (msg?.tool as AgentTool) || 'omniaide'
   const project = String(msg?.project || '')
   const input = String(msg?.input || '')
   const taskId = String(msg?.task_id || newTaskId())
@@ -105,30 +213,40 @@ function handleDispatch(msg: any) {
     reporter?.emit(taskId, 'failed', { error: '派发缺少 project/input', duration_ms: 0 })
     return
   }
-  if (!toolsCache[tool]) {
+  if (tool !== 'omniaide' && !toolsCache[tool]) {
     reporter?.emit(taskId, 'failed', { error: `${tool} 未安装或不在 PATH（本机）`, duration_ms: 0 })
     return
   }
   const dir = resolve(project)
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return
-  runVibeTask({ taskId, tool, dir, input, source: 'mobile' })
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+    reporter?.emit(taskId, 'failed', { error: `项目目录不存在: ${dir}`, duration_ms: 0 })
+    return
+  }
+  runVibeTask({ taskId, tool, dir, input, source: String(msg?.source || 'mobile') })
 }
 
 function handleControl(msg: any) {
   if (msg?.action === 'cancel' && msg?.task_id) {
+    const taskId = String(msg.task_id)
+    const session = codingSessions.get(taskId)
+    if (session && session.status === 'running') {
+      codingCancel.add(taskId)
+      reporter?.emit(taskId, 'milestone', { stage: 'cancelled' })
+      return
+    }
     const ok = cancelActiveProcess()
-    if (ok) reporter?.emit(String(msg.task_id), 'milestone', { stage: 'cancelled' })
+    if (ok) reporter?.emit(taskId, 'milestone', { stage: 'cancelled' })
   }
 }
 
 async function handleProjectsRequest(msg: any) {
-  let tools = { ...toolsCache }
-  try { tools = await checkAiTools(); toolsCache = tools } catch {}
+  let tools: Record<string, boolean> = { ...toolsCache }
+  try { toolsCache = await checkAiTools(); tools = { ...toolsCache } } catch {}
   reporter?.send({
     type: 'projects.response',
     request_id: msg?.request_id || '',
     projects: getProjects().map((p: ProjectInfo) => ({ name: p.name, path: p.path, type: p.type })),
-    tools,
+    tools: { ...tools, omniaide: true },
   })
 }
 
@@ -137,6 +255,7 @@ export default {
   page: Page,
 
   async activate(context: any) {
+    pluginCtx = context
     try {
       toolsCache = await checkAiTools()
     } catch {}
@@ -161,12 +280,12 @@ export default {
       console.error(`[hook:${msg.channelId}] msg: "${msg.text.slice(0, 60)}"`)
 
       let bPath = ''
-      let bTool: AiTool = 'opencode'
+      let bTool: AgentTool = 'opencode'
       try {
         const saved = await context.storage.get('binding_project')
         if (typeof saved === 'object' && saved !== null) {
           bPath = saved.path || ''
-          bTool = (saved.tool as AiTool) || 'opencode'
+          bTool = (saved.tool as AgentTool) || 'opencode'
         } else {
           bPath = String(saved || '')
         }
@@ -176,7 +295,7 @@ export default {
         try { await channelManager.sendTest(msg.channelId) } catch {}
         return
       }
-      if (!toolsCache[bTool]) {
+      if (bTool !== 'omniaide' && !toolsCache[bTool]) {
         try {
           const inst = channelManager.getChannel(msg.channelId)
           if (inst) await inst.reply(msg.replyId, `⚠️ ${bTool} 未安装或不在 PATH，请检查安装`)
@@ -212,11 +331,11 @@ export default {
       const acpStatus = getAcpStatus()
       return {
         title: 'VibeCoding Proxy',
-        subtitle: `${projects.length} 个项目 · ${Object.entries(toolsCache).filter(([,v]) => v).map(([k]) => k).join('/')}`,
+        subtitle: `${projects.length} 个项目 · omniaide/${Object.entries(toolsCache).filter(([,v]) => v).map(([k]) => k).join('/')}`,
         recentProjects: projects.slice(0, 5).map(p => ({
           name: p.name, path: p.path, type: p.type, hasGit: true,
         })),
-        tools: toolsCache,
+        tools: { ...toolsCache, omniaide: true },
         items: projects.slice(0, 5).map(p => {
           const acp = acpStatus.find(a => a.path === p.path)
           return {
@@ -304,7 +423,73 @@ export default {
       return channelManager.sendTest(args.id)
     })
 
-    context.registerCommand('getToolsCache', async () => toolsCache)
+    context.registerCommand('getToolsCache', async () => ({ ...toolsCache, omniaide: true }))
+
+    context.registerCommand('runCoding', async (args: any) => {
+      const path = String(args?.path || '')
+      const input = String(args?.input || '')
+      if (!path || !input.trim()) return { ok: false, error: '缺少项目路径或指令' }
+      const dir = resolve(path)
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) return { ok: false, error: `项目目录不存在: ${dir}` }
+      const taskId = newTaskId()
+      runVibeTask({ taskId, tool: 'omniaide', dir, input, source: 'panel' })
+      return { ok: true, taskId }
+    })
+
+    context.registerCommand('cancelCoding', async (args: any) => {
+      const taskId = String(args?.taskId || '')
+      if (!taskId) return false
+      handleControl({ action: 'cancel', task_id: taskId })
+      return true
+    })
+
+    context.registerCommand('getCodingSession', async (args: any) => {
+      const taskId = String(args?.taskId || latestCodingTaskId || '')
+      return snapshotCodingSession(taskId)
+    })
+
+    context.registerCommand('resetCodingThread', async (args: any) => {
+      const path = String(args?.path || '')
+      if (!path) return false
+      projectThreads.delete(resolve(path))
+      return true
+    })
+
+    context.registerCommand('getDeveloperProfile', async () => getDeveloperProfile())
+
+    context.registerCommand('refreshDeveloperProfile', async () => {
+      developerProfile = null
+      developerProfileAt = 0
+      return getDeveloperProfile()
+    })
+
+    context.registerCommand('detectDeveloperIdentity', async (args: any) => {
+      const cwd = args?.path ? resolve(String(args.path)) : undefined
+      const name = await runGit('config --global user.name')
+      const email = await runGit('config --global user.email')
+      const remote = await runGit('remote get-url origin', cwd)
+      let github = name
+      const m = remote.match(/github\.com[:/]([^/]+)\//i)
+      if (m) github = m[1]
+      const developer = {
+        github_username: github || name,
+        github_email: email,
+        default_org: '',
+        workspace_roots: [],
+        default_branch: 'main',
+        auth: 'ssh',
+        ssh_key_path: '~/.ssh/id_rsa',
+        permissions: ['read', 'edit', 'commit', 'push'],
+        commit_style: '',
+        notes: '',
+      }
+      try {
+        await pluginCtx.api.put('/auth/profile', { developer })
+        developerProfile = developer
+        developerProfileAt = Date.now()
+      } catch { }
+      return developer
+    })
 
     context.registerCommand('getBackendStatus', async () =>
       (await reporter?.status()) || { enabled: false, connected: false, deviceId: '', queued: 0 })
@@ -316,7 +501,7 @@ export default {
 
     context.registerCommand('bindProject', async (args: any) => {
       const path = args?.path || ''
-      const tool = (args?.tool as AiTool) || 'opencode'
+      const tool = (args?.tool as AgentTool) || 'opencode'
       try {
         await context.storage.set('binding_project', { path, tool })
       } catch {}
@@ -326,12 +511,17 @@ export default {
     // Start the selected agent tool in a project (and bind it for Feishu)
     context.registerCommand('startProjectAgent', async (args: any) => {
       const path = args?.path || ''
-      const tool = (args?.tool as AiTool) || 'opencode'
+      const tool = (args?.tool as AgentTool) || 'opencode'
       if (!path) return { ok: false, error: '缺少项目路径' }
-      if (!toolsCache[tool]) return { ok: false, error: `${tool} 未安装或不在 PATH` }
+      if (tool !== 'omniaide' && !toolsCache[tool]) return { ok: false, error: `${tool} 未安装或不在 PATH` }
 
       // Bind this project + tool so Feishu messages route here
       try { await context.storage.set('binding_project', { path, tool }) } catch {}
+
+      if (tool === 'omniaide') {
+        activeAgent = { path, tool }
+        return { ok: true, tool, path, ms: 0, code: 0, output: '自研 Agent 已就绪' }
+      }
 
       // Probe the agent with a short init prompt to confirm it launches
       const t0 = Date.now()
@@ -363,7 +553,7 @@ export default {
       try {
         const saved = await context.storage.get('binding_project')
         if (typeof saved === 'object' && saved !== null) {
-          return { path: saved.path || '', tool: (saved.tool as AiTool) || 'opencode' }
+          return { path: saved.path || '', tool: (saved.tool as AgentTool) || 'opencode' }
         }
         return { path: String(saved || ''), tool: 'opencode' }
       } catch {

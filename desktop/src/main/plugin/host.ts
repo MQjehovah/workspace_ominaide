@@ -161,13 +161,29 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
   proc.registerBridgeHandler('api:post', async ([path, body]) => {
     const cfg = await getConfig()
+    const base = cfg.serverUrl || 'https://mqgeek.com/ominaide'
+    const timeout = String(path).startsWith('/vibecoding/agent') ? 180000 : 15000
+    const send = (token: string) => axios.post(`${base}/api${path}`, body, {
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      timeout,
+    })
     try {
-      const res = await axios.post(`${cfg.serverUrl || 'https://mqgeek.com/ominaide'}/api${path}`, body, {
-        headers: { Authorization: 'Bearer ' + (cfg.token || ''), 'Content-Type': 'application/json' },
-        timeout: 15000,
-      })
+      const res = await send(cfg.token || '')
       return res.data
     } catch (e: any) {
+      if (e.response?.status === 401 && cfg.refresh_token) {
+        try {
+          const r = await axios.post(`${base}/api/auth/refresh`, { refresh_token: cfg.refresh_token }, {
+            headers: { Authorization: 'Bearer ' + (cfg.token || '') },
+          })
+          if (r.data?.access_token) {
+            await setConfig('token', r.data.access_token)
+            if (r.data.refresh_token) await setConfig('refresh_token', r.data.refresh_token)
+            const res = await send(r.data.access_token)
+            return res.data
+          }
+        } catch { }
+      }
       throw new Error(e.response?.data?.detail || e.response?.data || e.message)
     }
   })
