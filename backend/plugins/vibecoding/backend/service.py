@@ -1,3 +1,4 @@
+import asyncio
 import time
 from collections import deque
 
@@ -23,6 +24,7 @@ class VibecodingHub:
         self._tasks: dict[int, dict] = {}
         self._task_order: dict[int, deque] = {}
         self._pending: dict[str, tuple] = {}
+        self._rest_pending: dict[str, asyncio.Future] = {}
         self._history_max = history_max
 
     # -- host channel lifecycle ------------------------------------------
@@ -91,11 +93,22 @@ class VibecodingHub:
             if msg.get("event") in ("started", "done", "failed"):
                 await self.push_device_status(user_id)
         elif msg_type == "projects.response":
-            # desktop -> the requesting viewer
+            # desktop -> the requesting viewer or the awaiting REST call
+            self.resolve_rest_pending(msg)
             requester = self.pop_pending(msg.get("request_id") or "")
             if requester is not None:
                 await host_channel.send_to_ws(requester, CHANNEL, msg)
         elif msg_type == "task.dispatch":
+            if msg.get("tool") in ("omniaide", "server") or msg.get("engine") == "server":
+                from plugins.vibecoding.backend.server_agent import start_server_task
+                await start_server_task(
+                    user_id,
+                    msg.get("task_id"),
+                    msg.get("project"),
+                    msg.get("input"),
+                    msg.get("source") or "mobile",
+                )
+                return
             dispatch = {
                 "type": "task.dispatch",
                 "task_id": msg.get("task_id"),
@@ -113,6 +126,10 @@ class VibecodingHub:
                 if not sent:
                     await self._dispatch_error(user_id, msg.get("task_id"), "没有在线的桌面设备")
         elif msg_type == "task.control":
+            from plugins.vibecoding.backend.server_agent import is_server_task, cancel_server_task
+            if is_server_task(msg.get("task_id")):
+                cancel_server_task(msg.get("task_id"))
+                return
             control = {
                 "type": "task.control",
                 "task_id": msg.get("task_id"),
@@ -124,14 +141,15 @@ class VibecodingHub:
             else:
                 await host_channel.broadcast_to_hosts(user_id, CHANNEL, control)
         elif msg_type == "projects.request":
+            from core.config.settings import settings
+            from plugins.vibecoding.backend.workspace import list_projects
             request_id = msg.get("request_id") or ""
-            self.register_pending(request_id, ws)
-            request = {"type": "projects.request", "request_id": request_id}
-            target = msg.get("device_id")
-            if target:
-                await host_channel.send_to_host(user_id, target, CHANNEL, request)
-            else:
-                await host_channel.broadcast_to_hosts(user_id, CHANNEL, request)
+            await host_channel.send_to_ws(ws, CHANNEL, {
+                "type": "projects.response",
+                "request_id": request_id,
+                "projects": list_projects(settings.coding_workspace_root),
+                "tools": {"omniaide": True},
+            })
 
     async def _dispatch_error(self, user_id: int, task_id, reason: str):
         await host_channel.broadcast_to_viewers(user_id, CHANNEL, {
@@ -222,6 +240,20 @@ class VibecodingHub:
         if time.time() - (entry[1] if entry else 0) > 15:
             return None
         return entry[0] if entry else None
+
+    def register_rest_pending(self, request_id: str) -> asyncio.Future:
+        fut = asyncio.get_running_loop().create_future()
+        self._rest_pending[request_id] = fut
+        return fut
+
+    def resolve_rest_pending(self, msg: dict):
+        request_id = msg.get("request_id") or ""
+        fut = self._rest_pending.pop(request_id, None)
+        if fut is not None and not fut.done():
+            fut.set_result(msg)
+
+    def drop_rest_pending(self, request_id: str):
+        self._rest_pending.pop(request_id, None)
 
 
 hub = VibecodingHub()

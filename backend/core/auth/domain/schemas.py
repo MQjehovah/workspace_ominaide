@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class ContactInfo(BaseModel):
@@ -12,6 +12,19 @@ class ProjectInfo(BaseModel):
     deadline: str | None = None
 
 
+class DeveloperProfile(BaseModel):
+    github_username: str | None = None
+    github_email: str | None = None
+    default_org: str | None = None
+    workspace_roots: list[str] | None = None
+    default_branch: str = "main"
+    auth: str = "ssh"
+    ssh_key_path: str | None = None
+    permissions: list[str] = Field(default_factory=lambda: ["read", "edit", "commit", "push"])
+    commit_style: str | None = None
+    notes: str | None = None
+
+
 class UserProfileResponse(BaseModel):
     user_id: int
     name: str | None = None
@@ -20,6 +33,7 @@ class UserProfileResponse(BaseModel):
     contacts: list[ContactInfo] | None = None
     projects: list[ProjectInfo] | None = None
     preferences: dict | None = None
+    developer: DeveloperProfile | None = None
     model_config = {"from_attributes": True}
 
 
@@ -30,6 +44,7 @@ class UserProfileUpdate(BaseModel):
     contacts: list[ContactInfo] | None = None
     projects: list[ProjectInfo] | None = None
     preferences: dict | None = None
+    developer: DeveloperProfile | None = None
 
 
 class RegisterRequest(BaseModel):

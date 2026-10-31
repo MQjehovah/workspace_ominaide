@@ -98,6 +98,7 @@ async def get_profile(user: dict = Depends(get_current_user), db: AsyncSession =
     contacts = json.loads(profile.contacts) if profile.contacts else None
     projects = json.loads(profile.projects) if profile.projects else None
     preferences = json.loads(profile.preferences) if profile.preferences else None
+    developer = json.loads(profile.developer) if profile.developer else None
     return UserProfileResponse(
         user_id=profile.user_id,
         name=profile.name,
@@ -106,6 +107,7 @@ async def get_profile(user: dict = Depends(get_current_user), db: AsyncSession =
         contacts=contacts,
         projects=projects,
         preferences=preferences,
+        developer=developer,
     )
 
 
@@ -115,6 +117,7 @@ async def put_profile(req: UserProfileUpdate, user: dict = Depends(get_current_u
     contacts = json.loads(profile.contacts) if profile.contacts else None
     projects = json.loads(profile.projects) if profile.projects else None
     preferences = json.loads(profile.preferences) if profile.preferences else None
+    developer = json.loads(profile.developer) if profile.developer else None
     return UserProfileResponse(
         user_id=profile.user_id,
         name=profile.name,
@@ -123,6 +126,7 @@ async def put_profile(req: UserProfileUpdate, user: dict = Depends(get_current_u
         contacts=contacts,
         projects=projects,
         preferences=preferences,
+        developer=developer,
     )
 
 

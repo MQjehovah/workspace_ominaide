@@ -33,5 +33,7 @@ async def update_profile(db: AsyncSession, user_id: int, data: UserProfileUpdate
         profile.projects = json.dumps([p.model_dump() for p in data.projects], ensure_ascii=False)
     if data.preferences is not None:
         profile.preferences = json.dumps(data.preferences, ensure_ascii=False)
+    if data.developer is not None:
+        profile.developer = json.dumps(data.developer.model_dump(), ensure_ascii=False)
     await db.flush()
     return profile

@@ -26,4 +26,5 @@ class UserProfile(Base):
     contacts = Column(Text, nullable=True)
     projects = Column(Text, nullable=True)
     preferences = Column(Text, nullable=True)
+    developer = Column(Text, nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

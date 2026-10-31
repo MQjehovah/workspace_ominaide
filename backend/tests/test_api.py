@@ -106,6 +106,45 @@ async def test_mail_event_report_and_mcp(client, admin_token):
     assert "list_recent_emails" in names
 
 
+async def test_coding_task_requires_auth(client):
+    r = await client.post("/api/vibecoding/tasks", json={"project": "E:/x", "input": "y"})
+    assert r.status_code == 401
+
+
+async def test_coding_dispatch_without_desktop(client, admin_token):
+    r = await client.post(
+        "/api/vibecoding/tasks",
+        json={"project": "E:/x", "input": "y", "tool": "opencode"},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 409
+
+
+async def test_coding_dispatch_server_engine(client, admin_token):
+    r = await client.post(
+        "/api/vibecoding/tasks",
+        json={"project": "/workspace/missing", "input": "y"},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 200
+    assert r.json().get("engine") == "server"
+    assert r.json().get("task_id")
+
+
+async def test_coding_projects_endpoint(client, admin_token):
+    r = await client.get("/api/vibecoding/projects", headers=auth(admin_token))
+    assert r.status_code == 200
+    assert "projects" in r.json()
+    assert r.json()["tools"].get("omniaide") is True
+
+
+async def test_coding_tools_registered(client, admin_token):
+    r = await client.get("/api/mcp/tools", headers=auth(admin_token))
+    names = {t["name"] for t in r.json()["tools"]}
+    assert "dispatch_coding_task" in names
+    assert "list_coding_projects" in names
+
+
 async def test_activity_post_and_list(client, admin_token):
     """Client-reported activity events can be posted and listed."""
     payload = {

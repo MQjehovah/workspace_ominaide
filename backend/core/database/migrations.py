@@ -29,6 +29,10 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("chat_messages")}
             if "session_id" not in cols:
                 result.append("chat_messages")
+        if "user_profiles" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("user_profiles")}
+            if "developer" not in cols:
+                result.append("user_profiles")
         # LONGTEXT widening is only meaningful on MySQL; PostgreSQL TEXT is unbounded.
         if dialect == "mysql" and "plugin_notes" in table_names:
             cols = {c["name"]: c["type"] for c in inspector.get_columns("plugin_notes")}
@@ -46,5 +50,7 @@ async def ensure_schema_migrations():
                 await conn.execute(text(f"ALTER TABLE schedule_events ADD COLUMN reminded BOOLEAN DEFAULT {bool_default}"))
             elif table == "chat_messages":
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN session_id VARCHAR(64) DEFAULT 'default'"))
+            elif table == "user_profiles":
+                await conn.execute(text("ALTER TABLE user_profiles ADD COLUMN developer TEXT NULL"))
             elif table == "plugin_notes":
                 await conn.execute(text("ALTER TABLE plugin_notes MODIFY content LONGTEXT NULL"))

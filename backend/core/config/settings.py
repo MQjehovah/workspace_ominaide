@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
     intelligence_layer_enabled: bool = True
+    coding_workspace_root: str = "/workspace"
+    coding_max_turns: int = 40
+    coding_command_timeout_ms: int = 120000
     # Notes RAG: chunking + hybrid retrieval (vector + BM25 + RRF + MMR)
     notes_rag_enabled: bool = True
     notes_chunk_size: int = 600

@@ -203,6 +203,29 @@ async def activity_stats(user_id: int, args: dict) -> dict:
         }
 
 
+async def list_coding_projects(user_id: int, args: dict) -> dict:
+    """List projects available on the backend coding workspace."""
+    from core.config.settings import settings
+    from plugins.vibecoding.backend.workspace import list_projects
+
+    return {
+        "projects": list_projects(settings.coding_workspace_root),
+        "tools": {"omniaide": True},
+    }
+
+
+async def dispatch_coding_task(user_id: int, args: dict) -> dict:
+    """Dispatch a development task to the backend coding agent."""
+    from plugins.vibecoding.backend.server_agent import start_server_task
+
+    project = (args.get("project") or "").strip()
+    instruction = (args.get("instruction") or "").strip()
+    if not project or not instruction:
+        return {"error": "project and instruction are required"}
+    task_id = await start_server_task(user_id, None, project, instruction, "assistant")
+    return {"task_id": task_id, "dispatched": 1, "project": project, "engine": "server"}
+
+
 def register_ai_tools():
     tool_registry.register(MCPTool(name="list_schedule_events", description="List upcoming schedule/calendar events within a date range. Returns event titles and times.", inputSchema={"type":"object","properties":{"start":{"type":"string","description":"Start date ISO format"},"end":{"type":"string","description":"End date ISO format"}}}), list_schedule_events)
     tool_registry.register(MCPTool(name="list_recent_emails", description="List recent emails received by the user. Returns subject, sender and preview. Use important=true to filter for important mail.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results"},"important":{"type":"boolean","description":"Only important emails"}}}), list_recent_emails)
@@ -214,3 +237,5 @@ def register_ai_tools():
     tool_registry.register(MCPTool(name="unified_search", description="Search across all your data (files, notes, articles, events) with a natural language query. Use this as the primary search tool.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Natural language search query"},"types":{"type":"array","items":{"type":"string"},"description":"Optional: filter by type (file, note, rss_entry, event)"}},"required":["q"]}), unified_search_tool)
     tool_registry.register(MCPTool(name="list_activities", description="List recent user activity/event stream records (app usage, file ops, notifications, etc). Returns event type, summary and time.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results, default 20"},"event_type":{"type":"string","description":"Optional: filter by event type (e.g. app.used, file.created)"},"days":{"type":"integer","description":"Optional: look back days, default 7"}}}), list_activities)
     tool_registry.register(MCPTool(name="activity_stats", description="Get aggregated activity statistics: top apps by usage minutes, event type distribution, total event count.", inputSchema={"type":"object","properties":{"days":{"type":"integer","description":"Look back days, default 7"}}}), activity_stats)
+    tool_registry.register(MCPTool(name="list_coding_projects", description="List projects registered on the user's desktop coding agent. Use this before dispatching a coding task when the project path is unknown.", inputSchema={"type":"object","properties":{}}), list_coding_projects)
+    tool_registry.register(MCPTool(name="dispatch_coding_task", description="Dispatch a software development task to the user's desktop coding agent. It reads/edits files and runs commands locally, fully automatically. Requires the project's absolute path on the desktop machine.", inputSchema={"type":"object","properties":{"project":{"type":"string","description":"Absolute project directory path on the desktop machine"},"instruction":{"type":"string","description":"Detailed development task in natural language"},"tool":{"type":"string","description":"Optional agent tool, default omniaide"}},"required":["project","instruction"]}), dispatch_coding_task)
