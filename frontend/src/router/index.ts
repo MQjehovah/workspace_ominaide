@@ -45,6 +45,11 @@ const router = createRouter({
           component: () => import('@/views/Device.vue')
         },
         {
+          path: 'coding',
+          name: 'Coding',
+          component: () => import('@/views/Coding.vue')
+        },
+        {
           path: 'apps/:pluginName/:pathMatch(.*)*',
           name: 'PluginHost',
           component: () => import('@/core/layout/PluginHost.vue')

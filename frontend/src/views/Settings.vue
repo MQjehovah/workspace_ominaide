@@ -52,6 +52,54 @@
             <p v-else style="color:#909399;padding:20px">加载中...</p>
           </el-tab-pane>
 
+          <el-tab-pane label="开发者档案" name="developer">
+            <el-form v-if="profileForm" label-width="130px" style="margin-top:12px;max-width:640px">
+              <el-form-item label="GitHub 用户名">
+                <el-input v-model="profileForm.developer.github_username" placeholder="MQjehovah" />
+              </el-form-item>
+              <el-form-item label="Git 提交邮箱">
+                <el-input v-model="profileForm.developer.github_email" placeholder="you@example.com" />
+              </el-form-item>
+              <el-form-item label="默认组织">
+                <el-input v-model="profileForm.developer.default_org" placeholder="可选" />
+              </el-form-item>
+              <el-form-item label="默认分支">
+                <el-input v-model="profileForm.developer.default_branch" placeholder="main" />
+              </el-form-item>
+              <el-form-item label="工作区根目录">
+                <el-input v-model="workspaceRootsText" type="textarea" :rows="3" placeholder="每行一个路径，例如 E:\workspace" />
+              </el-form-item>
+              <el-form-item label="认证方式">
+                <el-radio-group v-model="profileForm.developer.auth">
+                  <el-radio-button value="ssh">SSH key</el-radio-button>
+                  <el-radio-button value="gh">gh CLI</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="SSH key 路径">
+                <el-input v-model="profileForm.developer.ssh_key_path" placeholder="~/.ssh/id_rsa" />
+              </el-form-item>
+              <el-form-item label="允许的操作">
+                <el-checkbox-group v-model="profileForm.developer.permissions">
+                  <el-checkbox value="read">读取</el-checkbox>
+                  <el-checkbox value="edit">修改</el-checkbox>
+                  <el-checkbox value="commit">提交</el-checkbox>
+                  <el-checkbox value="push">推送</el-checkbox>
+                  <el-checkbox value="pr">开 PR</el-checkbox>
+                </el-checkbox-group>
+              </el-form-item>
+              <el-form-item label="提交规范">
+                <el-input v-model="profileForm.developer.commit_style" placeholder="例如：类型: 简短描述" />
+              </el-form-item>
+              <el-form-item label="补充说明">
+                <el-input v-model="profileForm.developer.notes" type="textarea" :rows="2" />
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" :loading="saving" @click="saveProfile">保存档案</el-button>
+              </el-form-item>
+            </el-form>
+            <p v-else style="color:#909399;padding:20px">加载中...</p>
+          </el-tab-pane>
+
           <el-tab-pane label="服务器" name="server">
             <el-form label-width="120px" style="margin-top:12px;max-width:600px">
               <el-form-item label="服务器地址">
@@ -110,11 +158,33 @@ const saving = ref(false)
 
 interface Contact { name: string; relation: string }
 interface Project { name: string; deadline: string }
+interface Developer {
+  github_username: string; github_email: string; default_org: string
+  workspace_roots: string[]; default_branch: string; auth: string
+  ssh_key_path: string; permissions: string[]; commit_style: string; notes: string
+}
+
+const workspaceRootsText = ref('')
 
 const profileForm = ref<{
   name: string; role: string; company: string
-  contacts: Contact[]; projects: Project[]
+  contacts: Contact[]; projects: Project[]; developer: Developer
 } | null>(null)
+
+function emptyDeveloper(): Developer {
+  return {
+    github_username: '',
+    github_email: '',
+    default_org: '',
+    workspace_roots: [],
+    default_branch: 'main',
+    auth: 'ssh',
+    ssh_key_path: '',
+    permissions: ['read', 'edit', 'commit', 'push'],
+    commit_style: '',
+    notes: '',
+  }
+}
 
 const connected = ref(false)
 const serverVersion = ref('')
@@ -174,13 +244,21 @@ async function fetchProfile() {
   try {
     const res = await client.get('/auth/profile')
     const d = res.data
+    const dev = d.developer || {}
     profileForm.value = {
       name: d.name || '',
       role: d.role || '',
       company: d.company || '',
       contacts: d.contacts || [],
       projects: d.projects || [],
+      developer: {
+        ...emptyDeveloper(),
+        ...dev,
+        workspace_roots: dev.workspace_roots || [],
+        permissions: dev.permissions || ['read', 'edit', 'commit', 'push'],
+      },
     }
+    workspaceRootsText.value = (dev.workspace_roots || []).join('\n')
   } catch { /* ignore */ }
 }
 
@@ -203,7 +281,14 @@ function removeProject(i: number) {
 async function saveProfile() {
   saving.value = true
   try {
-    await client.put('/auth/profile', profileForm.value)
+    const payload: any = {
+      ...profileForm.value,
+      developer: {
+        ...profileForm.value!.developer,
+        workspace_roots: workspaceRootsText.value.split('\n').map(s => s.trim()).filter(Boolean),
+      },
+    }
+    await client.put('/auth/profile', payload)
     ElMessage.success('资料已保存')
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
