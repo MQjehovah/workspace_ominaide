@@ -392,6 +392,23 @@ async def _llm_call(client, messages: list[dict]):
     raise last_error or RuntimeError("LLM call failed")
 
 
+_SEMAPHORE: asyncio.Semaphore | None = None
+_PROJECT_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _semaphore() -> asyncio.Semaphore:
+    global _SEMAPHORE
+    if _SEMAPHORE is None:
+        _SEMAPHORE = asyncio.Semaphore(max(int(settings.coding_max_concurrency or 1), 1))
+    return _SEMAPHORE
+
+
+def _project_lock(project: str) -> asyncio.Lock:
+    """One lock per working tree: two tasks must never edit the same repo at once."""
+    key = str(Path(project).resolve())
+    return _PROJECT_LOCKS.setdefault(key, asyncio.Lock())
+
+
 def _delivery_line(summary: dict | None) -> str:
     if not summary:
         return ""
@@ -433,6 +450,8 @@ async def _run_task(user_id: int, task_id: str, project: str, instruction: str, 
     recorder = _RECORDERS.get(task_id)
     turns_used = 0
     messages: list[dict] | None = None
+    sem_acquired = False
+    lock_acquired = False
 
     try:
         await _emit(user_id, task_id, "started", {
@@ -444,6 +463,22 @@ async def _run_task(user_id: int, task_id: str, project: str, instruction: str, 
             "engine": "server",
             "auto_deliver": auto_deliver,
         })
+
+        # Cap overall concurrency, then serialize per working tree so two tasks
+        # never edit the same repository simultaneously.
+        sem = _semaphore()
+        await sem.acquire()
+        sem_acquired = True
+        lock = _project_lock(project)
+        if lock.locked():
+            await _emit(user_id, task_id, "milestone", {
+                "stage": "queued",
+                "reason": "project_busy",
+                "detail": "该项目已有任务在执行，排队等待",
+            })
+        await lock.acquire()
+        lock_acquired = True
+
         await _emit(user_id, task_id, "milestone", {"stage": "context"})
 
         context = ""
@@ -607,6 +642,10 @@ async def _run_task(user_id: int, task_id: str, project: str, instruction: str, 
             "turns": turns_used,
         })
     finally:
+        if lock_acquired:
+            lock.release()
+        if sem_acquired:
+            sem.release()
         if recorder is not None:
             recorder.set_turns(turns_used)
             if messages:

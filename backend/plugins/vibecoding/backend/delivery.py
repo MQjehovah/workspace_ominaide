@@ -6,7 +6,9 @@ dedicated branch, and force-push is never used.
 """
 
 import asyncio
+import os
 import re
+import signal
 import time
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -16,6 +18,27 @@ from plugins.vibecoding.backend.context import invalidate_context
 
 Emit = Callable[..., Awaitable[None]]
 PROTECTED_BRANCHES = {"main", "master"}
+
+# Delivery git runs as root, but the working tree and .git are writable by the
+# sandbox user. Any config key the model can set would then execute as root
+# (hooks, clean filters, fsmonitor, gpg.program, ext:: remotes). These flags plus
+# a temporarily rewritten .git/config keep root git on trusted settings.
+_SAFE_GIT_ARGS = [
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.fsmonitor=false",
+    "-c", "commit.gpgsign=false",
+    "-c", "tag.gpgsign=false",
+    "-c", "core.pager=cat",
+]
+_SAFE_REMOTE = re.compile(r"^(?:https?://|ssh://|git@)[^\s]+$")
+_MINIMAL_CONFIG = """[core]
+\trepositoryformatversion = 0
+\tfilemode = true
+\tbare = false
+\tlogallrefupdates = true
+[remote "origin"]
+\turl = {origin}
+"""
 
 
 def _slug(text: str, limit: int = 32) -> str:
@@ -57,7 +80,7 @@ async def _git(root: str, args: list[str], *, identity: dict | None, ssh_key: st
     env = workspace.git_env(identity, ssh_key)
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", *args,
+            "git", *_SAFE_GIT_ARGS, *args,
             cwd=str(root),
             env=env,
             stdout=asyncio.subprocess.PIPE,
@@ -85,21 +108,38 @@ async def _git(root: str, args: list[str], *, identity: dict | None, ssh_key: st
 
 async def _shell(root: str, command: str, *, identity: dict | None, ssh_key: str | None,
                  timeout: float) -> tuple[int, str, str]:
-    env = workspace.git_env(identity, ssh_key)
+    """Run the project's verify command as the unprivileged sandbox user."""
+    sandbox = workspace.sandbox_identity()
+    if sandbox is None and workspace.settings.coding_sandbox_enabled and workspace._euid() == 0:
+        return -1, "", "sandbox user is unavailable; refusing to verify as root"
+    if sandbox:
+        env = workspace.sandbox_env(identity)
+        run_kwargs = {"user": sandbox[0], "group": sandbox[1], "extra_groups": []}
+    else:
+        env = workspace.git_env(identity, ssh_key)
+        run_kwargs = {}
     proc = await asyncio.create_subprocess_shell(
         command,
         cwd=str(root),
         env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+        **run_kwargs,
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+            if hasattr(os, "killpg"):
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
         await proc.communicate()
         return -1, "", f"command timed out after {int(timeout)}s"
     return (
@@ -107,6 +147,85 @@ async def _shell(root: str, command: str, *, identity: dict | None, ssh_key: str
         out.decode("utf-8", errors="replace"),
         err.decode("utf-8", errors="replace"),
     )
+
+
+def _chown_git_dir(root: str) -> None:
+    """Hand .git back to the sandbox user after root-owned git operations."""
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return
+    try:
+        import grp
+        import pwd
+        from core.config.settings import settings
+
+        entry = pwd.getpwnam(settings.coding_sandbox_user)
+        if entry.pw_uid == 0:
+            return
+        git_dir = Path(root) / ".git"
+        if git_dir.is_symlink() or not git_dir.is_dir():
+            return
+        root_real = Path(root).resolve()
+        if root_real != git_dir.resolve().parent:
+            return
+        touched = 0
+        for dirpath, dirnames, filenames in os.walk(git_dir, followlinks=False):
+            for name in dirnames + filenames:
+                try:
+                    os.chown(os.path.join(dirpath, name), entry.pw_uid, entry.pw_gid,
+                             follow_symlinks=False)
+                except (OSError, NotImplementedError):
+                    pass
+                touched += 1
+                if touched > 50_000:
+                    return
+        try:
+            os.chown(git_dir, entry.pw_uid, entry.pw_gid, follow_symlinks=False)
+        except OSError:
+            pass
+    except Exception:
+        pass
+
+
+async def _harden_repo(root: str, identity: dict, ssh_key: str | None):
+    """Swap in a minimal trusted .git/config for the duration of delivery.
+
+    Returns `(restore, error)`. `restore` must be called exactly once.
+    """
+    def noop() -> None:
+        return None
+
+    git_dir = Path(root) / ".git"
+    if git_dir.is_symlink():
+        return noop, ".git 是软链接，拒绝交付"
+    config = git_dir / "config"
+    if config.is_symlink():
+        return noop, ".git/config 是软链接，拒绝交付"
+    if not config.is_file():
+        return noop, None
+    try:
+        original = config.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return noop, None
+
+    code, origin, _ = await _git(root, ["config", "--get", "remote.origin.url"],
+                                 identity=identity, ssh_key=ssh_key)
+    origin = origin.strip() if code == 0 else ""
+    if origin and not _SAFE_REMOTE.match(origin):
+        return noop, f"不支持的 git 远端地址：{origin[:120]}"
+
+    if origin:
+        try:
+            config.write_text(_MINIMAL_CONFIG.format(origin=origin), encoding="utf-8")
+        except OSError:
+            return noop, None
+
+    def restore() -> None:
+        try:
+            config.write_text(original, encoding="utf-8")
+        except OSError:
+            pass
+
+    return restore, None
 
 
 async def deliver(root: str, instruction: str, *, developer: dict | None = None,
@@ -117,8 +236,34 @@ async def deliver(root: str, instruction: str, *, developer: dict | None = None,
     """Verify, branch, commit and (optionally) push the working tree.
 
     Returns a summary dict; never raises for expected git/verify failures so the
-    agent task can still finish and report what happened.
+    agent task can still finish and report what happened. Root-owned git writes
+    are handed back to the sandbox user on every exit path.
     """
+    developer = developer or {}
+    identity = {
+        "name": developer.get("github_username"),
+        "email": developer.get("github_email"),
+    }
+    restore, error = await _harden_repo(root, identity, developer.get("ssh_key_path"))
+    try:
+        if error:
+            return {"ok": False, "skipped": True, "stage": "repo", "detail": error}
+        return await _run_delivery(
+            root, instruction, developer=developer, allow_commit=allow_commit,
+            allow_push=allow_push, verify_command=verify_command,
+            branch_prefix=branch_prefix, timeout_ms=timeout_ms, emit=emit,
+        )
+    finally:
+        restore()
+        _chown_git_dir(root)
+        invalidate_context(root)
+
+
+async def _run_delivery(root: str, instruction: str, *, developer: dict | None = None,
+                        allow_commit: bool = True, allow_push: bool = True,
+                        verify_command: str = "", branch_prefix: str = "agent/",
+                        timeout_ms: int = 600_000,
+                        emit: Emit | None = None) -> dict:
 
     async def notify(stage: str, ok: bool | None, detail: str = "", **extra):
         if emit is None:
@@ -218,7 +363,6 @@ async def deliver(root: str, instruction: str, *, developer: dict | None = None,
 
     if not allow_push:
         await notify("push_skipped", False, "开发者档案未授予 push 权限")
-        invalidate_context(root)
         return summary
 
     code, out, err = await _git(root, ["push", "-u", "origin", branch],
@@ -226,7 +370,6 @@ async def deliver(root: str, instruction: str, *, developer: dict | None = None,
     if code != 0:
         await notify("push_failed", False, _tail(err or out))
         summary["push_error"] = _tail(err or out)
-        invalidate_context(root)
         return summary
 
     _, remote, _ = await _git(root, ["remote", "get-url", "origin"], identity=identity, ssh_key=ssh_key)
@@ -236,5 +379,4 @@ async def deliver(root: str, instruction: str, *, developer: dict | None = None,
     await notify("push", True, branch, branch=branch)
     if pr_url:
         await notify("pr", True, pr_url, url=pr_url)
-    invalidate_context(root)
     return summary

@@ -1,9 +1,18 @@
 import asyncio
 import os
 import re
+import shlex
+import signal
 from pathlib import Path
 
 from core.config.settings import settings
+
+try:  # POSIX only; Windows dev machines fall back to running as the current user
+    import grp
+    import pwd
+except ImportError:  # pragma: no cover
+    grp = None
+    pwd = None
 
 SKIP_DIRS = {
     "node_modules", ".git", ".ssh", "dist", "build", "dist-electron", "out", "target",
@@ -44,7 +53,7 @@ def is_sensitive_path(path: str) -> bool:
 
 
 def git_env(identity: dict | None = None, ssh_key: str | None = None) -> dict:
-    """Environment for git subprocesses: commit identity + non-interactive SSH."""
+    """Environment for trusted git subprocesses: commit identity + SSH deploy key."""
     env = os.environ.copy()
     if identity:
         if identity.get("name"):
@@ -66,6 +75,154 @@ def git_env(identity: dict | None = None, ssh_key: str | None = None) -> dict:
     env[f"GIT_CONFIG_VALUE_{count}"] = "*"
     env["GIT_CONFIG_COUNT"] = str(count + 1)
     return env
+
+
+def _euid() -> int:
+    return os.geteuid() if hasattr(os, "geteuid") else -1
+
+
+def sandbox_identity() -> tuple[str, str] | None:
+    """(user, group) used to run untrusted repo commands, or None if unavailable."""
+    if not settings.coding_sandbox_enabled or _euid() != 0 or pwd is None:
+        return None
+    try:
+        entry = pwd.getpwnam(settings.coding_sandbox_user)
+    except KeyError:
+        return None
+    group = grp.getgrgid(entry.pw_gid).gr_name if grp else str(entry.pw_gid)
+    return entry.pw_name, group
+
+
+def sandbox_env(identity: dict | None = None) -> dict:
+    """Minimal environment for model-driven commands.
+
+    Starts from an empty dict on purpose: the backend process holds the LLM key,
+    database URL, JWT secrets and MinIO credentials, and none of them may leak
+    into a shell that a repository could influence.
+    """
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"),
+        "HOME": settings.coding_sandbox_home,
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
+        "TMPDIR": "/tmp",
+        "TERM": "dumb",
+        "PAGER": "cat",
+        "GIT_PAGER": "cat",
+        "GIT_TERMINAL_PROMPT": "0",
+        "PYTHONUNBUFFERED": "1",
+        "GIT_CONFIG_KEY_0": "safe.directory",
+        "GIT_CONFIG_VALUE_0": "*",
+        "GIT_CONFIG_COUNT": "1",
+    }
+    if identity:
+        if identity.get("name"):
+            env["GIT_AUTHOR_NAME"] = identity["name"]
+            env["GIT_COMMITTER_NAME"] = identity["name"]
+        if identity.get("email"):
+            env["GIT_AUTHOR_EMAIL"] = identity["email"]
+            env["GIT_COMMITTER_EMAIL"] = identity["email"]
+    return env
+
+
+_GIT_WRAPPERS = {"env", "sudo", "nohup", "time", "command", "exec", "stdbuf", "nice", "xargs"}
+_GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+_RAW_PUSH = re.compile(r"(?:\$\(|`)[^)`]{0,120}?\bgit\b[^)`]{0,80}?\bpush\b")
+_RAW_COMMIT = re.compile(r"(?:\$\(|`)[^)`]{0,120}?\bgit\b[^)`]{0,80}?\bcommit\b")
+_FORCE_PUSH = re.compile(
+    r"--force(?:-with-lease)?\b|(?:^|\s)-f\b|--mirror\b|--delete\b|(?:^|\s)\+[^\s]+"
+)
+_PROTECTED_REF = re.compile(r"(?:^|[\s:/])(?:main|master)(?:$|\s)")
+
+
+def _split_command(command: str) -> list[str]:
+    try:
+        return shlex.split(command, posix=True)
+    except ValueError:
+        return command.split()
+
+
+def git_invocations(command: str) -> list[list[str]]:
+    """Return `[subcommand, *args]` for every git call, including nested shells.
+
+    Handles `git -C dir push`, `git -c k=v push`, `sh -c "git push"`, `sudo git`
+    and `env FOO=1 git`, which the previous regex gate let through.
+    """
+    results: list[list[str]] = []
+
+    def scan(tokens: list[str], depth: int = 0) -> None:
+        if depth > 3:
+            return
+        index = 0
+        while index < len(tokens):
+            base = os.path.basename(tokens[index]).lower()
+            if base in ("sh", "bash", "zsh", "dash", "ksh"):
+                probe = index + 1
+                while probe < len(tokens):
+                    token = tokens[probe]
+                    if token.startswith("-") and not token.startswith("--") and "c" in token[1:]:
+                        if probe + 1 < len(tokens):
+                            scan(_split_command(tokens[probe + 1]), depth + 1)
+                        break
+                    if not token.startswith("-"):
+                        break
+                    probe += 1
+                index = probe + 1
+                continue
+            if base in _GIT_WRAPPERS:
+                index += 1
+                while index < len(tokens) and (
+                    tokens[index].startswith("-")
+                    or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[index])
+                ):
+                    index += 1
+                continue
+            if base == "git":
+                probe = index + 1
+                while probe < len(tokens) and tokens[probe].startswith("-"):
+                    probe += 2 if tokens[probe] in _GIT_OPTS_WITH_VALUE else 1
+                if probe < len(tokens):
+                    results.append([tokens[probe], *tokens[probe + 1:]])
+                index = probe + 1
+                continue
+            index += 1
+
+    scan(_split_command(command))
+    return results
+
+
+def git_policy_violation(command: str, *, allow_commit: bool, allow_push: bool) -> str | None:
+    """Structured git gate. Returns an error string when the command must not run."""
+    if re.search(r"(^|\s)-c\s+alias\.[^\s=]+=", command):
+        return "git alias overrides are blocked"
+    invocations = git_invocations(command)
+    subcommands = {item[0] for item in invocations if item}
+    is_push = "push" in subcommands or bool(_RAW_PUSH.search(command))
+    is_commit = "commit" in subcommands or bool(_RAW_COMMIT.search(command))
+
+    if is_push:
+        if not allow_push:
+            return "git push is not allowed by the developer profile"
+        if _FORCE_PUSH.search(command):
+            return "force push / destructive push is blocked"
+        if _PROTECTED_REF.search(command):
+            return "pushing main/master directly is blocked; use a feature branch"
+    if is_commit and not allow_commit:
+        return "git commit is not allowed by the developer profile"
+    return None
+
+
+def contains_sensitive_reference(command: str) -> bool:
+    """Block commands that name .env / key files, not just plain `cat .env`."""
+    for token in _split_command(command):
+        if ".env.example" in token:
+            continue
+        if re.search(r"(^|[/\\=:\"'\s])\.env(?:$|[.\s\"'=:])", token):
+            return True
+        if re.search(r"(^|[/\\])(id_rsa|id_ed25519|id_dsa|id_ecdsa|\.ssh)(?:$|[/\\\s])", token):
+            return True
+    return False
+
 
 
 def safe_path(root: str, p: str | None) -> Path:
@@ -201,11 +358,34 @@ def read_file(root: str, args: dict) -> dict:
     }
 
 
+def _hand_to_sandbox(*paths: Path) -> None:
+    """Give root-written files back to the sandbox user so later commands can edit them."""
+    if _euid() != 0 or pwd is None:
+        return
+    try:
+        entry = pwd.getpwnam(settings.coding_sandbox_user)
+    except KeyError:
+        return
+    if entry.pw_uid == 0:
+        return
+    for path in paths:
+        try:
+            os.chown(path, entry.pw_uid, entry.pw_gid, follow_symlinks=False)
+        except (OSError, NotImplementedError):
+            pass
+
+
 def write_file(root: str, args: dict) -> dict:
     path = safe_path(root, args.get("path"))
     content = str(args.get("content") or "")
+    created: list[Path] = []
+    probe = path.parent
+    while not probe.exists() and probe != probe.parent:
+        created.append(probe)
+        probe = probe.parent
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+    _hand_to_sandbox(path, *reversed(created))
     return {"path": args.get("path"), "bytes": len(content.encode("utf-8"))}
 
 
@@ -228,6 +408,7 @@ def edit_file(root: str, args: dict) -> dict:
     new = str(args.get("new_string") or "")
     next_text = text.replace(old, new) if args.get("replace_all") else text.replace(old, new, 1)
     path.write_text(next_text, encoding="utf-8")
+    _hand_to_sandbox(path)
     return {"path": args.get("path"), "replaced": count, "bytes": len(next_text.encode("utf-8"))}
 
 
@@ -286,18 +467,25 @@ async def run_command(root: str, args: dict, *, allow_push: bool = False, allow_
         return {"error": "command is required"}
     timeout = min(max(int(args.get("timeout_ms") or 120000), 1000), 600000)
 
-    is_push = re.search(r"(^|[;&|]\s*)git\s+push\b", command)
-    is_commit = re.search(r"(^|[;&|]\s*)git\s+commit\b", command)
-    if is_push and not allow_push:
-        return {"error": "git push is not allowed by the developer profile"}
-    if is_commit and not allow_commit:
-        return {"error": "git commit is not allowed by the developer profile"}
-    if is_push and re.search(r"--force(?!-with-lease)\b|(^|\s)-f\b", command):
-        return {"error": "force push is blocked"}
-    if re.search(r"(^|[\s/])\.env(?!\.example)(\s|$|[;&|])", command):
-        return {"error": "sensitive file is blocked"}
+    violation = git_policy_violation(command, allow_commit=allow_commit, allow_push=allow_push)
+    if violation:
+        return {"error": violation}
+    if contains_sensitive_reference(command):
+        return {"error": "sensitive file (.env / key) is blocked"}
 
-    env = git_env(identity, ssh_key)
+    sandbox = sandbox_identity()
+    if sandbox is None and settings.coding_sandbox_enabled and _euid() == 0:
+        # Fail closed: silently falling back to root would defeat the sandbox.
+        return {"error": f"sandbox user '{settings.coding_sandbox_user}' is unavailable; "
+                         "refusing to run repository commands as root"}
+    if sandbox:
+        env = sandbox_env(identity)
+        # extra_groups=[] clears the root supplementary groups inherited from
+        # the backend process; without it the child keeps gid 0.
+        run_kwargs = {"user": sandbox[0], "group": sandbox[1], "extra_groups": []}
+    else:
+        env = git_env(identity, ssh_key)
+        run_kwargs = {}
 
     proc = await asyncio.create_subprocess_shell(
         command,
@@ -305,6 +493,8 @@ async def run_command(root: str, args: dict, *, allow_push: bool = False, allow_
         env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,  # own process group so a timeout kills children too
+        **run_kwargs,
     )
     try:
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout / 1000)
@@ -313,14 +503,26 @@ async def run_command(root: str, args: dict, *, allow_push: bool = False, allow_
     except asyncio.TimeoutError:
         timed_out = True
         try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+            if hasattr(os, "killpg"):
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
         stdout_b, stderr_b = await proc.communicate()
         code = -1
     stdout = clamp(stdout_b.decode("utf-8", errors="replace"), MAX_COMMAND_OUTPUT)
     stderr = clamp(stderr_b.decode("utf-8", errors="replace"), MAX_COMMAND_OUTPUT)
-    return {"code": code, "timed_out": timed_out, "stdout": stdout, "stderr": stderr}
+    return {
+        "code": code,
+        "timed_out": timed_out,
+        "stdout": stdout,
+        "stderr": stderr,
+        "sandbox": sandbox[0] if sandbox else None,
+    }
 
 
 async def execute_tool(root: str, name: str, args: dict, *, allow_push: bool = False,

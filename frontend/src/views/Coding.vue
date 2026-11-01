@@ -171,21 +171,24 @@ function tagType(event: string) {
 }
 
 const STAGE_LABEL: Record<string, string> = {
-  context: '读取项目快照', executing: '执行中', cancelled: '已取消',
+  context: '读取项目快照', executing: '执行中', queued: '排队等待', cancelled: '已取消',
 }
 
 function eventText(ev: any) {
   const d = ev?.data || {}
   if (ev.event === 'tool') return `${d.name || ''} ${d.detail || ''}`.trim()
   if (ev.event === 'file') return `${d.action || ''} ${d.path || ''}`.trim()
-  if (ev.event === 'milestone') return STAGE_LABEL[d.stage] || d.stage || ''
+  if (ev.event === 'milestone') {
+    const label = STAGE_LABEL[d.stage] || d.stage || ''
+    return d.detail ? `${label} · ${d.detail}` : label
+  }
   if (ev.event === 'failed') return d.error || ''
   if (ev.event === 'delivery') {
     const labels: Record<string, string> = {
       skipped: '跳过', verify: '运行验证', verify_passed: '验证通过', verify_failed: '验证失败',
       branch: '创建分支', commit: '提交', push: '推送', push_failed: '推送失败', pr: 'PR',
       commit_failed: '提交失败', branch_failed: '建分支失败', push_skipped: '跳过推送',
-      sensitive_skipped: '排除敏感文件', stage_failed: '暂存失败',
+      sensitive_skipped: '排除敏感文件', stage_failed: '暂存失败', repo: '仓库检查',
     }
     return `${labels[d.stage] || d.stage || ''}${d.detail ? ' · ' + d.detail : ''}`
   }

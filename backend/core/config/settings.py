@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     coding_branch_prefix: str = "agent/"
     coding_context_max_chars: int = 12000
     coding_ssh_key_path: str = "/root/.ssh/id_rsa"
+    # Untrusted repo commands run as this unprivileged user with a scrubbed env.
+    coding_sandbox_enabled: bool = True
+    coding_sandbox_user: str = "agent"
+    coding_sandbox_home: str = "/home/agent"
+    coding_max_concurrency: int = 2
     # Notes RAG: chunking + hybrid retrieval (vector + BM25 + RRF + MMR)
     notes_rag_enabled: bool = True
     notes_chunk_size: int = 600

@@ -283,6 +283,220 @@ async def test_delivery_stops_when_verify_fails(tmp_path):
 
 
 
+def test_git_gate_blocks_push_and_commit_by_default():
+    from plugins.vibecoding.backend.workspace import git_policy_violation
+
+    blocked = [
+        "git push",
+        "git -C . push origin main",
+        'sh -c "git push origin main"',
+        "bash -lc 'git push --force'",
+        "env GIT_TRACE=1 git push origin master",
+        "sudo git push",
+        "git -c user.name=x push",
+        "git commit -m test",
+        "sh -c 'git commit -am wip'",
+    ]
+    for command in blocked:
+        assert git_policy_violation(command, allow_commit=False, allow_push=False), command
+
+
+def test_git_gate_blocks_force_and_protected_branch_even_when_allowed():
+    from plugins.vibecoding.backend.workspace import git_policy_violation
+
+    # push is permitted, but never destructive and never straight to main.
+    assert git_policy_violation("git push --force origin feature", allow_commit=True, allow_push=True)
+    assert git_policy_violation("git push -f origin feature", allow_commit=True, allow_push=True)
+    assert git_policy_violation("git push origin main", allow_commit=True, allow_push=True)
+    assert git_policy_violation("git push origin HEAD:master", allow_commit=True, allow_push=True)
+    assert git_policy_violation("git push origin refs/heads/main", allow_commit=True, allow_push=True)
+    assert git_policy_violation("git push origin +agent/fix", allow_commit=True, allow_push=True)
+    assert git_policy_violation("git push --delete origin agent/x", allow_commit=True, allow_push=True)
+    # Feature branch push and plain commit stay allowed.
+    assert git_policy_violation("git push -u origin agent/fix", allow_commit=True, allow_push=True) is None
+    assert git_policy_violation("git commit -m 'fix: x'", allow_commit=True, allow_push=True) is None
+
+
+def test_git_gate_allows_read_only_and_non_git_commands():
+    from plugins.vibecoding.backend.workspace import git_policy_violation
+
+    for command in [
+        "git status",
+        "git -C sub log --oneline -5",
+        "git diff --stat",
+        "pytest -q",
+        "npm run build",
+        "python -m pytest",
+    ]:
+        assert git_policy_violation(command, allow_commit=False, allow_push=False) is None, command
+
+
+def test_git_gate_blocks_alias_override():
+    from plugins.vibecoding.backend.workspace import git_policy_violation
+
+    assert git_policy_violation(
+        "git -c alias.p=push p origin main", allow_commit=True, allow_push=False
+    )
+
+
+def test_sensitive_reference_detection():
+    from plugins.vibecoding.backend.workspace import contains_sensitive_reference
+
+    for command in [
+        "cat .env",
+        "cat backend/.env",
+        "head -5 ./.env.local",
+        "cat /root/.ssh/id_rsa",
+        "ls ~/.ssh",
+        "grep SECRET .env",
+        "docker run --env-file=.env img",
+        "DB=.env ./start.sh",
+    ]:
+        assert contains_sensitive_reference(command), command
+    for command in [
+        "cat .env.example",
+        "pytest -q",
+        "git status",
+        "ls src",
+    ]:
+        assert not contains_sensitive_reference(command), command
+
+
+def test_sandbox_env_excludes_backend_secrets(monkeypatch):
+    from plugins.vibecoding.backend import workspace
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://secret")
+    monkeypatch.setenv("LLM_API_KEY", "sk-secret")
+    monkeypatch.setenv("JWT_SECRET", "jwt-secret")
+    env = workspace.sandbox_env({"name": "tester", "email": "t@example.com"})
+
+    assert "DATABASE_URL" not in env
+    assert "LLM_API_KEY" not in env
+    assert "JWT_SECRET" not in env
+    assert env["HOME"] == workspace.settings.coding_sandbox_home
+    assert env["GIT_AUTHOR_NAME"] == "tester"
+    assert env["GIT_AUTHOR_EMAIL"] == "t@example.com"
+
+
+async def test_run_command_fails_closed_without_sandbox_user(tmp_path, monkeypatch):
+    from plugins.vibecoding.backend import workspace
+
+    monkeypatch.setattr(workspace, "_euid", lambda: 0)
+    monkeypatch.setattr(workspace.settings, "coding_sandbox_enabled", True)
+    monkeypatch.setattr(workspace, "sandbox_identity", lambda: None)
+
+    result = await workspace.run_command(str(tmp_path), {"command": "id"})
+    assert "error" in result
+    assert "refusing" in result["error"]
+
+
+async def test_run_command_rejects_gated_git_and_reports_sandbox(tmp_path):
+    from plugins.vibecoding.backend import workspace
+
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    denied = await workspace.run_command(str(tmp_path), {"command": "git push origin main"})
+    assert "error" in denied
+
+    denied_commit = await workspace.run_command(str(tmp_path), {"command": "git commit -am wip"})
+    assert "error" in denied_commit
+
+    secret = await workspace.run_command(str(tmp_path), {"command": "cat .env"})
+    assert "error" in secret
+
+    ok = await workspace.run_command(str(tmp_path), {"command": "git --version"})
+    assert ok.get("code") == 0
+    assert "sandbox" in ok
+
+
+def test_project_locks_are_per_working_tree(tmp_path):
+    from plugins.vibecoding.backend import server_agent
+
+    a = server_agent._project_lock(str(tmp_path / "a"))
+    again = server_agent._project_lock(str(tmp_path / "a"))
+    other = server_agent._project_lock(str(tmp_path / "b"))
+    assert a is again
+    assert a is not other
+
+    sem = server_agent._semaphore()
+    assert sem is server_agent._semaphore()
+
+
+async def test_delivery_ignores_repo_hooks_and_restores_config(tmp_path):
+    import os
+
+    from plugins.vibecoding.backend.delivery import deliver
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    await _init_repo(repo)
+    marker = repo / "hook-ran.txt"
+    hooks = repo / ".git" / "hooks"
+    hooks.mkdir(exist_ok=True)
+    hook = hooks / "pre-commit"
+    hook.write_text(f"#!/bin/sh\ntouch '{marker.as_posix()}'\n", encoding="utf-8")
+    if hasattr(os, "chmod"):
+        os.chmod(hook, 0o755)
+
+    config = repo / ".git" / "config"
+    original = config.read_text(encoding="utf-8")
+
+    (repo / "a.txt").write_text("hooked\n", encoding="utf-8")
+    summary = await deliver(
+        str(repo), "改 a.txt",
+        developer={"github_username": "tester", "github_email": "t@example.com", "default_branch": "main"},
+        allow_commit=True, allow_push=False,
+    )
+    assert summary["ok"] is True
+    assert not marker.exists(), "repo hook must not run as root during delivery"
+    assert config.read_text(encoding="utf-8") == original
+
+
+async def test_delivery_rejects_exec_remote(tmp_path):
+    from plugins.vibecoding.backend.delivery import deliver
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    await _init_repo(repo)
+    import subprocess
+
+    subprocess.run(["git", "remote", "add", "origin", "ext::sh -c touch-pwned"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("x\n", encoding="utf-8")
+
+    summary = await deliver(
+        str(repo), "改 a.txt",
+        developer={"github_username": "tester", "github_email": "t@example.com", "default_branch": "main"},
+        allow_commit=True, allow_push=True,
+    )
+    assert summary["ok"] is False
+    assert summary["stage"] == "repo"
+    assert "ext:" in summary["detail"]
+
+
+async def test_delivery_rejects_symlinked_git_dir(tmp_path):
+    import os
+
+    from plugins.vibecoding.backend.delivery import deliver
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    await _init_repo(repo)
+    real = tmp_path / "real-git"
+    (repo / ".git").rename(real)
+    try:
+        os.symlink(real, repo / ".git", target_is_directory=True)
+    except (OSError, NotImplementedError):
+        return  # Windows without developer mode
+
+    (repo / "a.txt").write_text("x\n", encoding="utf-8")
+    summary = await deliver(
+        str(repo), "改 a.txt",
+        developer={"github_username": "tester", "github_email": "t@example.com", "default_branch": "main"},
+        allow_commit=True, allow_push=False,
+    )
+    assert summary["ok"] is False
+    assert summary["stage"] == "repo"
+
+
 async def test_activity_post_and_list(client, admin_token):
     """Client-reported activity events can be posted and listed."""
     payload = {
