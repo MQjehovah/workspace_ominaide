@@ -29,11 +29,19 @@ async def lifespan(app: FastAPI):
     import core.events.models  # noqa
     import plugins.notifications.backend.models  # noqa
     import plugins.chat.backend.models  # noqa
+    import plugins.vibecoding.backend.models  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     from core.database.migrations import ensure_schema_migrations
     await ensure_schema_migrations()
+
+    # Tasks interrupted by a restart can never resume; mark them cancelled.
+    try:
+        from plugins.vibecoding.backend.store import mark_orphans_cancelled
+        await mark_orphans_cancelled()
+    except Exception:
+        pass
 
     register_workers()
     worker_task = asyncio.create_task(worker_loop())

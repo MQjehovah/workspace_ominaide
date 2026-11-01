@@ -3,6 +3,8 @@ import os
 import re
 from pathlib import Path
 
+from core.config.settings import settings
+
 SKIP_DIRS = {
     "node_modules", ".git", ".ssh", "dist", "build", "dist-electron", "out", "target",
     "__pycache__", ".venv", "venv", ".next", ".nuxt", "coverage", ".idea", ".vscode",
@@ -34,6 +36,36 @@ def _is_sensitive(rel: Path) -> bool:
     if any(_is_sensitive_name(part) for part in parts):
         return True
     return False
+
+
+def is_sensitive_path(path: str) -> bool:
+    """Check a repo-relative path (as produced by `git`) for secrets."""
+    return _is_sensitive(Path(path))
+
+
+def git_env(identity: dict | None = None, ssh_key: str | None = None) -> dict:
+    """Environment for git subprocesses: commit identity + non-interactive SSH."""
+    env = os.environ.copy()
+    if identity:
+        if identity.get("name"):
+            env["GIT_AUTHOR_NAME"] = identity["name"]
+            env["GIT_COMMITTER_NAME"] = identity["name"]
+        if identity.get("email"):
+            env["GIT_AUTHOR_EMAIL"] = identity["email"]
+            env["GIT_COMMITTER_EMAIL"] = identity["email"]
+    key = ssh_key or settings.coding_ssh_key_path or "/root/.ssh/id_rsa"
+    env.setdefault("GIT_SSH_COMMAND", (
+        f"ssh -i {key} -o IdentitiesOnly=yes "
+        "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/omniaide_known_hosts"
+    ))
+    env.setdefault("GIT_TERMINAL_PROMPT", "0")
+    # The workspace is bind-mounted from the host (uid 1000) while the backend
+    # runs as root, which makes git refuse every repo as "dubious ownership".
+    count = int(env.get("GIT_CONFIG_COUNT") or 0)
+    env[f"GIT_CONFIG_KEY_{count}"] = "safe.directory"
+    env[f"GIT_CONFIG_VALUE_{count}"] = "*"
+    env["GIT_CONFIG_COUNT"] = str(count + 1)
+    return env
 
 
 def safe_path(root: str, p: str | None) -> Path:
@@ -245,7 +277,7 @@ def search_text(root: str, args: dict) -> dict:
 
 
 async def run_command(root: str, args: dict, *, allow_push: bool = False, allow_commit: bool = False,
-                      identity: dict | None = None) -> dict:
+                      identity: dict | None = None, ssh_key: str | None = None) -> dict:
     cwd = safe_path(root, args.get("cwd") or ".")
     if not cwd.exists() or not cwd.is_dir():
         return {"error": f"working directory not found: {args.get('cwd') or '.'}"}
@@ -265,18 +297,7 @@ async def run_command(root: str, args: dict, *, allow_push: bool = False, allow_
     if re.search(r"(^|[\s/])\.env(?!\.example)(\s|$|[;&|])", command):
         return {"error": "sensitive file is blocked"}
 
-    env = os.environ.copy()
-    if identity:
-        if identity.get("name"):
-            env["GIT_AUTHOR_NAME"] = identity["name"]
-            env["GIT_COMMITTER_NAME"] = identity["name"]
-        if identity.get("email"):
-            env["GIT_AUTHOR_EMAIL"] = identity["email"]
-            env["GIT_COMMITTER_EMAIL"] = identity["email"]
-    env.setdefault("GIT_SSH_COMMAND", (
-        "ssh -i /root/.ssh/id_rsa -o IdentitiesOnly=yes "
-        "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/omniaide_known_hosts"
-    ))
+    env = git_env(identity, ssh_key)
 
     proc = await asyncio.create_subprocess_shell(
         command,
@@ -303,7 +324,8 @@ async def run_command(root: str, args: dict, *, allow_push: bool = False, allow_
 
 
 async def execute_tool(root: str, name: str, args: dict, *, allow_push: bool = False,
-                       allow_commit: bool = False, identity: dict | None = None) -> dict:
+                       allow_commit: bool = False, identity: dict | None = None,
+                       ssh_key: str | None = None) -> dict:
     args = args or {}
     try:
         if name == "list_dir":
@@ -317,7 +339,8 @@ async def execute_tool(root: str, name: str, args: dict, *, allow_push: bool = F
         if name == "search_text":
             return search_text(root, args)
         if name == "run_command":
-            return await run_command(root, args, allow_push=allow_push, allow_commit=allow_commit, identity=identity)
+            return await run_command(root, args, allow_push=allow_push, allow_commit=allow_commit,
+                                     identity=identity, ssh_key=ssh_key)
         return {"error": f"unknown tool: {name}"}
     except ValueError as e:
         return {"error": str(e)}

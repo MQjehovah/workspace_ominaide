@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     coding_workspace_root: str = "/workspace"
     coding_max_turns: int = 40
     coding_command_timeout_ms: int = 120000
+    # One-shot delivery: after the agent finishes, verify -> branch -> commit -> push.
+    # When enabled the agent tools themselves cannot commit/push; delivery owns git.
+    coding_auto_deliver: bool = True
+    coding_auto_push: bool = True
+    coding_verify_command: str = ""      # e.g. "pytest -q" or "npm run build"
+    coding_branch_prefix: str = "agent/"
+    coding_context_max_chars: int = 12000
+    coding_ssh_key_path: str = "/root/.ssh/id_rsa"
     # Notes RAG: chunking + hybrid retrieval (vector + BM25 + RRF + MMR)
     notes_rag_enabled: bool = True
     notes_chunk_size: int = 600

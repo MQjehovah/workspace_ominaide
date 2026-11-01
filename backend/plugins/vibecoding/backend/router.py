@@ -28,8 +28,64 @@ async def list_devices(user: dict = Depends(get_current_user)):
 
 
 @router.get("/tasks")
-async def list_tasks(limit: int = 50, user: dict = Depends(get_current_user)):
-    return {"tasks": hub.recent_tasks(user["id"], limit)}
+async def list_tasks(limit: int = 50, project: str | None = None,
+                     user: dict = Depends(get_current_user)):
+    from plugins.vibecoding.backend import store
+
+    limit = max(1, min(int(limit or 50), 200))
+    try:
+        tasks = await store.list_tasks(user["id"], limit, project)
+    except Exception as e:
+        log.warning("[coding] cannot load task history: %s", e)
+        tasks = []
+
+    # Desktop-dispatched tasks only live in memory; merge them without duplicates.
+    seen = {t.get("task_id") for t in tasks}
+    for task in hub.recent_tasks(user["id"], limit):
+        if task.get("task_id") not in seen:
+            tasks.append(task)
+    tasks.sort(key=lambda t: t.get("started_ts") or 0, reverse=True)
+    return {"tasks": tasks[:limit]}
+
+
+@router.get("/tasks/{task_id}")
+async def get_task(task_id: str, user: dict = Depends(get_current_user)):
+    from plugins.vibecoding.backend import store
+
+    task = await store.get_task_detail(task_id, user["id"])
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return task
+
+
+class ContinueTaskRequest(BaseModel):
+    input: str
+
+
+@router.post("/tasks/{task_id}/continue")
+async def continue_task(task_id: str, req: ContinueTaskRequest,
+                        user: dict = Depends(get_current_user)):
+    from plugins.vibecoding.backend import store
+    from plugins.vibecoding.backend.server_agent import new_task_id, start_server_task
+
+    if not req.input.strip():
+        raise HTTPException(status_code=400, detail="input is required")
+
+    row = await store.get_task(task_id, user["id"])
+    if not row:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if row.status == "running":
+        raise HTTPException(status_code=409, detail="任务仍在执行，请先等待完成或取消")
+    messages = await store.get_task_messages(task_id, user["id"])
+    if not messages:
+        raise HTTPException(status_code=409, detail="该任务没有可复用的上下文")
+
+    new_id = new_task_id()
+    await start_server_task(
+        user["id"], new_id, row.project, req.input, "continue",
+        seed_messages=messages, parent_id=task_id,
+    )
+    return {"task_id": new_id, "parent_id": task_id, "engine": "server"}
 
 
 @router.get("/projects")

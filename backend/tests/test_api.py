@@ -143,6 +143,144 @@ async def test_coding_tools_registered(client, admin_token):
     names = {t["name"] for t in r.json()["tools"]}
     assert "dispatch_coding_task" in names
     assert "list_coding_projects" in names
+    assert "continue_coding_task" in names
+    assert "list_coding_tasks" in names
+
+
+async def test_coding_history_requires_auth(client):
+    r = await client.get("/api/vibecoding/tasks")
+    assert r.status_code == 401
+
+
+async def test_coding_task_failure_is_persisted(client, admin_token):
+    """A task that fails validation must still land in durable history."""
+    r = await client.post(
+        "/api/vibecoding/tasks",
+        json={"project": "/workspace/definitely-missing", "input": "x"},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 200
+    task_id = r.json()["task_id"]
+
+    detail = await client.get(f"/api/vibecoding/tasks/{task_id}", headers=auth(admin_token))
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["task_id"] == task_id
+    assert body["status"] == "failed"
+    assert body["error"]
+    assert body["events"]
+
+    listing = await client.get("/api/vibecoding/tasks?limit=50", headers=auth(admin_token))
+    assert any(t["task_id"] == task_id for t in listing.json()["tasks"])
+
+    # A failed task has no stored conversation, so continuing it is rejected.
+    cont = await client.post(
+        f"/api/vibecoding/tasks/{task_id}/continue",
+        json={"input": "再来一次"},
+        headers=auth(admin_token),
+    )
+    assert cont.status_code == 409
+
+
+async def test_coding_task_detail_is_user_scoped(client, admin_token, user_token):
+    r = await client.post(
+        "/api/vibecoding/tasks",
+        json={"project": "/workspace/definitely-missing", "input": "x"},
+        headers=auth(admin_token),
+    )
+    task_id = r.json()["task_id"]
+    other = await client.get(f"/api/vibecoding/tasks/{task_id}", headers=auth(user_token))
+    assert other.status_code == 404
+
+
+async def test_coding_project_context_snapshot(tmp_path):
+    from plugins.vibecoding.backend.context import build_project_context
+
+    (tmp_path / "AGENTS.md").write_text("Run pytest before committing.", encoding="utf-8")
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "main.py").write_text("x = 1\n", encoding="utf-8")
+
+    text = await build_project_context(str(tmp_path))
+    assert "AGENTS.md" in text
+    assert "src/" in text
+    assert "main.py" in text
+
+
+async def _init_repo(path):
+    import subprocess
+
+    def run(*args):
+        subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
+
+    run("init", "-b", "main")
+    run("config", "user.email", "test@example.com")
+    run("config", "user.name", "Test")
+    (path / "a.txt").write_text("one\n", encoding="utf-8")
+    run("add", "-A")
+    run("commit", "-m", "init")
+
+
+def _git_out(path, *args) -> str:
+    import subprocess
+
+    out = subprocess.run(["git", *args], cwd=path, capture_output=True)
+    stdout = out.stdout
+    if isinstance(stdout, bytes):
+        stdout = stdout.decode("utf-8", errors="replace")
+    return stdout.strip()
+
+
+async def test_delivery_branches_commits_and_skips_sensitive(tmp_path):
+    from plugins.vibecoding.backend.delivery import deliver
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    await _init_repo(repo)
+    (repo / "a.txt").write_text("two\n", encoding="utf-8")
+    (repo / ".env").write_text("SECRET=1\n", encoding="utf-8")
+
+    stages = []
+
+    async def emit(stage, ok, detail="", extra=None):
+        stages.append(stage)
+
+    summary = await deliver(
+        str(repo), "修复 a.txt 的内容",
+        developer={"github_username": "tester", "github_email": "t@example.com", "default_branch": "main"},
+        allow_commit=True, allow_push=False, verify_command="", emit=emit,
+    )
+    assert summary["ok"] is True
+    assert summary["branch"].startswith("agent/")
+    assert summary["pushed"] is False
+    assert "commit" in stages and "sensitive_skipped" in stages
+
+    branch = _git_out(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    assert branch.startswith("agent/")
+    assert "fix:" in _git_out(repo, "log", "-1", "--format=%s")
+    changed = _git_out(repo, "show", "--name-only", "--format=", "HEAD")
+    assert "a.txt" in changed
+    assert ".env" not in changed
+
+
+async def test_delivery_stops_when_verify_fails(tmp_path):
+    from plugins.vibecoding.backend.delivery import deliver
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    await _init_repo(repo)
+    head_before = _git_out(repo, "rev-parse", "HEAD")
+    (repo / "a.txt").write_text("broken\n", encoding="utf-8")
+
+    summary = await deliver(
+        str(repo), "改坏它",
+        developer={"github_username": "tester", "github_email": "t@example.com", "default_branch": "main"},
+        allow_commit=True, allow_push=False, verify_command="exit 3",
+    )
+    assert summary["ok"] is False
+    assert summary["stage"] == "verify"
+    assert _git_out(repo, "rev-parse", "HEAD") == head_before
+
 
 
 async def test_activity_post_and_list(client, admin_token):
