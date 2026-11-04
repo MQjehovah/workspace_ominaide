@@ -8,7 +8,7 @@
     </div>
     <div class="header-right">
       <GlobalSearch />
-      <el-dropdown trigger="click" @visible-change="fetchNotifications">
+      <el-dropdown trigger="click" @visible-change="onBellVisible">
         <el-badge :value="unreadCount" :hidden="unreadCount === 0" class="bell-badge">
           <button class="bell-btn">
             <el-icon><Bell /></el-icon>
@@ -21,9 +21,11 @@
               <div class="notif-dot" v-if="!n.read"></div>
               <div class="notif-body">
                 <div class="notif-title">{{ n.title }}</div>
+                <div v-if="n.body" class="notif-text">{{ n.body }}</div>
                 <div class="notif-time">{{ formatTime(n.created_at) }}</div>
               </div>
             </div>
+            <div v-if="notifications.length" class="notif-all" @click="router.push('/notifications')">查看全部通知</div>
             <el-dropdown-item v-if="unreadCount > 0" divided @click="markAllRead" style="text-align:center;color:#409EFF;font-size:12px">
               全部标记已读
             </el-dropdown-item>
@@ -68,42 +70,70 @@ const notifications = ref<any[]>([])
 const unreadCount = ref(0)
 let ws: WebSocket | null = null
 let reconnectTimer: any = null
+let disposed = false
+let retry = 0
 
 function connectWebSocket() {
   const token = localStorage.getItem('token')
-  if (!token) return
+  if (!token || disposed) return
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
   const base = import.meta.env.BASE_URL.replace(/\/$/, '')
   ws = new WebSocket(`${proto}://${window.location.host}${base}/ws/host?role=viewer&token=${encodeURIComponent(token)}`)
+  ws.onopen = () => { retry = 0 }
   ws.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data)
       if (data?.channel === 'notifications' || data?.type === 'new_notification') {
         fetchUnreadCount()
         fetchNotifications()
+        window.dispatchEvent(new CustomEvent('omniaide:notification'))
+      }
+      if (data?.type === 'approval_required') {
+        window.dispatchEvent(new CustomEvent('omniaide:approval'))
       }
     } catch { /* ignore */ }
   }
   ws.onclose = () => {
-    reconnectTimer = setTimeout(connectWebSocket, 5000)
+    ws = null
+    if (disposed) return
+    retry = Math.min(retry + 1, 6)
+    const delay = Math.min(30000, 1000 * 2 ** (retry - 1))
+    reconnectTimer = setTimeout(connectWebSocket, delay)
   }
   ws.onerror = () => ws?.close()
 }
 
 async function fetchNotifications() {
   try {
-    const r = await client.get('/notifications?unread=true&limit=10')
+    const r = await client.get('/notifications?limit=10')
     notifications.value = r.data || []
   } catch { /* ignore */ }
+}
+function onBellVisible(visible: boolean) {
+  if (visible) fetchNotifications()
 }
 async function fetchUnreadCount() {
   try { const r = await client.get('/notifications/unread-count'); unreadCount.value = r.data.count || 0 } catch { /* ignore */ }
 }
 async function markRead(n: any) {
-  try { await client.put(`/notifications/${n.id}/read`); n.read = true; unreadCount.value = Math.max(0, unreadCount.value - 1) } catch { /* ignore */ }
+  if (!n.read) {
+    try {
+      await client.put(`/notifications/${n.id}/read`)
+      n.read = true
+      unreadCount.value = Math.max(0, unreadCount.value - 1)
+    } catch { /* ignore */ }
+  }
+  if (n.link) {
+    if (/^https?:\/\//.test(n.link)) window.open(n.link, '_blank')
+    else router.push(n.link)
+  }
 }
 async function markAllRead() {
-  try { await client.put('/notifications/read-all'); notifications.value.forEach(n => n.read = true); unreadCount.value = 0 } catch { /* ignore */ }
+  try {
+    await client.put('/notifications/read-all')
+    notifications.value.forEach(n => n.read = true)
+    unreadCount.value = 0
+  } catch { /* ignore */ }
 }
 function formatTime(iso: string) {
   if (!iso) return ''
@@ -115,8 +145,13 @@ function formatTime(iso: string) {
   if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
 }
-onMounted(() => { fetchUnreadCount(); connectWebSocket() })
-onUnmounted(() => { if (ws) ws.close(); if (reconnectTimer) clearTimeout(reconnectTimer) })
+onMounted(() => { fetchUnreadCount(); fetchNotifications(); connectWebSocket() })
+onUnmounted(() => {
+  disposed = true
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  if (ws) ws.close()
+  ws = null
+})
 </script>
 
 <style scoped>
@@ -139,5 +174,16 @@ onUnmounted(() => { if (ws) ws.close(); if (reconnectTimer) clearTimeout(reconne
 .notif-dot { width:8px;height:8px;border-radius:50%;background:#409EFF;flex-shrink:0;margin-top:5px; }
 .notif-body { flex:1;min-width:0; }
 .notif-title { font-size:13px;color:#333; }
+.notif-text { font-size:12px;color:#606266;margin-top:2px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical; }
+.notif-all { text-align:center;padding:8px;font-size:12px;color:#409EFF;cursor:pointer;border-top:1px solid #f5f5f5; }
+.notif-all:hover { background:#f8f9fa; }
 .notif-time { font-size:11px;color:#909399;margin-top:2px; }
+@media (max-width: 768px) {
+  .header { padding: 0 12px; }
+  .header-right { gap: 6px; }
+  .breadcrumb { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-name { display: none; }
+  .header-right :deep(.global-search) { display: none; }
+  .bell-badge { margin-right: 0; }
+}
 </style>

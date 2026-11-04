@@ -17,11 +17,28 @@
   --color-border: #ebedf0;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: var(--color-content-bg); color: #333; }
+html, body, #app { height: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: var(--color-content-bg); color: #333; overflow-x: hidden; }
 a { text-decoration: none; color: inherit; }
 .page-wrapper { padding: 20px 24px; }
 .page-header { margin-bottom: 20px; }
 .page-header h2 { font-size: 20px; font-weight: 600; color: #1a1a2e; margin: 0; }
 .page-card { background: var(--color-card-bg); border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.06); border: 1px solid var(--color-border); overflow: hidden; }
 .page-card-body { padding: 20px; }
+
+@media (max-width: 768px) {
+  .page-wrapper { padding: 14px; }
+  .page-header { margin-bottom: 14px; }
+  .page-header h2 { font-size: 18px; }
+  .page-card-body { padding: 14px; }
+  .el-table { max-width: 100%; }
+  .el-dialog { width: calc(100vw - 24px) !important; margin-top: 8vh !important; }
+  .el-drawer { width: 100% !important; }
+  .notification-menu { width: calc(100vw - 24px) !important; max-width: 360px; }
+  .el-message { max-width: calc(100vw - 24px); }
+  .el-form-item { flex-direction: column; align-items: flex-start; }
+  .el-form-item__label { width: auto !important; padding: 0 0 4px !important; text-align: left !important; }
+  .el-form-item__content { width: 100%; margin-left: 0 !important; }
+  .el-tabs__nav-wrap { overflow-x: auto; }
+}
 </style>

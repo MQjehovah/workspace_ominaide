@@ -116,6 +116,11 @@ const detailBodyRef = ref<HTMLElement | null>(null)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 
 const cfg = ref<Config>({ mode: 'backend', apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', notify: true })
+const bots = ref<any[]>([])
+const currentBotId = ref<number | null>(null)
+const BOT_KEY = 'assistant_bot_id'
+const approvals = ref<any[]>([])
+let approvalTimer: any = null
 const cfgMode = ref('backend')
 const cfgKey = ref('')
 const cfgUrl = ref('https://api.openai.com/v1')
@@ -355,6 +360,54 @@ async function getToken(): Promise<string> {
     }
   } catch { /* ignore */ }
   return localStorage.getItem('token') || ''
+}
+
+async function loadBots() {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    const r = await fetch(`${su}/api/bots`, { headers: { Authorization: 'Bearer ' + tk } })
+    if (!r.ok) return
+    bots.value = await r.json()
+    const saved = Number(localStorage.getItem(BOT_KEY) || 0)
+    const found = bots.value.find((b: any) => b.id === saved)
+      || bots.value.find((b: any) => b.is_default)
+      || bots.value[0]
+    if (found) currentBotId.value = found.id
+  } catch { /* ignore */ }
+}
+
+function onBotChange() {
+  if (currentBotId.value) localStorage.setItem(BOT_KEY, String(currentBotId.value))
+  newSession()
+}
+
+async function loadApprovals() {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    const r = await fetch(`${su}/api/approvals?status=pending`, { headers: { Authorization: 'Bearer ' + tk } })
+    if (r.ok) approvals.value = await r.json()
+  } catch { /* ignore */ }
+}
+
+async function decideApproval(id: number, approved: boolean) {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    const r = await fetch(`${su}/api/approvals/${id}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
+      body: JSON.stringify({ approved }),
+    })
+    if (!r.ok) {
+      const err = await r.json().catch(() => null)
+      throw new Error(err?.detail || `审批失败 (${r.status})`)
+    }
+    await loadApprovals()
+  } catch (e: any) {
+    showToast(e?.message || '审批失败')
+  }
 }
 
 watch(sessions, () => {
@@ -597,7 +650,7 @@ async function streamMessage(message: string, history: { role: string; content: 
     const r = await fetch(`${su}/api/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
-      body: JSON.stringify({ message, history, images }),
+      body: JSON.stringify({ message, history, images, bot_id: currentBotId.value || undefined }),
       signal: abortCtl?.signal,
     })
     if (!r.ok) {
@@ -1188,7 +1241,7 @@ async function importCloudHistory() {
   try {
     const su = await serverUrl()
     const tk = await getToken()
-    const r = await fetch(`${su}/api/chat/history?limit=100`, { headers: { Authorization: 'Bearer ' + tk } })
+    const r = await fetch(`${su}/api/chat/history?limit=100${currentBotId.value ? `&bot_id=${currentBotId.value}` : ''}`, { headers: { Authorization: 'Bearer ' + tk } })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const items = await r.json()
     if (!items.length) { showToast('云端没有历史记录'); return }
@@ -1398,6 +1451,9 @@ function applySettings() {
 onMounted(() => {
   loadConfig()
   loadSessions()
+  loadBots()
+  loadApprovals()
+  approvalTimer = setInterval(loadApprovals, 10000)
   if (!current.value) newSession()
   try {
     const mqAgent = (window as any).mqbox?.agent
@@ -1422,6 +1478,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKey)
+  clearInterval(approvalTimer)
   renderTimers.forEach(t => clearTimeout(t))
   clearTimeout(persistTimer)
   clearTimeout(toastTimer)
@@ -1490,6 +1547,15 @@ const suggestions = [
         <div class="head-left">
           <button class="icon-btn" title="切换侧边栏 (Ctrl+B)" @click="sidebar = !sidebar">☰</button>
           <span class="head-title" :title="current?.title || ''">{{ current?.title || '新会话' }}</span>
+          <select
+            v-if="cfg.mode === 'backend' && bots.length"
+            v-model.number="currentBotId"
+            class="bot-select"
+            title="选择 Bot"
+            @change="onBotChange"
+          >
+            <option v-for="b in bots" :key="b.id" :value="b.id">{{ b.avatar || '🤖' }} {{ b.name }}</option>
+          </select>
           <span v-if="loading" class="stage-indicator">
             <span class="status-dot"></span>
             {{ stage || '处理中' }}
@@ -1507,6 +1573,14 @@ const suggestions = [
           <button class="icon-btn close" title="关闭" @click="close">×</button>
         </div>
       </header>
+
+      <div v-if="approvals.length" class="approval-strip">
+        <div v-for="a in approvals" :key="a.id" class="approval-item">
+          <span class="approval-name" :title="a.reason || ''">🔐 {{ a.tool_name }}</span>
+          <button class="approval-btn ok" @click="decideApproval(a.id, true)">允许</button>
+          <button class="approval-btn no" @click="decideApproval(a.id, false)">拒绝</button>
+        </div>
+      </div>
 
       <transition name="fade">
         <div v-if="searchOpen" class="conv-search">
@@ -2145,6 +2219,30 @@ const suggestions = [
   text-overflow: ellipsis;
   max-width: 320px;
 }
+.bot-select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  max-width: 160px;
+  outline: none;
+}
+.approval-strip {
+  padding: 6px 12px;
+  background: rgba(251, 191, 36, .08);
+  border-bottom: 1px solid rgba(251, 191, 36, .3);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.approval-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--amber); }
+.approval-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.approval-btn {
+  border: 1px solid var(--border); background: transparent; color: var(--text);
+  border-radius: 5px; padding: 1px 8px; cursor: pointer; font-size: 12px;
+}
+.approval-btn.ok { border-color: rgba(47, 214, 165, .5); color: var(--green); }
+.approval-btn.no { border-color: rgba(248, 113, 113, .5); color: #f87171; }
 .status-dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--green);

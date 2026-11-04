@@ -2,8 +2,11 @@
   <div class="notes-page">
     <header class="notes-topbar">
       <div class="notes-heading">
-        <div class="notes-title">笔记</div>
-        <div class="notes-sub">{{ treeCount }} 个节点 · 拖动可排序/分层</div>
+        <el-button class="notes-list-toggle" text circle :icon="Menu" @click="mobileListOpen = true" />
+        <div>
+          <div class="notes-title">笔记</div>
+          <div class="notes-sub">{{ treeCount }} 个节点 · 拖动可排序/分层</div>
+        </div>
       </div>
       <div class="notes-actions">
         <el-dropdown trigger="click" @command="handleImportCommand">
@@ -29,7 +32,8 @@
     </header>
 
     <div class="notes-body">
-      <aside class="notes-sidebar">
+      <div v-if="isMobile && mobileListOpen" class="notes-backdrop" @click="mobileListOpen = false" />
+      <aside class="notes-sidebar" :class="{ 'mobile-open': isMobile && mobileListOpen }">
         <div class="sidebar-top">
           <div class="sidebar-title-row">
             <span>全部笔记</span>
@@ -211,8 +215,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { ChatDotRound, Clock, Delete, Download, FolderAdd, Link, MoreFilled, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { ChatDotRound, Clock, Delete, Download, FolderAdd, Link, Menu, MoreFilled, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '@/api/client'
 import TipTapEditor from './TipTapEditor.vue'
@@ -229,6 +233,8 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const sidebarQuery = ref('')
 const noteSearchResults = ref<any[]>([])
 const noteSearchLoading = ref(false)
+const isMobile = ref(false)
+const mobileListOpen = ref(false)
 let sidebarSearchTimer: ReturnType<typeof setTimeout> | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -339,6 +345,7 @@ async function openNote(id: number) {
   const note = allNotes.find((n: any) => n.id === id)
   if (note?.is_folder) return
   currentId.value = id
+  if (isMobile.value) mobileListOpen.value = false
   try {
     const res = await client.get(`/plugins/notes/${id}`)
     const n = res.data
@@ -579,7 +586,20 @@ async function handleMoreCommand(cmd: string, inEditor = false) {
   }
 }
 
-onMounted(loadTree)
+function syncNotesViewport() {
+  isMobile.value = window.innerWidth <= 768
+  if (!isMobile.value) mobileListOpen.value = false
+}
+
+onMounted(() => {
+  syncNotesViewport()
+  window.addEventListener('resize', syncNotesViewport)
+  loadTree()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncNotesViewport)
+})
 </script>
 
 <style scoped>
@@ -603,7 +623,8 @@ onMounted(loadTree)
   border-bottom: 1px solid #e8ecf1;
   background: rgba(255, 255, 255, 0.96);
 }
-.notes-heading { min-width: 0; }
+.notes-heading { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.notes-list-toggle { display: none; }
 .notes-title { font-size: 19px; font-weight: 700; letter-spacing: .2px; }
 .notes-sub { font-size: 12px; color: #8b95a5; margin-top: 2px; }
 .notes-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; min-width: 0; }
@@ -682,5 +703,32 @@ onMounted(loadTree)
   .notes-sidebar { width: 220px; flex-basis: 220px; }
   .notes-actions .el-button span { display: none; }
   .note-actions .el-button span { display: none; }
+}
+@media (max-width: 768px) {
+  .notes-page { height: calc(100vh - var(--header-height) - 20px); }
+  .notes-topbar {
+    height: auto; flex: 0 0 auto; padding: 10px 12px;
+    flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .notes-title { font-size: 17px; }
+  .notes-sub { display: none; }
+  .notes-list-toggle { display: inline-flex; }
+  .notes-actions { gap: 4px; flex: 1 1 auto; justify-content: flex-end; }
+  .notes-actions .el-button { padding: 6px; }
+  .notes-body { padding: 10px; gap: 0; position: relative; }
+  .notes-sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 2200;
+    width: 84vw; max-width: 320px; flex-basis: auto;
+    border-radius: 0; transform: translateX(-100%);
+    transition: transform .2s ease;
+  }
+  .notes-sidebar.mobile-open { transform: translateX(0); }
+  .notes-backdrop {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 2199;
+  }
+  .notes-main, .notes-empty { border-radius: 12px; }
+  .note-head { padding: 12px; gap: 8px; }
+  .title-input :deep(.el-input__inner) { font-size: 20px; }
+  .note-editor-shell { padding: 0 10px 8px; }
 }
 </style>

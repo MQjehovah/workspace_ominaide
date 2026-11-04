@@ -1,6 +1,6 @@
 <template>
   <div class="page-wrapper">
-    <div class="page-header"><h2>活动记录</h2></div>
+    <div class="page-header"><h2>活动</h2></div>
 
     <!-- Stats Cards -->
     <el-row :gutter="16" style="margin-bottom:16px">

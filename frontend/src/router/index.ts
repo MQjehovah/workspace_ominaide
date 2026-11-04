@@ -20,9 +20,19 @@ const router = createRouter({
           component: () => import('@/views/Dashboard.vue')
         },
         {
+          path: 'bots',
+          name: '助手管理',
+          component: () => import('@/views/BotConsole.vue')
+        },
+        {
           path: 'activities',
-          name: '活动记录',
+          name: '活动',
           component: () => import('@/views/Activity.vue')
+        },
+        {
+          path: 'notifications',
+          name: '通知',
+          component: () => import('@/views/Notifications.vue')
         },
         {
           path: 'files',
@@ -45,9 +55,9 @@ const router = createRouter({
           component: () => import('@/views/Device.vue')
         },
         {
-          path: 'coding',
-          name: 'Coding',
-          component: () => import('@/views/Coding.vue')
+          path: 'projects',
+          name: 'Projects',
+          component: () => import('@/views/Projects.vue')
         },
         {
           path: 'apps/:pluginName/:pathMatch(.*)*',

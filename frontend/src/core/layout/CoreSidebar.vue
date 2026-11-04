@@ -17,7 +17,7 @@
       </el-menu-item>
       <el-menu-item index="/activities">
         <el-icon><TrendCharts /></el-icon>
-        <span>活动记录</span>
+        <span>活动</span>
       </el-menu-item>
       <el-menu-item index="/schedule"><el-icon><Calendar /></el-icon><span>日程</span></el-menu-item>
       <el-menu-item index="/rss"><el-icon><Promotion /></el-icon><span>资讯</span></el-menu-item>
@@ -31,15 +31,19 @@
       </el-menu-item>
       <el-menu-item index="/device">
         <el-icon><Cellphone /></el-icon>
-        <span>智能设备</span>
+        <span>设备</span>
       </el-menu-item>
-      <el-menu-item index="/coding">
+      <el-menu-item index="/projects">
         <el-icon><Cpu /></el-icon>
-        <span>开发助手</span>
+        <span>项目</span>
       </el-menu-item>
 
       <div class="menu-divider"></div>
       <div class="menu-label" v-if="!collapsed">管理</div>
+      <el-menu-item index="/bots">
+        <el-icon><ChatDotRound /></el-icon>
+        <span>助手管理</span>
+      </el-menu-item>
       <el-menu-item index="/admin/users">
         <el-icon><User /></el-icon>
         <span>用户管理</span>
@@ -70,7 +74,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu } from '@element-plus/icons-vue'
+import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()

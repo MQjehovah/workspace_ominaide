@@ -1,7 +1,7 @@
 <template>
   <div class="page-wrapper">
     <div class="page-header">
-      <h2>智能设备</h2>
+      <h2>设备</h2>
       <span class="muted">SmartAssistant · 实时通道 / 手势 / 固件</span>
     </div>
 

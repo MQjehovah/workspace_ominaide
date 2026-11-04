@@ -2,7 +2,23 @@
   <div class="assistant-root">
     <div v-if="open" class="assistant-panel">
       <div class="assistant-header">
-        <span>AI 助理</span>
+        <div class="assistant-head-left">
+          <span>AI 助理</span>
+          <el-select
+            v-if="bots.length"
+            v-model="currentBotId"
+            size="small"
+            class="bot-select"
+            placeholder="默认 Bot"
+          >
+            <el-option
+              v-for="b in bots"
+              :key="b.id"
+              :label="`${b.avatar || '🤖'} ${b.name}`"
+              :value="b.id"
+            />
+          </el-select>
+        </div>
         <div style="display:flex;gap:4px">
           <button class="assistant-icon-btn" title="清空对话" @click="clearHistory">
             <el-icon><Delete /></el-icon>
@@ -10,6 +26,13 @@
           <button class="assistant-icon-btn" title="关闭" @click="open = false">
             <el-icon><Close /></el-icon>
           </button>
+        </div>
+      </div>
+      <div v-if="approvals.length" class="approval-bar">
+        <div v-for="a in approvals" :key="a.id" class="approval-row">
+          <span class="approval-text" :title="a.reason || ''">🔐 {{ a.tool_name }}</span>
+          <button class="approval-btn ok" @click="decide(a.id, true)">允许</button>
+          <button class="approval-btn no" @click="decide(a.id, false)">拒绝</button>
         </div>
       </div>
       <div ref="bodyRef" class="assistant-body">
@@ -35,12 +58,13 @@
     </div>
     <button class="assistant-fab" @click="open = !open">
       <el-icon><ChatDotRound /></el-icon>
+      <span v-if="approvals.length" class="approval-badge">{{ approvals.length }}</span>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { Delete, Close, Promotion, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { apiUrl } from '@/api/base'
@@ -50,6 +74,70 @@ const loading = ref(false)
 const input = ref('')
 const messages = ref<{ role: string; content: string }[]>([])
 const bodyRef = ref<HTMLDivElement | null>(null)
+const bots = ref<{ id: number; name: string; avatar?: string; is_default?: boolean }[]>([])
+const currentBotId = ref<number | null>(null)
+const BOT_KEY = 'assistant_bot_id'
+const approvals = ref<{ id: number; tool_name: string; reason?: string }[]>([])
+let approvalTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadApprovals() {
+  try {
+    const token = localStorage.getItem('token') || ''
+    const r = await fetch(apiUrl('/approvals?status=pending'), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (r.ok) approvals.value = await r.json()
+  } catch { /* ignore */ }
+}
+
+async function decide(id: number, approved: boolean) {
+  try {
+    const token = localStorage.getItem('token') || ''
+    const r = await fetch(apiUrl(`/approvals/${id}/decision`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ approved }),
+    })
+    if (!r.ok) {
+      const err = await r.json().catch(() => null)
+      throw new Error(err?.detail || `审批失败 (${r.status})`)
+    }
+    await loadApprovals()
+  } catch (e: any) {
+    ElMessage.error(e.message || '审批失败')
+  }
+}
+
+async function loadBots() {
+  try {
+    const token = localStorage.getItem('token') || ''
+    const r = await fetch(apiUrl('/bots'), { headers: { Authorization: `Bearer ${token}` } })
+    if (!r.ok) return
+    bots.value = await r.json()
+    const saved = Number(localStorage.getItem(BOT_KEY) || 0)
+    const found = bots.value.find(b => b.id === saved)
+      || bots.value.find(b => b.is_default)
+      || bots.value[0]
+    if (found) currentBotId.value = found.id
+  } catch { /* ignore */ }
+}
+
+watch(currentBotId, (val, old) => {
+  if (val) localStorage.setItem(BOT_KEY, String(val))
+  if (old != null && val !== old) messages.value = []
+})
+
+onMounted(() => {
+  loadBots()
+  loadApprovals()
+  approvalTimer = setInterval(loadApprovals, 10000)
+  window.addEventListener('omniaide:approval', loadApprovals)
+})
+
+onUnmounted(() => {
+  if (approvalTimer) clearInterval(approvalTimer)
+  window.removeEventListener('omniaide:approval', loadApprovals)
+})
 
 async function send() {
   const text = input.value.trim()
@@ -63,7 +151,7 @@ async function send() {
     const resp = await fetch(apiUrl('/chat/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, bot_id: currentBotId.value || undefined }),
     })
     if (!resp.ok) {
       const err = await resp.json().catch(() => null)
@@ -124,6 +212,12 @@ function scrollBottom() {
   box-shadow: 0 6px 20px rgba(99,102,241,0.4); transition: transform .15s;
 }
 .assistant-fab:hover { transform: scale(1.06); }
+.approval-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px;
+  padding: 0 5px; border-radius: 9px; background: #f56c6c; color: #fff;
+  font-size: 11px; line-height: 18px; text-align: center; font-weight: 600;
+  box-shadow: 0 2px 6px rgba(245,108,108,.5);
+}
 .assistant-panel {
   position: absolute; right: 0; bottom: 64px; width: 380px; height: 520px;
   background: #fff; border-radius: 14px; border: 1px solid #e0e0e0;
@@ -133,6 +227,27 @@ function scrollBottom() {
   display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;
   background: linear-gradient(135deg, #6366f1, #a855f7); color: #fff; font-size: 14px; font-weight: 600;
 }
+.assistant-head-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bot-select { width: 128px; }
+.bot-select :deep(.el-select__wrapper) {
+  background: rgba(255,255,255,.18);
+  box-shadow: none;
+  min-height: 24px;
+}
+.bot-select :deep(.el-select__placeholder) { color: #fff; }
+.bot-select :deep(.el-select__caret) { color: #fff; }
+.approval-bar {
+  padding: 6px 12px; background: #fff7e6; border-bottom: 1px solid #ffe0a3;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.approval-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8a5a00; }
+.approval-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.approval-btn {
+  border: 1px solid #e0b25a; background: #fff; color: #8a5a00;
+  border-radius: 5px; padding: 1px 7px; cursor: pointer; font-size: 12px;
+}
+.approval-btn.ok { border-color: #67c23a; color: #3f8f1f; }
+.approval-btn.no { border-color: #f56c6c; color: #c45656; }
 .assistant-icon-btn { border: none; background: rgba(255,255,255,0.15); color: #fff; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
 .assistant-icon-btn:hover { background: rgba(255,255,255,0.3); }
 .assistant-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -140,6 +255,17 @@ function scrollBottom() {
 .msg-row.user { justify-content: flex-end; }
 .msg-row.assistant { justify-content: flex-start; }
 .msg-bubble { max-width: 85%; padding: 9px 13px; border-radius: 10px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+@media (max-width: 768px) {
+  .assistant-root { right: 12px; bottom: 12px; }
+  .assistant-panel {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    border-radius: 0; border: none; bottom: 0;
+  }
+  .assistant-header { padding: 10px 12px; }
+  .assistant-head-left { gap: 6px; }
+  .bot-select { width: 96px; }
+  .assistant-body { padding: 10px; }
+}
 .msg-row.user .msg-bubble { background: #6366f1; color: #fff; border-bottom-right-radius: 2px; }
 .msg-row.assistant .msg-bubble { background: #f3f4f6; color: #333; border-bottom-left-radius: 2px; }
 .typing { display: flex; gap: 4px; align-items: center; padding: 12px 14px; }

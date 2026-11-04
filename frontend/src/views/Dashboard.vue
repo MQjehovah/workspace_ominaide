@@ -10,7 +10,7 @@
           · {{ unread }} 条未读
         </p>
         <div class="hero-actions">
-          <el-button type="primary" :icon="Cpu" @click="router.push('/coding')">打开开发助手</el-button>
+          <el-button type="primary" :icon="Cpu" @click="router.push('/projects')">打开项目</el-button>
           <el-button :icon="Document" @click="router.push('/notes')">写笔记</el-button>
           <el-button :icon="Calendar" @click="router.push('/schedule')">看日程</el-button>
         </div>
@@ -71,7 +71,7 @@
               <h3>待办</h3>
               <span class="card-sub">{{ pendingTodos.length ? `还有 ${pendingTodos.length} 项未完成` : '全部完成' }}</span>
             </div>
-            <el-button link @click="router.push('/activities')">查看记录</el-button>
+            <el-button link @click="router.push('/apps/todo')">查看待办</el-button>
           </div>
           <div class="card-body">
             <div v-if="pendingTodos.length" class="todo-list">
@@ -108,7 +108,7 @@
             </div>
             <div v-else class="empty">
               <el-icon :size="28"><TrendCharts /></el-icon>
-              <p>还没有活动记录。</p>
+              <p>还没有活动。</p>
             </div>
           </div>
         </div>
@@ -152,19 +152,19 @@
         <div v-if="codingTasks.length" class="page-card block">
           <div class="card-head">
             <div>
-              <h3>最近开发任务</h3>
-              <span class="card-sub">来自桌面端 Coding Agent</span>
+              <h3>最近 Coding Run</h3>
+              <span class="card-sub">来自 Bot 的 coding 能力</span>
             </div>
-            <el-button link @click="router.push('/coding')">打开</el-button>
+            <el-button link @click="router.push('/projects')">打开</el-button>
           </div>
           <div class="card-body">
-            <div v-for="t in codingTasks.slice(0, 4)" :key="t.task_id" class="coding-item">
-              <div class="coding-title">{{ t.project_name || t.project || '未命名项目' }}</div>
+            <div v-for="t in codingTasks.slice(0, 4)" :key="t.id" class="coding-item">
+              <div class="coding-title">{{ t.project_path || t.branch || 'Coding Run' }}</div>
               <div class="coding-meta">
                 <el-tag size="small" :type="t.status === 'running' ? 'warning' : (t.status === 'failed' ? 'danger' : 'success')">
                   {{ t.status }}
                 </el-tag>
-                <span>{{ t.tool || '-' }}</span>
+                <span>{{ t.branch || 'feature/*' }}</span>
               </div>
             </div>
           </div>
@@ -175,7 +175,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowRight, Bell, Calendar, Check, Cpu, Document, Folder, Promotion, TrendCharts,
@@ -215,12 +215,12 @@ const pendingTodos = computed(() => todos.value.filter(t => t.status !== 'done')
 const stats = computed(() => [
   { label: '文件', value: counts.files, icon: Folder, color: '#409EFF', bg: '#ecf5ff', path: '/files' },
   { label: '笔记', value: counts.notes, icon: Document, color: '#8B5CF6', bg: '#f3efff', path: '/notes' },
-  { label: '待办', value: pendingTodos.value.length, icon: Check, color: '#10B981', bg: '#e8f8f1', path: '/activities' },
-  { label: '未读通知', value: unread.value, icon: Bell, color: '#F59E0B', bg: '#fff7e6', path: '/activities' },
+  { label: '待办', value: pendingTodos.value.length, icon: Check, color: '#10B981', bg: '#e8f8f1', path: '/apps/todo' },
+  { label: '未读通知', value: unread.value, icon: Bell, color: '#F59E0B', bg: '#fff7e6', path: '/notifications' },
 ])
 
 const quickLinks = [
-  { label: '开发助手', path: '/coding', icon: Cpu },
+  { label: '项目', path: '/projects', icon: Cpu },
   { label: '笔记', path: '/notes', icon: Document },
   { label: '日程', path: '/schedule', icon: Calendar },
   { label: '文件', path: '/files', icon: Folder },
@@ -290,8 +290,8 @@ async function loadAll() {
       events.value = Array.isArray(r.data) ? r.data : []
     }),
 
-    client.get('/vibecoding/tasks?limit=5').then(r => {
-      codingTasks.value = r.data?.tasks || []
+    client.get('/projects/runs?limit=5').then(r => {
+      codingTasks.value = Array.isArray(r.data) ? r.data : []
     }),
   ])
 }
@@ -303,7 +303,19 @@ async function toggleTodo(t: any) {
   } catch { }
 }
 
-onMounted(loadAll)
+function refreshUnread() {
+  client.get('/notifications/unread-count')
+    .then(r => { unread.value = Number(r.data?.count || 0) })
+    .catch(() => {})
+}
+
+onMounted(() => {
+  loadAll()
+  window.addEventListener('omniaide:notification', refreshUnread)
+})
+onUnmounted(() => {
+  window.removeEventListener('omniaide:notification', refreshUnread)
+})
 </script>
 
 <style scoped>
@@ -395,5 +407,10 @@ onMounted(loadAll)
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero-side { display: none; }
   .hero h1 { font-size: 24px; }
+}
+@media (max-width: 600px) {
+  .hero { flex-direction: column; align-items: flex-start; padding: 20px; }
+  .stat-grid { grid-template-columns: 1fr; }
+  .quick-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>
