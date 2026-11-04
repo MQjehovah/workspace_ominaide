@@ -294,6 +294,73 @@ async def test_save_memory_tool_uses_bot_scope(client, user_token):
     assert any("深色模式" in m["content"] for m in memories)
 
 
+async def test_list_coding_runs_reads_extension_fields(client, user_token):
+    """Coding metadata lives in coding_runs, not on the generic BotRun."""
+    me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
+    uid = me["id"]
+    bots = (await client.get("/api/bots", headers=auth(user_token))).json()
+    bot_id = next(b for b in bots if b["is_default"])["id"]
+
+    from core.bots.models import BotRun
+    from core.coding.models import CodingRun
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        run = BotRun(
+            bot_id=bot_id,
+            user_id=uid,
+            trigger="coding",
+            status="done",
+            input="只读检查项目结构",
+            output="ok",
+        )
+        db.add(run)
+        await db.commit()
+        await db.refresh(run)
+        db.add(
+            CodingRun(
+                run_id=run.id,
+                user_id=uid,
+                project_path="/workspace/demo",
+                branch="feature/check",
+                engine="builtin",
+            )
+        )
+        await db.commit()
+
+    from core.ai.mcp.tools.coding import list_coding_runs
+
+    result = await list_coding_runs(uid, {"limit": 5})
+    assert not result.isError, result
+    text = result.content[0].text
+    assert f"#{run.id}" in text
+    assert "/workspace/demo" in text
+    assert "feature/check" in text
+
+
+async def test_coding_run_inherits_chat_session(client, user_token, monkeypatch):
+    """Delegated coding runs must report back into the originating chat."""
+    me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
+    uid = me["id"]
+    bots = (await client.get("/api/bots", headers=auth(user_token))).json()
+    bot_id = next(b for b in bots if b["is_default"])["id"]
+
+    from core.bots import runner
+    from core.bots.context import reset_current_session_id, set_current_session_id
+    from core.bots.registry import get_active_bot
+    from core.coding.service import create_coding_run
+
+    monkeypatch.setattr(runner, "enqueue_run", lambda run_id: None)
+    bot = await get_active_bot(uid, bot_id)
+    token = set_current_session_id("chat-session-1")
+    try:
+        run = await create_coding_run(uid, bot, "/workspace/demo", "do it")
+    finally:
+        reset_current_session_id(token)
+
+    assert run.session_id == "chat-session-1"
+
+
 async def test_approvals_list_and_validation(client, user_token):
     r = await client.get("/api/approvals?status=pending", headers=auth(user_token))
     assert r.status_code == 200

@@ -10,6 +10,7 @@ from contextvars import ContextVar, Token
 
 _current_bot_id: ContextVar[int | None] = ContextVar("current_bot_id", default=None)
 _current_run_id: ContextVar[int | None] = ContextVar("current_run_id", default=None)
+_current_session_id: ContextVar[str | None] = ContextVar("current_session_id", default=None)
 
 
 def set_current_bot_id(bot_id: int | None) -> Token:
@@ -34,3 +35,15 @@ def reset_current_run_id(token: Token) -> None:
 
 def get_current_run_id() -> int | None:
     return _current_run_id.get()
+
+
+def set_current_session_id(session_id: str | None) -> Token:
+    return _current_session_id.set(session_id)
+
+
+def reset_current_session_id(token: Token) -> None:
+    _current_session_id.reset(token)
+
+
+def get_current_session_id() -> str | None:
+    return _current_session_id.get()

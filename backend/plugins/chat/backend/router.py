@@ -12,7 +12,12 @@ from core.database.session import get_db, async_session
 from core.auth.dependencies import get_current_user
 from core.ai.agent import run_agent, run_agent_stream
 from core.bots import runner
-from core.bots.context import reset_current_bot_id, set_current_bot_id
+from core.bots.context import (
+    reset_current_bot_id,
+    reset_current_session_id,
+    set_current_bot_id,
+    set_current_session_id,
+)
 from core.bots.memory import build_bot_context
 from core.bots.registry import BotNotFound, get_active_bot, get_or_create_default_bot
 from plugins.chat.backend.schemas import (
@@ -286,6 +291,7 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
     try:
         messages = await build_messages(req, user["id"], bot=bot)
         token = set_current_bot_id(bot.id)
+        session_token = set_current_session_id(session_id)
         try:
             reply = await run_agent(
                 user["id"],
@@ -296,6 +302,7 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
             )
         finally:
+            reset_current_session_id(session_token)
             reset_current_bot_id(token)
         await save_message(user["id"], "user", req.message, session_id, bot=bot)
         await save_message(user["id"], "assistant", reply, session_id, bot=bot)
@@ -319,6 +326,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
     async def event_stream():
         reply_parts = []
         token = set_current_bot_id(bot.id)
+        session_token = set_current_session_id(session_id)
         try:
             async for event in run_agent_stream(
                 user["id"],
@@ -340,6 +348,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         finally:
+            reset_current_session_id(session_token)
             reset_current_bot_id(token)
             await save_message(user["id"], "assistant", "".join(reply_parts), session_id, bot=bot)
 
@@ -482,6 +491,7 @@ async def voice(
     try:
         messages = await build_messages(req, user["id"], bot=bot, extra_system=VOICE_STYLE, history_limit=6)
         token = set_current_bot_id(bot.id)
+        session_token = set_current_session_id(session_id or DEFAULT_SESSION)
         try:
             reply = await run_agent(
                 user["id"],
@@ -492,6 +502,7 @@ async def voice(
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
             )
         finally:
+            reset_current_session_id(session_token)
             reset_current_bot_id(token)
     except HTTPException:
         raise
@@ -581,6 +592,7 @@ async def voice_stream(
 
     async def supervisor():
         token = set_current_bot_id(bot.id)
+        session_token = set_current_session_id(sid)
         try:
             async for ev in iter_agent_events(
                 run_agent_stream(
@@ -604,6 +616,7 @@ async def voice_stream(
         except Exception as e:
             await out_q.put({"t": "status", "text": f"处理失败：{e}"[:120]})
         finally:
+            reset_current_session_id(session_token)
             reset_current_bot_id(token)
 
         reply = "".join(reply_parts).strip() or "已执行。"

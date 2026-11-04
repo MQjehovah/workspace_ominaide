@@ -7,7 +7,6 @@
       </div>
       <div class="header-actions">
         <el-button :icon="Refresh" @click="loadProjects">刷新</el-button>
-        <el-button :icon="Search" @click="scanWorkspace">扫描工作区</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">添加项目</el-button>
       </div>
     </div>
@@ -32,7 +31,7 @@
           </span>
         </button>
         <div v-if="projects.length === 0" class="empty-hint">
-          还没有项目。点“扫描工作区”从 /workspace 导入。
+          还没有项目。点“添加项目”手动添加。
         </div>
       </aside>
 
@@ -43,7 +42,7 @@
             <p class="muted">{{ selected.path }}</p>
             <p class="muted">
               <template v-if="selected.is_git">
-                Git 项目 · 默认分支 {{ selected.default_branch || 'main' }}
+                Git 项目 · 默认分支 {{ selected.default_branch || 'master' }}
                 <template v-if="selected.repo_url"> · {{ selected.repo_url }}</template>
               </template>
               <template v-else>非 Git 项目 · 仅作为目录管理</template>
@@ -51,7 +50,7 @@
           </div>
           <div class="head-actions">
             <el-button type="primary" :icon="VideoPlay" @click="openRun">发起 Coding Run</el-button>
-            <el-popconfirm title="删除这个项目？项目记录会删除，历史 Run 保留。" @confirm="deleteProject">
+            <el-popconfirm title="删除这个项目？会同时删除项目目录，不可恢复；历史 Run 保留。" @confirm="deleteProject">
               <template #reference><el-button type="danger" plain>删除</el-button></template>
             </el-popconfirm>
           </div>
@@ -99,14 +98,18 @@
       <el-form :model="form" label-width="100px">
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="路径">
-          <el-input v-model="form.path" placeholder="/workspace/workspace_ominaide" />
+          <el-input v-model="form.path" :placeholder="pathPlaceholder" />
         </el-form-item>
         <el-form-item label="Git 项目">
           <el-checkbox v-model="form.is_git">这是一个 Git 仓库</el-checkbox>
         </el-form-item>
         <template v-if="form.is_git">
-          <el-form-item label="仓库地址"><el-input v-model="form.repo_url" placeholder="可选" /></el-form-item>
-          <el-form-item label="默认分支"><el-input v-model="form.default_branch" placeholder="main" /></el-form-item>
+          <el-form-item label="仓库地址" required>
+            <el-input v-model="form.repo_url" placeholder="必填，例如 git@github.com:user/repo.git" />
+          </el-form-item>
+          <el-form-item label="默认分支">
+            <el-input v-model="form.default_branch" placeholder="master" />
+          </el-form-item>
         </template>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="3" />
@@ -138,7 +141,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { FolderOpened, Plus, Refresh, Search, VideoPlay } from '@element-plus/icons-vue'
+import { FolderOpened, Plus, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 
@@ -150,9 +153,12 @@ const selected = computed(() => projects.value.find(p => p.id === selectedId.val
 const createOpen = ref(false)
 const saving = ref(false)
 const form = reactive({
-  name: '', path: '', is_git: true, repo_url: '', default_branch: 'main',
+  name: '', path: '', is_git: true, repo_url: '', default_branch: 'master',
   description: '',
 })
+const pathPlaceholder = computed(() =>
+  form.name.trim() ? `/workspace/${form.name.trim()}` : '/workspace/<名称>'
+)
 
 const runOpen = ref(false)
 const starting = ref(false)
@@ -202,20 +208,32 @@ async function loadRuns() {
 
 function openCreate() {
   Object.assign(form, {
-    name: '', path: '', is_git: true, repo_url: '', default_branch: 'main',
+    name: '', path: '', is_git: true, repo_url: '', default_branch: 'master',
     description: '',
   })
   createOpen.value = true
 }
 
 async function createProject() {
-  if (!form.name.trim() || !form.path.trim()) {
-    ElMessage.warning('名称和路径必填')
+  const name = form.name.trim()
+  if (!name) {
+    ElMessage.warning('名称必填')
     return
   }
+  if (form.is_git && !form.repo_url.trim()) {
+    ElMessage.warning('Git 项目必须填写仓库地址')
+    return
+  }
+  const path = form.path.trim() || `/workspace/${name}`
   saving.value = true
   try {
-    await client.post('/projects', { ...form })
+    await client.post('/projects', {
+      ...form,
+      name,
+      path,
+      repo_url: form.repo_url.trim(),
+      default_branch: form.default_branch.trim() || 'master',
+    })
     createOpen.value = false
     await loadProjects()
     ElMessage.success('项目已添加')
@@ -223,17 +241,6 @@ async function createProject() {
     ElMessage.error(e?.response?.data?.detail || '添加失败')
   } finally {
     saving.value = false
-  }
-}
-
-async function scanWorkspace() {
-  try {
-    const r = await client.post('/projects/scan')
-    const created = r.data || []
-    await loadProjects()
-    ElMessage.success(created.length ? `导入 ${created.length} 个项目` : '没有发现新项目')
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '扫描失败')
   }
 }
 

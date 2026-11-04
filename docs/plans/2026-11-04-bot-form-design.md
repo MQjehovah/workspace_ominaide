@@ -949,6 +949,16 @@ runner 命中 ask
 - 新增 `Notifications.vue`：支持全部 / 未读筛选、单条已读、全部已读、跟随通知链接。
 - Header 的“查看全部通知”改为跳转 `/notifications`。
 
+### 2026-11-05：项目默认路径、删除目录与委派回复
+
+- 添加项目时路径可留空，后端默认使用 `/workspace/<项目名>`。
+- Git 项目必须填写仓库地址；默认分支默认 `master`。
+- 删除项目时同时删除项目目录，但拒绝删除工作区根目录或工作区外路径。
+- 移除“扫描工作区”接口和页面按钮。
+- 修复 `list_coding_runs` 读取 `BotRun.project` 导致的报错，改为联查 `coding_runs`。
+- 委派 Coding Run 会继承当前聊天会话：完成后写入聊天历史，并通过 `/ws/host` 的 `chat.chat_reply` 推送到打开的聊天面板。
+- 聊天面板手机端：全屏 `100dvh`、安全区适配、隐藏悬浮按钮避免遮挡输入框、气泡字号/间距优化、消息入场动画、Enter 发送与 Shift+Enter 换行，并修复 SSE 分块解析。
+
 ### 2026-11-05：Coding Agent 信任加固
 
 - 镜像补齐 `git` / `openssh-client`，创建无特权沙箱用户 `agent`（uid 1001 / gid 1000）。

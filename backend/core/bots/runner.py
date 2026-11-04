@@ -24,8 +24,10 @@ from core.bots import policy
 from core.bots.context import (
     reset_current_bot_id,
     reset_current_run_id,
+    reset_current_session_id,
     set_current_bot_id,
     set_current_run_id,
+    set_current_session_id,
 )
 from core.bots.memory import add_memory, build_bot_context
 from core.bots.models import Bot, BotApproval, BotRun, BotRunStep
@@ -425,9 +427,11 @@ async def _call_tool(run: BotRun, name: str, arguments: dict) -> tuple[str, bool
     req = type("Req", (), {"name": name, "arguments": arguments})()
     token = set_current_bot_id(run.bot_id)
     run_token = set_current_run_id(run.id)
+    session_token = set_current_session_id(run.session_id)
     try:
         result = await tool_registry.call(run.user_id, req)
     finally:
+        reset_current_session_id(session_token)
         reset_current_run_id(run_token)
         reset_current_bot_id(token)
     text = _serialize_result(result)[:MAX_TOOL_OUTPUT]
@@ -617,10 +621,32 @@ async def _finalize(
     if status == "done":
         if run.session_id and run.output:
             await _save_chat_reply(run)
+            if await _coding_run(run.id) is not None:
+                await _broadcast_chat_reply(run)
         if run.routine_id and run.output:
             await _notify_run(run, bot)
         if run.output and settings.bot_run_auto_summary and not skip_summary:
             await _maybe_summarize(run, bot)
+
+
+async def _broadcast_chat_reply(run: BotRun) -> None:
+    """Push asynchronous replies (e.g. delegated coding runs) to open chats."""
+    try:
+        from core.wschannel.hub import host_channel
+
+        await host_channel.broadcast(
+            run.user_id,
+            "chat",
+            {
+                "type": "chat_reply",
+                "session_id": run.session_id,
+                "bot_id": run.bot_id,
+                "run_id": run.id,
+                "content": run.output or "",
+            },
+        )
+    except Exception as e:
+        print(f"[bots.runner] broadcast chat reply failed: {e}")
 
 
 async def _save_chat_reply(run: BotRun) -> None:

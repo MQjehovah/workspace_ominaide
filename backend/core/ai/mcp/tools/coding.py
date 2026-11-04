@@ -94,20 +94,21 @@ async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
         rows = list(
             (
                 await db.execute(
-                    select(BotRun)
+                    select(BotRun, CodingRun)
                     .join(CodingRun, CodingRun.run_id == BotRun.id)
                     .where(BotRun.user_id == user_id)
                     .order_by(BotRun.id.desc())
                     .limit(limit)
                 )
-            ).scalars().all()
+            ).all()
         )
     if not rows:
         return _ok("还没有 Coding Run。")
     lines = ["最近的 Coding Run："]
-    for r in rows:
+    for run, coding in rows:
         lines.append(
-            f"- #{r.id} [{r.status}] {r.project or '-'} · {r.branch or '-'} · {(r.input or '')[:60]}"
+            f"- #{run.id} [{run.status}] {coding.project_path or '-'} · "
+            f"{coding.branch or '-'} · {(run.input or '')[:60]}"
         )
     return _ok("\n".join(lines))
 

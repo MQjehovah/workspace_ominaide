@@ -88,6 +88,9 @@ function connectWebSocket() {
         fetchNotifications()
         window.dispatchEvent(new CustomEvent('omniaide:notification'))
       }
+      if (data?.channel === 'chat' && data?.type === 'chat_reply') {
+        window.dispatchEvent(new CustomEvent('omniaide:chat-reply', { detail: data }))
+      }
       if (data?.type === 'approval_required') {
         window.dispatchEvent(new CustomEvent('omniaide:approval'))
       }

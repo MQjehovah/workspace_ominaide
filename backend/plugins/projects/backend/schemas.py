@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    path: str = Field(min_length=1, max_length=500)
+    path: str = ""
     is_git: bool = True
     repo_url: str | None = None
-    default_branch: str | None = "main"
+    default_branch: str | None = "master"
     description: str | None = None
 
 

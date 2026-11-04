@@ -1,3 +1,5 @@
+import asyncio
+import shutil
 from pathlib import Path
 
 from sqlalchemy import select
@@ -7,10 +9,6 @@ from core.coding.models import CodingRun
 from core.bots.models import BotRun
 from core.database.session import async_session
 from plugins.projects.backend.models import Project
-
-
-def _normalize_path(value: str) -> str:
-    return str(Path(value).expanduser().resolve())
 
 
 def _validate_path(value: str) -> str:
@@ -48,7 +46,19 @@ async def get_project(user_id: int, project_id: int) -> Project | None:
 
 
 async def create_project(user_id: int, data) -> Project:
-    path = _validate_path(data.path)
+    name = (data.name or "").strip()
+    if not name:
+        raise ValueError("项目名称不能为空")
+    raw_path = (data.path or "").strip()
+    if not raw_path:
+        root = Path(settings.coding_workspace_root).expanduser().resolve()
+        raw_path = str(root / name)
+    path = _validate_path(raw_path)
+
+    repo_url = (data.repo_url or "").strip() or None
+    if data.is_git and not repo_url:
+        raise ValueError("Git 项目必须填写仓库地址")
+
     async with async_session() as db:
         existing = (
             await db.execute(
@@ -61,11 +71,13 @@ async def create_project(user_id: int, data) -> Project:
             raise ValueError("该项目路径已存在")
         project = Project(
             user_id=user_id,
-            name=data.name,
+            name=name,
             path=path,
             is_git=data.is_git,
-            repo_url=data.repo_url if data.is_git else None,
-            default_branch=(data.default_branch or "main") if data.is_git else None,
+            repo_url=repo_url if data.is_git else None,
+            default_branch=((data.default_branch or "").strip() or "master")
+            if data.is_git
+            else None,
             description=data.description,
         )
         db.add(project)
@@ -93,8 +105,11 @@ async def update_project(user_id: int, project_id: int, data) -> Project | None:
         if not project.is_git:
             project.repo_url = None
             project.default_branch = None
-        elif not project.default_branch:
-            project.default_branch = "main"
+        else:
+            project.repo_url = (project.repo_url or "").strip() or None
+            if not project.repo_url:
+                raise ValueError("Git 项目必须填写仓库地址")
+            project.default_branch = (project.default_branch or "").strip() or "master"
         await db.commit()
         await db.refresh(project)
         return project
@@ -111,42 +126,17 @@ async def delete_project(user_id: int, project_id: int) -> bool:
         ).scalar_one_or_none()
         if project is None:
             return False
+
+        target = Path(project.path).expanduser().resolve()
+        root = Path(settings.coding_workspace_root).expanduser().resolve()
+        if target == root or root not in target.parents:
+            raise ValueError(f"拒绝删除工作区外的目录：{project.path}")
+        if target.exists():
+            await asyncio.to_thread(shutil.rmtree, target)
+
         await db.delete(project)
         await db.commit()
         return True
-
-
-async def scan_workspace(user_id: int) -> list[Project]:
-    from core.coding.workspace import list_projects as scan
-
-    found = scan(settings.coding_workspace_root)
-    async with async_session() as db:
-        existing = {
-            p.path
-            for p in (
-                await db.execute(select(Project).where(Project.user_id == user_id))
-            ).scalars().all()
-        }
-        created = []
-        for item in found:
-            path = _normalize_path(item["path"])
-            if path in existing:
-                continue
-            is_git = item.get("type") == "git"
-            project = Project(
-                user_id=user_id,
-                name=item["name"],
-                path=path,
-                is_git=is_git,
-                default_branch="main" if is_git else None,
-                description=f"从工作区扫描：{item.get('type', 'project')}",
-            )
-            db.add(project)
-            created.append(project)
-        await db.commit()
-        for p in created:
-            await db.refresh(p)
-        return created
 
 
 async def list_project_runs(

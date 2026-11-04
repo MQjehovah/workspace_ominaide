@@ -29,9 +29,15 @@ async def create_project(payload: ProjectCreate, user: dict = Depends(get_curren
         raise HTTPException(status_code=422, detail=str(e))
 
 
-@router.post("/scan", response_model=list[ProjectOut])
-async def scan_projects(user: dict = Depends(get_current_user)):
-    return await service.scan_workspace(user["id"])
+@router.delete("/{project_id}")
+async def delete_project(project_id: int, user: dict = Depends(get_current_user)):
+    try:
+        ok = await service.delete_project(user["id"], project_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"message": "Project and directory deleted"}
 
 
 @router.get("/runs", response_model=list[ProjectRunOut])
@@ -61,14 +67,6 @@ async def update_project(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
-
-
-@router.delete("/{project_id}")
-async def delete_project(project_id: int, user: dict = Depends(get_current_user)):
-    ok = await service.delete_project(user["id"], project_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return {"message": "Project deleted"}
 
 
 @router.get("/{project_id}/runs", response_model=list[ProjectRunOut])

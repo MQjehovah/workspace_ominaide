@@ -18,15 +18,19 @@ async def create_coding_run(
     branch: str | None = None,
     engine: str = "builtin",
     parent_run_id: int | None = None,
+    session_id: str | None = None,
 ):
     from core.bots import runner
+    from core.bots.context import get_current_session_id
 
+    session_id = session_id or get_current_session_id()
     run = await runner.create_run(
         user_id,
         bot,
         instruction,
         trigger="coding",
         parent_run_id=parent_run_id,
+        session_id=session_id,
         auto_start=False,
     )
     async with async_session() as db:
