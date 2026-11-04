@@ -179,3 +179,4 @@ class ApprovalOut(BaseModel):
 class ApprovalDecision(BaseModel):
     approved: bool
     reason: str | None = None
+    remember: bool = False

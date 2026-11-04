@@ -324,6 +324,23 @@ async def decide_approval(
         approval.reason = payload.reason
         approval.decided_at = datetime.utcnow()
 
+        if payload.approved and payload.remember:
+            from core.bots.models import Bot
+
+            bot = (
+                await db.execute(
+                    select(Bot).where(
+                        Bot.id == approval.bot_id, Bot.user_id == user["id"]
+                    )
+                )
+            ).scalar_one_or_none()
+            if bot is not None:
+                risk_policy = dict(bot.risk_policy or {})
+                tools = dict(risk_policy.get("tools") or {})
+                tools[approval.tool_name] = "auto"
+                risk_policy["tools"] = tools
+                bot.risk_policy = risk_policy
+
         run = (
             await db.execute(select(BotRun).where(BotRun.id == approval.run_id))
         ).scalar_one_or_none()

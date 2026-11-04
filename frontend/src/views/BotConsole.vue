@@ -266,6 +266,7 @@
                   <el-table-column label="操作" width="160" fixed="right">
                     <template #default="{ row }">
                       <el-button link type="success" @click="decide(row, true)">允许</el-button>
+                      <el-button link type="success" @click="decide(row, true, true)">总是允许</el-button>
                       <el-button link type="danger" @click="decide(row, false)">拒绝</el-button>
                     </template>
                   </el-table-column>
@@ -870,10 +871,10 @@ async function cancelRun(row: any) {
   }
 }
 
-async function decide(row: any, approved: boolean) {
+async function decide(row: any, approved: boolean, remember = false) {
   try {
-    await client.post(`/approvals/${row.id}/decision`, { approved })
-    ElMessage.success(approved ? '已允许' : '已拒绝')
+    await client.post(`/approvals/${row.id}/decision`, { approved, remember })
+    ElMessage.success(approved ? (remember ? '已允许并记住' : '已允许') : '已拒绝')
     await loadApprovals()
     await loadRuns()
   } catch (e: any) {

@@ -391,14 +391,14 @@ async function loadApprovals() {
   } catch { /* ignore */ }
 }
 
-async function decideApproval(id: number, approved: boolean) {
+async function decideApproval(id: number, approved: boolean, remember = false) {
   try {
     const su = await serverUrl()
     const tk = await getToken()
     const r = await fetch(`${su}/api/approvals/${id}/decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
-      body: JSON.stringify({ approved }),
+      body: JSON.stringify({ approved, remember }),
     })
     if (!r.ok) {
       const err = await r.json().catch(() => null)
@@ -1599,6 +1599,7 @@ const suggestions = [
         <div v-for="a in approvals" :key="a.id" class="approval-item">
           <span class="approval-name" :title="a.reason || ''">🔐 {{ a.tool_name }}</span>
           <button class="approval-btn ok" @click="decideApproval(a.id, true)">允许</button>
+          <button class="approval-btn ok" @click="decideApproval(a.id, true, true)">总是允许</button>
           <button class="approval-btn no" @click="decideApproval(a.id, false)">拒绝</button>
         </div>
       </div>

@@ -1015,6 +1015,17 @@ runner 命中 ask
   - `/root/.ssh` 已挂载
   - Coding `run_command` → uid=1001(agent)，pwd=/workspace/workspace_ominaide
 
+### 2026-11-05：Shell 审批降噪
+
+- `run_shell` 默认使用智能审批：
+  - 简单只读命令自动执行：`ls`、`pwd`、`cat`、`head`、`tail`、`grep`、`find`、`ps`、`df`、`git status/log/diff` 等
+  - 含 `;`、`&&`、`|`、重定向、命令替换、`.env`/`.ssh`/密钥引用的命令一律需要审批
+  - `ssh`、`scp`、`rm`、`docker`、`systemctl`、包管理等命令需要审批
+- 审批条新增“总是允许”：批准后把该工具写入当前 Bot 的 `risk_policy.tools.<tool> = "auto"`，以后不再询问；仍可在 Bot 管理里改回。
+- 支持 `risk_policy.tools.run_shell = "auto" | "ask" | "deny"` 或 `{"decision": "smart"}`。
+- 注意：智能审批是体验优化，不是安全边界；shell 语法可以变形，真正的安全边界仍是容器权限和审批授权。
+- 线上验证：`ls -la`/`git status` → auto；`ssh`/`rm`/`ls; rm`/`cat .env` → ask；审批“总是允许”后 Bot 策略变为 auto。
+
 ### 2026-11-05：Coding Agent 信任加固
 
 - 镜像补齐 `git` / `openssh-client`，创建无特权沙箱用户 `agent`（uid 1001 / gid 1000）。

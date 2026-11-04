@@ -5,6 +5,10 @@ Policy resolution order:
 2. Bot's ``risk_policy[risk_level]`` (level override)
 3. Built-in default: read/write = auto, exec/external = ask
 """
+import os
+import re
+import shlex
+
 from core.bots.models import Bot
 
 RISK_READ = "read"
@@ -104,7 +108,44 @@ def resolve_risk(bot: Bot | None, name: str) -> str:
     return classify_tool(name)
 
 
-def decide(bot: Bot | None, name: str) -> tuple[str, str]:
+_SAFE_SHELL_COMMANDS = {
+    "ls", "pwd", "whoami", "id", "hostname", "uname", "date", "uptime",
+    "df", "du", "free", "ps", "cat", "head", "tail", "wc", "grep", "rg",
+    "find", "echo", "which", "git",
+}
+_SHELL_META = (";", "&&", "||", "|", ">", "<", "`", "$(", "\n")
+_SHELL_SECRET_HINTS = (".env", ".ssh", "id_rsa", "id_ed25519", "/etc/shadow")
+
+
+def shell_decision(command: str, default: str = "ask") -> str:
+    """Return auto only for simple read-only commands; ask for everything else.
+
+    This is UX, not a security boundary: shell syntax can always be obfuscated.
+    """
+    command = (command or "").strip()
+    if not command or any(meta in command for meta in _SHELL_META):
+        return default
+    lower = command.lower()
+    if any(hint in lower for hint in _SHELL_SECRET_HINTS):
+        return default
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return default
+    if not tokens:
+        return default
+    base = os.path.basename(tokens[0])
+    if base not in _SAFE_SHELL_COMMANDS:
+        return default
+    if base == "find" and any(t in ("-delete", "-exec", "-execdir") for t in tokens):
+        return default
+    if base == "git":
+        if len(tokens) < 2 or tokens[1] not in ("status", "log", "diff", "show", "branch", "remote"):
+            return default
+    return "auto"
+
+
+def decide(bot: Bot | None, name: str, arguments: dict | None = None) -> tuple[str, str]:
     """Return ``(risk_level, decision)`` where decision is auto/ask/deny."""
     risk = resolve_risk(bot, name)
     custom = (getattr(bot, "risk_policy", None) or {}) if bot is not None else {}
@@ -115,6 +156,11 @@ def decide(bot: Bot | None, name: str) -> tuple[str, str]:
         return risk, spec
     if isinstance(spec, dict) and spec.get("decision") in ("auto", "ask", "deny"):
         return risk, spec["decision"]
+    if isinstance(spec, dict) and spec.get("decision") == "smart":
+        return risk, shell_decision((arguments or {}).get("command", ""))
+
+    if name == "run_shell":
+        return risk, shell_decision((arguments or {}).get("command", ""))
 
     decision = custom.get(risk) or DEFAULT_LEVEL_POLICY.get(risk, "ask")
     if decision not in ("auto", "ask", "deny"):

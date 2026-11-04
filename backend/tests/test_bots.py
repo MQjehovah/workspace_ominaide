@@ -484,10 +484,15 @@ async def test_run_approval_state_machine(client, user_token, monkeypatch):
 
     r = await client.post(
         f"/api/approvals/{approval['id']}/decision",
-        json={"approved": True},
+        json={"approved": True, "remember": True},
         headers=auth(user_token),
     )
     assert r.status_code == 200
+
+    bot_after = (
+        await client.get(f"/api/bots/{bot_id}", headers=auth(user_token))
+    ).json()
+    assert bot_after["risk_policy"]["tools"]["shell.exec"] == "auto"
 
     await runner.execute_run(run_id)
     r = await client.get(f"/api/runs/{run_id}", headers=auth(user_token))

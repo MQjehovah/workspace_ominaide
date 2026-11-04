@@ -32,6 +32,7 @@
         <div v-for="a in approvals" :key="a.id" class="approval-row">
           <span class="approval-text" :title="a.reason || ''">🔐 {{ a.tool_name }}</span>
           <button class="approval-btn ok" @click="decide(a.id, true)">允许</button>
+          <button class="approval-btn ok" @click="decide(a.id, true, true)">总是允许</button>
           <button class="approval-btn no" @click="decide(a.id, false)">拒绝</button>
         </div>
       </div>
@@ -102,13 +103,13 @@ async function loadApprovals() {
   } catch { /* ignore */ }
 }
 
-async function decide(id: number, approved: boolean) {
+async function decide(id: number, approved: boolean, remember = false) {
   try {
     const token = localStorage.getItem('token') || ''
     const r = await fetch(apiUrl(`/approvals/${id}/decision`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ approved }),
+      body: JSON.stringify({ approved, remember }),
     })
     if (!r.ok) {
       const err = await r.json().catch(() => null)
@@ -294,8 +295,8 @@ function scrollBottom() {
   padding: 8px 12px; background: #fff7e6; border-bottom: 1px solid #ffe0a3;
   display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;
 }
-.approval-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #8a5a00; }
-.approval-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.approval-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #8a5a00; flex-wrap: wrap; }
+.approval-text { flex: 1 1 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .approval-btn {
   border: 1px solid #e0b25a; background: #fff; color: #8a5a00;
   border-radius: 6px; padding: 3px 9px; cursor: pointer; font-size: 12px;

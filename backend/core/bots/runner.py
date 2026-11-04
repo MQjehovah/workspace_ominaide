@@ -349,7 +349,7 @@ async def _execute_tool_calls(
     for i in range(start, len(tool_calls)):
         tc = tool_calls[i]
         name = tc["name"]
-        risk, decision = policy.decide(bot, name)
+        risk, decision = policy.decide(bot, name, tc["arguments"])
 
         if decision == "deny":
             text = f"工具 {name} 被当前 Bot 的策略拒绝执行。"
