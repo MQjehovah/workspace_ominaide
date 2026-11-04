@@ -149,6 +149,7 @@ async def test_coding_tools_registered(client, admin_token):
     assert "delegate_coding" in names
     assert "list_coding_projects" in names
     assert "list_coding_runs" in names
+    assert "get_coding_run" in names
     assert "dispatch_coding_task" not in names
     assert "ha_list_entities" in names
     assert "ha_toggle" in names

@@ -912,16 +912,21 @@ async def stream_run(run_id: int, user_id: int):
 
 
 async def recover_runs() -> None:
-    """Startup recovery: fail stale runs, re-enqueue queued ones."""
+    """Startup recovery: fail orphaned runs and re-enqueue queued ones."""
     now = _now()
-    stale = now - timedelta(seconds=max(60, settings.bot_run_heartbeat_seconds * 4))
     queued: list[int] = []
 
     async with async_session() as db:
+        # This deployment has a single backend process. Any run still marked
+        # running at startup lost its worker, even if its heartbeat is recent.
         await db.execute(
             update(BotRun)
-            .where(BotRun.status == "running", BotRun.heartbeat_at < stale)
-            .values(status="failed", error="interrupted", finished_at=now)
+            .where(BotRun.status == "running")
+            .values(
+                status="failed",
+                error="interrupted by backend restart; please retry",
+                finished_at=now,
+            )
         )
         old_approval_cutoff = now - timedelta(hours=24)
         waiting = list(

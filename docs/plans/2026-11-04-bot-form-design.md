@@ -968,6 +968,14 @@ runner 命中 ask
 - 实测 HA 有 370 个实体、5 个灯；台灯实体为 `light.philips_cn_234010960_cbulb_s_2_light`，友好名称“台灯”。
 - Coding 沙箱命令改用 `setpriv` 降权，避开 uvloop 不支持 `user/group/extra_groups` 的问题；实测 `run_command` 以 uid=1001(agent) 执行成功。
 
+### 2026-11-05：Coding Run 产出读取与重启恢复
+
+- 新增 `get_coding_run` 工具：按 `run_id` 读取状态、项目、分支、完整产出、错误和最后 40 条步骤；`list_coding_runs` 增加产出预览并提示用 `get_coding_run`。
+- `delegate_coding` 的返回里带上 `get_coding_run(run_id=...)` 提示，Bot 可在任务完成后读取结果。
+- 启动恢复改为把所有 `running` 状态标记为失败：单实例部署下，重启后不可能还有存活的 worker，不能只依赖 60 秒心跳窗口。
+- 实测 Run #7 在重启时处于 `running`，旧逻辑因心跳较新未处理，永久卡住；新逻辑启动后标记为 `failed: interrupted by backend restart; please retry`。
+- 实测 `get_coding_run` 可读取 #5 的完整产出和 #7 的中断状态。
+
 ### 2026-11-05：Coding Agent 信任加固
 
 - 镜像补齐 `git` / `openssh-client`，创建无特权沙箱用户 `agent`（uid 1001 / gid 1000）。

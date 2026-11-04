@@ -67,6 +67,7 @@ async def delegate_coding(user_id: int, args: dict) -> MCPCallResponse:
                 f"分支：{branch or '自动创建 feature/*'}",
                 f"状态：{run.status}",
                 f"进度：/api/runs/{run.id}/stream",
+                f"完成后可用 get_coding_run(run_id={run.id}) 读取完整产出。",
             ]
         )
     )
@@ -106,10 +107,70 @@ async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
         return _ok("还没有 Coding Run。")
     lines = ["最近的 Coding Run："]
     for run, coding in rows:
+        preview = (run.output or run.error or "").replace("\n", " ")[:80]
         lines.append(
             f"- #{run.id} [{run.status}] {coding.project_path or '-'} · "
             f"{coding.branch or '-'} · {(run.input or '')[:60]}"
+            + (f" · 产出：{preview}" if preview else "")
         )
+    lines.append("需要完整产出时调用 get_coding_run(run_id)。")
+    return _ok("\n".join(lines))
+
+
+async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
+    """Read one Coding Run's full output, error and steps."""
+    from core.bots.models import BotRun, BotRunStep
+    from core.coding.models import CodingRun
+    from core.database.session import async_session
+
+    try:
+        run_id = int(args.get("run_id") or 0)
+    except (TypeError, ValueError):
+        run_id = 0
+    if not run_id:
+        return _err("run_id 必填")
+
+    async with async_session() as db:
+        row = (
+            await db.execute(
+                select(BotRun, CodingRun)
+                .join(CodingRun, CodingRun.run_id == BotRun.id)
+                .where(BotRun.id == run_id, BotRun.user_id == user_id)
+            )
+        ).first()
+        if row is None:
+            return _err(f"Coding Run #{run_id} 不存在")
+        run, coding = row
+        steps = list(
+            (
+                await db.execute(
+                    select(BotRunStep)
+                    .where(BotRunStep.run_id == run_id)
+                    .order_by(BotRunStep.seq.asc())
+                )
+            ).scalars().all()
+        )
+
+    lines = [
+        f"# Coding Run #{run.id}",
+        f"状态：{run.status}",
+        f"项目：{coding.project_path or '-'}",
+        f"分支：{coding.branch or '-'}",
+        f"引擎：{coding.engine or '-'}",
+        f"任务：{run.input or '-'}",
+    ]
+    if run.output:
+        lines.append(f"\n## 产出\n{run.output[:12000]}")
+    if run.error:
+        lines.append(f"\n## 错误\n{run.error[:4000]}")
+    if steps:
+        lines.append("\n## 步骤")
+        for step in steps[-40:]:
+            detail = (step.result or "").replace("\n", " ")[:180]
+            lines.append(
+                f"- [{step.seq}] {step.type} {step.tool_name or ''} "
+                f"{step.status or ''} {detail}".rstrip()
+            )
     return _ok("\n".join(lines))
 
 
@@ -154,7 +215,7 @@ TOOLS = [
     (
         MCPTool(
             name="list_coding_runs",
-            description="列出最近的 Coding Run（状态、项目、分支、任务摘要）。",
+            description="列出最近的 Coding Run（状态、项目、分支、任务摘要和产出预览）。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -163,5 +224,22 @@ TOOLS = [
             },
         ),
         list_coding_runs,
+    ),
+    (
+        MCPTool(
+            name="get_coding_run",
+            description=(
+                "读取某个 Coding Run 的完整产出、错误和步骤。"
+                "用户问“Run #5 结果是什么/改了什么/为什么失败”时使用；先用 list_coding_runs 找 run_id。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "integer", "description": "Coding Run 编号，例如 5"},
+                },
+                "required": ["run_id"],
+            },
+        ),
+        get_coding_run,
     ),
 ]

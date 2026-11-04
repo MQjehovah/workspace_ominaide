@@ -301,7 +301,7 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
-    from core.bots.models import BotRun
+    from core.bots.models import BotRun, BotRunStep
     from core.coding.models import CodingRun
     from core.database.session import async_session
 
@@ -312,7 +312,7 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
             trigger="coding",
             status="done",
             input="只读检查项目结构",
-            output="ok",
+            output="检查完成：目录结构正常",
         )
         db.add(run)
         await db.commit()
@@ -326,9 +326,19 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
                 engine="builtin",
             )
         )
+        db.add(
+            BotRunStep(
+                run_id=run.id,
+                seq=1,
+                type="tool",
+                tool_name="list_dir",
+                result='{"entries": ["backend/"]}',
+                status="ok",
+            )
+        )
         await db.commit()
 
-    from core.ai.mcp.tools.coding import list_coding_runs
+    from core.ai.mcp.tools.coding import get_coding_run, list_coding_runs
 
     result = await list_coding_runs(uid, {"limit": 5})
     assert not result.isError, result
@@ -336,6 +346,15 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
     assert f"#{run.id}" in text
     assert "/workspace/demo" in text
     assert "feature/check" in text
+    assert "产出预览" not in text
+    assert "检查完成" in text
+
+    detail = await get_coding_run(uid, {"run_id": run.id})
+    assert not detail.isError, detail
+    detail_text = detail.content[0].text
+    assert "检查完成：目录结构正常" in detail_text
+    assert "list_dir" in detail_text
+    assert "backend/" in detail_text
 
 
 async def test_coding_run_inherits_chat_session(client, user_token, monkeypatch):
@@ -359,6 +378,42 @@ async def test_coding_run_inherits_chat_session(client, user_token, monkeypatch)
         reset_current_session_id(token)
 
     assert run.session_id == "chat-session-1"
+
+
+async def test_recover_runs_fails_orphaned_running(client, user_token, monkeypatch):
+    """A restart must close runs whose worker no longer exists."""
+    from datetime import datetime
+
+    from core.bots import runner
+    from core.bots.models import BotRun
+    from core.database.session import async_session
+
+    me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
+    uid = me["id"]
+    bots = (await client.get("/api/bots", headers=auth(user_token))).json()
+    bot_id = next(b for b in bots if b["is_default"])["id"]
+
+    async with async_session() as db:
+        run = BotRun(
+            bot_id=bot_id,
+            user_id=uid,
+            trigger="coding",
+            status="running",
+            input="restart recovery test",
+            heartbeat_at=datetime.utcnow(),
+        )
+        db.add(run)
+        await db.commit()
+        await db.refresh(run)
+        run_id = run.id
+
+    monkeypatch.setattr(runner, "enqueue_run", lambda _run_id: None)
+    await runner.recover_runs()
+
+    recovered = await runner.get_run(uid, run_id)
+    assert recovered is not None
+    assert recovered.status == "failed"
+    assert "restart" in (recovered.error or "")
 
 
 async def test_approvals_list_and_validation(client, user_token):
