@@ -9,6 +9,7 @@ from core.ai.mcp.tools.personal import TOOLS as PERSONAL_TOOLS
 from core.ai.mcp.tools.productivity import TOOLS as PRODUCTIVITY_TOOLS
 from core.ai.mcp.tools.documents import TOOLS as DOCUMENT_TOOLS
 from core.ai.mcp.tools.coding import TOOLS as CODING_TOOLS
+from core.ai.mcp.tools.web import TOOLS as WEB_TOOLS
 
 
 def register_core_tools():
@@ -21,6 +22,8 @@ def register_core_tools():
     for tool, handler in DOCUMENT_TOOLS:
         tool_registry.register(tool, handler)
     for tool, handler in CODING_TOOLS:
+        tool_registry.register(tool, handler)
+    for tool, handler in WEB_TOOLS:
         tool_registry.register(tool, handler)
     tool_registry.register(
         MCPTool(

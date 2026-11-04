@@ -48,6 +48,9 @@ TOOL_RISK = {
     "create_presentation": RISK_WRITE,
     "list_coding_projects": RISK_READ,
     "list_coding_runs": RISK_READ,
+    "get_coding_run": RISK_READ,
+    "web_search": RISK_READ,
+    "fetch_url": RISK_READ,
     "delegate_coding": RISK_WRITE,
 }
 

@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     # Agentic retrieval: judge sufficiency and run follow-up searches.
     notes_rag_agentic_enabled: bool = True
     notes_rag_agentic_hops: int = 2
+    # Web access (Bing search + page fetching). No API key required.
+    web_search_url: str = "https://cn.bing.com/search"
+    web_search_max_results: int = 5
+    web_fetch_max_bytes: int = 2_000_000
+    web_fetch_max_chars: int = 12_000
     # Proactive morning briefing (server local time).
     morning_brief_enabled: bool = True
     morning_brief_hour: int = 7

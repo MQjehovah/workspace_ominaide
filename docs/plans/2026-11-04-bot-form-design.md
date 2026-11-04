@@ -976,6 +976,14 @@ runner 命中 ask
 - 实测 Run #7 在重启时处于 `running`，旧逻辑因心跳较新未处理，永久卡住；新逻辑启动后标记为 `failed: interrupted by backend restart; please retry`。
 - 实测 `get_coding_run` 可读取 #5 的完整产出和 #7 的中断状态。
 
+### 2026-11-05：联网搜索与网页正文
+
+- 新增 `web_search`：使用 Bing 公共 HTML 搜索（服务器实测可访问），返回标题、URL 和摘要；无需 API key。
+- 新增 `fetch_url`：打开公网 http/https 页面并提取正文，支持 HTML / 纯文本 / JSON，正文可截断。
+- SSRF 防护：拒绝 localhost、`.local`、内网/回环/链路本地地址；只允许公网主机。
+- 两个工具都归类为只读，不需要审批。
+- 线上验证：搜索“南京天气”返回天气网/天气网15天/中央气象台结果；抓取天气网页成功提取多日预报正文；访问 `127.0.0.1` 被拒绝。
+
 ### 2026-11-05：Coding Agent 信任加固
 
 - 镜像补齐 `git` / `openssh-client`，创建无特权沙箱用户 `agent`（uid 1001 / gid 1000）。
