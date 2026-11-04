@@ -8,12 +8,13 @@ class ChatMessage(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     session_id = Column(String(64), nullable=False, default="default", index=True)
+    bot_id = Column(Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True)
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
     def __repr__(self):
-        return f"<ChatMessage id={self.id} role={self.role} user_id={self.user_id} session={self.session_id}>"
+        return f"<ChatMessage id={self.id} role={self.role} user_id={self.user_id} session={self.session_id} bot={self.bot_id}>"
 
 
 class ChatSession(Base):
@@ -22,9 +23,10 @@ class ChatSession(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     session_id = Column(String(64), nullable=False, index=True)
+    bot_id = Column(Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True)
     title = Column(String(120), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     def __repr__(self):
-        return f"<ChatSession user_id={self.user_id} session={self.session_id}>"
+        return f"<ChatSession user_id={self.user_id} session={self.session_id} bot={self.bot_id}>"

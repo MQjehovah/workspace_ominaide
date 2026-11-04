@@ -1,6 +1,7 @@
 from datetime import datetime
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from core.timeutil import naive_local
 from plugins.todo.backend.models import PluginTodoItem
 from plugins.todo.backend.schemas import TodoCreate, TodoUpdate
 
@@ -11,7 +12,7 @@ async def create_todo(db: AsyncSession, user_id: int, req: TodoCreate) -> Plugin
         title=req.title,
         description=req.description,
         priority=req.priority,
-        due_date=datetime.fromisoformat(req.due_date) if req.due_date else None,
+        due_date=naive_local(req.due_date) if req.due_date else None,
         tags=req.tags,
     )
     db.add(todo)
@@ -62,7 +63,7 @@ async def update_todo(db: AsyncSession, user_id: int, todo_id: int, req: TodoUpd
     if req.priority is not None:
         todo.priority = req.priority
     if req.due_date is not None:
-        todo.due_date = datetime.fromisoformat(req.due_date) if req.due_date else None
+        todo.due_date = naive_local(req.due_date) if req.due_date else None
     if req.tags is not None:
         todo.tags = req.tags
 

@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from core.ai.indexer import index_content
+from core.timeutil import naive_local
 from plugins.schedule.backend.models import Event
 from plugins.schedule.backend.schemas import EventCreate, EventUpdate
 
@@ -21,7 +22,10 @@ async def list_events(
 
 
 async def create_event(db: AsyncSession, user_id: int, req: EventCreate) -> Event:
-    ev = Event(user_id=user_id, **req.model_dump())
+    data = req.model_dump()
+    data["start_time"] = naive_local(data.get("start_time"))
+    data["end_time"] = naive_local(data.get("end_time"))
+    ev = Event(user_id=user_id, **data)
     db.add(ev)
     await db.flush()
     await db.refresh(ev)
@@ -49,7 +53,11 @@ async def update_event(
     ev = await get_event(db, user_id, event_id)
     if not ev:
         return None
-    for k, v in req.model_dump(exclude_unset=True).items():
+    fields = req.model_dump(exclude_unset=True)
+    for key in ("start_time", "end_time"):
+        if key in fields:
+            fields[key] = naive_local(fields[key])
+    for k, v in fields.items():
         setattr(ev, k, v)
     await db.flush()
     await db.refresh(ev)

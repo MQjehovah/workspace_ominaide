@@ -72,9 +72,10 @@ async def _send_briefing(user_id: int):
             65: "大雨", 71: "小雪", 73: "中雪", 75: "大雪", 80: "阵雨",
             81: "强阵雨", 82: "暴雨", 95: "雷雨", 96: "雷雨冰雹",
         }
-        weather_text = "未配置天气"
+        weather_text = ""
         if weather:
             weather_text = f"{weather.get('temp')}℃，{wmo.get(int(weather.get('code') or -1), '天气未知')}"
+        weather_line = f"天气：{weather_text}\n" if weather_text else ""
 
         ev_lines = [
             f"{e.start_time.strftime('%H:%M')} {e.title}" for e in events
@@ -84,7 +85,7 @@ async def _send_briefing(user_id: int):
 
         data = (
             f"日期：{now.strftime('%Y-%m-%d 星期') + '日一二三四五六'[now.weekday()]}\n"
-            f"天气：{weather_text}\n"
+            f"{weather_line}"
             f"今日日程：{'；'.join(ev_lines)}\n"
             f"未完成待办：{'；'.join(todo_lines)}\n"
             f"未读通知：{unread} 条\n"
@@ -490,6 +491,20 @@ async def scheduler_loop():
                         active_users = [row[0] for row in r.fetchall() if row[0] not in _sent_today]
                 except Exception:
                     active_users = []
+
+                # The morning briefing is routine-driven once a Bot routine
+                # exists; this hard-coded path is only a fallback.
+                if active_users:
+                    try:
+                        from core.bots.routines import has_enabled_routine
+
+                        active_users = [
+                            uid
+                            for uid in active_users
+                            if not await has_enabled_routine(uid, "morning_brief")
+                        ]
+                    except Exception:
+                        pass
 
                 if active_users:
                     tasks = [_send_briefing(uid) for uid in active_users]

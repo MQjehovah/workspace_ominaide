@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] | None = None
     images: list[str] | None = None
     session_id: str | None = None
+    bot_id: int | None = None
 
 
 class ChatResponse(BaseModel):
@@ -23,6 +24,7 @@ class ChatHistoryItem(BaseModel):
     role: str
     content: str
     created_at: datetime
+    bot_id: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -52,5 +54,6 @@ class SessionItem(BaseModel):
     session_id: str
     title: str | None = None
     updated_at: datetime | None = None
+    bot_id: int | None = None
 
     model_config = {"from_attributes": True}

@@ -68,9 +68,10 @@ class Settings(BaseSettings):
     # One-shot delivery: after the agent finishes, verify -> branch -> commit -> push.
     # When enabled the agent tools themselves cannot commit/push; delivery owns git.
     coding_auto_deliver: bool = True
-    coding_auto_push: bool = True
+    # Safe default: commit to a bot branch, but do not push until explicitly enabled.
+    coding_auto_push: bool = False
     coding_verify_command: str = ""      # e.g. "pytest -q" or "npm run build"
-    coding_branch_prefix: str = "agent/"
+    coding_branch_prefix: str = "feature/"
     coding_context_max_chars: int = 12000
     coding_ssh_key_path: str = "/root/.ssh/id_rsa"
     # Untrusted repo commands run as this unprivileged user with a scrubbed env.
@@ -94,6 +95,13 @@ class Settings(BaseSettings):
     morning_brief_enabled: bool = True
     morning_brief_hour: int = 7
     morning_brief_minute: int = 30
+    # Bot runs: persistent execution, heartbeat and recovery.
+    bot_run_concurrency: int = 2
+    bot_run_max_turns: int = 20
+    bot_run_timeout_seconds: int = 1800
+    bot_run_heartbeat_seconds: int = 15
+    bot_run_poll_seconds: float = 0.4
+    bot_run_auto_summary: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     cors_origins: str = '["*","http://localhost:3000","http://localhost:5173","http://localhost:5000","http://localhost:8080","app://."]'

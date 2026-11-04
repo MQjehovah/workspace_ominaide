@@ -14,8 +14,8 @@ import re
 import time
 from pathlib import Path
 
-from plugins.vibecoding.backend import workspace
-from plugins.vibecoding.backend.workspace import list_dir
+from core.coding import workspace
+from core.coding.workspace import list_dir
 
 DOC_FILES = ("AGENTS.md", "CLAUDE.md", "README.md", "README.zh-CN.md", "CONTRIBUTING.md")
 DOC_CHARS = 1400

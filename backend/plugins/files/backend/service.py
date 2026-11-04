@@ -1,4 +1,5 @@
 import asyncio
+import io
 import uuid
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func, or_, delete
@@ -157,6 +158,57 @@ async def get_file(db: AsyncSession, user_id: int, file_id: int) -> File | None:
         select(File).where(File.id == file_id, File.user_id == user_id)
     )
     return result.scalar_one_or_none()
+
+
+async def save_generated_file(
+    db: AsyncSession,
+    user_id: int,
+    filename: str,
+    data: bytes,
+    mime_type: str,
+    folder_path: str = "/",
+    index_text: str = "",
+) -> File:
+    """Persist an in-memory generated file (docx/pptx/...) to MinIO + metadata."""
+    from core.auth.domain.models import User  # noqa: F401  (FK target for File.user_id)
+
+    if minio_client is None:
+        raise RuntimeError("MinIO unavailable")
+    bucket = DEFAULT_BUCKET
+    object_key = _generate_object_key(user_id, filename)
+    minio_client.put_object(
+        bucket,
+        object_key,
+        io.BytesIO(data),
+        len(data),
+        content_type=mime_type,
+    )
+
+    file_record = File(
+        user_id=user_id,
+        bucket=bucket,
+        object_key=object_key,
+        original_name=filename,
+        folder_path=_normalize_path(folder_path),
+        size=len(data),
+        mime_type=mime_type,
+        status="active",
+    )
+    db.add(file_record)
+    await db.flush()
+    await db.refresh(file_record)
+
+    if index_text:
+        asyncio.create_task(index_content(
+            user_id=user_id,
+            source_type='file',
+            source_id=file_record.id,
+            title=filename,
+            content=index_text[:32000],
+            metadata={"link": f"/files/{file_record.id}"},
+        ))
+
+    return file_record
 
 
 async def get_download_url(file_record: File) -> str:

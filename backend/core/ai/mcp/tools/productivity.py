@@ -7,7 +7,8 @@ briefing. All tools operate on the user's own data via the existing services.
 from datetime import datetime, timedelta
 
 from core.ai.mcp.core import MCPTool, MCPCallResponse, MCPContent
-from core.config import settings
+from core.config.settings import settings
+from core.timeutil import parse_datetime
 
 
 def _ok(text: str) -> MCPCallResponse:
@@ -27,7 +28,7 @@ async def create_event_tool(user_id: int, args: dict) -> MCPCallResponse:
     if not title or not start_raw:
         return _err("title 和 start 必填")
     try:
-        start = datetime.fromisoformat(start_raw)
+        start = parse_datetime(start_raw)
     except ValueError:
         return _err(f"start 时间格式不对: {start_raw}（例 2026-10-26 15:00）")
     try:

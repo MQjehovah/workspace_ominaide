@@ -9,7 +9,7 @@ persistent "remember this" facts stored in the entities collection.
 import hashlib
 
 from core.ai.mcp.core import MCPTool, MCPCallResponse, MCPContent
-from core.config import settings
+from core.config.settings import settings
 
 
 def _ok(text: str) -> MCPCallResponse:
@@ -62,7 +62,7 @@ async def search_knowledge(user_id: int, args: dict) -> MCPCallResponse:
 
 async def save_memory(user_id: int, args: dict) -> MCPCallResponse:
     """Persist a user fact so future conversations know it (auto-injected
-    into context when relevant)."""
+    into context when relevant). Scoped to the current bot when available."""
     fact = (args.get("fact") or "").strip()
     if not fact:
         return _err("fact is required")
@@ -71,6 +71,19 @@ async def save_memory(user_id: int, args: dict) -> MCPCallResponse:
     if not settings.memory_layer_enabled:
         return _err("memory layer disabled")
 
+    from core.bots.context import get_current_bot_id
+
+    bot_id = get_current_bot_id()
+    if bot_id is not None:
+        try:
+            from core.bots.memory import add_memory
+
+            await add_memory(user_id, bot_id, fact)
+            return _ok(f"已记住：{fact}")
+        except Exception as e:
+            return _err(f"save failed: {e}")
+
+    # Legacy path: no bot scope (e.g. direct MCP call). Kept for compatibility.
     try:
         from core.ai.embeddings import generate_embedding
         from core.ai import vector_store

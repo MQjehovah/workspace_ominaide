@@ -9,8 +9,10 @@ from core.database.session import async_session
 async def list_schedule_events(user_id: int, args: dict) -> dict:
     """List schedule events within a date range."""
     from datetime import datetime, timedelta
-    start = args.get("start") or datetime.utcnow().isoformat()
-    end = args.get("end") or (datetime.utcnow() + timedelta(days=30)).isoformat()
+    from core.timeutil import naive_local
+
+    start = naive_local(args.get("start")) or datetime.now()
+    end = naive_local(args.get("end")) or (datetime.now() + timedelta(days=30))
     async with async_session() as db:
         from plugins.schedule.backend.models import Event
         q = select(Event).where(Event.user_id == user_id, Event.start_time >= start, Event.start_time <= end).order_by(Event.start_time).limit(20)
@@ -22,17 +24,21 @@ async def list_schedule_events(user_id: int, args: dict) -> dict:
 async def create_schedule_event(user_id: int, args: dict) -> dict:
     """Create a schedule/calendar event. Use this to turn natural-language requests into calendar events."""
     from datetime import datetime, timedelta
+    from core.timeutil import parse_datetime
+
     title = args.get("title")
     start = args.get("start_time")
     if not title or not start:
         return {"error": "title and start_time are required"}
     try:
-        start_dt = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+        start_dt = parse_datetime(start)
     except ValueError:
         return {"error": "start_time must be an ISO datetime string, e.g. 2026-08-02T15:00:00"}
-    start_dt = start_dt.replace(tzinfo=None)
     end = args.get("end_time")
-    end_dt = datetime.fromisoformat(str(end).replace("Z", "+00:00")).replace(tzinfo=None) if end else None
+    try:
+        end_dt = parse_datetime(end) if end else None
+    except ValueError:
+        return {"error": "end_time must be an ISO datetime string"}
     notes = args.get("notes")
     remind_before = int(args.get("remind_before", 10) or 0)
 
@@ -203,65 +209,6 @@ async def activity_stats(user_id: int, args: dict) -> dict:
         }
 
 
-async def list_coding_projects(user_id: int, args: dict) -> dict:
-    """List projects available on the backend coding workspace."""
-    from core.config.settings import settings
-    from plugins.vibecoding.backend.workspace import list_projects
-
-    return {
-        "projects": list_projects(settings.coding_workspace_root),
-        "tools": {"omniaide": True},
-    }
-
-
-async def dispatch_coding_task(user_id: int, args: dict) -> dict:
-    """Dispatch a development task to the backend coding agent."""
-    from plugins.vibecoding.backend.server_agent import start_server_task
-
-    project = (args.get("project") or "").strip()
-    instruction = (args.get("instruction") or "").strip()
-    if not project or not instruction:
-        return {"error": "project and instruction are required"}
-    task_id = await start_server_task(user_id, None, project, instruction, "assistant")
-    return {"task_id": task_id, "dispatched": 1, "project": project, "engine": "server"}
-
-
-async def continue_coding_task(user_id: int, args: dict) -> dict:
-    """Continue a previous coding task with its stored conversation context."""
-    from plugins.vibecoding.backend import store
-    from plugins.vibecoding.backend.server_agent import new_task_id, start_server_task
-
-    task_id = (args.get("task_id") or "").strip()
-    instruction = (args.get("instruction") or "").strip()
-    if not task_id or not instruction:
-        return {"error": "task_id and instruction are required"}
-    row = await store.get_task(task_id, user_id)
-    if not row:
-        return {"error": "task not found"}
-    if row.status == "running":
-        return {"error": "task is still running"}
-    messages = await store.get_task_messages(task_id, user_id)
-    if not messages:
-        return {"error": "task has no reusable context"}
-    new_id = new_task_id()
-    await start_server_task(
-        user_id, new_id, row.project, instruction, "assistant",
-        seed_messages=messages, parent_id=task_id,
-    )
-    return {"task_id": new_id, "parent_id": task_id, "engine": "server"}
-
-
-async def list_coding_tasks(user_id: int, args: dict) -> dict:
-    """List recent coding tasks so the assistant can pick one to continue."""
-    from plugins.vibecoding.backend import store
-
-    try:
-        limit = int(args.get("limit") or 10)
-    except (TypeError, ValueError):
-        limit = 10
-    return {"tasks": await store.list_tasks(user_id, limit)}
-
-
 def register_ai_tools():
     tool_registry.register(MCPTool(name="list_schedule_events", description="List upcoming schedule/calendar events within a date range. Returns event titles and times.", inputSchema={"type":"object","properties":{"start":{"type":"string","description":"Start date ISO format"},"end":{"type":"string","description":"End date ISO format"}}}), list_schedule_events)
     tool_registry.register(MCPTool(name="list_recent_emails", description="List recent emails received by the user. Returns subject, sender and preview. Use important=true to filter for important mail.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results"},"important":{"type":"boolean","description":"Only important emails"}}}), list_recent_emails)
@@ -273,7 +220,3 @@ def register_ai_tools():
     tool_registry.register(MCPTool(name="unified_search", description="Search across all your data (files, notes, articles, events) with a natural language query. Use this as the primary search tool.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Natural language search query"},"types":{"type":"array","items":{"type":"string"},"description":"Optional: filter by type (file, note, rss_entry, event)"}},"required":["q"]}), unified_search_tool)
     tool_registry.register(MCPTool(name="list_activities", description="List recent user activity/event stream records (app usage, file ops, notifications, etc). Returns event type, summary and time.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results, default 20"},"event_type":{"type":"string","description":"Optional: filter by event type (e.g. app.used, file.created)"},"days":{"type":"integer","description":"Optional: look back days, default 7"}}}), list_activities)
     tool_registry.register(MCPTool(name="activity_stats", description="Get aggregated activity statistics: top apps by usage minutes, event type distribution, total event count.", inputSchema={"type":"object","properties":{"days":{"type":"integer","description":"Look back days, default 7"}}}), activity_stats)
-    tool_registry.register(MCPTool(name="list_coding_projects", description="List software projects available in the user's self-hosted backend coding workspace. Use this before dispatching a coding task when the project path is unknown.", inputSchema={"type":"object","properties":{}}), list_coding_projects)
-    tool_registry.register(MCPTool(name="dispatch_coding_task", description="Dispatch a software development task to the backend coding agent running on the user's own server. It reads/edits files, runs builds and tests, then automatically verifies, commits to a new branch and pushes. Fully automatic.", inputSchema={"type":"object","properties":{"project":{"type":"string","description":"Absolute project directory path inside the backend workspace, e.g. /workspace/workspace_ominaide"},"instruction":{"type":"string","description":"Detailed development task in natural language"}},"required":["project","instruction"]}), dispatch_coding_task)
-    tool_registry.register(MCPTool(name="continue_coding_task", description="Continue a previous coding task, reusing its full conversation context. Use list_coding_tasks first to find the task_id.", inputSchema={"type":"object","properties":{"task_id":{"type":"string","description":"Task id returned by dispatch_coding_task or list_coding_tasks"},"instruction":{"type":"string","description":"Follow-up instruction, e.g. '补充测试并重新验证'"}},"required":["task_id","instruction"]}), continue_coding_task)
-    tool_registry.register(MCPTool(name="list_coding_tasks", description="List the user's recent coding tasks with status, project, branch and commit. Use this to find a task to continue or to report progress.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results, default 10"}}}), list_coding_tasks)

@@ -13,8 +13,8 @@ import time
 from pathlib import Path
 from typing import Awaitable, Callable
 
-from plugins.vibecoding.backend import workspace
-from plugins.vibecoding.backend.context import invalidate_context
+from core.coding import workspace
+from core.coding.context import invalidate_context
 
 Emit = Callable[..., Awaitable[None]]
 PROTECTED_BRANCHES = {"main", "master"}
@@ -230,7 +230,8 @@ async def _harden_repo(root: str, identity: dict, ssh_key: str | None):
 
 async def deliver(root: str, instruction: str, *, developer: dict | None = None,
                   allow_commit: bool = True, allow_push: bool = True,
-                  verify_command: str = "", branch_prefix: str = "agent/",
+                  verify_command: str = "", branch_prefix: str = "feature/",
+                  branch: str | None = None, allow_protected_push: bool = False,
                   timeout_ms: int = 600_000,
                   emit: Emit | None = None) -> dict:
     """Verify, branch, commit and (optionally) push the working tree.
@@ -251,7 +252,9 @@ async def deliver(root: str, instruction: str, *, developer: dict | None = None,
         return await _run_delivery(
             root, instruction, developer=developer, allow_commit=allow_commit,
             allow_push=allow_push, verify_command=verify_command,
-            branch_prefix=branch_prefix, timeout_ms=timeout_ms, emit=emit,
+            branch_prefix=branch_prefix, branch=branch,
+            allow_protected_push=allow_protected_push,
+            timeout_ms=timeout_ms, emit=emit,
         )
     finally:
         restore()
@@ -261,7 +264,8 @@ async def deliver(root: str, instruction: str, *, developer: dict | None = None,
 
 async def _run_delivery(root: str, instruction: str, *, developer: dict | None = None,
                         allow_commit: bool = True, allow_push: bool = True,
-                        verify_command: str = "", branch_prefix: str = "agent/",
+                        verify_command: str = "", branch_prefix: str = "feature/",
+                        branch: str | None = None, allow_protected_push: bool = False,
                         timeout_ms: int = 600_000,
                         emit: Emit | None = None) -> dict:
 
@@ -311,15 +315,26 @@ async def _run_delivery(root: str, instruction: str, *, developer: dict | None =
                                   identity=identity, ssh_key=ssh_key)
     current = current if code == 0 else ""
 
-    if current.startswith(branch_prefix) and current not in PROTECTED_BRANCHES:
-        branch = current
+    target = (branch or "").strip()
+    if target:
+        if current != target:
+            code, _, _ = await _git(root, ["checkout", target], identity=identity, ssh_key=ssh_key)
+            if code != 0:
+                code, _, err = await _git(root, ["checkout", "-b", target], identity=identity, ssh_key=ssh_key)
+                if code != 0:
+                    await notify("branch_failed", False, _tail(err))
+                    return {"ok": False, "stage": "branch", "detail": _tail(err)}
+        branch_name = target
+        await notify("branch", True, branch_name)
+    elif current.startswith(branch_prefix) and current not in PROTECTED_BRANCHES:
+        branch_name = current
     else:
-        branch = f"{branch_prefix}{_slug(instruction)}-{time.strftime('%m%d%H%M')}"
-        code, _, err = await _git(root, ["checkout", "-b", branch], identity=identity, ssh_key=ssh_key)
+        branch_name = f"{branch_prefix}{_slug(instruction)}-{time.strftime('%m%d%H%M')}"
+        code, _, err = await _git(root, ["checkout", "-b", branch_name], identity=identity, ssh_key=ssh_key)
         if code != 0:
             await notify("branch_failed", False, _tail(err))
             return {"ok": False, "stage": "branch", "detail": _tail(err)}
-        await notify("branch", True, branch)
+        await notify("branch", True, branch_name)
 
     code, _, err = await _git(root, ["add", "-A"], identity=identity, ssh_key=ssh_key)
     if code != 0:
@@ -337,23 +352,23 @@ async def _run_delivery(root: str, instruction: str, *, developer: dict | None =
 
     if not staged:
         await notify("skipped", True, "没有可提交的改动（仅敏感文件）")
-        return {"ok": True, "skipped": True, "reason": "only_sensitive", "branch": branch}
+        return {"ok": True, "skipped": True, "reason": "only_sensitive", "branch": branch_name}
 
     code, out, err = await _git(root, ["commit", "-m", _commit_message(instruction)],
                                 identity=identity, ssh_key=ssh_key)
     if code != 0:
         if "nothing to commit" in (out + err):
             await notify("skipped", True, "没有可提交的改动")
-            return {"ok": True, "skipped": True, "reason": "no_changes", "branch": branch}
+            return {"ok": True, "skipped": True, "reason": "no_changes", "branch": branch_name}
         await notify("commit_failed", False, _tail(err or out))
-        return {"ok": False, "stage": "commit", "detail": _tail(err or out), "branch": branch}
+        return {"ok": False, "stage": "commit", "detail": _tail(err or out), "branch": branch_name}
 
     _, sha, _ = await _git(root, ["rev-parse", "--short", "HEAD"], identity=identity, ssh_key=ssh_key)
     await notify("commit", True, f"{sha} · {len(staged)} 个文件", sha=sha, files=len(staged))
 
     summary = {
         "ok": True,
-        "branch": branch,
+        "branch": branch_name,
         "commit": sha,
         "files": len(staged),
         "verify": verify_result,
@@ -365,7 +380,12 @@ async def _run_delivery(root: str, instruction: str, *, developer: dict | None =
         await notify("push_skipped", False, "开发者档案未授予 push 权限")
         return summary
 
-    code, out, err = await _git(root, ["push", "-u", "origin", branch],
+    if branch_name in PROTECTED_BRANCHES and not allow_protected_push:
+        await notify("push_skipped", False, "protected branch push requires an explicit user request")
+        summary["push_skipped"] = "protected_branch"
+        return summary
+
+    code, out, err = await _git(root, ["push", "-u", "origin", branch_name],
                                 identity=identity, ssh_key=ssh_key, timeout=180)
     if code != 0:
         await notify("push_failed", False, _tail(err or out))
@@ -373,10 +393,10 @@ async def _run_delivery(root: str, instruction: str, *, developer: dict | None =
         return summary
 
     _, remote, _ = await _git(root, ["remote", "get-url", "origin"], identity=identity, ssh_key=ssh_key)
-    pr_url = _github_pr_url(remote, branch, base_branch)
+    pr_url = _github_pr_url(remote, branch_name, base_branch)
     summary["pushed"] = True
     summary["pr_url"] = pr_url
-    await notify("push", True, branch, branch=branch)
+    await notify("push", True, branch_name, branch=branch_name)
     if pr_url:
         await notify("pr", True, pr_url, url=pr_url)
     return summary

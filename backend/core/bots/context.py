@@ -1,0 +1,36 @@
+"""Current bot scope for the running agent loop.
+
+Tools (e.g. save_memory) need to know which Bot is executing without changing
+the MCP handler signature. The chat endpoints / runner set this before invoking
+the agent and reset it afterwards. ContextVars are copied into asyncio tasks,
+so background supervisors inherit the scope as long as they are created while
+the token is active.
+"""
+from contextvars import ContextVar, Token
+
+_current_bot_id: ContextVar[int | None] = ContextVar("current_bot_id", default=None)
+_current_run_id: ContextVar[int | None] = ContextVar("current_run_id", default=None)
+
+
+def set_current_bot_id(bot_id: int | None) -> Token:
+    return _current_bot_id.set(bot_id)
+
+
+def reset_current_bot_id(token: Token) -> None:
+    _current_bot_id.reset(token)
+
+
+def get_current_bot_id() -> int | None:
+    return _current_bot_id.get()
+
+
+def set_current_run_id(run_id: int | None) -> Token:
+    return _current_run_id.set(run_id)
+
+
+def reset_current_run_id(token: Token) -> None:
+    _current_run_id.reset(token)
+
+
+def get_current_run_id() -> int | None:
+    return _current_run_id.get()

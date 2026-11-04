@@ -5,17 +5,20 @@ from datetime import datetime
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.config.settings import settings
 from core.database.session import get_db, async_session
 from core.auth.dependencies import get_current_user
 from core.ai.agent import run_agent, run_agent_stream
+from core.bots import runner
+from core.bots.context import reset_current_bot_id, set_current_bot_id
+from core.bots.memory import build_bot_context
+from core.bots.registry import BotNotFound, get_active_bot, get_or_create_default_bot
 from plugins.chat.backend.schemas import (
     ChatRequest, ChatResponse, ChatHistoryItem, TranslateRequest, TranslateResponse,
     AsrResponse, TtsRequest, SessionItem,
 )
-from plugins.chat.backend.memory import build_context
 from plugins.chat.backend.voice_stream import (
     iter_agent_events, take_sentences, tts_pcm,
 )
@@ -25,40 +28,66 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 DEFAULT_SESSION = "default"
 
 
-async def _upsert_session(db: AsyncSession, user_id: int, session_id: str, role: str, content: str):
+async def _resolve_bot(user_id: int, bot_id: int | None):
+    try:
+        return await get_active_bot(user_id, bot_id)
+    except BotNotFound:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+
+async def _upsert_session(db: AsyncSession, user_id: int, session_id: str, role: str, content: str, bot=None):
     from plugins.chat.backend.models import ChatSession
     r = await db.execute(
         select(ChatSession).where(ChatSession.user_id == user_id, ChatSession.session_id == session_id)
     )
     s = r.scalar_one_or_none()
     if s is None:
-        s = ChatSession(user_id=user_id, session_id=session_id)
+        s = ChatSession(
+            user_id=user_id,
+            session_id=session_id,
+            bot_id=bot.id if bot is not None else None,
+        )
         db.add(s)
+    elif bot is not None and s.bot_id is None:
+        s.bot_id = bot.id
     s.updated_at = datetime.utcnow()
     if not s.title and role == "user" and content:
         s.title = content[:30]
 
 
-async def save_message(user_id: int, role: str, content: str, session_id: str = DEFAULT_SESSION):
+async def save_message(user_id: int, role: str, content: str, session_id: str = DEFAULT_SESSION, bot=None):
     from plugins.chat.backend.models import ChatMessage
     if not content:
         return
     try:
         async with async_session() as db:
-            db.add(ChatMessage(user_id=user_id, session_id=session_id, role=role, content=content))
-            await _upsert_session(db, user_id, session_id, role, content)
+            db.add(ChatMessage(
+                user_id=user_id,
+                session_id=session_id,
+                role=role,
+                content=content,
+                bot_id=bot.id if bot is not None else None,
+            ))
+            await _upsert_session(db, user_id, session_id, role, content, bot)
             await db.commit()
     except Exception:
         pass
 
 
-async def load_history(user_id: int, session_id: str, limit: int) -> list[dict]:
+async def load_history(user_id: int, session_id: str, limit: int, bot=None) -> list[dict]:
     """Load the most recent messages of a session in chronological order."""
     from plugins.chat.backend.models import ChatMessage
+    conds = [ChatMessage.user_id == user_id, ChatMessage.session_id == session_id]
+    if bot is not None:
+        if bot.is_default:
+            # NULL = history written before the bot layer existed.
+            conds.append(or_(ChatMessage.bot_id == bot.id, ChatMessage.bot_id.is_(None)))
+        else:
+            conds.append(ChatMessage.bot_id == bot.id)
     async with async_session() as db:
         result = await db.execute(
             select(ChatMessage)
-            .where(ChatMessage.user_id == user_id, ChatMessage.session_id == session_id)
+            .where(*conds)
             .order_by(ChatMessage.id.desc())
             .limit(limit)
         )
@@ -66,13 +95,14 @@ async def load_history(user_id: int, session_id: str, limit: int) -> list[dict]:
         return [{"role": m.role, "content": m.content} for m in rows]
 
 
-async def resolve_history(req: ChatRequest, user_id: int, limit: int | None = None) -> list[dict]:
+async def resolve_history(req: ChatRequest, user_id: int, limit: int | None = None, bot=None) -> list[dict]:
     """Client-provided history wins; otherwise auto-load from the session store."""
     if req.history is not None:
         return [{"role": m.role, "content": m.content} for m in req.history]
     return await load_history(
         user_id, req.session_id or DEFAULT_SESSION,
         limit or settings.chat_history_limit,
+        bot=bot,
     )
 
 
@@ -91,19 +121,25 @@ async def build_messages(
     req: ChatRequest,
     user_id: int,
     *,
+    bot=None,
     persona: bool = True,
     extra_system: str | None = None,
     history_limit: int | None = None,
 ) -> list[dict]:
     messages: list[dict] = []
-    if persona and settings.assistant_system_prompt:
-        messages.append({"role": "system", "content": settings.assistant_system_prompt})
+    persona_text = (
+        bot.system_prompt
+        if bot is not None and bot.system_prompt
+        else settings.assistant_system_prompt
+    )
+    if persona and persona_text:
+        messages.append({"role": "system", "content": persona_text})
     if extra_system:
         messages.append({"role": "system", "content": extra_system})
-    ctx = await build_context(user_id, req.message)
+    ctx = await build_bot_context(user_id, bot, req.message)
     if ctx:
         messages.append({"role": "system", "content": ctx})
-    messages.extend(await resolve_history(req, user_id, limit=history_limit))
+    messages.extend(await resolve_history(req, user_id, limit=history_limit, bot=bot))
     messages.append({"role": "user", "content": _user_content(req)})
     return messages
 
@@ -112,6 +148,7 @@ async def build_messages(
 async def list_history(
     limit: int = Query(50, ge=1, le=200),
     session_id: str | None = Query(None),
+    bot_id: int | None = Query(None),
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -119,6 +156,13 @@ async def list_history(
     q = select(ChatMessage).where(ChatMessage.user_id == user["id"])
     if session_id:
         q = q.where(ChatMessage.session_id == session_id)
+    if bot_id is not None:
+        bot = await _resolve_bot(user["id"], bot_id)
+        q = q.where(
+            or_(ChatMessage.bot_id == bot.id, ChatMessage.bot_id.is_(None))
+            if bot.is_default
+            else ChatMessage.bot_id == bot.id
+        )
     result = await db.execute(q.order_by(ChatMessage.id.desc()).limit(limit))
     messages = list(reversed(result.scalars().all()))
     return [ChatHistoryItem.model_validate(m) for m in messages]
@@ -127,6 +171,7 @@ async def list_history(
 @router.delete("/history")
 async def clear_history(
     session_id: str | None = Query(None),
+    bot_id: int | None = Query(None),
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -134,34 +179,73 @@ async def clear_history(
     cond = [ChatMessage.user_id == user["id"]]
     if session_id:
         cond.append(ChatMessage.session_id == session_id)
-        await db.execute(delete(ChatSession).where(ChatSession.user_id == user["id"], ChatSession.session_id == session_id))
+    sess_cond = [ChatSession.user_id == user["id"]]
+    if session_id:
+        sess_cond.append(ChatSession.session_id == session_id)
+    if bot_id is not None:
+        bot = await _resolve_bot(user["id"], bot_id)
+        msg_bot = (
+            or_(ChatMessage.bot_id == bot.id, ChatMessage.bot_id.is_(None))
+            if bot.is_default
+            else ChatMessage.bot_id == bot.id
+        )
+        cond.append(msg_bot)
+        sess_cond.append(ChatSession.bot_id == bot.id)
     await db.execute(delete(ChatMessage).where(*cond))
+    if session_id or bot_id is not None:
+        await db.execute(delete(ChatSession).where(*sess_cond))
     await db.commit()
     return {"message": "Chat history cleared"}
 
 
 @router.get("/sessions", response_model=list[SessionItem])
-async def list_sessions(user: dict = Depends(get_current_user)):
+async def list_sessions(
+    bot_id: int | None = Query(None),
+    user: dict = Depends(get_current_user),
+):
     from plugins.chat.backend.models import ChatSession
     async with async_session() as db:
-        r = await db.execute(
-            select(ChatSession)
-            .where(ChatSession.user_id == user["id"])
-            .order_by(ChatSession.updated_at.desc())
-            .limit(100)
-        )
+        q = select(ChatSession).where(ChatSession.user_id == user["id"])
+        if bot_id is not None:
+            bot = await _resolve_bot(user["id"], bot_id)
+            q = q.where(
+                or_(ChatSession.bot_id == bot.id, ChatSession.bot_id.is_(None))
+                if bot.is_default
+                else ChatSession.bot_id == bot.id
+            )
+        r = await db.execute(q.order_by(ChatSession.updated_at.desc()).limit(100))
         return [
-            SessionItem(session_id=s.session_id, title=s.title, updated_at=s.updated_at)
+            SessionItem(
+                session_id=s.session_id,
+                title=s.title,
+                updated_at=s.updated_at,
+                bot_id=s.bot_id,
+            )
             for s in r.scalars().all()
         ]
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, user: dict = Depends(get_current_user)):
+async def delete_session(
+    session_id: str,
+    bot_id: int | None = Query(None),
+    user: dict = Depends(get_current_user),
+):
     from plugins.chat.backend.models import ChatMessage, ChatSession
     async with async_session() as db:
-        await db.execute(delete(ChatMessage).where(ChatMessage.user_id == user["id"], ChatMessage.session_id == session_id))
-        await db.execute(delete(ChatSession).where(ChatSession.user_id == user["id"], ChatSession.session_id == session_id))
+        msg_cond = [ChatMessage.user_id == user["id"], ChatMessage.session_id == session_id]
+        sess_cond = [ChatSession.user_id == user["id"], ChatSession.session_id == session_id]
+        if bot_id is not None:
+            bot = await _resolve_bot(user["id"], bot_id)
+            if bot.is_default:
+                msg_cond.append(
+                    or_(ChatMessage.bot_id == bot.id, ChatMessage.bot_id.is_(None))
+                )
+            else:
+                msg_cond.append(ChatMessage.bot_id == bot.id)
+            sess_cond.append(ChatSession.bot_id == bot.id)
+        await db.execute(delete(ChatMessage).where(*msg_cond))
+        await db.execute(delete(ChatSession).where(*sess_cond))
         await db.commit()
     return {"message": "Session deleted"}
 
@@ -172,19 +256,22 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
     if not settings.llm_api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
     session_id = req.session_id or DEFAULT_SESSION
+    bot = await _resolve_bot(user["id"], req.bot_id) if req.bot_id else None
     try:
         from openai import AsyncOpenAI
-        messages = await build_messages(req, user["id"], persona=False)
+        messages = await build_messages(req, user["id"], bot=bot, persona=False)
         client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
         resp = await client.chat.completions.create(
-            model=settings.llm_model,
+            model=(bot.model if bot is not None and bot.model else settings.llm_model),
             messages=messages,
-            temperature=0.7,
+            temperature=(bot.temperature if bot is not None and bot.temperature is not None else 0.7),
         )
         reply = (resp.choices[0].message.content or "").strip()
-        await save_message(user["id"], "user", req.message, session_id)
-        await save_message(user["id"], "assistant", reply, session_id)
+        await save_message(user["id"], "user", req.message, session_id, bot=bot)
+        await save_message(user["id"], "assistant", reply, session_id, bot=bot)
         return ChatResponse(reply=reply)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -195,12 +282,26 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
     if not settings.llm_api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
     session_id = req.session_id or DEFAULT_SESSION
+    bot = await _resolve_bot(user["id"], req.bot_id)
     try:
-        messages = await build_messages(req, user["id"])
-        reply = await run_agent(user["id"], messages, max_turns=30)
-        await save_message(user["id"], "user", req.message, session_id)
-        await save_message(user["id"], "assistant", reply, session_id)
+        messages = await build_messages(req, user["id"], bot=bot)
+        token = set_current_bot_id(bot.id)
+        try:
+            reply = await run_agent(
+                user["id"],
+                messages,
+                tools_filter=bot.allowed_tools,
+                max_turns=bot.max_turns or 30,
+                model=bot.model,
+                temperature=bot.temperature if bot.temperature is not None else 0.7,
+            )
+        finally:
+            reset_current_bot_id(token)
+        await save_message(user["id"], "user", req.message, session_id, bot=bot)
+        await save_message(user["id"], "assistant", reply, session_id, bot=bot)
         return ChatResponse(reply=reply)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -211,13 +312,22 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="LLM API key not configured")
 
     session_id = req.session_id or DEFAULT_SESSION
-    messages = await build_messages(req, user["id"])
-    await save_message(user["id"], "user", req.message, session_id)
+    bot = await _resolve_bot(user["id"], req.bot_id)
+    messages = await build_messages(req, user["id"], bot=bot)
+    await save_message(user["id"], "user", req.message, session_id, bot=bot)
 
     async def event_stream():
         reply_parts = []
+        token = set_current_bot_id(bot.id)
         try:
-            async for event in run_agent_stream(user["id"], messages, max_turns=30):
+            async for event in run_agent_stream(
+                user["id"],
+                messages,
+                tools_filter=bot.allowed_tools,
+                max_turns=bot.max_turns or 30,
+                model=bot.model,
+                temperature=bot.temperature if bot.temperature is not None else 0.7,
+            ):
                 if event.startswith("data: "):
                     try:
                         payload = json.loads(event[6:].strip())
@@ -229,7 +339,9 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        await save_message(user["id"], "assistant", "".join(reply_parts), session_id)
+        finally:
+            reset_current_bot_id(token)
+            await save_message(user["id"], "assistant", "".join(reply_parts), session_id, bot=bot)
 
     return StreamingResponse(
         event_stream(),
@@ -240,6 +352,31 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/runs")
+async def chat_run(req: ChatRequest, user: dict = Depends(get_current_user)):
+    """Create a persistent run. The client streams ``/api/runs/{id}/stream``."""
+    if not settings.llm_api_key:
+        raise HTTPException(status_code=400, detail="LLM API key not configured")
+    session_id = req.session_id or DEFAULT_SESSION
+    bot = await _resolve_bot(user["id"], req.bot_id)
+    messages = await build_messages(req, user["id"], bot=bot)
+    await save_message(user["id"], "user", req.message, session_id, bot=bot)
+    run = await runner.create_run(
+        user["id"],
+        bot,
+        req.message,
+        messages=messages,
+        trigger="chat",
+        session_id=session_id,
+    )
+    return {
+        "run_id": run.id,
+        "bot_id": bot.id,
+        "status": run.status,
+        "stream": f"/api/runs/{run.id}/stream",
+    }
 
 
 @router.post("/asr", response_model=AsrResponse)
@@ -306,6 +443,7 @@ async def voice(
     file: UploadFile = File(...),
     session_id: str = Form(DEFAULT_SESSION),
     voice: str | None = Form(None),
+    bot_id: int | None = Form(None),
     user: dict = Depends(get_current_user),
 ):
     """Audio in → agent (tools/memory) → audio out.
@@ -339,15 +477,29 @@ async def voice(
     if not transcript:
         raise HTTPException(status_code=422, detail="No speech recognized")
 
-    req = ChatRequest(message=transcript, session_id=session_id or DEFAULT_SESSION)
+    bot = await _resolve_bot(user["id"], bot_id)
+    req = ChatRequest(message=transcript, session_id=session_id or DEFAULT_SESSION, bot_id=bot.id)
     try:
-        messages = await build_messages(req, user["id"], extra_system=VOICE_STYLE, history_limit=6)
-        reply = await run_agent(user["id"], messages, max_turns=30)
+        messages = await build_messages(req, user["id"], bot=bot, extra_system=VOICE_STYLE, history_limit=6)
+        token = set_current_bot_id(bot.id)
+        try:
+            reply = await run_agent(
+                user["id"],
+                messages,
+                tools_filter=bot.allowed_tools,
+                max_turns=bot.max_turns or 30,
+                model=bot.model,
+                temperature=bot.temperature if bot.temperature is not None else 0.7,
+            )
+        finally:
+            reset_current_bot_id(token)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Agent failed: {e}")
 
-    await save_message(user["id"], "user", transcript, session_id or DEFAULT_SESSION)
-    await save_message(user["id"], "assistant", reply, session_id or DEFAULT_SESSION)
+    await save_message(user["id"], "user", transcript, session_id or DEFAULT_SESSION, bot=bot)
+    await save_message(user["id"], "assistant", reply, session_id or DEFAULT_SESSION, bot=bot)
 
     try:
         tts_client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
@@ -380,6 +532,7 @@ async def voice_stream(
     file: UploadFile = File(...),
     session_id: str = Form(DEFAULT_SESSION),
     voice: str | None = Form(None),
+    bot_id: int | None = Form(None),
     user: dict = Depends(get_current_user),
 ):
     """Low-latency voice: ASR once, then stream agent text + sentence-level TTS.
@@ -418,17 +571,26 @@ async def voice_stream(
         raise HTTPException(status_code=422, detail="No speech recognized")
 
     sid = session_id or DEFAULT_SESSION
-    req = ChatRequest(message=transcript, session_id=sid)
-    messages = await build_messages(req, user["id"], extra_system=VOICE_STYLE, history_limit=6)
-    await save_message(user["id"], "user", transcript, sid)
+    bot = await _resolve_bot(user["id"], bot_id)
+    req = ChatRequest(message=transcript, session_id=sid, bot_id=bot.id)
+    messages = await build_messages(req, user["id"], bot=bot, extra_system=VOICE_STYLE, history_limit=6)
+    await save_message(user["id"], "user", transcript, sid, bot=bot)
 
     out_q: asyncio.Queue = asyncio.Queue(maxsize=64)
     reply_parts: list[str] = []
 
     async def supervisor():
+        token = set_current_bot_id(bot.id)
         try:
             async for ev in iter_agent_events(
-                run_agent_stream(user["id"], messages, max_turns=30)
+                run_agent_stream(
+                    user["id"],
+                    messages,
+                    tools_filter=bot.allowed_tools,
+                    max_turns=bot.max_turns or 30,
+                    model=bot.model,
+                    temperature=bot.temperature if bot.temperature is not None else 0.7,
+                )
             ):
                 typ = ev.get("type")
                 if typ == "token":
@@ -441,6 +603,8 @@ async def voice_stream(
                     await out_q.put({"t": "status", "text": "正在执行工具..."})
         except Exception as e:
             await out_q.put({"t": "status", "text": f"处理失败：{e}"[:120]})
+        finally:
+            reset_current_bot_id(token)
 
         reply = "".join(reply_parts).strip() or "已执行。"
 
@@ -471,7 +635,7 @@ async def voice_stream(
                 await out_q.put({"t": "status", "text": "语音合成失败"})
 
         print(f"[voice_stream] reply={reply!r} pcm={len(pcm) if pcm else 0}", flush=True)
-        await save_message(user["id"], "assistant", reply, sid)
+        await save_message(user["id"], "assistant", reply, sid, bot=bot)
         await out_q.put({"t": "done", "reply": reply})
 
     async def gen():

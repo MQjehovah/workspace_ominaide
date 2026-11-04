@@ -12,6 +12,7 @@ async def ensure_schema_migrations():
 
     dialect = engine.dialect.name  # "postgresql" | "mysql" | "sqlite"
     bool_default = "false" if dialect == "postgresql" else "0"
+    bool_true = "true" if dialect == "postgresql" else "1"
 
     def _needed_columns(sync_conn) -> list[str]:
         inspector = inspect(sync_conn)
@@ -29,10 +30,24 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("chat_messages")}
             if "session_id" not in cols:
                 result.append("chat_messages")
+            if "bot_id" not in cols:
+                result.append("chat_messages_bot")
+        if "chat_sessions" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("chat_sessions")}
+            if "bot_id" not in cols:
+                result.append("chat_sessions_bot")
         if "user_profiles" in table_names:
             cols = {c["name"] for c in inspector.get_columns("user_profiles")}
             if "developer" not in cols:
                 result.append("user_profiles")
+        if "bot_runs" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("bot_runs")}
+            if "parent_run_id" not in cols:
+                result.append("bot_runs_parent")
+        if "projects" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("projects")}
+            if "is_git" not in cols:
+                result.append("projects_is_git")
         # LONGTEXT widening is only meaningful on MySQL; PostgreSQL TEXT is unbounded.
         if dialect == "mysql" and "plugin_notes" in table_names:
             cols = {c["name"]: c["type"] for c in inspector.get_columns("plugin_notes")}
@@ -50,7 +65,15 @@ async def ensure_schema_migrations():
                 await conn.execute(text(f"ALTER TABLE schedule_events ADD COLUMN reminded BOOLEAN DEFAULT {bool_default}"))
             elif table == "chat_messages":
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN session_id VARCHAR(64) DEFAULT 'default'"))
+            elif table == "chat_messages_bot":
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN bot_id INTEGER NULL"))
+            elif table == "chat_sessions_bot":
+                await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN bot_id INTEGER NULL"))
             elif table == "user_profiles":
                 await conn.execute(text("ALTER TABLE user_profiles ADD COLUMN developer TEXT NULL"))
+            elif table == "bot_runs_parent":
+                await conn.execute(text("ALTER TABLE bot_runs ADD COLUMN parent_run_id INTEGER NULL"))
+            elif table == "projects_is_git":
+                await conn.execute(text(f"ALTER TABLE projects ADD COLUMN is_git BOOLEAN DEFAULT {bool_true}"))
             elif table == "plugin_notes":
                 await conn.execute(text("ALTER TABLE plugin_notes MODIFY content LONGTEXT NULL"))

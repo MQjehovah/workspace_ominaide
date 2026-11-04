@@ -44,6 +44,38 @@ async def test_chat_history_endpoints(client, admin_token):
     assert isinstance(r.json(), list)
 
 
+def test_config_package_exports_settings():
+    from core.config import settings
+
+    assert hasattr(settings, "memory_layer_enabled")
+    assert hasattr(settings, "bot_run_auto_summary")
+
+
+async def test_schedule_accepts_aware_datetimes(client, admin_token):
+    """Frontend sends UTC (Z) ranges; DB columns are naive local wall time."""
+    r = await client.post(
+        "/api/schedule",
+        json={
+            "title": "TZ 测试日程",
+            "start_time": "2026-11-05T09:00:00+08:00",
+            "end_time": "2026-11-05T10:00:00+08:00",
+        },
+        headers=auth(admin_token),
+    )
+    assert r.status_code in (200, 201), r.text
+    event_id = r.json()["id"]
+
+    r = await client.get(
+        "/api/schedule?start=2026-11-04T16:00:00Z&end=2026-11-05T16:00:00Z",
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    assert any(e["id"] == event_id for e in r.json())
+
+    r = await client.delete(f"/api/schedule/{event_id}", headers=auth(admin_token))
+    assert r.status_code == 200
+
+
 async def test_sync_folders_requires_auth(client):
     r = await client.get("/api/sync/folders")
     assert r.status_code == 401
@@ -106,95 +138,46 @@ async def test_mail_event_report_and_mcp(client, admin_token):
     assert "list_recent_emails" in names
 
 
-async def test_coding_task_requires_auth(client):
-    r = await client.post("/api/vibecoding/tasks", json={"project": "E:/x", "input": "y"})
+async def test_projects_requires_auth(client):
+    r = await client.get("/api/projects")
     assert r.status_code == 401
-
-
-async def test_coding_dispatch_without_desktop(client, admin_token):
-    r = await client.post(
-        "/api/vibecoding/tasks",
-        json={"project": "E:/x", "input": "y", "tool": "opencode"},
-        headers=auth(admin_token),
-    )
-    assert r.status_code == 409
-
-
-async def test_coding_dispatch_server_engine(client, admin_token):
-    r = await client.post(
-        "/api/vibecoding/tasks",
-        json={"project": "/workspace/missing", "input": "y"},
-        headers=auth(admin_token),
-    )
-    assert r.status_code == 200
-    assert r.json().get("engine") == "server"
-    assert r.json().get("task_id")
-
-
-async def test_coding_projects_endpoint(client, admin_token):
-    r = await client.get("/api/vibecoding/projects", headers=auth(admin_token))
-    assert r.status_code == 200
-    assert "projects" in r.json()
-    assert r.json()["tools"].get("omniaide") is True
 
 
 async def test_coding_tools_registered(client, admin_token):
     r = await client.get("/api/mcp/tools", headers=auth(admin_token))
     names = {t["name"] for t in r.json()["tools"]}
-    assert "dispatch_coding_task" in names
+    assert "delegate_coding" in names
     assert "list_coding_projects" in names
-    assert "continue_coding_task" in names
-    assert "list_coding_tasks" in names
+    assert "list_coding_runs" in names
+    assert "dispatch_coding_task" not in names
 
 
-async def test_coding_history_requires_auth(client):
-    r = await client.get("/api/vibecoding/tasks")
-    assert r.status_code == 401
+async def test_project_service_crud(tmp_path, monkeypatch):
+    from core.config.settings import settings
 
+    monkeypatch.setattr(settings, "coding_workspace_root", str(tmp_path))
+    repo = tmp_path / "demo"
+    repo.mkdir()
 
-async def test_coding_task_failure_is_persisted(client, admin_token):
-    """A task that fails validation must still land in durable history."""
-    r = await client.post(
-        "/api/vibecoding/tasks",
-        json={"project": "/workspace/definitely-missing", "input": "x"},
-        headers=auth(admin_token),
+    from plugins.projects.backend import service
+    from plugins.projects.backend.schemas import ProjectCreate, ProjectUpdate
+
+    project = await service.create_project(
+        1, ProjectCreate(name="Demo", path=str(repo))
     )
-    assert r.status_code == 200
-    task_id = r.json()["task_id"]
+    assert project.path == str(repo.resolve())
+    assert any(p.id == project.id for p in await service.list_projects(1))
 
-    detail = await client.get(f"/api/vibecoding/tasks/{task_id}", headers=auth(admin_token))
-    assert detail.status_code == 200, detail.text
-    body = detail.json()
-    assert body["task_id"] == task_id
-    assert body["status"] == "failed"
-    assert body["error"]
-    assert body["events"]
-
-    listing = await client.get("/api/vibecoding/tasks?limit=50", headers=auth(admin_token))
-    assert any(t["task_id"] == task_id for t in listing.json()["tasks"])
-
-    # A failed task has no stored conversation, so continuing it is rejected.
-    cont = await client.post(
-        f"/api/vibecoding/tasks/{task_id}/continue",
-        json={"input": "再来一次"},
-        headers=auth(admin_token),
+    updated = await service.update_project(
+        1, project.id, ProjectUpdate(name="Demo 2")
     )
-    assert cont.status_code == 409
-
-
-async def test_coding_task_detail_is_user_scoped(client, admin_token, user_token):
-    r = await client.post(
-        "/api/vibecoding/tasks",
-        json={"project": "/workspace/definitely-missing", "input": "x"},
-        headers=auth(admin_token),
-    )
-    task_id = r.json()["task_id"]
-    other = await client.get(f"/api/vibecoding/tasks/{task_id}", headers=auth(user_token))
-    assert other.status_code == 404
+    assert updated is not None and updated.name == "Demo 2"
+    assert await service.delete_project(1, project.id)
+    assert not any(p.id == project.id for p in await service.list_projects(1))
 
 
 async def test_coding_project_context_snapshot(tmp_path):
-    from plugins.vibecoding.backend.context import build_project_context
+    from core.coding.context import build_project_context
 
     (tmp_path / "AGENTS.md").write_text("Run pytest before committing.", encoding="utf-8")
     src = tmp_path / "src"
@@ -232,7 +215,7 @@ def _git_out(path, *args) -> str:
 
 
 async def test_delivery_branches_commits_and_skips_sensitive(tmp_path):
-    from plugins.vibecoding.backend.delivery import deliver
+    from core.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -251,12 +234,12 @@ async def test_delivery_branches_commits_and_skips_sensitive(tmp_path):
         allow_commit=True, allow_push=False, verify_command="", emit=emit,
     )
     assert summary["ok"] is True
-    assert summary["branch"].startswith("agent/")
+    assert summary["branch"].startswith("feature/")
     assert summary["pushed"] is False
     assert "commit" in stages and "sensitive_skipped" in stages
 
     branch = _git_out(repo, "rev-parse", "--abbrev-ref", "HEAD")
-    assert branch.startswith("agent/")
+    assert branch.startswith("feature/")
     assert "fix:" in _git_out(repo, "log", "-1", "--format=%s")
     changed = _git_out(repo, "show", "--name-only", "--format=", "HEAD")
     assert "a.txt" in changed
@@ -264,7 +247,7 @@ async def test_delivery_branches_commits_and_skips_sensitive(tmp_path):
 
 
 async def test_delivery_stops_when_verify_fails(tmp_path):
-    from plugins.vibecoding.backend.delivery import deliver
+    from core.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -284,7 +267,7 @@ async def test_delivery_stops_when_verify_fails(tmp_path):
 
 
 def test_git_gate_blocks_push_and_commit_by_default():
-    from plugins.vibecoding.backend.workspace import git_policy_violation
+    from core.coding.workspace import git_policy_violation
 
     blocked = [
         "git push",
@@ -302,7 +285,7 @@ def test_git_gate_blocks_push_and_commit_by_default():
 
 
 def test_git_gate_blocks_force_and_protected_branch_even_when_allowed():
-    from plugins.vibecoding.backend.workspace import git_policy_violation
+    from core.coding.workspace import git_policy_violation
 
     # push is permitted, but never destructive and never straight to main.
     assert git_policy_violation("git push --force origin feature", allow_commit=True, allow_push=True)
@@ -318,7 +301,7 @@ def test_git_gate_blocks_force_and_protected_branch_even_when_allowed():
 
 
 def test_git_gate_allows_read_only_and_non_git_commands():
-    from plugins.vibecoding.backend.workspace import git_policy_violation
+    from core.coding.workspace import git_policy_violation
 
     for command in [
         "git status",
@@ -332,7 +315,7 @@ def test_git_gate_allows_read_only_and_non_git_commands():
 
 
 def test_git_gate_blocks_alias_override():
-    from plugins.vibecoding.backend.workspace import git_policy_violation
+    from core.coding.workspace import git_policy_violation
 
     assert git_policy_violation(
         "git -c alias.p=push p origin main", allow_commit=True, allow_push=False
@@ -340,7 +323,7 @@ def test_git_gate_blocks_alias_override():
 
 
 def test_sensitive_reference_detection():
-    from plugins.vibecoding.backend.workspace import contains_sensitive_reference
+    from core.coding.workspace import contains_sensitive_reference
 
     for command in [
         "cat .env",
@@ -363,7 +346,7 @@ def test_sensitive_reference_detection():
 
 
 def test_sandbox_env_excludes_backend_secrets(monkeypatch):
-    from plugins.vibecoding.backend import workspace
+    from core.coding import workspace
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://secret")
     monkeypatch.setenv("LLM_API_KEY", "sk-secret")
@@ -379,7 +362,7 @@ def test_sandbox_env_excludes_backend_secrets(monkeypatch):
 
 
 async def test_run_command_fails_closed_without_sandbox_user(tmp_path, monkeypatch):
-    from plugins.vibecoding.backend import workspace
+    from core.coding import workspace
 
     monkeypatch.setattr(workspace, "_euid", lambda: 0)
     monkeypatch.setattr(workspace.settings, "coding_sandbox_enabled", True)
@@ -391,7 +374,7 @@ async def test_run_command_fails_closed_without_sandbox_user(tmp_path, monkeypat
 
 
 async def test_run_command_rejects_gated_git_and_reports_sandbox(tmp_path):
-    from plugins.vibecoding.backend import workspace
+    from core.coding import workspace
 
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
     denied = await workspace.run_command(str(tmp_path), {"command": "git push origin main"})
@@ -408,23 +391,10 @@ async def test_run_command_rejects_gated_git_and_reports_sandbox(tmp_path):
     assert "sandbox" in ok
 
 
-def test_project_locks_are_per_working_tree(tmp_path):
-    from plugins.vibecoding.backend import server_agent
-
-    a = server_agent._project_lock(str(tmp_path / "a"))
-    again = server_agent._project_lock(str(tmp_path / "a"))
-    other = server_agent._project_lock(str(tmp_path / "b"))
-    assert a is again
-    assert a is not other
-
-    sem = server_agent._semaphore()
-    assert sem is server_agent._semaphore()
-
-
 async def test_delivery_ignores_repo_hooks_and_restores_config(tmp_path):
     import os
 
-    from plugins.vibecoding.backend.delivery import deliver
+    from core.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -452,7 +422,7 @@ async def test_delivery_ignores_repo_hooks_and_restores_config(tmp_path):
 
 
 async def test_delivery_rejects_exec_remote(tmp_path):
-    from plugins.vibecoding.backend.delivery import deliver
+    from core.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -475,7 +445,7 @@ async def test_delivery_rejects_exec_remote(tmp_path):
 async def test_delivery_rejects_symlinked_git_dir(tmp_path):
     import os
 
-    from plugins.vibecoding.backend.delivery import deliver
+    from core.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()

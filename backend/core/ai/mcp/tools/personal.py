@@ -2,7 +2,7 @@
 unread notifications and latest RSS headlines aloud ("帮我读一下通知/新闻").
 """
 from core.ai.mcp.core import MCPTool, MCPCallResponse, MCPContent
-from core.config import settings
+from core.config.settings import settings
 
 
 def _ok(text: str) -> MCPCallResponse:

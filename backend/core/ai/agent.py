@@ -47,20 +47,22 @@ async def run_agent(
     messages: list[dict],
     tools_filter: list[str] | None = None,
     max_turns: int = 20,
+    model: str | None = None,
+    temperature: float = 0.7,
 ) -> str:
     """Non-streaming agent loop (kept for backward compat)."""
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
     all_tools = tool_registry.get_tools()
-    if tools_filter:
+    if tools_filter is not None:
         all_tools = [t for t in all_tools if t.name in tools_filter]
     openai_tools = _to_openai_tools(all_tools)
 
     for turn in range(max_turns):
         resp = await client.chat.completions.create(
-            model=settings.llm_model,
+            model=model or settings.llm_model,
             messages=messages,
             tools=openai_tools or None,
-            temperature=0.7,
+            temperature=temperature,
         )
         choice = resp.choices[0]
         msg = choice.message
@@ -89,11 +91,13 @@ async def run_agent_stream(
     messages: list[dict],
     tools_filter: list[str] | None = None,
     max_turns: int = 20,
+    model: str | None = None,
+    temperature: float = 0.7,
 ):
     """Streaming agent: yields SSE-formatted strings."""
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
     all_tools = tool_registry.get_tools()
-    if tools_filter:
+    if tools_filter is not None:
         all_tools = [t for t in all_tools if t.name in tools_filter]
     openai_tools = _to_openai_tools(all_tools)
 
@@ -108,10 +112,10 @@ async def run_agent_stream(
         accumulated_reasoning = ""
         tool_calls = None
         async for chunk in await client.chat.completions.create(
-            model=settings.llm_model,
+            model=model or settings.llm_model,
             messages=messages,
             tools=openai_tools or None,
-            temperature=0.7,
+            temperature=temperature,
             stream=True,
         ):
             delta = chunk.choices[0].delta if chunk.choices else None

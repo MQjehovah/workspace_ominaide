@@ -5,6 +5,7 @@ from datetime import datetime
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
 from core.events.recorder import record_event
+from core.timeutil import parse_datetime
 
 from plugins.schedule.backend.schemas import EventCreate, EventUpdate, EventResponse
 from plugins.schedule.backend import service
@@ -20,8 +21,11 @@ async def list_events(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    s = datetime.fromisoformat(start) if start else None
-    e = datetime.fromisoformat(end) if end else None
+    try:
+        s = parse_datetime(start) if start else None
+        e = parse_datetime(end) if end else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="start/end must be ISO datetimes")
     return await service.list_events(db, user["id"], s, e)
 
 

@@ -7,6 +7,8 @@ from core.ai.mcp.tools.context_tool import get_system_context
 from core.ai.mcp.tools.knowledge import TOOLS as KNOWLEDGE_TOOLS
 from core.ai.mcp.tools.personal import TOOLS as PERSONAL_TOOLS
 from core.ai.mcp.tools.productivity import TOOLS as PRODUCTIVITY_TOOLS
+from core.ai.mcp.tools.documents import TOOLS as DOCUMENT_TOOLS
+from core.ai.mcp.tools.coding import TOOLS as CODING_TOOLS
 
 
 def register_core_tools():
@@ -15,6 +17,10 @@ def register_core_tools():
     for tool, handler in PERSONAL_TOOLS:
         tool_registry.register(tool, handler)
     for tool, handler in PRODUCTIVITY_TOOLS:
+        tool_registry.register(tool, handler)
+    for tool, handler in DOCUMENT_TOOLS:
+        tool_registry.register(tool, handler)
+    for tool, handler in CODING_TOOLS:
         tool_registry.register(tool, handler)
     tool_registry.register(
         MCPTool(

@@ -29,19 +29,26 @@ async def lifespan(app: FastAPI):
     import core.events.models  # noqa
     import plugins.notifications.backend.models  # noqa
     import plugins.chat.backend.models  # noqa
-    import plugins.vibecoding.backend.models  # noqa
+    import core.coding.models  # noqa
+    import plugins.projects.backend.models  # noqa
+    import core.bots.models  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     from core.database.migrations import ensure_schema_migrations
     await ensure_schema_migrations()
 
-    # Tasks interrupted by a restart can never resume; mark them cancelled.
-    try:
-        from plugins.vibecoding.backend.store import mark_orphans_cancelled
-        await mark_orphans_cancelled()
-    except Exception:
-        pass
+    # Every user gets a default ``main`` bot. Existing rows stay readable.
+    from core.bots.registry import seed_default_bots
+    from core.bots.routines import (
+        register_event_handler,
+        routine_loop,
+        seed_default_routines,
+    )
+
+    await seed_default_bots()
+    await seed_default_routines()
+    register_event_handler()
 
     register_workers()
     worker_task = asyncio.create_task(worker_loop())
@@ -50,9 +57,17 @@ async def lifespan(app: FastAPI):
     await discover_plugins(app)
     register_core_tools()
     register_ai_tools()
+
+    from core.bots.runner import recover_runs
+
+    await recover_runs()
+    routine_task = asyncio.create_task(routine_loop())
     yield
+    routine_task.cancel()
     scheduler_task.cancel()
     worker_task.cancel()
+    try: await routine_task
+    except asyncio.CancelledError: pass
     try: await scheduler_task
     except asyncio.CancelledError: pass
     try: await worker_task
@@ -130,13 +145,11 @@ app.include_router(notes_router)
 from plugins.schedule.backend.router import router as schedule_router
 app.include_router(schedule_router)
 
+from plugins.projects.backend.router import router as projects_router
+app.include_router(projects_router)
+
 from plugins.notifications.backend.router import router as notifications_router
 app.include_router(notifications_router)
-
-from plugins.vibecoding.backend.router import router as vibecoding_router
-app.include_router(vibecoding_router)
-from plugins.vibecoding.backend.router import register_host_channel
-register_host_channel()
 
 from plugins.rss.backend.router import router as rss_router
 app.include_router(rss_router)
@@ -149,6 +162,12 @@ except ModuleNotFoundError:
 
 from core.ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)
+
+from core.bots.router import router as bots_router
+from core.bots.router import runs_router, approvals_router
+app.include_router(bots_router)
+app.include_router(runs_router)
+app.include_router(approvals_router)
 
 from core.ai.search_router import router as search_router
 app.include_router(search_router)
