@@ -159,23 +159,6 @@ WMO = {0: "晴", 1: "基本晴", 2: "多云", 3: "阴", 45: "雾", 48: "雾凇",
 
 TOOLS = [
     (MCPTool(
-        name="create_event",
-        description="为用户创建日程。用户说\"帮我约/提醒我…\"时调用。时间解析成 YYYY-MM-DD HH:MM（相对时间如\"明天下午三点\"换算成具体时间）。",
-        inputSchema={"type": "object", "properties": {
-            "title": {"type": "string"},
-            "start": {"type": "string", "description": "开始时间 YYYY-MM-DD HH:MM"},
-            "hours": {"type": "number", "description": "持续小时数，默认 1"},
-            "remind_before": {"type": "integer", "description": "提前提醒分钟数，默认 0"},
-        }, "required": ["title", "start"]},
-    ), create_event_tool),
-    (MCPTool(
-        name="list_events",
-        description="查询用户未来的日程安排。",
-        inputSchema={"type": "object", "properties": {
-            "days": {"type": "integer", "description": "往后看几天，默认 3"},
-        }},
-    ), list_events_tool),
-    (MCPTool(
         name="create_note",
         description="帮用户记一条笔记（速记/日记/想法）。用户说\"记一下/记个笔记\"时调用。",
         inputSchema={"type": "object", "properties": {

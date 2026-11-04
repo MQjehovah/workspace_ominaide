@@ -632,7 +632,22 @@ function handleEvent(m: Msg, data: any) {
     case 'token': appendToken(m, data.content || ''); stage.value = '正在生成回复'; break
     case 'reasoning': appendReasoning(m, data.content || ''); stage.value = '正在思考分析'; break
     case 'tool_call': startStep(m, data.name, data.arguments); stage.value = `正在执行 · ${data.name}`; break
-    case 'tool_result': finishStep(m, data.name, data.content || '', !!data.error); break
+    case 'tool_result': {
+      const name = data.tool || data.name || '工具'
+      startStep(m, name, data.arguments)
+      finishStep(m, name, data.content || '', data.status === 'error' || !!data.error)
+      break
+    }
+    case 'approval_required':
+      stage.value = `等待审批 · ${data.tool || '工具'}`
+      loadApprovals()
+      break
+    case 'done':
+      if (data.error) m.error = data.error
+      if (data.reply && data.reply.length > m.text.length) {
+        appendToken(m, data.reply.slice(m.text.length))
+      }
+      break
     case 'error': m.error = data.content || 'AI 请求出错'; break
     case 'usage': m.usage = { chars: data.chars || 0, tools: data.tools || 0, duration: Date.now() - taskStartAt }; break
     case 'tools_ready':
@@ -647,7 +662,7 @@ async function streamMessage(message: string, history: { role: string; content: 
   if (c.mode === 'backend') {
     const su = await serverUrl()
     const tk = await getToken()
-    const r = await fetch(`${su}/api/chat/stream`, {
+    const r = await fetch(`${su}/api/chat/runs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
       body: JSON.stringify({ message, history, images, bot_id: currentBotId.value || undefined }),
@@ -657,7 +672,13 @@ async function streamMessage(message: string, history: { role: string; content: 
       const err = await r.json().catch(() => null)
       throw new Error(err?.detail || `请求失败 (${r.status})`)
     }
-    const reader = r.body?.getReader()
+    const run = await r.json()
+    const sr = await fetch(`${su}/api/runs/${run.run_id}/stream`, {
+      headers: { Authorization: 'Bearer ' + tk },
+      signal: abortCtl?.signal,
+    })
+    if (!sr.ok) throw new Error(`读取运行结果失败 (${sr.status})`)
+    const reader = sr.body?.getReader()
     if (!reader) throw new Error('无响应流')
     const decoder = new TextDecoder()
     let buf = ''

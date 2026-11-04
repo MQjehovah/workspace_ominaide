@@ -11,12 +11,14 @@ RISK_READ = "read"
 RISK_WRITE = "write"
 RISK_EXEC = "exec"
 RISK_EXTERNAL = "external"
+RISK_DANGEROUS = "dangerous"
 
 DEFAULT_LEVEL_POLICY = {
     RISK_READ: "auto",
     RISK_WRITE: "auto",
     RISK_EXEC: "ask",
     RISK_EXTERNAL: "ask",
+    RISK_DANGEROUS: "ask",
 }
 
 # Explicit classifications for tools shipped with the backend.
@@ -52,6 +54,21 @@ TOOL_RISK = {
     "web_search": RISK_READ,
     "fetch_url": RISK_READ,
     "delegate_coding": RISK_WRITE,
+    # External side effects: require explicit approval in chat.
+    "ha_toggle": RISK_EXTERNAL,
+    "ha_call_service": RISK_EXTERNAL,
+    "send_email": RISK_EXTERNAL,
+    "device_music_control": RISK_EXTERNAL,
+    "play_device_music": RISK_EXTERNAL,
+    # Destructive operations: require explicit approval in chat.
+    "todo_delete": RISK_DANGEROUS,
+    "event_delete": RISK_DANGEROUS,
+    "note_delete": RISK_DANGEROUS,
+    "file_delete": RISK_DANGEROUS,
+    "project_delete": RISK_DANGEROUS,
+    "routine_delete": RISK_DANGEROUS,
+    "rss_delete_feed": RISK_DANGEROUS,
+    "memory_delete": RISK_DANGEROUS,
 }
 
 _EXEC_PREFIXES = ("exec", "shell", "command", "script", "terminal", "quicklink", "vibecoding", "run_")

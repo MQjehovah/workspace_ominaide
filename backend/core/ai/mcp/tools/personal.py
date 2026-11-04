@@ -59,17 +59,6 @@ async def get_latest_news(user_id: int, args: dict) -> MCPCallResponse:
 TOOLS = [
     (
         MCPTool(
-            name="get_unread_notifications",
-            description="读取用户的未读通知列表（含日程提醒）。用户问\"有什么通知/提醒\"时调用。",
-            inputSchema={
-                "type": "object",
-                "properties": {"limit": {"type": "integer", "description": "条数，默认 8"}},
-            },
-        ),
-        get_unread_notifications,
-    ),
-    (
-        MCPTool(
             name="get_latest_news",
             description="读取用户 RSS 订阅的最新文章标题。用户问\"有什么新闻/资讯\"时调用。",
             inputSchema={

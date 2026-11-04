@@ -155,6 +155,18 @@ async def test_coding_tools_registered(client, admin_token):
     assert "ha_toggle" in names
     assert "web_search" in names
     assert "fetch_url" in names
+    assert "todo_update" in names
+    assert "event_delete" in names
+    assert "note_delete" in names
+    assert "file_delete" in names
+    assert "routine_create" in names
+    assert "rss_add_feed" in names
+    assert "send_email" in names
+    assert "read_file_content" in names
+    assert "project_delete" in names
+    assert "create_event" not in names
+    assert "list_events" not in names
+    assert "get_unread_notifications" not in names
 
 
 async def test_project_service_crud(tmp_path, monkeypatch):

@@ -177,7 +177,7 @@ async function send() {
   scrollBottom()
   try {
     const token = localStorage.getItem('token') || ''
-    const resp = await fetch(apiUrl('/chat/stream'), {
+    const resp = await fetch(apiUrl('/chat/runs'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ message: text, bot_id: currentBotId.value || undefined }),
@@ -186,7 +186,12 @@ async function send() {
       const err = await resp.json().catch(() => null)
       throw new Error(err?.detail || `请求失败 (${resp.status})`)
     }
-    const reader = resp.body?.getReader()
+    const run = await resp.json()
+    const streamResp = await fetch(apiUrl(`/runs/${run.run_id}/stream`), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!streamResp.ok) throw new Error(`读取运行结果失败 (${streamResp.status})`)
+    const reader = streamResp.body?.getReader()
     const decoder = new TextDecoder()
     let reply = ''
     if (reader) {
@@ -203,8 +208,20 @@ async function send() {
           try {
             const payload = JSON.parse(ev.slice(6))
             if (payload.type === 'token') {
-              reply += payload.content
+              reply += payload.content || ''
               messages.value[replyIndex].content = reply
+              scrollBottom()
+            } else if (payload.type === 'approval_required') {
+              loadApprovals()
+              ElMessage.warning(`需要确认：${payload.tool || '工具调用'}`)
+            } else if (payload.type === 'done') {
+              const final = payload.reply || reply
+              if (final) {
+                messages.value[replyIndex].content = final
+              } else if (payload.error) {
+                messages.value[replyIndex].content = `执行失败：${payload.error}`
+              }
+              if (payload.error) ElMessage.error(payload.error)
               scrollBottom()
             } else if (payload.type === 'error') {
               ElMessage.error(payload.content || 'AI 请求出错')
@@ -212,7 +229,7 @@ async function send() {
           } catch { /* ignore */ }
         }
       }
-      if (!reply) messages.value.splice(replyIndex, 1)
+      if (!reply && !messages.value[replyIndex].content) messages.value.splice(replyIndex, 1)
     }
   } catch (e: any) {
     messages.value.pop()

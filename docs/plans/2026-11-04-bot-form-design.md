@@ -984,6 +984,24 @@ runner 命中 ask
 - 两个工具都归类为只读，不需要审批。
 - 线上验证：搜索“南京天气”返回天气网/天气网15天/中央气象台结果；抓取天气网页成功提取多日预报正文；访问 `127.0.0.1` 被拒绝。
 
+### 2026-11-05：补齐管理工具、清理重复工具与对话内审批
+
+- 新增 31 个管理工具：
+  - 待办：`todo_update` / `todo_complete` / `todo_delete`
+  - 日程：`event_update` / `event_delete`
+  - 笔记：`note_update` / `note_delete`
+  - 通知：`notification_mark_read` / `notification_mark_all_read` / `notification_send`
+  - 记忆：`memory_list` / `memory_delete`
+  - 文件：`file_delete` / `file_rename` / `file_move` / `file_create_folder` / `read_file_content`
+  - 邮件：`mail_read` / `send_email`
+  - 项目：`project_create` / `project_update` / `project_delete`
+  - 例程：`routine_list` / `routine_create` / `routine_update` / `routine_delete` / `routine_run`
+  - RSS：`rss_list_feeds` / `rss_add_feed` / `rss_delete_feed` / `rss_refresh_feed`
+- 清理重复工具：移除 `create_event` / `list_events` / `get_unread_notifications`，保留 `create_schedule_event` / `list_schedule_events` / `list_notifications`。
+- 新增 `dangerous` 风险等级（默认需要审批）；`ha_toggle` / `ha_call_service` / `send_email` / 设备音乐控制归为 `external`，各类删除归为 `dangerous`。
+- Web 聊天和桌面聊天改为走 `POST /api/chat/runs` + `/api/runs/{id}/stream`，复用 Bot Run 的审批机制；审批条可直接在对话面板中允许/拒绝，批准后流继续输出。
+- 线上工具总数 71；管理工具实测通过；`/api/chat/runs` + 流式回复实测返回 `pong`。
+
 ### 2026-11-05：Coding Agent 信任加固
 
 - 镜像补齐 `git` / `openssh-client`，创建无特权沙箱用户 `agent`（uid 1001 / gid 1000）。
