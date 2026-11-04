@@ -959,6 +959,15 @@ runner 命中 ask
 - 委派 Coding Run 会继承当前聊天会话：完成后写入聊天历史，并通过 `/ws/host` 的 `chat.chat_reply` 推送到打开的聊天面板。
 - 聊天面板手机端：全屏 `100dvh`、安全区适配、隐藏悬浮按钮避免遮挡输入框、气泡字号/间距优化、消息入场动画、Enter 发送与 Shift+Enter 换行，并修复 SSE 分块解析。
 
+### 2026-11-05：Home Assistant 实体发现与 Coding 沙箱修复
+
+- 新增 `ha_list_entities`：支持按 `domain`、`query`（实体 ID / 中文名称）过滤，返回实体 ID、名称、状态和域统计。
+- `ha_toggle` / `ha_call_service` 在调用前校验实体是否存在；不存在时明确提示先调用 `ha_list_entities`。
+- `ha_get_state` 区分“未配置”和“实体不存在”，不再混为一条消息。
+- `ha_call_service` 解析 HA 返回的 changed 列表；HA 对不存在的实体也会返回 HTTP 200 + `[]`，此前会误报成功。
+- 实测 HA 有 370 个实体、5 个灯；台灯实体为 `light.philips_cn_234010960_cbulb_s_2_light`，友好名称“台灯”。
+- Coding 沙箱命令改用 `setpriv` 降权，避开 uvloop 不支持 `user/group/extra_groups` 的问题；实测 `run_command` 以 uid=1001(agent) 执行成功。
+
 ### 2026-11-05：Coding Agent 信任加固
 
 - 镜像补齐 `git` / `openssh-client`，创建无特权沙箱用户 `agent`（uid 1001 / gid 1000）。

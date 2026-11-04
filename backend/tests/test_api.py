@@ -150,6 +150,8 @@ async def test_coding_tools_registered(client, admin_token):
     assert "list_coding_projects" in names
     assert "list_coding_runs" in names
     assert "dispatch_coding_task" not in names
+    assert "ha_list_entities" in names
+    assert "ha_toggle" in names
 
 
 async def test_project_service_crud(tmp_path, monkeypatch):

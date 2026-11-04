@@ -20,23 +20,43 @@ def _resp(payload: dict, is_error: bool = False) -> MCPCallResponse:
 
 async def ha_call_service(user_id: int, args: dict) -> MCPCallResponse:
     """Call a Home Assistant service (domain/service/entity_id)."""
-    domain = args.get("domain", "")
-    service = args.get("service", "")
+    domain = (args.get("domain") or "").strip()
+    service = (args.get("service") or "").strip()
+    entity_id = (args.get("entity_id") or "").strip() or None
     if not domain or not service:
         return _resp({"ok": False, "detail": "domain and service are required"}, True)
-    result = await ha.call_service(domain, service,
-                                   args.get("entity_id"), args.get("data") or {})
+    if not ha.ha_configured():
+        return _resp({"ok": False, "detail": "HA not configured (HA_BASE_URL / HA_TOKEN)"}, True)
+    if entity_id and await ha.get_state(entity_id) is None:
+        return _resp({"ok": False, "detail": f"entity not found: {entity_id}; call ha_list_entities first"}, True)
+    result = await ha.call_service(domain, service, entity_id, args.get("data") or {})
+    return _resp(result, not result["ok"])
+
+
+async def ha_list_entities(user_id: int, args: dict) -> MCPCallResponse:
+    """List Home Assistant entities with optional domain/name filtering."""
+    try:
+        limit = int(args.get("limit") or 80)
+    except (TypeError, ValueError):
+        limit = 80
+    result = await ha.list_entities(
+        domain=(args.get("domain") or "").strip() or None,
+        query=(args.get("query") or "").strip() or None,
+        limit=limit,
+    )
     return _resp(result, not result["ok"])
 
 
 async def ha_get_state(user_id: int, args: dict) -> MCPCallResponse:
     """Get the state of a Home Assistant entity."""
-    entity_id = args.get("entity_id", "")
+    entity_id = (args.get("entity_id") or "").strip()
     if not entity_id:
         return _resp({"ok": False, "detail": "entity_id is required"}, True)
+    if not ha.ha_configured():
+        return _resp({"ok": False, "detail": "HA not configured (HA_BASE_URL / HA_TOKEN)"}, True)
     st = await ha.get_state(entity_id)
     if st is None:
-        return _resp({"ok": False, "detail": "entity not found or HA not configured"}, True)
+        return _resp({"ok": False, "detail": f"entity not found: {entity_id}; call ha_list_entities first"}, True)
     return _resp({"ok": True, "entity_id": st.get("entity_id"),
                   "state": st.get("state"),
                   "friendly_name": (st.get("attributes") or {}).get("friendly_name", "")})
@@ -44,12 +64,20 @@ async def ha_get_state(user_id: int, args: dict) -> MCPCallResponse:
 
 async def ha_toggle(user_id: int, args: dict) -> MCPCallResponse:
     """Toggle a switch/light/input_boolean/fan entity (shorthand)."""
-    entity_id = args.get("entity_id", "")
+    entity_id = (args.get("entity_id") or "").strip()
     if not entity_id:
         return _resp({"ok": False, "detail": "entity_id is required"}, True)
+    if not ha.ha_configured():
+        return _resp({"ok": False, "detail": "HA not configured (HA_BASE_URL / HA_TOKEN)"}, True)
+    state = await ha.get_state(entity_id)
+    if state is None:
+        return _resp({"ok": False, "detail": f"entity not found: {entity_id}; call ha_list_entities first"}, True)
     domain = entity_id.split(".")[0]
     service = "toggle" if domain != "script" else "turn_on"
     result = await ha.call_service(domain, service, entity_id)
+    result["entity_id"] = entity_id
+    result["friendly_name"] = (state.get("attributes") or {}).get("friendly_name", "")
+    result["state_before"] = state.get("state")
     return _resp(result, not result["ok"])
 
 
@@ -97,6 +125,7 @@ async def device_music_control(user_id: int, args: dict) -> MCPCallResponse:
 
 
 register_plugin_tool_handler("ha_call_service", ha_call_service)
+register_plugin_tool_handler("ha_list_entities", ha_list_entities)
 register_plugin_tool_handler("ha_get_state", ha_get_state)
 register_plugin_tool_handler("ha_toggle", ha_toggle)
 register_plugin_tool_handler("set_device_timer", set_device_timer)

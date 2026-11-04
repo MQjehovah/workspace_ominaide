@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import shlex
+import shutil
 import signal
 from pathlib import Path
 
@@ -482,20 +483,39 @@ async def run_command(root: str, args: dict, *, allow_push: bool = False, allow_
         env = sandbox_env(identity)
         # extra_groups=[] clears the root supplementary groups inherited from
         # the backend process; without it the child keeps gid 0.
-        run_kwargs = {"user": sandbox[0], "group": sandbox[1], "extra_groups": []}
+        # uvloop's subprocess implementation rejects user/group/extra_groups,
+        # so drop privileges with setpriv before exec instead.
+        setpriv = shutil.which("setpriv")
+        if not setpriv or pwd is None or grp is None:
+            return {"error": "setpriv is unavailable; refusing to run repository commands as root"}
+        try:
+            user_entry = pwd.getpwnam(sandbox[0])
+            group_entry = grp.getgrnam(sandbox[1])
+        except KeyError:
+            return {"error": f"sandbox identity unavailable: {sandbox[0]}:{sandbox[1]}"}
+        proc = await asyncio.create_subprocess_exec(
+            setpriv,
+            "--reuid", str(user_entry.pw_uid),
+            "--regid", str(group_entry.gr_gid),
+            "--clear-groups",
+            "--",
+            "/bin/sh", "-c", command,
+            cwd=str(cwd),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
     else:
         env = git_env(identity, ssh_key)
-        run_kwargs = {}
-
-    proc = await asyncio.create_subprocess_shell(
-        command,
-        cwd=str(cwd),
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        start_new_session=True,  # own process group so a timeout kills children too
-        **run_kwargs,
-    )
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            cwd=str(cwd),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,  # own process group so a timeout kills children too
+        )
     try:
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout / 1000)
         code = proc.returncode

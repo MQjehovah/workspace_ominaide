@@ -1,6 +1,6 @@
 {
   "name": "device",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "title": "设备接入",
   "description": "智能助手硬件接入：摘要、设备事件、Home Assistant、计时器与音乐播放",
   "icon": "Smartphone",
@@ -10,14 +10,26 @@
   },
   "tools": [
     {
+      "name": "ha_list_entities",
+      "description": "列出 Home Assistant 的实体，可用 domain（如 light/switch/climate）或 query（实体 ID 或中文名称关键词，如「台灯」）过滤。控制设备前先用它找到准确的 entity_id，不要猜。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {"type": "string", "description": "可选，按域过滤，如 light/switch/climate"},
+          "query": {"type": "string", "description": "可选，按实体 ID 或友好名称模糊匹配，如「台灯」"},
+          "limit": {"type": "integer", "description": "最多返回条数，默认 80，最大 200"}
+        }
+      }
+    },
+    {
       "name": "ha_call_service",
-      "description": "调用 Home Assistant 服务（控制智能家居：开/关灯、开关、场景、脚本等）",
+      "description": "调用 Home Assistant 服务（控制智能家居：开/关灯、开关、场景、脚本等）。entity_id 必须来自 ha_list_entities，不确定时先查询。",
       "inputSchema": {
         "type": "object",
         "properties": {
           "domain": {"type": "string", "description": "服务域，如 light/switch/climate/script/input_boolean/fan/cover"},
           "service": {"type": "string", "description": "服务名，如 toggle/turn_on/turn_off"},
-          "entity_id": {"type": "string", "description": "实体 ID，如 light.desk_lamp"},
+          "entity_id": {"type": "string", "description": "实体 ID，如 light.philips_cn_xxx_light；必须真实存在"},
           "data": {"type": "object", "description": "附加参数（如亮度、色温），可省略"}
         },
         "required": ["domain", "service"]
@@ -25,22 +37,22 @@
     },
     {
       "name": "ha_get_state",
-      "description": "查询 Home Assistant 实体的当前状态（如灯是否开着、当前温度）",
+      "description": "查询 Home Assistant 实体的当前状态（如灯是否开着、当前温度）。entity_id 必须来自 ha_list_entities。",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "entity_id": {"type": "string", "description": "实体 ID，如 light.desk_lamp"}
+          "entity_id": {"type": "string", "description": "实体 ID，如 light.philips_cn_xxx_light"}
         },
         "required": ["entity_id"]
       }
     },
     {
       "name": "ha_toggle",
-      "description": "翻转一个 Home Assistant 实体（开关灯/插座/勿扰开关等，script 则执行）",
+      "description": "翻转一个 Home Assistant 实体（开关灯/插座/勿扰开关等，script 则执行）。不确定 entity_id 时先调用 ha_list_entities。",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "entity_id": {"type": "string", "description": "实体 ID，如 light.desk_lamp"}
+          "entity_id": {"type": "string", "description": "实体 ID，如 light.philips_cn_xxx_light"}
         },
         "required": ["entity_id"]
       }
