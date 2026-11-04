@@ -105,11 +105,23 @@ async def test_memory_routine_and_project_tools(client, user_token, tmp_path, mo
     assert not project_dir.exists()
 
 
+async def test_run_shell_tool(tmp_path, monkeypatch):
+    from core.config.settings import settings
+    from core.ai.mcp.tools.system import run_shell
+
+    monkeypatch.setattr(settings, "shell_default_cwd", str(tmp_path))
+    monkeypatch.setattr(settings, "coding_workspace_root", str(tmp_path))
+    result = await run_shell(1, {"command": "echo shell-ok", "cwd": str(tmp_path)})
+    assert not result.isError, result.content[0].text
+    assert "shell-ok" in result.content[0].text
+
+
 def test_risky_tools_require_approval():
     from core.bots.policy import classify_tool, decide
 
     assert classify_tool("ha_toggle") == "external"
     assert classify_tool("send_email") == "external"
+    assert classify_tool("run_shell") == "exec"
     assert classify_tool("file_delete") == "dangerous"
     assert classify_tool("event_delete") == "dangerous"
     assert decide(None, "ha_toggle")[1] == "ask"

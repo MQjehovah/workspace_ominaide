@@ -109,6 +109,12 @@ class Settings(BaseSettings):
     bot_run_auto_summary: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    # General shell tool for the bot (approval required). Runs in the backend
+    # container as the backend user, with a scrubbed environment.
+    shell_enabled: bool = True
+    shell_default_cwd: str = "/app"
+    shell_timeout_seconds: int = 600
+    shell_max_output_chars: int = 30_000
     cors_origins: str = '["*","http://localhost:3000","http://localhost:5173","http://localhost:5000","http://localhost:8080","app://."]'
     webrtc_ice_servers: str = '[{"urls":"stun:mqgeek.com:3478"},{"urls":"turn:mqgeek.com:3478","username":"guest","credential":"guest"},{"urls":"turn:mqgeek.com:3478?transport=tcp","username":"guest","credential":"guest"}]'
 

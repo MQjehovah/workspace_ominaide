@@ -1002,6 +1002,19 @@ runner 命中 ask
 - Web 聊天和桌面聊天改为走 `POST /api/chat/runs` + `/api/runs/{id}/stream`，复用 Bot Run 的审批机制；审批条可直接在对话面板中允许/拒绝，批准后流继续输出。
 - 线上工具总数 71；管理工具实测通过；`/api/chat/runs` + 流式回复实测返回 `pong`。
 
+### 2026-11-05：Bot 通用 Shell（含 SSH）
+
+- 新增通用 `run_shell`：在 backend 容器内执行 shell 命令，默认目录 `/app`，可指定 `cwd` 和超时。
+- 运行身份：容器后端用户（生产为 root）；环境只保留 PATH/HOME/proxy/SSH_AUTH_SOCK，不注入数据库、LLM key、JWT 等密钥。
+- 已确认容器内 `ssh` 可用，`/root/.ssh` 已挂载（id_rsa / id_rsa.pub），可以发起 SSH。
+- Coding 仍然隔离：`coding` 的 `run_command` 继续以 `agent` 用户在 `/workspace` 内执行，不能借此访问宿主机。
+- `run_shell` 归类为 `exec`，默认需要审批；Web/桌面聊天会弹出允许/拒绝。
+- 线上实测：
+  - `id; hostname; pwd` → uid=0(root)，cwd=/app
+  - `ssh -V` → OpenSSH_10.0p2
+  - `/root/.ssh` 已挂载
+  - Coding `run_command` → uid=1001(agent)，pwd=/workspace/workspace_ominaide
+
 ### 2026-11-05：Coding Agent 信任加固
 
 - 镜像补齐 `git` / `openssh-client`，创建无特权沙箱用户 `agent`（uid 1001 / gid 1000）。

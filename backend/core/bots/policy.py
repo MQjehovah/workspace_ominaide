@@ -53,6 +53,7 @@ TOOL_RISK = {
     "get_coding_run": RISK_READ,
     "web_search": RISK_READ,
     "fetch_url": RISK_READ,
+    "run_shell": RISK_EXEC,
     "delegate_coding": RISK_WRITE,
     # External side effects: require explicit approval in chat.
     "ha_toggle": RISK_EXTERNAL,
