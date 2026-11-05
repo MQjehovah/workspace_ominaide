@@ -112,6 +112,9 @@ export function createChildContext(info: PluginInfo): PluginContext {
     return false
   }
 
+  const perms = new Set<string>(info.manifest.permissions || [])
+  const has = (name: string) => perms.has(name)
+
   const context: PluginContext = {
     plugin: info,
     config: {
@@ -124,30 +127,36 @@ export function createChildContext(info: PluginInfo): PluginContext {
       delete: (path: string) => rpc('api:delete', path),
     },
     clipboard: null,
-    shell: {
+    // Manifest permissions are enforced here, not just displayed in the UI.
+    shell: has('shell') ? {
       openPath: async (path: string) => rpc('shell:openPath', path) as Promise<string>,
       openExternal: async (url: string) => rpc('shell:openExternal', url) as Promise<void>,
-    },
-    storage: {
+    } : null,
+    storage: has('storage') ? {
       get: async (key: string) => rpc('storage:get', key),
       set: async (key: string, value: any) => rpc('storage:set', key, value),
+    } : {
+      get: async () => null,
+      set: async () => {},
     },
-    notification: {
+    notification: has('notification') ? {
       show: (title: string, body?: string) => { rpc('notification:show', title, body) },
+    } : {
+      show: () => {},
     },
-    screenshot: {
+    screenshot: has('screenshot') ? {
       start: () => rpc('screenshot:start'),
       captureFullscreen: () => rpc('screenshot:capture-fullscreen') as Promise<string | null>,
       showEditor: (dataUrl: string) => rpc('screenshot:show-editor', dataUrl),
       getHistory: () => rpc('screenshot:get-history'),
       clearHistory: () => rpc('screenshot:clear-history'),
       deleteHistory: (id: string) => rpc('screenshot:delete-history', id),
-    },
-    remote: {
+    } : null,
+    remote: has('remote') ? {
       getDesktopSources: () => rpc('remote:get-sources'),
       getScreenSize: () => rpc('remote:screen-size') as Promise<{ width: number; height: number }>,
       getAllDisplays: () => rpc('remote:get-all-displays'),
-    },
+    } : null,
     openPage: (pluginId: string, query?: string) => { rpc('openPage', pluginId, query) },
     registerCommand: (name: string, handler: Function) => { commands.set(name, handler) },
     signal: (method: string, ...args: any[]) => rpc(method, ...args),
