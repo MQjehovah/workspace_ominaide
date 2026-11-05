@@ -120,7 +120,17 @@ function onDragOver(e: DragEvent) {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
   const y = e.clientY - rect.top
   const h = rect.height
-  // Any node can act as a container now that folders may nest.
+  const folderSource = Array.from(e.dataTransfer.types).includes('application/x-omni-folder')
+  if (folderSource) {
+    // Folders are top-level workspaces: only reorder them at the root.
+    if ((props.node.parent_id ?? null) !== null) {
+      dropPos.value = null
+      return
+    }
+    dropPos.value = y < h * 0.5 ? 'before' : 'after'
+    return
+  }
+
   if (y < h * 0.28) dropPos.value = 'before'
   else if (y > h * 0.72) dropPos.value = 'after'
   else dropPos.value = 'inside'

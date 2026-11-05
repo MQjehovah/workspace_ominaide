@@ -37,6 +37,9 @@ def _schedule_rag_index(user_id: int, note: PluginNote) -> None:
 
 async def create_note(db: AsyncSession, user_id: int, req: NoteCreate,
                       *, defer_index: bool = False) -> PluginNote:
+    # Folders are top-level workspaces only; the tree lives in note nodes.
+    if req.is_folder and req.parent_id is not None:
+        raise ValueError("Folders cannot be nested")
     if req.parent_id is not None:
         parent = await db.get(PluginNote, req.parent_id)
         if not parent or parent.user_id != user_id:
@@ -277,6 +280,8 @@ async def move_note(db: AsyncSession, user_id: int, note_id: int, parent_id: int
         raise ValueError("Note not found")
     if parent_id == note.id:
         raise ValueError("Cannot move a note into itself")
+    if note.is_folder and parent_id is not None:
+        raise ValueError("Folders cannot be nested")
 
     if parent_id is not None:
         parent = await get_note(db, user_id, parent_id)
