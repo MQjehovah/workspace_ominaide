@@ -48,7 +48,6 @@ def test_config_package_exports_settings():
     from core.config import settings
 
     assert hasattr(settings, "memory_layer_enabled")
-    assert hasattr(settings, "bot_run_auto_summary")
 
 
 async def test_schedule_accepts_aware_datetimes(client, admin_token):

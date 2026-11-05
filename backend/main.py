@@ -44,14 +44,9 @@ async def lifespan(app: FastAPI):
 
     # Every user gets a default ``main`` bot. Existing rows stay readable.
     from core.bots.registry import seed_default_bots
-    from core.bots.routines import (
-        register_event_handler,
-        routine_loop,
-        seed_default_routines,
-    )
+    from core.bots.routines import register_event_handler, routine_loop
 
     await seed_default_bots()
-    await seed_default_routines()
     register_event_handler()
 
     register_workers()

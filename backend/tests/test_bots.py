@@ -220,7 +220,7 @@ async def test_run_lifecycle_and_cancel(client, user_token):
     assert "cancelled" in r.text
 
 
-async def test_routine_crud_and_seed(client, user_token, monkeypatch):
+async def test_routine_crud(client, user_token):
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
@@ -252,19 +252,6 @@ async def test_routine_crud_and_seed(client, user_token, monkeypatch):
         headers=auth(user_token),
     )
     assert r.status_code == 422
-
-    # Seed is idempotent and creates the morning briefing routine when enabled.
-    from core.bots import routines as routine_service
-    from core.bots.routines import seed_default_routines
-    from core.config.settings import settings
-
-    monkeypatch.setattr(settings, "morning_brief_enabled", True)
-    await seed_default_routines()
-    await seed_default_routines()
-    me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
-    all_routines = await routine_service.list_routines(me["id"])
-    morning = [x for x in all_routines if x.name == "morning_brief"]
-    assert len(morning) == 1
 
     r = await client.delete(
         f"/api/bots/{bot_id}/routines/{routine['id']}", headers=auth(user_token)
@@ -462,7 +449,6 @@ async def test_run_approval_state_machine(client, user_token, monkeypatch):
 
     monkeypatch.setattr(runner, "_stream_completion", fake_stream)
     monkeypatch.setattr(runner, "enqueue_run", lambda run_id: None)
-    monkeypatch.setattr(settings, "bot_run_auto_summary", False)
 
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]

@@ -49,16 +49,6 @@ async def _unique_slug(db, user_id: int, base: str, exclude_id: int | None = Non
         n += 1
 
 
-async def _ensure_routine(user_id: int, bot_id: int) -> None:
-    """Best-effort: new users get the default morning routine immediately."""
-    try:
-        from core.bots.routines import ensure_default_routine
-
-        await ensure_default_routine(user_id, bot_id)
-    except Exception:
-        pass
-
-
 async def _ensure_default(db, user_id: int) -> Bot:
     r = await db.execute(
         select(Bot)
@@ -116,7 +106,6 @@ async def get_or_create_default_bot(user_id: int) -> Bot:
         bot = await _ensure_default(db, user_id)
         await db.commit()
         await db.refresh(bot)
-    await _ensure_routine(user_id, bot.id)
     return bot
 
 
@@ -137,8 +126,6 @@ async def get_active_bot(user_id: int, bot_id: int | None = None) -> Bot:
             if bot is None or bot.status != "active":
                 raise BotNotFound(bot_id)
 
-    if made_default:
-        await _ensure_routine(user_id, bot.id)
     return bot
 
 

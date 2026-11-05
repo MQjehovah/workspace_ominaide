@@ -10,10 +10,7 @@ from sqlalchemy import select, delete, update
 
 from core.bots import runner
 from core.bots.models import Bot, BotRoutine
-from core.config.settings import settings
 from core.database.session import async_session
-
-MORNING_ROUTINE = "morning_brief"
 
 
 def _parse_field(expr: str, lo: int, hi: int) -> set[int]:
@@ -207,20 +204,6 @@ async def delete_routine(user_id: int, routine_id: int) -> bool:
         return bool(res.rowcount)
 
 
-async def has_enabled_routine(user_id: int, name: str) -> bool:
-    async with async_session() as db:
-        routine = (
-            await db.execute(
-                select(BotRoutine).where(
-                    BotRoutine.user_id == user_id,
-                    BotRoutine.name == name,
-                    BotRoutine.enabled == True,  # noqa: E712
-                )
-            )
-        ).scalar_one_or_none()
-        return routine is not None
-
-
 async def run_routine_now(user_id: int, routine_id: int):
     routine = await get_routine(user_id, routine_id)
     if routine is None:
@@ -340,16 +323,35 @@ async def _on_event(event) -> None:
                 ).scalar_one_or_none()
             if bot is None or bot.status != "active":
                 continue
+            prompt = r.prompt or r.name
+            context = _event_context(event)
+            if context:
+                prompt = f"{prompt}\n\n{context}"
             await runner.create_run(
                 r.user_id,
                 bot,
-                r.prompt or r.name,
+                prompt,
                 trigger="event",
                 routine_id=r.id,
                 idempotency_key=f"routine:{r.id}:event:{event.id}",
             )
     except Exception as e:
         print(f"[bots.routines] event handler error: {e}")
+
+
+def _event_context(event) -> str:
+    """Give event-triggered routines the payload, not just a generic prompt."""
+    import json
+
+    parts: list[str] = []
+    if event.summary:
+        parts.append(f"事件摘要: {event.summary}")
+    if event.details:
+        try:
+            parts.append("事件详情: " + json.dumps(event.details, ensure_ascii=False)[:3000])
+        except Exception:
+            pass
+    return "\n".join(parts)
 
 
 def _matches_filter(flt: dict | None, event) -> bool:
@@ -362,70 +364,4 @@ def _matches_filter(flt: dict | None, event) -> bool:
     return True
 
 
-async def ensure_default_routine(user_id: int, bot_id: int | None = None) -> None:
-    """Create the morning briefing routine for one user if missing."""
-    if not settings.morning_brief_enabled:
-        return
-    cron = f"{settings.morning_brief_minute} {settings.morning_brief_hour} * * *"
 
-    async with async_session() as db:
-        if bot_id is None:
-            bot = (
-                await db.execute(
-                    select(Bot).where(
-                        Bot.user_id == user_id,
-                        Bot.is_default == True,  # noqa: E712
-                        Bot.status == "active",
-                    )
-                )
-            ).scalars().first()
-            if bot is None:
-                return
-            bot_id = bot.id
-
-        existing = (
-            await db.execute(
-                select(BotRoutine).where(
-                    BotRoutine.user_id == user_id,
-                    BotRoutine.name == MORNING_ROUTINE,
-                )
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            return
-
-        db.add(
-            BotRoutine(
-                bot_id=bot_id,
-                user_id=user_id,
-                name=MORNING_ROUTINE,
-                trigger_type="cron",
-                cron_expr=cron,
-                prompt=(
-                    "生成今天的晨间简报。先调用工具获取当前天气、今日日程、"
-                    "未完成待办、未读通知和新订阅文章，再用 3-6 句中文口语化地播报："
-                    "问候、天气/穿衣建议、今日日程、最重要的 1-2 个待办，"
-                    "最后提醒今天最先要做的事。不要 Markdown，不要编造数据。"
-                ),
-                enabled=True,
-                next_run_at=next_run(cron),
-            )
-        )
-        await db.commit()
-
-
-async def seed_default_routines() -> None:
-    """Create the morning briefing routine for every existing user."""
-    if not settings.morning_brief_enabled:
-        return
-
-    from core.auth.domain.models import User
-
-    async with async_session() as db:
-        user_ids = list((await db.execute(select(User.id))).scalars().all())
-
-    for uid in user_ids:
-        try:
-            await ensure_default_routine(uid)
-        except Exception as e:
-            print(f"[bots.routines] seed failed for user {uid}: {e}")

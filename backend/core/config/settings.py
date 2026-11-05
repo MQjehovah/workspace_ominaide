@@ -69,10 +69,6 @@ class Settings(BaseSettings):
     # Backend-first RSS: refresh feeds even when no desktop client is online.
     rss_refresh_enabled: bool = True
     rss_refresh_interval_seconds: int = 1800
-    # Digest generation calls the LLM: opt in via a Bot trigger instead.
-    rss_digest_enabled: bool = False
-    rss_digest_hour: int = 8
-    rss_digest_minute: int = 0
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
     # Extract candidate memories from important external content (mail/DingTalk).
@@ -113,23 +109,13 @@ class Settings(BaseSettings):
     web_search_max_results: int = 5
     web_fetch_max_bytes: int = 2_000_000
     web_fetch_max_chars: int = 12_000
-    # Scheduled LLM jobs are opt-in now: create them as Bot triggers instead of
-    # letting the backend spend tokens invisibly.
-    morning_brief_enabled: bool = False
-    morning_brief_hour: int = 7
-    morning_brief_minute: int = 30
-    daily_review_enabled: bool = False
-    daily_review_hour: int = 22
-    daily_review_minute: int = 0
-    event_scan_enabled: bool = False        # every 15 min urgent-event scan
-    daily_analysis_enabled: bool = False    # daily user-profile refresh
+    # Scheduled AI jobs live in Bot routines, not here.
     # Bot runs: persistent execution, heartbeat and recovery.
     bot_run_concurrency: int = 2
     bot_run_max_turns: int = 20
     bot_run_timeout_seconds: int = 1800
     bot_run_heartbeat_seconds: int = 15
     bot_run_poll_seconds: float = 0.4
-    bot_run_auto_summary: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     # General shell tool for the bot (approval required). Runs in the backend

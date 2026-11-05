@@ -29,7 +29,7 @@ from core.bots.context import (
     set_current_run_id,
     set_current_session_id,
 )
-from core.bots.memory import add_memory, build_bot_context
+from core.bots.memory import build_bot_context
 from core.bots.models import Bot, BotApproval, BotRun, BotRunStep
 from core.config.settings import settings
 from core.database.session import async_session
@@ -625,8 +625,10 @@ async def _finalize(
                 await _broadcast_chat_reply(run)
         if run.routine_id and run.output:
             await _notify_run(run, bot)
-        if run.output and settings.bot_run_auto_summary and not skip_summary:
-            await _maybe_summarize(run, bot)
+        # Emit an event instead of spending an LLM call inline. A Bot routine
+        # can subscribe to bot.run.finished to summarise / persist the result.
+        if run.output and run.routine_id is None and not skip_summary:
+            await _emit_run_finished(run)
 
 
 async def _broadcast_chat_reply(run: BotRun) -> None:
@@ -665,40 +667,25 @@ async def _save_chat_reply(run: BotRun) -> None:
         print(f"[bots.runner] save chat reply failed: {e}")
 
 
-async def _maybe_summarize(run: BotRun, bot: Bot | None) -> None:
-    """Persist one compact long-term memory after a substantive run."""
-    if bot is None or not settings.memory_layer_enabled:
-        return
-    if not run.routine_id and len(run.output or "") < 800:
-        return
+async def _emit_run_finished(run: BotRun) -> None:
+    """Publish bot.run.finished so an event-triggered routine can summarise it."""
     try:
-        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-        resp = await client.chat.completions.create(
-            model=bot.model or settings.llm_model,
-            messages=[
+        from core.events.bus import record_event
+
+        async with async_session() as db:
+            await record_event(
+                db, run.user_id, "bot.run.finished", "bot_run", run.id,
+                f"Bot 运行完成: {(run.input or '')[:80]}",
                 {
-                    "role": "system",
-                    "content": (
-                        "把下面这次任务压缩成一条长期记忆，只保留结论、用户偏好、"
-                        "未完成事项和关键事实。不超过 200 字，不要 Markdown。"
-                    ),
+                    "run_id": run.id,
+                    "bot_id": run.bot_id,
+                    "input": (run.input or "")[:1000],
+                    "output": (run.output or "")[:4000],
                 },
-                {"role": "user", "content": (run.input or "") + "\n\n" + (run.output or "")},
-            ],
-            temperature=0.2,
-        )
-        text = (resp.choices[0].message.content or "").strip()
-        if text:
-            await add_memory(
-                run.user_id,
-                run.bot_id,
-                text,
-                kind="summary",
-                importance=0.6,
-                source_run_id=run.id,
             )
+            await db.commit()
     except Exception as e:
-        print(f"[bots.runner] summary failed: {e}")
+        print(f"[bots.runner] run-finished event failed: {e}")
 
 
 # ---------------------------------------------------------------------------

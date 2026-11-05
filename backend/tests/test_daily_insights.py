@@ -254,15 +254,4 @@ async def test_bot_context_includes_recent_daily_review(client):
     assert "知识库检索优化" in context
 
 
-async def test_briefing_includes_yesterday_review(client):
-    from core.ai.daily_insights import generate_daily_insight
-    from core.ai.scheduler import _briefing_review_line
 
-    _, user_id = await _new_user(client)
-    yesterday = date.today() - timedelta(days=1)
-    await _add_activity(user_id, yesterday, summary="昨天把发票报销提交了")
-    await generate_daily_insight(user_id, yesterday)
-
-    line = await _briefing_review_line(user_id)
-    assert line
-    assert "发票报销" in line

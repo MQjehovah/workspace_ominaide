@@ -75,6 +75,18 @@ ROUTINE_TEMPLATES: list[dict] = [
         ),
     },
     {
+        "key": "run_summary",
+        "name": "运行摘要",
+        "description": "每次 Bot 运行结束后，把结论和未完成事项写入长期记忆。",
+        "trigger_type": "event",
+        "event_type": "bot.run.finished",
+        "prompt": (
+            "下面是一次刚结束的 Bot 运行，包含输入和输出。"
+            "请把结论、用户偏好、未完成事项和关键事实压缩成一条不超过 200 字的长期记忆，"
+            "并调用 save_memory 工具保存。不要编造，不要复述过程。"
+        ),
+    },
+    {
         "key": "mail_triage",
         "name": "重要邮件处理",
         "description": "收到重要邮件时生成摘要，并建议回复、建待办或忽略。",

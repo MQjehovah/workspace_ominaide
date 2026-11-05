@@ -4,8 +4,13 @@ from core.ai.indexer import index_content
 from core.config.settings import settings
 
 
+def _is_internal(event) -> bool:
+    """Bot lifecycle events feed routines, not the generic index/entity workers."""
+    return (event.event_type or "").startswith("bot.run.")
+
+
 async def indexing_handler(event):
-    if not settings.data_layer_enabled:
+    if not settings.data_layer_enabled or _is_internal(event):
         return
     await index_content(
         user_id=event.user_id,
@@ -18,7 +23,7 @@ async def indexing_handler(event):
 
 
 async def entity_handler(event):
-    if not settings.memory_layer_enabled:
+    if not settings.memory_layer_enabled or _is_internal(event):
         return
     from core.ai.indexer import extract_and_store_entities
     await extract_and_store_entities(
