@@ -5,7 +5,8 @@ WORKDIR /app
 # git/ssh are required by the coding agent (delivery + deploy-key push).
 # node/npm run the DingTalk Workspace CLI (`dws`) used by the MCP hub.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git openssh-client ca-certificates nodejs npm tar && \
+    apt-get install -y --no-install-recommends \
+        git openssh-client ca-certificates nodejs npm tar unzip && \
     rm -rf /var/lib/apt/lists/*
 
 RUN npm config set registry https://registry.npmmirror.com && \
