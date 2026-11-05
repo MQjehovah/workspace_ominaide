@@ -415,6 +415,22 @@ async def _after_ingest(user_id: int, message_id: int) -> None:
             pass
         await db.commit()
 
+        # External mail is untrusted: it may only create review candidates.
+        if settings.memory_external_extract_enabled and msg.important:
+            try:
+                from core.memory_service import ingest_text
+
+                await ingest_text(
+                    user_id,
+                    f"{msg.subject or ''}\n{msg.content or msg.preview or ''}",
+                    source_type="email",
+                    source_id=msg.id,
+                    source_ref={"subject": msg.subject, "from": msg.from_address},
+                    trust="untrusted",
+                )
+            except Exception as e:
+                print(f"[mail] memory extract error: {e}")
+
 
 async def sync_due_accounts(interval_seconds: int) -> dict:
     """Sync accounts whose last sync is older than the interval."""

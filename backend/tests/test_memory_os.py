@@ -120,6 +120,59 @@ async def test_memory_candidates_are_user_scoped(client):
     assert r.status_code == 404
 
 
+async def test_memory_conflict_supersedes_and_links_graph(client):
+    from core.database.session import async_session
+    from core.memory_models import MemoryRecord
+    from sqlalchemy import select
+
+    token, user_id = await _new_user(client)
+    r = await client.put(
+        "/api/auth/profile",
+        json={"contacts": [{"name": "李四", "relation": "同事"}]},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+
+    old = await _seed(user_id, "和李四讨论预算", kind="fact")
+    r = await client.post(f"/api/memory/candidates/{old}/approve", headers=auth(token))
+    assert r.status_code == 200, r.text
+    old_record = r.json()["record_id"]
+
+    new = await _seed(user_id, "和李四讨论预算的最终版本", kind="fact")
+    r = await client.post(f"/api/memory/candidates/{new}/approve", headers=auth(token))
+    assert r.status_code == 200, r.text
+    new_record = r.json()["record_id"]
+
+    async with async_session() as db:
+        row = (await db.execute(
+            select(MemoryRecord).where(MemoryRecord.id == old_record)
+        )).scalar_one()
+    assert row.status == "superseded"
+    assert row.superseded_by == new_record
+
+    r = await client.get("/api/memory/graph", headers=auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert any(n["type"] == "person" and n["label"] == "李四" for n in body["nodes"])
+    assert any(e["relation"] == "mentions" for e in body["edges"])
+
+
+async def test_update_memory_record(client):
+    token, user_id = await _new_user(client)
+    cid = await _seed(user_id, "用户喜欢浅色主题")
+    r = await client.post(f"/api/memory/candidates/{cid}/approve", headers=auth(token))
+    record_id = r.json()["record_id"]
+
+    r = await client.patch(
+        f"/api/memory/records/{record_id}",
+        json={"content": "用户喜欢浅色主题，编辑器字号 15px", "importance": 80},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert "15px" in r.json()["content"]
+    assert r.json()["importance"] == 80
+
+
 async def test_extract_without_llm_queues_nothing(client):
     token, _ = await _new_user(client)
     r = await client.post("/api/memory/extract", json={"hours": 24}, headers=auth(token))

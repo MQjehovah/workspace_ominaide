@@ -6,11 +6,11 @@ import json
 import re
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from core.config.settings import settings
 from core.database.session import async_session
-from core.memory_models import MemoryCandidate, MemoryRecord
+from core.memory_models import MemoryCandidate, MemoryEdge, MemoryRecord
 
 MAX_CANDIDATES_PER_TEXT = 8
 MAX_RECORD_CONTENT = 1200
@@ -224,6 +224,88 @@ async def list_candidates(user_id: int, status: str = "pending", limit: int = 10
     return rows
 
 
+async def _link_edges(db, user_id: int, record: MemoryRecord) -> None:
+    """Link a memory to profile contacts/projects it mentions."""
+    try:
+        from core.auth.domain.models import UserProfile
+
+        profile = (await db.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )).scalar_one_or_none()
+        if profile is None:
+            return
+        targets: list[tuple[str, str, int | None]] = []
+        for c in _loads(profile.contacts) or []:
+            if isinstance(c, dict) and c.get("name"):
+                targets.append(("person", str(c["name"]), None))
+        for p in _loads(profile.projects) or []:
+            if isinstance(p, dict) and p.get("name"):
+                targets.append(("project", str(p["name"]), None))
+        if not targets:
+            return
+        existing = {
+            e.target_name for e in (await db.execute(
+                select(MemoryEdge).where(
+                    MemoryEdge.user_id == user_id,
+                    MemoryEdge.memory_id == record.id,
+                )
+            )).scalars().all()
+        }
+        for target_type, name, target_id in targets:
+            if name and name in (record.content or "") and name not in existing:
+                db.add(MemoryEdge(
+                    user_id=user_id,
+                    memory_id=record.id,
+                    target_type=target_type,
+                    target_id=target_id,
+                    target_name=name,
+                    relation="mentions",
+                ))
+                existing.add(name)
+    except Exception as e:
+        print(f"[memory] edge error: {e}")
+
+
+async def _supersede_conflicts(db, user_id: int, candidate: MemoryCandidate, new_record_id: int) -> list[int]:
+    """Mark older records superseded when the new memory clearly replaces them."""
+    old_rows = list((await db.execute(
+        select(MemoryRecord).where(
+            MemoryRecord.user_id == user_id,
+            MemoryRecord.kind == candidate.kind,
+            MemoryRecord.status == "active",
+            MemoryRecord.id != new_record_id,
+        )
+    )).scalars().all())
+    superseded: list[int] = []
+    new_content = candidate.content or ""
+    for old in old_rows:
+        old_content = old.content or ""
+        if len(old_content) < 6 or len(new_content) < 6:
+            continue
+        if old_content in new_content or new_content in old_content:
+            old.status = "superseded"
+            old.valid_to = datetime.utcnow()
+            old.superseded_by = new_record_id
+            superseded.append(old.id)
+    return superseded
+
+
+async def _index_record(user_id: int, record: MemoryRecord) -> None:
+    try:
+        from core.ai.indexer import index_content
+
+        await index_content(
+            user_id,
+            "memory",
+            record.id,
+            f"[{record.kind}] {record.content[:60]}",
+            record.content,
+            metadata={"kind": record.kind, "link": "/about"},
+        )
+    except Exception as e:
+        print(f"[memory] index error: {e}")
+
+
 async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | None:
     async with async_session() as db:
         cand = (await db.execute(
@@ -241,6 +323,7 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
                 MemoryRecord.kind == cand.kind,
             )
         )).scalar_one_or_none()
+        created = record is None
         if record is not None and record.status != "active":
             record.status = "active"
             record.valid_to = None
@@ -267,9 +350,13 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
             sources = _loads(record.sources)
             sources.extend(_loads(cand.source_ref))
             record.sources = sources[-20:]
+        if created:
+            await _supersede_conflicts(db, user_id, cand, record.id)
+        await _link_edges(db, user_id, record)
         cand.status = "approved"
         cand.reviewed_at = datetime.utcnow()
         await db.commit()
+        await _index_record(user_id, record)
         return record
 
 
@@ -330,17 +417,134 @@ async def forget_record(user_id: int, record_id: int) -> bool:
         row.status = "deleted"
         row.valid_to = datetime.utcnow()
         await db.commit()
-        return True
+    try:
+        from core.ai import vector_store
+
+        await vector_store.delete_source(user_id, "memory", record_id)
+    except Exception:
+        pass
+    return True
+
+
+async def update_record(
+    user_id: int, record_id: int, content: str | None = None,
+    importance: int | None = None,
+) -> MemoryRecord | None:
+    async with async_session() as db:
+        row = (await db.execute(
+            select(MemoryRecord).where(
+                MemoryRecord.id == record_id,
+                MemoryRecord.user_id == user_id,
+            )
+        )).scalar_one_or_none()
+        if row is None:
+            return None
+        if content and content.strip():
+            row.content = content.strip()[:MAX_RECORD_CONTENT]
+            row.normalized = _normalize(content)
+        if importance is not None:
+            row.importance = max(0, min(int(importance), 100))
+        await db.commit()
+        await db.refresh(row)
+    await _index_record(user_id, row)
+    return row
+
+
+async def _vector_records(user_id: int, query: str, limit: int) -> list[MemoryRecord]:
+    from core.ai.embeddings import generate_embedding
+    from core.ai import vector_store
+
+    vec = await generate_embedding(query)
+    if not vec:
+        return []
+    hits = await vector_store.search(
+        "omnidocs", user_id, vec, limit=max(4, limit * 2), source_types=["memory"]
+    )
+    ids = [h.get("source_id") for h in hits if h.get("source_id")]
+    if not ids:
+        return []
+    async with async_session() as db:
+        rows = list((await db.execute(
+            select(MemoryRecord).where(
+                MemoryRecord.user_id == user_id,
+                MemoryRecord.id.in_(ids),
+                MemoryRecord.status == "active",
+            )
+        )).scalars().all())
+    order = {rid: i for i, rid in enumerate(ids)}
+    rows.sort(key=lambda r: order.get(r.id, 999))
+    return rows[:limit]
+
+
+async def _touch_records(ids: list[int]) -> None:
+    if not ids:
+        return
+    try:
+        async with async_session() as db:
+            await db.execute(
+                update(MemoryRecord)
+                .where(MemoryRecord.id.in_(ids))
+                .values(use_count=MemoryRecord.use_count + 1, last_used_at=datetime.utcnow())
+            )
+            await db.commit()
+    except Exception:
+        pass
 
 
 async def build_memory_context(user_id: int, query: str | None = None, limit: int = 8) -> str | None:
     try:
-        rows = await list_records(user_id, query or "", limit)
+        rows: list[MemoryRecord] = []
+        if query:
+            try:
+                rows = await _vector_records(user_id, query, limit)
+            except Exception:
+                rows = []
+        if not rows:
+            rows = await list_records(user_id, query or "", limit)
         if not rows and query:
             rows = await list_records(user_id, "", limit)
         if not rows:
             return None
+        await _touch_records([r.id for r in rows[:limit]])
         lines = [f"- [{r.kind}] {r.content}" for r in rows[:limit]]
         return ("【长期记忆】\n" + "\n".join(lines))[:1600]
     except Exception:
         return None
+
+
+async def memory_graph(user_id: int, limit: int = 100) -> dict:
+    async with async_session() as db:
+        records = list((await db.execute(
+            select(MemoryRecord).where(
+                MemoryRecord.user_id == user_id,
+                MemoryRecord.status == "active",
+            ).order_by(MemoryRecord.importance.desc()).limit(max(1, min(limit, 300)))
+        )).scalars().all())
+        ids = [r.id for r in records]
+        edges = list((await db.execute(
+            select(MemoryEdge).where(
+                MemoryEdge.user_id == user_id,
+                MemoryEdge.memory_id.in_(ids or [0]),
+            )
+        )).scalars().all())
+    nodes = [
+        {"id": f"memory:{r.id}", "type": "memory", "label": r.content[:80], "kind": r.kind}
+        for r in records
+    ]
+    seen: set[str] = set()
+    for e in edges:
+        key = f"{e.target_type}:{e.target_name}"
+        if key not in seen:
+            seen.add(key)
+            nodes.append({"id": key, "type": e.target_type, "label": e.target_name})
+    return {
+        "nodes": nodes,
+        "edges": [
+            {
+                "source": f"memory:{e.memory_id}",
+                "target": f"{e.target_type}:{e.target_name}",
+                "relation": e.relation,
+            }
+            for e in edges
+        ],
+    }

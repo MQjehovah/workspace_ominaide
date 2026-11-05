@@ -58,3 +58,22 @@ class MemoryRecord(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "normalized", "kind", name="uq_memory_record_user_norm_kind"),
     )
+
+
+class MemoryEdge(Base):
+    """A lightweight relation between a memory and a person/project/entity."""
+
+    __tablename__ = "memory_edges"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    memory_id = Column(
+        Integer, ForeignKey("memory_records.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    target_type = Column(String(32), nullable=False)  # person/project/entity
+    target_id = Column(Integer, nullable=True)
+    target_name = Column(String(200), nullable=False, index=True)
+    relation = Column(String(32), default="mentions")
+    weight = Column(Integer, default=50)
+    created_at = Column(DateTime, server_default=func.now())

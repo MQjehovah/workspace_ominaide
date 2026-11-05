@@ -39,6 +39,33 @@ Memory OS 把“聊天记录”升级为可审核、可追溯、可遗忘的长�
 
 当前调度器每天 22:00 生成每日回顾后，分析过去 24 小时的**用户消息**。助理输出不作为长期记忆来源，避免模型幻觉变成“事实”。
 
+## 外部内容隔离
+
+邮件、RSS、钉钉消息都属于外部内容，可能被他人控制：
+
+- 重要邮件在入库后调用 `ingest_text(..., trust="untrusted")`，只生成候选，绝不自动通过。
+- 外部候选在「关于我」里显示为「外部内容」，必须人工点「记住」。
+- 开关：`MEMORY_EXTERNAL_EXTRACT_ENABLED`（默认开）。
+- 同一内容已存在活跃记录时不会重复入队。
+
+## 冲突与时间版本
+
+同一 `kind` 的新记忆如果包含旧记忆（或反过来被旧记忆包含），旧记录会被标记：
+
+- `status=superseded`
+- `valid_to=now`
+- `superseded_by=<新记录 id>`
+
+旧记录不再注入上下文，但保留在库中可审计。放宽的策略是先做包含关系判断，避免把“预算讨论”和“预算讨论的最终版本”当成两条并存事实。
+
+## 关系图
+
+记忆被确认时会扫描用户画像中的联系人与项目，命中名称则写入 `memory_edges`：
+
+- `target_type`：`person` / `project`
+- `relation`：默认 `mentions`
+- API：`GET /api/memory/graph` 返回 `nodes` + `edges`，可和实体图谱一起展示。
+
 ## API
 
 ```
@@ -46,7 +73,9 @@ GET    /api/memory/candidates?status=pending
 POST   /api/memory/candidates/{id}/approve
 POST   /api/memory/candidates/{id}/reject
 GET    /api/memory/records?q=
+PATCH  /api/memory/records/{id}      # 修正内容 / 重要度
 DELETE /api/memory/records/{id}      # 遗忘
+GET    /api/memory/graph             # 记忆-人物/项目关系图
 POST   /api/memory/extract           # 立即抽取最近会话
 POST   /api/memory/consolidate       # 自动通过高置信可信候选
 ```
@@ -69,16 +98,24 @@ Web「关于我」页面：
 
 最多 8 条、约 1600 字，避免挤占上下文。
 
+检索顺序：
+
+1. 有查询时先走向量检索（`source_type="memory"`，集合 `omnidocs`）；
+2. 向量不可用或没有命中时退回关键词匹配；
+3. 注入成功的记录会累加 `use_count` 并更新 `last_used_at`，作为“这条记忆确实有用”的反馈信号。
+
+记忆写入、修正时会同步索引；遗忘时删除对应向量，避免已遗忘内容继续被检索到。
+
 ## 安全边界
 
 - 只有 `trusted` 来源的候选可以自动通过（默认阈值 90）；外部内容必须人工确认。
 - 抽取只读用户消息，不把助理生成的文本当作事实。
-- 遗忘只影响记忆注入，不删除原始聊天/邮件。
+- 遗忘只影响记忆注入与向量索引，不删除原始聊天/邮件。
 - 每条记忆保留来源 `source_type/source_id/source_ref`，便于“为什么知道”。
+- 被新事实取代的记录保留 `superseded_by`，可追溯但不参与注入。
 
 ## 后续
 
-- 邮件/RSS/钉钉消息接入 `ingest_text(trust="untrusted")`，统一进入审核队列。
-- 记忆冲突检测与时间版本（同一事实变更时 supersede）。
-- 记忆使用反馈：被采纳/被纠正的次数影响置信度。
-- 向量检索替换当前的关键词匹配。
+- 记忆使用反馈升级为显式采纳/纠正（当前用 `use_count` 与人工修正近似）。
+- 向量检索与关键词检索做加权融合，而不是简单回退。
+- 钉钉消息按会话/联系人批量抽取，避免逐条调用 LLM。

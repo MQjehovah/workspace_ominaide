@@ -112,6 +112,11 @@ class ExtractRequest(BaseModel):
     hours: int = 24
 
 
+class RecordUpdate(BaseModel):
+    content: str | None = None
+    importance: int | None = None
+
+
 @router.get("/candidates")
 async def candidates(
     status: str = Query("pending"),
@@ -154,6 +159,27 @@ async def records(
 
     rows = await list_records(user["id"], q, limit)
     return {"items": [_record_out(r) for r in rows]}
+
+
+@router.patch("/records/{record_id}")
+async def update_record(
+    record_id: int,
+    req: RecordUpdate,
+    user: dict = Depends(get_current_user),
+):
+    from core.memory_service import update_record as update
+
+    row = await update(user["id"], record_id, req.content, req.importance)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return _record_out(row)
+
+
+@router.get("/graph")
+async def graph(user: dict = Depends(get_current_user)):
+    from core.memory_service import memory_graph
+
+    return await memory_graph(user["id"])
 
 
 @router.delete("/records/{record_id}")

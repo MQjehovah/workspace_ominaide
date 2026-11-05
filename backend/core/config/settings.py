@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     rss_digest_minute: int = 0
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
+    # Extract candidate memories from important external content (mail/DingTalk).
+    memory_external_extract_enabled: bool = True
     intelligence_layer_enabled: bool = True
     coding_workspace_root: str = "/workspace"
     coding_max_turns: int = 40
