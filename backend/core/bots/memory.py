@@ -264,6 +264,15 @@ async def _insight_block(user_id: int) -> str | None:
         return None
 
 
+async def _long_term_memory_block(user_id: int, query: str) -> str | None:
+    try:
+        from core.memory_service import build_memory_context
+
+        return await build_memory_context(user_id, query, limit=8)
+    except Exception:
+        return None
+
+
 async def build_bot_context(
     user_id: int, bot: Bot | None = None, query: str = ""
 ) -> str | None:
@@ -277,6 +286,10 @@ async def build_bot_context(
     insight = await _insight_block(user_id)
     if insight:
         parts.append(insight)
+
+    long_term = await _long_term_memory_block(user_id, query)
+    if long_term:
+        parts.append(long_term)
 
     # L1 bot memory (or all memories in legacy mode).
     if bot is not None:

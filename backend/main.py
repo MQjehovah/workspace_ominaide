@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
     import core.bots.models  # noqa
     import core.ai.insight_models  # noqa
     import core.mcp_hub.models  # noqa
+    import core.memory_models  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

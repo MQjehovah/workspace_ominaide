@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import text
 
 from core.auth.dependencies import get_current_user
@@ -101,6 +102,114 @@ async def list_entities(
             "last_seen": meta.get("last_seen"),
         })
     return {"items": items, "counts": counts, "supported": True}
+
+
+class CandidateApprove(BaseModel):
+    pass
+
+
+class ExtractRequest(BaseModel):
+    hours: int = 24
+
+
+@router.get("/candidates")
+async def candidates(
+    status: str = Query("pending"),
+    limit: int = Query(100, ge=1, le=300),
+    user: dict = Depends(get_current_user),
+):
+    from core.memory_service import list_candidates
+
+    rows = await list_candidates(user["id"], status, limit)
+    return {"items": [_candidate_out(r) for r in rows]}
+
+
+@router.post("/candidates/{candidate_id}/approve")
+async def approve_candidate(candidate_id: int, user: dict = Depends(get_current_user)):
+    from core.memory_service import approve_candidate as approve
+
+    record = await approve(user["id"], candidate_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Candidate not found or already reviewed")
+    return {"message": "Approved", "record_id": record.id}
+
+
+@router.post("/candidates/{candidate_id}/reject")
+async def reject_candidate(candidate_id: int, user: dict = Depends(get_current_user)):
+    from core.memory_service import reject_candidate as reject
+
+    ok = await reject(user["id"], candidate_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Candidate not found or already reviewed")
+    return {"message": "Rejected"}
+
+
+@router.get("/records")
+async def records(
+    q: str = Query(""),
+    limit: int = Query(100, ge=1, le=300),
+    user: dict = Depends(get_current_user),
+):
+    from core.memory_service import list_records
+
+    rows = await list_records(user["id"], q, limit)
+    return {"items": [_record_out(r) for r in rows]}
+
+
+@router.delete("/records/{record_id}")
+async def forget_record(record_id: int, user: dict = Depends(get_current_user)):
+    from core.memory_service import forget_record as forget
+
+    ok = await forget(user["id"], record_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"message": "Forgotten"}
+
+
+@router.post("/extract")
+async def extract_memories(req: ExtractRequest | None = None, user: dict = Depends(get_current_user)):
+    from core.memory_service import ingest_recent_chats
+
+    req = req or ExtractRequest()
+    count = await ingest_recent_chats(user["id"], max(1, min(req.hours, 168)))
+    return {"queued": count}
+
+
+@router.post("/consolidate")
+async def consolidate_memories(user: dict = Depends(get_current_user)):
+    from core.memory_service import consolidate
+
+    return await consolidate(user["id"])
+
+
+def _candidate_out(row) -> dict:
+    return {
+        "id": row.id,
+        "kind": row.kind,
+        "content": row.content,
+        "confidence": row.confidence,
+        "source_type": row.source_type,
+        "source_id": row.source_id,
+        "source_ref": row.source_ref,
+        "trust": row.trust,
+        "status": row.status,
+        "created_at": row.created_at,
+    }
+
+
+def _record_out(row) -> dict:
+    return {
+        "id": row.id,
+        "kind": row.kind,
+        "content": row.content,
+        "confidence": row.confidence,
+        "importance": row.importance,
+        "source_type": row.source_type,
+        "sources": row.sources,
+        "status": row.status,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
 
 
 @router.delete("/entities/{doc_key}")

@@ -5,7 +5,10 @@
         <h2>关于我</h2>
         <p class="sub">AI 对你的长期理解、实体关系和最近回顾。所有内容都可以被修正或遗忘。</p>
       </div>
-      <el-button :icon="Edit" @click="$router.push('/settings')">编辑资料</el-button>
+      <div class="header-actions">
+        <el-button :icon="MagicStick" :loading="extracting" @click="extractMemories">整理记忆</el-button>
+        <el-button :icon="Edit" @click="$router.push('/settings')">编辑资料</el-button>
+      </div>
     </div>
 
     <div class="about-grid">
@@ -108,6 +111,52 @@
         </div>
       </section>
 
+      <section class="page-card full-row">
+        <div class="section-head">
+          <h3>待审核记忆 <span class="count" v-if="candidates.length">{{ candidates.length }}</span></h3>
+          <span class="muted">来自对话、邮件或外部消息；确认后才会进入长期记忆。</span>
+        </div>
+        <div v-if="candidates.length === 0" class="muted">没有待审核的记忆。点「整理记忆」从最近的对话中抽取。</div>
+        <div v-for="c in candidates" :key="c.id" class="candidate-row">
+          <div class="candidate-main">
+            <div class="candidate-content">{{ c.content }}</div>
+            <div class="candidate-meta">
+              <el-tag size="small" effect="plain">{{ kindLabel(c.kind) }}</el-tag>
+              <el-tag size="small" :type="c.trust === 'trusted' ? 'success' : 'warning'">
+                {{ c.trust === 'trusted' ? '可信来源' : '外部内容' }}
+              </el-tag>
+              <span class="muted">置信度 {{ c.confidence }}</span>
+              <span class="muted">{{ c.source_type }}</span>
+            </div>
+          </div>
+          <div class="candidate-actions">
+            <el-button size="small" type="primary" @click="approveCandidate(c)">记住</el-button>
+            <el-button size="small" @click="rejectCandidate(c)">忽略</el-button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-card full-row">
+        <div class="section-head">
+          <h3>长期记忆 <span class="count" v-if="records.length">{{ records.length }}</span></h3>
+          <span class="muted">Bot 每次对话会按相关度读取；每条都可以遗忘。</span>
+        </div>
+        <div v-if="records.length === 0" class="muted">还没有长期记忆。</div>
+        <div v-for="r in records" :key="r.id" class="record-row">
+          <div class="record-main">
+            <div class="record-content">{{ r.content }}</div>
+            <div class="candidate-meta">
+              <el-tag size="small" effect="plain">{{ kindLabel(r.kind) }}</el-tag>
+              <span class="muted">重要度 {{ r.importance }}</span>
+              <span class="muted">{{ fmt(r.updated_at) }}</span>
+            </div>
+          </div>
+          <el-popconfirm title="忘掉这条记忆？不会删除原始内容。" @confirm="forgetRecord(r)">
+            <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
+          </el-popconfirm>
+        </div>
+      </section>
+
       <section class="page-card">
         <div class="section-head">
           <h3>最近回顾</h3>
@@ -126,7 +175,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit } from '@element-plus/icons-vue'
+import { Edit, MagicStick } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 
@@ -135,6 +184,9 @@ const entities = ref<any[]>([])
 const entitiesSupported = ref(true)
 const entityType = ref('')
 const reviews = ref<any[]>([])
+const candidates = ref<any[]>([])
+const records = ref<any[]>([])
+const extracting = ref(false)
 
 function fmt(value: string) {
   return value ? formatBackendDate(value) : ''
@@ -146,6 +198,69 @@ function textOf(item: any) {
 
 function typeLabel(type: string) {
   return ({ person: '人物', project: '项目', term: '术语' } as Record<string, string>)[type] || type
+}
+
+function kindLabel(kind: string) {
+  return ({
+    fact: '事实', preference: '偏好', commitment: '承诺',
+    relationship: '关系', project: '项目',
+  } as Record<string, string>)[kind] || kind
+}
+
+async function loadMemory() {
+  try {
+    const [c, r] = await Promise.all([
+      client.get('/memory/candidates', { params: { status: 'pending', limit: 100 } }),
+      client.get('/memory/records', { params: { limit: 100 } }),
+    ])
+    candidates.value = c.data.items || []
+    records.value = r.data.items || []
+  } catch {
+    candidates.value = []
+    records.value = []
+  }
+}
+
+async function extractMemories() {
+  extracting.value = true
+  try {
+    const { data } = await client.post('/memory/extract', { hours: 24 })
+    ElMessage.success(`已整理，新增 ${data.queued || 0} 条候选记忆`)
+    await loadMemory()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '整理失败')
+  } finally {
+    extracting.value = false
+  }
+}
+
+async function approveCandidate(c: any) {
+  try {
+    await client.post(`/memory/candidates/${c.id}/approve`)
+    ElMessage.success('已记住')
+    await loadMemory()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '操作失败')
+  }
+}
+
+async function rejectCandidate(c: any) {
+  try {
+    await client.post(`/memory/candidates/${c.id}/reject`)
+    await loadMemory()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '操作失败')
+  }
+}
+
+async function forgetRecord(r: any) {
+  try {
+    await client.delete(`/memory/records/${r.id}`)
+    ElMessage.success('已遗忘')
+    await loadMemory()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '操作失败')
+  }
 }
 
 async function loadProfile() {
@@ -190,13 +305,22 @@ async function loadReviews() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadProfile(), loadEntities(), loadReviews()])
+  await Promise.all([loadProfile(), loadEntities(), loadReviews(), loadMemory()])
 })
 </script>
 
 <style scoped>
 .about-page { max-width: 1180px; }
 .about-page .sub { margin: 4px 0 0; font-size: 12px; color: #909399; }
+.header-actions { display: flex; gap: 8px; }
+.full-row { grid-column: 1 / -1; }
+.count { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px; background: #eef4ff; color: #2f6fbf; font-size: 11px; font-weight: 600; }
+.candidate-row, .record-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 11px 0; border-bottom: 1px solid #f0f2f5; }
+.candidate-row:last-child, .record-row:last-child { border-bottom: none; }
+.candidate-main, .record-main { min-width: 0; flex: 1; }
+.candidate-content, .record-content { font-size: 13px; line-height: 1.7; color: #303133; }
+.candidate-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.candidate-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .about-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
 .profile-card { grid-row: span 2; }
 .profile-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }

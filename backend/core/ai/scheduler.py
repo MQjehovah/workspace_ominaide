@@ -583,6 +583,12 @@ async def _generate_daily_reviews(notify: bool = True) -> None:
             await generate_daily_insight(uid, today, force=False, notify=notify)
         except Exception as e:
             print(f"[scheduler] daily review error for user {uid}: {e}")
+        try:
+            from core.memory_service import ingest_recent_chats
+
+            await ingest_recent_chats(uid, hours=24)
+        except Exception as e:
+            print(f"[scheduler] memory ingest error for user {uid}: {e}")
 
 
 async def _backfill_yesterday_reviews() -> None:
