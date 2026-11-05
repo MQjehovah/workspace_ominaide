@@ -47,16 +47,17 @@ Memory OS 把“聊天记录”升级为可审核、可追溯、可遗忘的长�
 - 外部候选在「关于我」里显示为「外部内容」，必须人工点「记住」。
 - 开关：`MEMORY_EXTERNAL_EXTRACT_ENABLED`（默认开）。
 - 同一内容已存在活跃记录时不会重复入队。
+- 外部来源确认后，注入时会带上来源标记（如 `[commitment/email]`），便于区分“用户说的”和“邮件里写的”。
+- 邮件抽取在数据库会话之外执行，避免 LLM 超时长期占用连接池。
 
 ## 冲突与时间版本
 
-同一 `kind` 的新记忆如果包含旧记忆（或反过来被旧记忆包含），旧记录会被标记：
+同一 `kind` 的新记忆只有在**更具体**时才会取代旧记忆（旧内容是新内容的子串，且两者不完全相同）。反过来，新记忆若只是旧记录的简短摘要，不会让更丰富的旧事实消失。
 
-- `status=superseded`
-- `valid_to=now`
-- `superseded_by=<新记录 id>`
-
-旧记录不再注入上下文，但保留在库中可审计。放宽的策略是先做包含关系判断，避免把“预算讨论”和“预算讨论的最终版本”当成两条并存事实。
+- 旧记录标记：`status=superseded`、`valid_to=now`、`superseded_by=<新记录 id>`
+- 旧记录不再注入上下文，但保留在库中可审计
+- 用户重新确认一条已被取代的记忆时，会把它恢复为 active，并把此前的取代者标记为 superseded，保证同一事实只有一条 active
+- 删除（遗忘）与取代是两种状态：`deleted` 不会出现在普通记录列表，重新确认会显式恢复
 
 ## 关系图
 
@@ -64,7 +65,7 @@ Memory OS 把“聊天记录”升级为可审核、可追溯、可遗忘的长�
 
 - `target_type`：`person` / `project`
 - `relation`：默认 `mentions`
-- API：`GET /api/memory/graph` 返回 `nodes` + `edges`，可和实体图谱一起展示。
+- API：`GET /api/memory/graph` 返回 `nodes` + `edges`；读取时会为老记忆补建边，并对重复边去重
 
 ## API
 
@@ -73,7 +74,7 @@ GET    /api/memory/candidates?status=pending
 POST   /api/memory/candidates/{id}/approve
 POST   /api/memory/candidates/{id}/reject
 GET    /api/memory/records?q=
-PATCH  /api/memory/records/{id}      # 修正内容 / 重要度
+PATCH  /api/memory/records/{id}      # 修正内容 / 重要度；重名返回 409
 DELETE /api/memory/records/{id}      # 遗忘
 GET    /api/memory/graph             # 记忆-人物/项目关系图
 POST   /api/memory/extract           # 立即抽取最近会话
@@ -100,8 +101,8 @@ Web「关于我」页面：
 
 检索顺序：
 
-1. 有查询时先走向量检索（`source_type="memory"`，集合 `omnidocs`）；
-2. 向量不可用或没有命中时退回关键词匹配；
+1. PostgreSQL + pgvector 环境下先走向量检索（`source_type="memory"`，集合 `omnidocs`）；
+2. 向量不可用（MySQL/SQLite、未配置 embedding）或没有命中时退回关键词匹配，不会产生额外 embedding 调用；
 3. 注入成功的记录会累加 `use_count` 并更新 `last_used_at`，作为“这条记忆确实有用”的反馈信号。
 
 记忆写入、修正时会同步索引；遗忘时删除对应向量，避免已遗忘内容继续被检索到。

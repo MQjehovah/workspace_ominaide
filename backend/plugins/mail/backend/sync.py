@@ -384,12 +384,19 @@ async def _after_ingest(user_id: int, message_id: int) -> None:
 
     await analyze_message(user_id, message_id)
 
+    ingest_payload: dict | None = None
     async with async_session() as db:
         msg = (await db.execute(
             select(MailMessage).where(MailMessage.id == message_id)
         )).scalar_one_or_none()
         if msg is None:
             return
+        if settings.memory_external_extract_enabled and msg.important:
+            ingest_payload = {
+                "subject": msg.subject,
+                "content": msg.content or msg.preview or "",
+                "from": msg.from_address,
+            }
         try:
             from core.events.recorder import record_event
 
@@ -415,21 +422,23 @@ async def _after_ingest(user_id: int, message_id: int) -> None:
             pass
         await db.commit()
 
-        # External mail is untrusted: it may only create review candidates.
-        if settings.memory_external_extract_enabled and msg.important:
-            try:
-                from core.memory_service import ingest_text
+    # External mail is untrusted: it may only create review candidates. Run the
+    # LLM extraction outside the DB session so a slow provider cannot pin a
+    # pooled connection for the whole mailbox sync.
+    if ingest_payload:
+        try:
+            from core.memory_service import ingest_text
 
-                await ingest_text(
-                    user_id,
-                    f"{msg.subject or ''}\n{msg.content or msg.preview or ''}",
-                    source_type="email",
-                    source_id=msg.id,
-                    source_ref={"subject": msg.subject, "from": msg.from_address},
-                    trust="untrusted",
-                )
-            except Exception as e:
-                print(f"[mail] memory extract error: {e}")
+            await ingest_text(
+                user_id,
+                f"{ingest_payload['subject'] or ''}\n{ingest_payload['content']}",
+                source_type="email",
+                source_id=message_id,
+                source_ref={"subject": ingest_payload["subject"], "from": ingest_payload["from"]},
+                trust="untrusted",
+            )
+        except Exception as e:
+            print(f"[mail] memory extract error: {e}")
 
 
 async def sync_due_accounts(interval_seconds: int) -> dict:

@@ -169,7 +169,10 @@ async def update_record(
 ):
     from core.memory_service import update_record as update
 
-    row = await update(user["id"], record_id, req.content, req.importance)
+    try:
+        row = await update(user["id"], record_id, req.content, req.importance)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     if row is None:
         raise HTTPException(status_code=404, detail="Memory not found")
     return _record_out(row)

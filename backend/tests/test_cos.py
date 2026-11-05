@@ -51,7 +51,7 @@ async def _seed_sources(user_id: int, tag: str) -> dict:
         )
         event = Event(
             user_id=user_id, title=f"{tag} 周会",
-            start_time=now + timedelta(hours=1), end_time=now + timedelta(hours=2),
+            start_time=now, end_time=now + timedelta(hours=1),
             notes="讨论预算与排期",
         )
         feed = Feed(user_id=user_id, url=f"https://example.com/{tag}", title="科技资讯")
@@ -146,6 +146,30 @@ async def test_weekly_review_uses_daily_insights(client):
     assert body["period"]["start"] and body["period"]["end"]
 
 
+async def test_dingtalk_payload_ignores_sender_objects(client):
+    from core.cos.collectors import normalise_dingtalk_payload
+
+    payload = {
+        "conversations": [
+            {
+                "conversationTitle": "项目群",
+                "lastMessage": "预算已发，请确认",
+                "lastMessageTime": "1762300800000",
+                "openConversationId": "cid-1",
+                "sender": {"name": "张三"},
+            },
+            {"sender": {"name": "李四"}},
+            {"name": "王五"},
+        ]
+    }
+    items = normalise_dingtalk_payload(payload)
+    assert len(items) == 1
+    assert items[0]["title"] == "项目群"
+    assert items[0]["id"] == "dingtalk:cid-1"
+    assert "预算" in items[0]["summary"]
+    assert items[0]["time"]
+
+
 async def test_draft_reply_from_mail(client):
     token, user_id = await _new_user(client)
     ids = await _seed_sources(user_id, "reply")
@@ -158,6 +182,8 @@ async def test_draft_reply_from_mail(client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["body"]
+    assert body["sent"] is False
+    assert body["to"] == "boss@example.com"
     assert body["subject"].startswith("Re:")
 
     # Cannot draft from another user's message.

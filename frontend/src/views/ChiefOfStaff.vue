@@ -17,7 +17,7 @@
           </div>
         </div>
 
-        <div v-if="triage?.sources?.dingtalk !== 'ok'" class="source-note">
+        <div v-if="['not_configured', 'error'].includes(triage?.sources?.dingtalk || '')" class="source-note">
           钉钉未连接：在「MCP 管理」中启用 dingtalk 后，未读消息会自动进入收件箱。
         </div>
 
@@ -41,7 +41,7 @@
               </div>
             </div>
             <div class="item-actions">
-              <el-button size="small" @click="createTodo(item)">转待办</el-button>
+              <el-button v-if="!['todo', 'schedule'].includes(item.source)" size="small" @click="createTodo(item)">转待办</el-button>
               <el-button
                 v-if="item.source === 'mail'"
                 size="small"
@@ -178,29 +178,32 @@
     </el-tabs>
 
     <el-dialog v-model="draftVisible" title="起草回复" width="640px">
-      <div v-if="draft">
-        <div class="draft-meta">
-          <el-tag size="small" effect="plain">{{ draft.to || '收件人' }}</el-tag>
-          <el-select v-model="draftTone" size="small" style="width: 130px" @change="generateDraft">
-            <el-option label="专业" value="professional" />
-            <el-option label="友好" value="friendly" />
-            <el-option label="简短" value="concise" />
-          </el-select>
+      <div v-loading="draftLoading" class="draft-body">
+        <div v-if="draft">
+          <div class="draft-meta">
+            <el-tag size="small" effect="plain">{{ draft.to || '收件人' }}</el-tag>
+            <el-select v-model="draftTone" size="small" style="width: 130px">
+              <el-option label="专业" value="professional" />
+              <el-option label="友好" value="friendly" />
+              <el-option label="简短" value="concise" />
+            </el-select>
+            <el-button size="small" link type="primary" @click="generateDraft">重新生成</el-button>
+          </div>
+          <el-input v-model="draft.subject" class="draft-input" placeholder="主题" />
+          <el-input v-model="draft.body" type="textarea" :rows="10" class="draft-input" />
+          <p class="muted">{{ draft.note }}</p>
         </div>
-        <el-input v-model="draft.subject" class="draft-input" placeholder="主题" />
-        <el-input v-model="draft.body" type="textarea" :rows="10" class="draft-input" />
-        <p class="muted">{{ draft.note }}</p>
       </div>
       <template #footer>
         <el-button @click="draftVisible = false">关闭</el-button>
-        <el-button type="primary" @click="copyDraft">复制草稿</el-button>
+        <el-button type="primary" :disabled="!draft" @click="copyDraft">复制草稿</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import client from '@/api/client'
@@ -219,6 +222,7 @@ const draftVisible = ref(false)
 const draft = ref<any>(null)
 const draftTone = ref('professional')
 const draftItem = ref<any>(null)
+const draftLoading = ref(false)
 
 const groupList = computed(() => {
   const groups = triage.value?.groups || {}
@@ -283,9 +287,7 @@ async function loadWeekly() {
 
 async function reload() {
   await Promise.all([loadTriage(), loadBrief(), loadWeekly()])
-}
-
-async function createTodo(item: any) {
+}async function createTodo(item: any) {
   try {
     await client.post('/plugins/todo/items', {
       title: item.title.slice(0, 200),
@@ -308,6 +310,7 @@ function openDraft(item: any) {
 
 async function generateDraft() {
   if (!draftItem.value) return
+  draftLoading.value = true
   try {
     const { data } = await client.post('/cos/draft-reply', {
       source: draftItem.value.source,
@@ -317,6 +320,8 @@ async function generateDraft() {
     draft.value = data
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '生成草稿失败')
+  } finally {
+    draftLoading.value = false
   }
 }
 
@@ -352,7 +357,12 @@ async function runMeetingPrep() {
   }
 }
 
-onMounted(reload)
+watch(tab, (value) => {
+  if (value === 'brief' && !brief.value) loadBrief()
+  if (value === 'weekly' && !weekly.value) loadWeekly()
+})
+
+onMounted(loadTriage)
 </script>
 
 <style scoped>

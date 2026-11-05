@@ -21,7 +21,13 @@ def _snippet(value: str | None, size: int = 180) -> str:
 
 
 def _iso(value: datetime | None) -> str | None:
-    return value.isoformat() if value else None
+    if not value:
+        return None
+    # Naive columns hold local wall-clock time; emit an explicit offset so the
+    # frontend does not reinterpret them as UTC.
+    if value.tzinfo is None:
+        value = value.astimezone()
+    return value.isoformat()
 
 
 def _mail_priority(row) -> str:
@@ -38,6 +44,7 @@ async def mail_items(
     user_id: int,
     *,
     since: datetime | None = None,
+    until: datetime | None = None,
     limit: int = 30,
     unread_only: bool = False,
     query: str | None = None,
@@ -51,6 +58,11 @@ async def mail_items(
             q = q.where(or_(
                 MailMessage.date >= since,
                 MailMessage.created_at >= since,
+            ))
+        if until is not None:
+            q = q.where(or_(
+                MailMessage.date < until,
+                MailMessage.created_at < until,
             ))
         if unread_only:
             q = q.where(MailMessage.read == False)  # noqa: E712
@@ -90,6 +102,8 @@ async def todo_items(
     *,
     limit: int = 30,
     query: str | None = None,
+    due_before: datetime | None = None,
+    due_after: datetime | None = None,
 ) -> list[dict]:
     from plugins.todo.backend.models import PluginTodoItem
 
@@ -100,6 +114,10 @@ async def todo_items(
         )
         if query:
             q = q.where(PluginTodoItem.title.ilike(f"%{query}%"))
+        if due_before is not None:
+            q = q.where(PluginTodoItem.due_date < due_before)
+        if due_after is not None:
+            q = q.where(PluginTodoItem.due_date >= due_after)
         q = q.order_by(PluginTodoItem.due_date.is_(None), PluginTodoItem.due_date).limit(limit)
         rows = list((await db.execute(q)).scalars().all())
 
@@ -173,6 +191,7 @@ async def rss_items(
     user_id: int,
     *,
     since: datetime | None = None,
+    until: datetime | None = None,
     limit: int = 20,
     query: str | None = None,
 ) -> list[dict]:
@@ -186,6 +205,8 @@ async def rss_items(
         )
         if since is not None:
             q = q.where(or_(Entry.published >= since, Entry.created_at >= since))
+        if until is not None:
+            q = q.where(or_(Entry.published < until, Entry.created_at < until))
         if query:
             like = f"%{query}%"
             q = q.where(or_(Entry.title.ilike(like), Entry.summary.ilike(like)))
@@ -250,10 +271,87 @@ async def _dingtalk_server(user_id: int):
         return (await db.execute(
             select(McpServer).where(
                 McpServer.user_id == user_id,
-                McpServer.slug == "dingtalk",
                 McpServer.enabled == True,  # noqa: E712
-            )
+                or_(
+                    McpServer.slug == "dingtalk",
+                    McpServer.slug.like("dingtalk%"),
+                    McpServer.name.ilike("%钉钉%"),
+                ),
+            ).order_by(McpServer.id).limit(1)
         )).scalar_one_or_none()
+
+
+def _normalise_dingtalk_time(value) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        stamp = int(raw)
+        if stamp > 10**12:
+            stamp //= 1000
+        try:
+            return datetime.fromtimestamp(stamp).isoformat()
+        except Exception:
+            return None
+    try:
+        from core.timeutil import parse_datetime
+
+        return parse_datetime(raw).isoformat()
+    except Exception:
+        return None
+
+
+_DINGTALK_TITLE_KEYS = (
+    "conversationTitle", "conversationName", "chatName", "groupName",
+    "title", "name",
+)
+_DINGTALK_TEXT_KEYS = (
+    "lastMessage", "text", "content", "summary", "message", "preview",
+)
+_DINGTALK_TIME_KEYS = ("lastMessageTime", "lastMsgTime", "createTime", "time", "timestamp")
+_DINGTALK_ID_KEYS = ("openConversationId", "conversationId", "chatId", "openId")
+
+
+def normalise_dingtalk_payload(data, limit: int = 15) -> list[dict]:
+    """Turn an unknown dws payload into inbox items.
+
+    Only dicts that actually carry message text become items; nested objects
+    such as ``{"sender": {"name": "张三"}}`` are ignored instead of appearing
+    as fake conversations.
+    """
+    candidates: list[dict] = []
+    _walk_dicts(data, candidates)
+    items: list[dict] = []
+    seen: set[str] = set()
+    for row in candidates:
+        text = _first(row, _DINGTALK_TEXT_KEYS)
+        if not text:
+            continue
+        raw_title = _first(row, _DINGTALK_TITLE_KEYS)
+        source_id = _first(row, _DINGTALK_ID_KEYS)
+        if not raw_title and not source_id:
+            continue
+        title = raw_title or "钉钉消息"
+        key = f"{title}|{text}"
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({
+            "id": f"dingtalk:{source_id or len(items)}",
+            "source": "dingtalk",
+            "source_id": None,
+            "title": title,
+            "summary": _snippet(text),
+            "from": title,
+            "time": _normalise_dingtalk_time(_first(row, _DINGTALK_TIME_KEYS)),
+            "priority": "needs_reply",
+            "needs_reply": True,
+            "link": "/mcp",
+            "meta": {"conversation_id": source_id or None},
+        })
+        if len(items) >= limit:
+            break
+    return items
 
 
 async def dingtalk_items(
@@ -279,40 +377,8 @@ async def dingtalk_items(
     if data is None:
         return [], "error"
 
-    candidates: list[dict] = []
-    _walk_dicts(data, candidates)
-    items: list[dict] = []
-    seen: set[str] = set()
-    for row in candidates:
-        title = _first(row, (
-            "conversationTitle", "conversationName", "chatName", "groupName",
-            "title", "name", "senderName", "sender", "nick",
-        ))
-        text = _first(row, (
-            "lastMessage", "text", "content", "summary", "message", "preview",
-        ))
-        if not title and not text:
-            continue
-        key = f"{title}|{text}"
-        if key in seen:
-            continue
-        seen.add(key)
-        items.append({
-            "id": f"dingtalk:{len(items)}",
-            "source": "dingtalk",
-            "source_id": None,
-            "title": title or "钉钉消息",
-            "summary": _snippet(text),
-            "from": title or "钉钉",
-            "time": _first(row, ("time", "createTime", "lastMessageTime", "timestamp")) or None,
-            "priority": "needs_reply",
-            "needs_reply": True,
-            "link": "/mcp",
-            "meta": {"query": query or ""},
-        })
-        if len(items) >= limit:
-            break
-    return items, "ok"
+    items = normalise_dingtalk_payload(data, limit)
+    return items, "ok" if items else "empty"
 
 
 def group_items(items: list[dict]) -> dict[str, list[dict]]:
@@ -328,10 +394,10 @@ def group_items(items: list[dict]) -> dict[str, list[dict]]:
             groups["urgent"].append(item)
         elif item["needs_reply"]:
             groups["needs_reply"].append(item)
-        elif item["source"] == "schedule" or item["source"] == "todo":
+        elif item["priority"] == "high" or item["source"] in ("schedule", "todo"):
             groups["today"].append(item)
         else:
             groups["fyi"].append(item)
-    for bucket in groups.values():
-        bucket.sort(key=lambda x: x.get("time") or "", reverse=True)
+    for key, bucket in groups.items():
+        bucket.sort(key=lambda x: x.get("time") or "", reverse=(key != "today"))
     return groups

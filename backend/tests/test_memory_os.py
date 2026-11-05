@@ -150,6 +150,11 @@ async def test_memory_conflict_supersedes_and_links_graph(client):
     assert row.status == "superseded"
     assert row.superseded_by == new_record
 
+    r = await client.get("/api/memory/records", headers=auth(token))
+    ids = [x["id"] for x in r.json()["items"]]
+    assert old_record not in ids
+    assert new_record in ids
+
     r = await client.get("/api/memory/graph", headers=auth(token))
     assert r.status_code == 200, r.text
     body = r.json()
@@ -173,8 +178,163 @@ async def test_update_memory_record(client):
     assert r.json()["importance"] == 80
 
 
+async def test_shorter_new_memory_does_not_supersede_richer_old(client):
+    from core.database.session import async_session
+    from core.memory_models import MemoryRecord
+    from sqlalchemy import select
+
+    token, user_id = await _new_user(client)
+    rich = "用户偏好中文回复，代码示例用 TypeScript"
+    first = await _seed(user_id, rich, kind="preference")
+    r = await client.post(f"/api/memory/candidates/{first}/approve", headers=auth(token))
+    assert r.status_code == 200, r.text
+    rich_id = r.json()["record_id"]
+
+    short = await _seed(user_id, "用户偏好中文回复", kind="preference")
+    r = await client.post(f"/api/memory/candidates/{short}/approve", headers=auth(token))
+    assert r.status_code == 200, r.text
+
+    async with async_session() as db:
+        rows = list((await db.execute(
+            select(MemoryRecord).where(
+                MemoryRecord.user_id == user_id,
+                MemoryRecord.kind == "preference",
+            )
+        )).scalars().all())
+    active = [r for r in rows if r.status == "active"]
+    assert any(r.id == rich_id for r in active)
+    assert len(active) == 2
+
+
+async def test_reactivating_superseded_memory_keeps_one_active(client):
+    from core.database.session import async_session
+    from core.memory_models import MemoryRecord
+    from sqlalchemy import select
+
+    token, user_id = await _new_user(client)
+    old_content = "用户每周五提交周报"
+    old_c = await _seed(user_id, old_content, kind="commitment")
+    r = await client.post(f"/api/memory/candidates/{old_c}/approve", headers=auth(token))
+    old_id = r.json()["record_id"]
+
+    new_c = await _seed(user_id, "用户每周五提交周报并抄送项目组", kind="commitment")
+    r = await client.post(f"/api/memory/candidates/{new_c}/approve", headers=auth(token))
+    assert r.status_code == 200, r.text
+
+    again = await _seed(user_id, old_content, kind="commitment")
+    r = await client.post(f"/api/memory/candidates/{again}/approve", headers=auth(token))
+    assert r.status_code == 200, r.text
+
+    async with async_session() as db:
+        rows = list((await db.execute(
+            select(MemoryRecord).where(
+                MemoryRecord.user_id == user_id,
+                MemoryRecord.kind == "commitment",
+            )
+        )).scalars().all())
+    active = [r for r in rows if r.status == "active"]
+    assert len(active) == 1
+    assert active[0].id == old_id
+    assert active[0].superseded_by is None
+
+
+async def test_update_memory_collision_returns_409(client):
+    token, user_id = await _new_user(client)
+    c1 = await _seed(user_id, "用户偏好红色主题", kind="preference")
+    c2 = await _seed(user_id, "用户偏好蓝色主题", kind="preference")
+    id1 = (await client.post(f"/api/memory/candidates/{c1}/approve", headers=auth(token))).json()["record_id"]
+    id2 = (await client.post(f"/api/memory/candidates/{c2}/approve", headers=auth(token))).json()["record_id"]
+
+    r = await client.patch(
+        f"/api/memory/records/{id1}",
+        json={"content": "用户偏好蓝色主题"},
+        headers=auth(token),
+    )
+    assert r.status_code == 409, r.text
+
+    r = await client.patch(
+        f"/api/memory/records/{id2}",
+        json={"content": "用户偏好蓝色主题"},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+
+
+async def test_memory_graph_is_user_scoped(client):
+    token_a, user_a = await _new_user(client)
+    token_b, _ = await _new_user(client)
+    r = await client.put(
+        "/api/auth/profile",
+        json={"contacts": [{"name": "王五", "relation": "客户"}]},
+        headers=auth(token_a),
+    )
+    assert r.status_code == 200, r.text
+    cid = await _seed(user_a, "和王五确认合同条款", kind="relationship")
+    await client.post(f"/api/memory/candidates/{cid}/approve", headers=auth(token_a))
+
+    r = await client.get("/api/memory/graph", headers=auth(token_a))
+    assert r.status_code == 200
+    assert any(n["label"] == "王五" for n in r.json()["nodes"])
+
+    r = await client.get("/api/memory/graph", headers=auth(token_b))
+    assert r.status_code == 200
+    assert r.json()["nodes"] == []
+    assert r.json()["edges"] == []
+
+
 async def test_extract_without_llm_queues_nothing(client):
     token, _ = await _new_user(client)
     r = await client.post("/api/memory/extract", json={"hours": 24}, headers=auth(token))
     assert r.status_code == 200, r.text
     assert r.json()["queued"] == 0
+
+
+async def test_important_mail_creates_untrusted_candidate(client, monkeypatch):
+    from core.database.session import async_session
+    from core.memory_models import MemoryCandidate
+    from plugins.mail.backend.models import MailAccount, MailMessage
+    from sqlalchemy import select
+
+    import core.memory_service as memory_service
+    import plugins.mail.backend.sync as mail_sync
+
+    token, user_id = await _new_user(client)
+    async with async_session() as db:
+        account = MailAccount(
+            user_id=user_id, email="u@example.com", imap_host="imap.example.com",
+            smtp_host="smtp.example.com", username="u", password="p",
+        )
+        db.add(account)
+        await db.flush()
+        msg = MailMessage(
+            user_id=user_id, account_id=account.id, uid=99,
+            subject="预算确认", from_address="client@example.com",
+            content="请在周五前提交预算方案。", important=True, read=False,
+        )
+        db.add(msg)
+        await db.commit()
+        message_id = msg.id
+
+    async def fake_analyze(*args, **kwargs):
+        return None
+
+    async def fake_extract(text: str):
+        return [{"kind": "commitment", "content": "客户要求周五前提交预算方案", "confidence": 88}]
+
+    monkeypatch.setattr(mail_sync, "analyze_message", fake_analyze)
+    monkeypatch.setattr(memory_service, "_llm_extract", fake_extract)
+
+    await mail_sync._after_ingest(user_id, message_id)
+
+    async with async_session() as db:
+        cand = (await db.execute(
+            select(MemoryCandidate).where(
+                MemoryCandidate.user_id == user_id,
+                MemoryCandidate.content == "客户要求周五前提交预算方案",
+            )
+        )).scalar_one()
+    assert cand.trust == "untrusted"
+    assert cand.source_type == "email"
+    assert cand.status == "pending"
+
+    assert not await memory_service.build_memory_context(user_id, "预算")

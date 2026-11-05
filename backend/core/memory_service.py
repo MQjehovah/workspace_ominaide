@@ -6,7 +6,7 @@ import json
 import re
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from core.config.settings import settings
 from core.database.session import async_session
@@ -282,7 +282,9 @@ async def _supersede_conflicts(db, user_id: int, candidate: MemoryCandidate, new
         old_content = old.content or ""
         if len(old_content) < 6 or len(new_content) < 6:
             continue
-        if old_content in new_content or new_content in old_content:
+        # Only a strictly more specific new memory supersedes the old one.
+        # The reverse (new is a shorter summary) must not retire richer facts.
+        if old_content in new_content and old_content != new_content:
             old.status = "superseded"
             old.valid_to = datetime.utcnow()
             old.superseded_by = new_record_id
@@ -291,6 +293,8 @@ async def _supersede_conflicts(db, user_id: int, candidate: MemoryCandidate, new
 
 
 async def _index_record(user_id: int, record: MemoryRecord) -> None:
+    if not _vector_backend_available():
+        return
     try:
         from core.ai.indexer import index_content
 
@@ -304,6 +308,17 @@ async def _index_record(user_id: int, record: MemoryRecord) -> None:
         )
     except Exception as e:
         print(f"[memory] index error: {e}")
+
+
+def _vector_backend_available() -> bool:
+    """Vector recall is pgvector-only; skip the embedding call elsewhere."""
+    try:
+        from core.config.settings import settings as _settings
+        from core.database.session import engine
+
+        return bool(_settings.data_layer_enabled) and engine.dialect.name == "postgresql"
+    except Exception:
+        return False
 
 
 async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | None:
@@ -323,10 +338,23 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
                 MemoryRecord.kind == cand.kind,
             )
         )).scalar_one_or_none()
-        created = record is None
         if record is not None and record.status != "active":
+            # Explicitly re-approving a superseded memory swaps the supersede
+            # direction instead of leaving two contradictory active rows.
+            if record.status == "superseded" and record.superseded_by:
+                superseder = (await db.execute(
+                    select(MemoryRecord).where(
+                        MemoryRecord.id == record.superseded_by,
+                        MemoryRecord.user_id == user_id,
+                    )
+                )).scalar_one_or_none()
+                if superseder is not None and superseder.status == "active":
+                    superseder.status = "superseded"
+                    superseder.valid_to = datetime.utcnow()
+                    superseder.superseded_by = record.id
             record.status = "active"
             record.valid_to = None
+            record.superseded_by = None
         if record is None:
             record = MemoryRecord(
                 user_id=user_id,
@@ -350,8 +378,7 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
             sources = _loads(record.sources)
             sources.extend(_loads(cand.source_ref))
             record.sources = sources[-20:]
-        if created:
-            await _supersede_conflicts(db, user_id, cand, record.id)
+        await _supersede_conflicts(db, user_id, cand, record.id)
         await _link_edges(db, user_id, record)
         cand.status = "approved"
         cand.reviewed_at = datetime.utcnow()
@@ -437,20 +464,47 @@ async def update_record(
                 MemoryRecord.user_id == user_id,
             )
         )).scalar_one_or_none()
-        if row is None:
+        if row is None or row.status != "active":
             return None
         if content and content.strip():
-            row.content = content.strip()[:MAX_RECORD_CONTENT]
-            row.normalized = _normalize(content)
+            new_content = content.strip()[:MAX_RECORD_CONTENT]
+            new_norm = _normalize(new_content)
+            clash = (await db.execute(
+                select(MemoryRecord).where(
+                    MemoryRecord.user_id == user_id,
+                    MemoryRecord.normalized == new_norm,
+                    MemoryRecord.kind == row.kind,
+                    MemoryRecord.id != record_id,
+                )
+            )).scalar_one_or_none()
+            if clash is not None:
+                raise ValueError("A memory with the same content already exists")
+            row.content = new_content
+            row.normalized = new_norm
         if importance is not None:
             row.importance = max(0, min(int(importance), 100))
-        await db.commit()
+        try:
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            raise ValueError("Unable to update memory") from e
         await db.refresh(row)
+
+    # Content may mention different people/projects now: rebuild edges.
+    async with async_session() as db:
+        await db.execute(delete(MemoryEdge).where(
+            MemoryEdge.user_id == user_id,
+            MemoryEdge.memory_id == record_id,
+        ))
+        await _link_edges(db, user_id, row)
+        await db.commit()
     await _index_record(user_id, row)
     return row
 
 
 async def _vector_records(user_id: int, query: str, limit: int) -> list[MemoryRecord]:
+    if not _vector_backend_available():
+        return []
     from core.ai.embeddings import generate_embedding
     from core.ai import vector_store
 
@@ -476,14 +530,17 @@ async def _vector_records(user_id: int, query: str, limit: int) -> list[MemoryRe
     return rows[:limit]
 
 
-async def _touch_records(ids: list[int]) -> None:
+async def _touch_records(user_id: int, ids: list[int]) -> None:
     if not ids:
         return
     try:
         async with async_session() as db:
             await db.execute(
                 update(MemoryRecord)
-                .where(MemoryRecord.id.in_(ids))
+                .where(
+                    MemoryRecord.user_id == user_id,
+                    MemoryRecord.id.in_(ids),
+                )
                 .values(use_count=MemoryRecord.use_count + 1, last_used_at=datetime.utcnow())
             )
             await db.commit()
@@ -505,8 +562,11 @@ async def build_memory_context(user_id: int, query: str | None = None, limit: in
             rows = await list_records(user_id, "", limit)
         if not rows:
             return None
-        await _touch_records([r.id for r in rows[:limit]])
-        lines = [f"- [{r.kind}] {r.content}" for r in rows[:limit]]
+        await _touch_records(user_id, [r.id for r in rows[:limit]])
+        lines = []
+        for r in rows[:limit]:
+            origin = "" if (r.source_type or "chat") in ("chat", "manual") else f"/{r.source_type}"
+            lines.append(f"- [{r.kind}{origin}] {r.content}")
         return ("【长期记忆】\n" + "\n".join(lines))[:1600]
     except Exception:
         return None
@@ -527,24 +587,38 @@ async def memory_graph(user_id: int, limit: int = 100) -> dict:
                 MemoryEdge.memory_id.in_(ids or [0]),
             )
         )).scalars().all())
+        # Backfill edges for memories created before the graph feature existed.
+        linked = {e.memory_id for e in edges}
+        missing = [r for r in records if r.id not in linked]
+        if missing:
+            for r in missing[:25]:
+                await _link_edges(db, user_id, r)
+            await db.commit()
+            edges = list((await db.execute(
+                select(MemoryEdge).where(
+                    MemoryEdge.user_id == user_id,
+                    MemoryEdge.memory_id.in_(ids or [0]),
+                )
+            )).scalars().all())
     nodes = [
         {"id": f"memory:{r.id}", "type": "memory", "label": r.content[:80], "kind": r.kind}
         for r in records
     ]
     seen: set[str] = set()
+    edges_out: list[dict] = []
+    edge_seen: set[tuple[int, str, str]] = set()
     for e in edges:
         key = f"{e.target_type}:{e.target_name}"
         if key not in seen:
             seen.add(key)
             nodes.append({"id": key, "type": e.target_type, "label": e.target_name})
-    return {
-        "nodes": nodes,
-        "edges": [
-            {
-                "source": f"memory:{e.memory_id}",
-                "target": f"{e.target_type}:{e.target_name}",
-                "relation": e.relation,
-            }
-            for e in edges
-        ],
-    }
+        edge_key = (e.memory_id, e.target_type, e.target_name)
+        if edge_key in edge_seen:
+            continue
+        edge_seen.add(edge_key)
+        edges_out.append({
+            "source": f"memory:{e.memory_id}",
+            "target": key,
+            "relation": e.relation,
+        })
+    return {"nodes": nodes, "edges": edges_out}

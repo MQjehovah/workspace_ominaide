@@ -37,8 +37,15 @@ Web 入口：侧栏「幕僚长」→ `/cos`。
 所有生成都是确定性优先：
 
 - 没有 LLM key 时仍返回完整结构：摘要由规则拼接，议程使用固定骨架，草稿使用模板。
-- 钉钉未配置或调用失败时，`sources.dingtalk` 标记状态，其他来源照常工作。
+- 钉钉未配置或调用失败时，`sources.dingtalk` 标记 `not_configured` / `error`；已连接但没有未读时为 `empty`，历史日期简报为 `skipped`，其他来源照常工作。
+- 钉钉 payload 只接受带消息正文的会话对象，嵌套的 sender/name 不会变成假“待回复”条目。
 - 草稿不会自动发送；发送仍需用户明确确认，并走钉钉 MCP 的 `confirmed` / 邮件发送流程。
+
+## 时间与日期
+
+- 后端返回的时间带本地时区偏移，前端不再把本地时间当 UTC。
+- `GET /api/cos/daily-brief?day=YYYY-MM-DD` 会按该日窗口读取日程、待办、邮件和资讯；只有当天才读取实时钉钉未读。
+- 数据源里 `schedule_events` / 待办截止 / 邮件日期是本地墙上时间，RSS 发布时间按 UTC 入库，统一在 collector 边界转换。
 
 ## 安全边界
 
