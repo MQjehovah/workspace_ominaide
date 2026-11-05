@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
     import plugins.projects.backend.models  # noqa
     import core.bots.models  # noqa
     import core.ai.insight_models  # noqa
+    import core.mcp_hub.models  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -60,11 +61,16 @@ async def lifespan(app: FastAPI):
     register_core_tools()
     register_ai_tools()
 
+    from core.mcp_hub.hub import mcp_hub
+
+    await mcp_hub.startup()
+
     from core.bots.runner import recover_runs
 
     await recover_runs()
     routine_task = asyncio.create_task(routine_loop())
     yield
+    await mcp_hub.shutdown()
     routine_task.cancel()
     scheduler_task.cancel()
     worker_task.cancel()
@@ -150,6 +156,9 @@ app.include_router(rss_router)
 
 from core.ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)
+
+from core.mcp_hub.router import router as mcp_hub_router
+app.include_router(mcp_hub_router)
 
 from core.bots.router import router as bots_router
 from core.bots.router import runs_router, approvals_router

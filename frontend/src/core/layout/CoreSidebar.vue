@@ -65,6 +65,10 @@
         <el-icon><Monitor /></el-icon>
         <span>插件市场</span>
       </el-menu-item>
+      <el-menu-item index="/mcp">
+        <el-icon><Connection /></el-icon>
+        <span>MCP 管理</span>
+      </el-menu-item>
     </el-menu>
 
     <div class="sidebar-footer">
@@ -87,7 +91,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound, Sunrise, Message, ChatLineRound, UserFilled } from '@element-plus/icons-vue'
+import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound, Sunrise, Message, ChatLineRound, UserFilled, Connection } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()

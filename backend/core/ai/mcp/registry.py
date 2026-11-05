@@ -39,15 +39,27 @@ class ToolRegistry:
     def register(self, tool: MCPTool, handler: ToolHandler):
         self._tools[tool.name] = (tool, handler)
 
-    def get_tools(self) -> list[MCPTool]:
-        return [t for t, _ in self._tools.values()]
+    def unregister(self, name: str) -> None:
+        self._tools.pop(name, None)
+
+    def get_tools(self, user_id: int | None = None) -> list[MCPTool]:
+        tools = [t for t, _ in self._tools.values()]
+        if user_id is None:
+            return tools
+        return [t for t in tools if getattr(t, "user_id", None) in (None, user_id)]
 
     def get_handler(self, name: str) -> ToolHandler | None:
         entry = self._tools.get(name)
         return entry[1] if entry else None
 
     async def call(self, user_id: int, req: MCPCallRequest) -> MCPCallResponse:
-        handler = self.get_handler(req.name)
+        entry = self._tools.get(req.name)
+        if entry is None or getattr(entry[0], "user_id", None) not in (None, user_id):
+            return MCPCallResponse(
+                isError=True,
+                content=[MCPContent(text=f"Tool '{req.name}' not found")]
+            )
+        handler = entry[1]
         if not handler:
             return MCPCallResponse(
                 isError=True,

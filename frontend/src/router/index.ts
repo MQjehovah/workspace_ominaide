@@ -90,6 +90,11 @@ const router = createRouter({
           component: () => import('@/views/AdminPlugins.vue')
         },
         {
+          path: 'mcp',
+          name: 'MCP 管理',
+          component: () => import('@/views/McpServers.vue')
+        },
+        {
           path: 'schedule',
           name: 'Schedule',
           component: () => import('@/views/Schedule.vue')

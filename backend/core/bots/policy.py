@@ -84,8 +84,23 @@ _WRITE_PREFIXES = (
 )
 
 
+_DYNAMIC_RISK: dict[str, str] = {}
+
+
+def register_tool_risk(name: str, risk: str) -> None:
+    """Let the MCP hub declare risk for dynamically discovered tools."""
+    if risk in DEFAULT_LEVEL_POLICY:
+        _DYNAMIC_RISK[name] = risk
+
+
+def unregister_tool_risk(name: str) -> None:
+    _DYNAMIC_RISK.pop(name, None)
+
+
 def classify_tool(name: str) -> str:
     name = (name or "").strip().lower()
+    if name in _DYNAMIC_RISK:
+        return _DYNAMIC_RISK[name]
     if name in TOOL_RISK:
         return TOOL_RISK[name]
     if name.startswith(_EXEC_PREFIXES):

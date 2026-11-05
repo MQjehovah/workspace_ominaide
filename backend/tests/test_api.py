@@ -1,9 +1,9 @@
 from conftest import auth
 
 
-async def test_mcp_router_mounted(client):
+async def test_mcp_router_mounted(client, admin_token):
     """MCP tools router must be reachable."""
-    r = await client.get("/api/mcp/tools")
+    r = await client.get("/api/mcp/tools", headers=auth(admin_token))
     assert r.status_code == 200
     tools = r.json().get("tools", [])
     names = {t.get("name") for t in tools}

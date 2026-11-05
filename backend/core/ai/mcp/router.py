@@ -7,9 +7,9 @@ router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
 
 @router.get("/tools")
-async def list_tools():
-    """MCP: List all available tools with their schemas."""
-    tools = tool_registry.get_tools()
+async def list_tools(user: dict = Depends(get_current_user)):
+    """MCP: List all tools available to the current user with their schemas."""
+    tools = tool_registry.get_tools(user_id=user["id"])
     return {"tools": [t.model_dump() for t in tools]}
 
 

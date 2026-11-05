@@ -6,6 +6,11 @@ class MCPTool(BaseModel):
     name: str
     description: str
     inputSchema: dict  # JSON Schema
+    # Metadata for the unified catalog. Built-in tools keep these defaults.
+    source: str = "builtin"
+    server: str | None = None
+    risk: str | None = None
+    user_id: int | None = None
 
 
 class MCPResource(BaseModel):

@@ -52,7 +52,7 @@ async def run_agent(
 ) -> str:
     """Non-streaming agent loop (kept for backward compat)."""
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-    all_tools = tool_registry.get_tools()
+    all_tools = tool_registry.get_tools(user_id=user_id)
     if tools_filter is not None:
         all_tools = [t for t in all_tools if t.name in tools_filter]
     openai_tools = _to_openai_tools(all_tools)
@@ -96,7 +96,7 @@ async def run_agent_stream(
 ):
     """Streaming agent: yields SSE-formatted strings."""
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-    all_tools = tool_registry.get_tools()
+    all_tools = tool_registry.get_tools(user_id=user_id)
     if tools_filter is not None:
         all_tools = [t for t in all_tools if t.name in tools_filter]
     openai_tools = _to_openai_tools(all_tools)

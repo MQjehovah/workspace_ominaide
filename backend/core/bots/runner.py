@@ -216,7 +216,7 @@ async def _execute_coding(run: BotRun, bot: Bot, coding) -> None:
 
 async def _loop(run: BotRun, bot: Bot, messages: list[dict], seq: int) -> None:
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-    all_tools = tool_registry.get_tools()
+    all_tools = tool_registry.get_tools(user_id=run.user_id)
     if bot.allowed_tools is not None:
         all_tools = [t for t in all_tools if t.name in bot.allowed_tools]
     tools = _to_openai_tools(all_tools)
