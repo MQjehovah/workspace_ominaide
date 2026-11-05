@@ -11,6 +11,7 @@ ROUTINE_TEMPLATES: list[dict] = [
         "description": "每天凌晨回顾聊天、邮件、钉钉和活动，形成长期记忆；高置信度自动通过。",
         "trigger_type": "cron",
         "cron_expr": "0 2 * * *",
+        "silent": True,
         "prompt": (
             "你是记忆整理助手，按步骤执行：\n"
             "1. 调用 `list_recent_chats`，参数 hours=24、limit=100，读取全部会话。\n"

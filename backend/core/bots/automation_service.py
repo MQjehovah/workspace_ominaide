@@ -194,6 +194,7 @@ async def create_from_template(user_id: int, bot_id: int, template_key: str, ove
         event_filter=data.get("event_filter"),
         prompt=data.get("prompt"),
         enabled=bool(data.get("enabled", True)),
+        silent=bool(data.get("silent", False)),
     )
 
 

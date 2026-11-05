@@ -111,7 +111,7 @@ async def get_routine(user_id: int, routine_id: int) -> BotRoutine | None:
 async def create_routine(user_id: int, bot_id: int, name: str, *, trigger_type: str = "cron",
                          cron_expr: str | None = None, event_type: str | None = None,
                          event_filter: dict | None = None, prompt: str | None = None,
-                         enabled: bool = True) -> BotRoutine:
+                         enabled: bool = True, silent: bool = False) -> BotRoutine:
     trigger_type = (trigger_type or "cron").lower()
     if trigger_type not in ("cron", "event", "manual"):
         raise ValueError("trigger_type must be cron/event/manual")
@@ -141,6 +141,7 @@ async def create_routine(user_id: int, bot_id: int, name: str, *, trigger_type: 
             event_filter=event_filter,
             prompt=prompt,
             enabled=enabled,
+            silent=silent,
             next_run_at=nxt,
         )
         db.add(routine)
@@ -178,6 +179,8 @@ async def update_routine(user_id: int, routine_id: int, data: dict) -> BotRoutin
             routine.prompt = data["prompt"]
         if "enabled" in data:
             routine.enabled = bool(data["enabled"])
+        if "silent" in data:
+            routine.silent = bool(data["silent"])
 
         if routine.trigger_type == "cron":
             if not routine.cron_expr:

@@ -44,6 +44,10 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("bot_runs")}
             if "parent_run_id" not in cols:
                 result.append("bot_runs_parent")
+        if "bot_routines" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("bot_routines")}
+            if "silent" not in cols:
+                result.append("bot_routines_silent")
         if "projects" in table_names:
             cols = {c["name"] for c in inspector.get_columns("projects")}
             if "is_git" not in cols:
@@ -85,6 +89,8 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE user_profiles ADD COLUMN developer TEXT NULL"))
             elif table == "bot_runs_parent":
                 await conn.execute(text("ALTER TABLE bot_runs ADD COLUMN parent_run_id INTEGER NULL"))
+            elif table == "bot_routines_silent":
+                await conn.execute(text(f"ALTER TABLE bot_routines ADD COLUMN silent BOOLEAN DEFAULT {bool_default}"))
             elif table == "projects_is_git":
                 await conn.execute(text(f"ALTER TABLE projects ADD COLUMN is_git BOOLEAN DEFAULT {bool_true}"))
             elif table == "mail_sync_state":

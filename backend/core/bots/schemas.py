@@ -129,6 +129,7 @@ class RoutineCreate(BaseModel):
     event_filter: dict | None = None
     prompt: str | None = None
     enabled: bool = True
+    silent: bool = False
 
 
 class RoutineUpdate(BaseModel):
@@ -139,6 +140,7 @@ class RoutineUpdate(BaseModel):
     event_filter: dict | None = None
     prompt: str | None = None
     enabled: bool | None = None
+    silent: bool | None = None
 
 
 class RoutineOut(BaseModel):
@@ -152,6 +154,7 @@ class RoutineOut(BaseModel):
     event_filter: dict | None = None
     prompt: str | None = None
     enabled: bool = True
+    silent: bool = False
     next_run_at: datetime | None = None
     last_run_at: datetime | None = None
     last_status: str | None = None

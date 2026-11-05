@@ -132,6 +132,9 @@ class BotRoutine(Base):
     event_filter = Column(JSON, nullable=True)
     prompt = Column(Text, nullable=True)
     enabled = Column(Boolean, default=True, index=True)
+    # Silent routines still run and record history, but do not push a result
+    # notification (e.g. the nightly memory agent).
+    silent = Column(Boolean, default=False)
     next_run_at = Column(DateTime, nullable=True, index=True)
     last_run_at = Column(DateTime, nullable=True)
     last_status = Column(String(20), nullable=True)

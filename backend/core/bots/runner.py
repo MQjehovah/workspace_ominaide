@@ -702,6 +702,8 @@ async def _notify_run(run: BotRun, bot: Bot | None) -> None:
                 routine = (
                     await db.execute(select(BotRoutine).where(BotRoutine.id == run.routine_id))
                 ).scalar_one_or_none()
+            if routine is not None and routine.silent:
+                return
             if routine is not None and routine.name:
                 title = routine.name
         except Exception:
