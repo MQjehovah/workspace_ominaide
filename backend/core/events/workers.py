@@ -6,7 +6,7 @@ from core.config.settings import settings
 
 def _is_internal(event) -> bool:
     """Events handled explicitly (bot runs, mail) skip generic worker LLM calls."""
-    return (event.event_type or "").startswith(("bot.run.", "mail.received", "dingtalk.message"))
+    return (event.event_type or "").startswith(("bot.run.", "mail.received", "dingtalk."))
 
 
 async def indexing_handler(event):

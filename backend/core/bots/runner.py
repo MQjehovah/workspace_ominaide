@@ -30,7 +30,7 @@ from core.bots.context import (
     set_current_session_id,
 )
 from core.bots.memory import build_bot_context
-from core.bots.models import Bot, BotApproval, BotRoutine, BotRun, BotRunStep
+from core.bots.models import Bot, BotApproval, BotRun, BotRunStep
 from core.config.settings import settings
 from core.database.session import async_session
 
@@ -623,10 +623,8 @@ async def _finalize(
             await _save_chat_reply(run)
             if await _coding_run(run.id) is not None:
                 await _broadcast_chat_reply(run)
-        # Cron routines report their result automatically; event routines are
-        # silent unless the model calls send_notification itself.
-        if run.routine_id and run.output and run.trigger != "event":
-            await _notify_run(run, bot)
+        # Routines never auto-notify: the model must call send_notification
+        # when it decides the user should be interrupted.
         # Emit an event instead of spending an LLM call inline. A Bot routine
         # can subscribe to bot.run.finished to summarise / persist the result.
         if run.output and run.routine_id is None and not skip_summary:
@@ -693,50 +691,6 @@ async def _emit_run_finished(run: BotRun) -> None:
 # ---------------------------------------------------------------------------
 # Notifications
 # ---------------------------------------------------------------------------
-
-async def _notify_run(run: BotRun, bot: Bot | None) -> None:
-    title = f"🤖 {bot.name if bot else 'Bot'}"
-    if run.routine_id:
-        try:
-            async with async_session() as db:
-                routine = (
-                    await db.execute(select(BotRoutine).where(BotRoutine.id == run.routine_id))
-                ).scalar_one_or_none()
-            if routine is not None and routine.silent:
-                return
-            if routine is not None and routine.name:
-                title = routine.name
-        except Exception:
-            pass
-    body = (run.output or "")[:4000]
-    try:
-        from plugins.notifications.backend.service import create_notification
-
-        async with async_session() as db:
-            n = await create_notification(db, run.user_id, title, body, "bot_run", "/bots?tab=runs")
-            await db.commit()
-            nid = n.id
-        try:
-            from core.wschannel.hub import host_channel
-
-            await host_channel.broadcast(
-                run.user_id,
-                "notifications",
-                {"type": "new_notification", "id": nid, "title": title, "body": body},
-            )
-        except Exception:
-            pass
-        try:
-            from plugins.device.backend.events import publish_device_event
-
-            await publish_device_event(
-                run.user_id, "bot_run", {"id": nid, "title": title}
-            )
-        except Exception:
-            pass
-    except Exception as e:
-        print(f"[bots.runner] notify failed: {e}")
-
 
 async def _notify_approval(run: BotRun, approval: BotApproval, reason: str) -> None:
     title = "🔐 需要审批"

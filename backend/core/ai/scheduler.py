@@ -189,19 +189,20 @@ async def _sync_dingtalk() -> None:
             )).scalars().all())
         user_ids = sorted(set(users)) or [1]
 
+        day_key = now.strftime("%Y-%m-%d")
         for user_id in user_ids:
-            existing: set[str] = set()
+            existing: set[tuple[str, str]] = set()
             async with async_session() as db:
                 rows = await db.execute(
                     select(UserActivity.details).where(
                         UserActivity.user_id == user_id,
-                        UserActivity.event_type == "dingtalk.message",
+                        UserActivity.event_type == "dingtalk.conversation",
                         UserActivity.created_at >= now - timedelta(days=2),
                     )
                 )
                 for (details,) in rows:
-                    if isinstance(details, dict) and details.get("message_id"):
-                        existing.add(str(details["message_id"]))
+                    if isinstance(details, dict) and details.get("conversation_id"):
+                        existing.add((str(details["conversation_id"]), str(details.get("day") or "")))
 
             stored = 0
             for conv in conversations[:50]:
@@ -209,13 +210,17 @@ async def _sync_dingtalk() -> None:
                 conv_name = conv.get("name") or conv_id or "钉钉会话"
                 if not conv_id:
                     continue
+                key = (str(conv_id), day_key)
+                if key in existing:
+                    continue
                 try:
                     msg_payload = await run_dws(
                         [
                             "chat", "+chat-messages",
                             "--conversation-id", str(conv_id),
                             "--start", start_iso, "--end", end_iso,
-                            "--order", "asc", "--page-all", "--max-items", "30",
+                            "--order", "asc", "--page-all",
+                            "--max-items", str(max(10, _settings.dingtalk_sync_max_messages)),
                             "--format", "json",
                         ],
                         timeout=180,
@@ -223,36 +228,35 @@ async def _sync_dingtalk() -> None:
                 except Exception:
                     continue
                 messages = _unwrap(msg_payload, "messages") or []
+                lines: list[str] = []
+                for msg in messages:
+                    text = str(msg.get("text") or "").strip()
+                    if not text:
+                        continue
+                    sender = str(msg.get("sender") or "").strip()
+                    lines.append(f"{sender}: {text}" if sender else text)
+                    if len(lines) >= _settings.dingtalk_sync_max_messages:
+                        break
+                if not lines:
+                    continue
+                content = "\n".join(lines)[:8000]
                 async with async_session() as db:
-                    for msg in messages:
-                        message_id = str(msg.get("messageId") or "")
-                        if not message_id or message_id in existing:
-                            continue
-                        text = str(msg.get("text") or "").strip()
-                        if not text:
-                            continue
-                        sender = str(msg.get("sender") or "")
-                        await record_event(
-                            db, user_id, "dingtalk.message", "dingtalk", None,
-                            f"钉钉 · {conv_name} · {sender}",
-                            {
-                                "conversation": conv_name,
-                                "conversation_id": str(conv_id),
-                                "sender": sender,
-                                "message_id": message_id,
-                                "preview": text[:200],
-                                "time": str(msg.get("createTime") or ""),
-                            },
-                        )
-                        existing.add(message_id)
-                        stored += 1
-                        if stored >= _settings.dingtalk_sync_max_messages:
-                            break
+                    await record_event(
+                        db, user_id, "dingtalk.conversation", "dingtalk", None,
+                        f"钉钉会话 · {conv_name}",
+                        {
+                            "conversation": conv_name,
+                            "conversation_id": str(conv_id),
+                            "day": day_key,
+                            "message_count": len(lines),
+                            "content": content,
+                        },
+                    )
                     await db.commit()
-                if stored >= _settings.dingtalk_sync_max_messages:
-                    break
+                existing.add(key)
+                stored += 1
             if stored:
-                print(f"[scheduler] dingtalk synced: {stored} message(s) for user {user_id}")
+                print(f"[scheduler] dingtalk synced: {stored} conversation(s) for user {user_id}")
     except Exception as e:
         print(f"[scheduler] dingtalk sync error: {e}")
 
