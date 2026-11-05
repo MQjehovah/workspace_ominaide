@@ -3,7 +3,7 @@ import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream, rmSync } from 'fs'
 import { writeLog } from '../logger'
-import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager } from '../plugin/host'
+import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled } from '../plugin/host'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
 import * as screenshot from '../screenshot'
@@ -164,7 +164,9 @@ export function registerIpcHandlers() {
       cfg.disabledPlugins = disabled
     }
     await setConfig('disabledPlugins', cfg.disabledPlugins)
-    // Notify all windows to refresh plugin data
+    // Apply immediately: disabled plugins stop their child process (and any
+    // background collection); enabling starts it again without a restart.
+    await setPluginEnabled(pluginId, enabled)
     BrowserWindow.getAllWindows().forEach(win => win.webContents.send('plugins:updated'))
   })
   ipcMain.handle('plugin:import', async () => {

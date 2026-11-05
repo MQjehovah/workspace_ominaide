@@ -11,13 +11,27 @@
       </div>
 
       <div v-if="tab === 'plugins'" class="card-body">
+        <div class="privacy-banner">
+          <div>
+            <div class="privacy-title">隐私与采集</div>
+            <div class="privacy-desc">
+              关闭开关会立即停止对应插件的后台进程。标记「会读取本地数据」的插件如下；
+              剪贴板、前台窗口、邮件内容只在你启用时读取。
+            </div>
+          </div>
+          <button class="privacy-pause" @click="pauseCollection">暂停全部采集</button>
+        </div>
         <div v-for="p in plugins" :key="p.id" class="plugin-item">
           <div class="plugin-icon" :style="{ background: getColor(p.id) + '20' }">
             <div class="plugin-dot" :style="{ background: p.enabled ? '#28A745' : '#ccc' }"></div>
           </div>
           <div class="plugin-info">
-            <span class="plugin-name">{{ p.manifest?.displayName || p.id }}</span>
+            <span class="plugin-name">
+              {{ p.manifest?.displayName || p.id }}
+              <span v-if="privacyNote(p.id)" class="privacy-tag" :title="privacyNote(p.id)">会读取本地数据</span>
+            </span>
             <span class="plugin-desc">{{ p.manifest?.description || '' }}</span>
+            <span v-if="privacyNote(p.id)" class="privacy-note">{{ privacyNote(p.id) }}</span>
           </div>
           <div class="plugin-actions">
             <button class="cfg-btn" title="配置" @click="openConfig(p)">⚙</button>
@@ -123,6 +137,30 @@ function getCommands(pluginId: string): string[] {
 async function togglePlugin(p: any) {
   p.enabled = !p.enabled
   await window.mqbox.plugin.setEnabled(p.id, p.enabled)
+}
+
+const PRIVACY_NOTES: Record<string, string> = {
+  activity: '读取前台应用与窗口标题，用于活动时间线',
+  'clipboard-history': '读取剪贴板文本，仅保存在本机历史中',
+  mail: '读取邮箱内容；收取与分析已由后端完成',
+  remote: '被控时共享屏幕、键鼠与剪贴板',
+  screenshot: '手动截图时读取屏幕画面',
+  everything: '搜索本机文件名与路径',
+}
+
+function privacyNote(id: string): string {
+  return PRIVACY_NOTES[id] || ''
+}
+
+async function pauseCollection() {
+  const ids = ['activity', 'clipboard-history', 'mail']
+  for (const id of ids) {
+    const p = plugins.value.find(x => x.id === id)
+    if (p?.enabled) {
+      p.enabled = false
+      await window.mqbox.plugin.setEnabled(id, false)
+    }
+  }
 }
 
 async function importPlugin() {
@@ -239,6 +277,13 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 .plugin-dot { width:8px; height:8px; border-radius:4px; }
 .plugin-info { flex:1; }
 .plugin-name { font-size:13px; font-weight:500; display:block; }
+.privacy-banner { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; background:#f5f9ff; border:1px solid #d9e9ff; border-radius:10px; padding:10px 12px; margin-bottom:10px; }
+.privacy-title { font-size:13px; font-weight:600; color:#1a1a2e; }
+.privacy-desc { font-size:11px; color:#7a8290; line-height:1.6; margin-top:4px; }
+.privacy-pause { flex-shrink:0; border:1px solid #b9d4ff; background:#fff; color:#2f6fbf; border-radius:6px; padding:5px 8px; font-size:11px; cursor:pointer; }
+.privacy-pause:hover { background:#eaf3ff; }
+.privacy-tag { display:inline-block; margin-left:6px; padding:1px 5px; border-radius:4px; background:#fff1f0; color:#c45656; font-size:10px; font-weight:500; }
+.privacy-note { font-size:10px; color:#a0a4ad; margin-top:2px; }
 .plugin-desc { font-size:11px; color:#999; }
 .plugin-actions { display:flex; align-items:center; gap:8px; }
 .cfg-btn { border:none; background:transparent; cursor:pointer; font-size:16px; color:#999; padding:2px 4px; border-radius:4px; }

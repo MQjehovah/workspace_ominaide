@@ -32,8 +32,14 @@ export function getProcessManager(): PluginProcessManager {
 
 export async function initPlugins() {
   const loaded = loadPlugins()
+  const cfg = await getConfig()
+  const disabled = new Set<string>(cfg.disabledPlugins || [])
 
   for (const [id, info] of loaded) {
+    if (disabled.has(id)) {
+      console.log(`[plugin] ${id}: disabled by user, not starting`)
+      continue
+    }
     try {
       const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
       if (!existsSync(modulePath)) {
@@ -64,10 +70,12 @@ export async function initPlugins() {
 
 export async function reloadNewPlugins(): Promise<string[]> {
   const loaded = loadPlugins()
+  const cfg = await getConfig()
+  const disabled = new Set<string>(cfg.disabledPlugins || [])
   const started: string[] = []
 
   for (const [id, info] of loaded) {
-    if (plugins.has(id)) continue
+    if (plugins.has(id) || disabled.has(id)) continue
 
     try {
       const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
@@ -108,6 +116,8 @@ let lastClipboardText = ''
 function startClipboardMonitoring() {
   setInterval(async () => {
     try {
+      // Never read the clipboard when the clipboard-history plugin is disabled.
+      if (!plugins.has('clipboard-history')) return
       const text = clipboard.readText()
       if (text && text !== lastClipboardText) {
         lastClipboardText = text
@@ -445,6 +455,42 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     const s = ptySessions.get(id)
     if (s) { s.term.kill(); ptySessions.delete(id) }
   })
+}
+
+export async function startPluginById(id: string): Promise<boolean> {
+  if (plugins.has(id)) return true
+  const info = loadPlugins().get(id)
+  if (!info) return false
+  try {
+    const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
+    if (!existsSync(modulePath)) return false
+    const proc = await processManager.startPlugin(info)
+    registerBridgeHandlers(proc)
+    const ready = await proc.waitForReady(8000)
+    if (!ready) {
+      console.warn(`[plugin] ${id}: not ready, will still add panel`)
+      proc.on('stderr', (msg: string) => console.error(`[plugin:${id}]`, msg))
+    }
+    plugins.set(id, info)
+    const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
+    panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('plugins:updated')
+    })
+    return true
+  } catch (e) {
+    console.error(`[plugin] failed to start ${id}:`, e)
+    return false
+  }
+}
+
+export async function setPluginEnabled(id: string, enabled: boolean): Promise<boolean> {
+  if (enabled) return startPluginById(id)
+  removePlugin(id)
+  BrowserWindow.getAllWindows().forEach(win => {
+    if (!win.isDestroyed()) win.webContents.send('plugins:updated')
+  })
+  return true
 }
 
 export function removePlugin(id: string): boolean {
