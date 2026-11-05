@@ -12,6 +12,7 @@ from core.ai.mcp.tools.coding import TOOLS as CODING_TOOLS
 from core.ai.mcp.tools.web import TOOLS as WEB_TOOLS
 from core.ai.mcp.tools.management import TOOLS as MANAGEMENT_TOOLS
 from core.ai.mcp.tools.system import TOOLS as SYSTEM_TOOLS
+from core.ai.mcp.tools.notifications import TOOLS as NOTIFICATION_TOOLS
 
 
 def register_core_tools():
@@ -30,6 +31,8 @@ def register_core_tools():
     for tool, handler in MANAGEMENT_TOOLS:
         tool_registry.register(tool, handler)
     for tool, handler in SYSTEM_TOOLS:
+        tool_registry.register(tool, handler)
+    for tool, handler in NOTIFICATION_TOOLS:
         tool_registry.register(tool, handler)
     tool_registry.register(
         MCPTool(

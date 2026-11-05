@@ -5,8 +5,8 @@ from core.config.settings import settings
 
 
 def _is_internal(event) -> bool:
-    """Bot lifecycle events feed routines, not the generic index/entity workers."""
-    return (event.event_type or "").startswith("bot.run.")
+    """Events handled explicitly (bot runs, mail) skip generic worker LLM calls."""
+    return (event.event_type or "").startswith(("bot.run.", "mail.received"))
 
 
 async def indexing_handler(event):

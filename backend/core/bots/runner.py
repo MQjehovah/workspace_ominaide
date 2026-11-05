@@ -30,7 +30,7 @@ from core.bots.context import (
     set_current_session_id,
 )
 from core.bots.memory import build_bot_context
-from core.bots.models import Bot, BotApproval, BotRun, BotRunStep
+from core.bots.models import Bot, BotApproval, BotRoutine, BotRun, BotRunStep
 from core.config.settings import settings
 from core.database.session import async_session
 
@@ -623,7 +623,9 @@ async def _finalize(
             await _save_chat_reply(run)
             if await _coding_run(run.id) is not None:
                 await _broadcast_chat_reply(run)
-        if run.routine_id and run.output:
+        # Cron routines report their result automatically; event routines are
+        # silent unless the model calls send_notification itself.
+        if run.routine_id and run.output and run.trigger != "event":
             await _notify_run(run, bot)
         # Emit an event instead of spending an LLM call inline. A Bot routine
         # can subscribe to bot.run.finished to summarise / persist the result.
@@ -694,6 +696,16 @@ async def _emit_run_finished(run: BotRun) -> None:
 
 async def _notify_run(run: BotRun, bot: Bot | None) -> None:
     title = f"🤖 {bot.name if bot else 'Bot'}"
+    if run.routine_id:
+        try:
+            async with async_session() as db:
+                routine = (
+                    await db.execute(select(BotRoutine).where(BotRoutine.id == run.routine_id))
+                ).scalar_one_or_none()
+            if routine is not None and routine.name:
+                title = routine.name
+        except Exception:
+            pass
     body = (run.output or "")[:4000]
     try:
         from plugins.notifications.backend.service import create_notification

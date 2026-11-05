@@ -111,8 +111,8 @@ async def test_sync_account_is_incremental_and_deduped(client, monkeypatch):
         )).scalar_one()
     assert count == 1
     assert msg.important is False
-    assert msg.ai_summary  # deterministic fallback when LLM is not configured
-    assert "预算" in msg.ai_summary
+    # Analysis is a Bot routine now; sync must not write summary/importance back.
+    assert msg.ai_summary is None
 
 
 async def test_mail_messages_api_is_scoped(client, monkeypatch):

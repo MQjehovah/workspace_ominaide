@@ -348,7 +348,7 @@ def _event_context(event) -> str:
         parts.append(f"事件摘要: {event.summary}")
     if event.details:
         try:
-            parts.append("事件详情: " + json.dumps(event.details, ensure_ascii=False)[:3000])
+            parts.append("事件详情: " + json.dumps(event.details, ensure_ascii=False)[:8000])
         except Exception:
             pass
     return "\n".join(parts)

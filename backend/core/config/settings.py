@@ -60,20 +60,15 @@ class Settings(BaseSettings):
     ha_token: str = ""             # HA 长期访问令牌
     mail_encryption_key: str = ""
     # Backend-first mail: pull IMAP incrementally and analyse new messages.
-    # IMAP fetching itself is free; per-message LLM analysis costs tokens and is
-    # off by default. Move it to a Bot trigger if you want it.
+    # IMAP fetching only. Analysis is done by a mail.received Bot routine.
     mail_sync_enabled: bool = True
     mail_sync_interval_seconds: int = 300
     mail_max_per_sync: int = 20
-    mail_llm_analysis_enabled: bool = False
     # Backend-first RSS: refresh feeds even when no desktop client is online.
     rss_refresh_enabled: bool = True
     rss_refresh_interval_seconds: int = 1800
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
-    # Extract candidate memories from important external content (mail/DingTalk).
-    # Each extraction is an LLM call; opt in explicitly.
-    memory_external_extract_enabled: bool = False
     intelligence_layer_enabled: bool = True
     coding_workspace_root: str = "/workspace"
     coding_max_turns: int = 40

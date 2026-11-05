@@ -90,7 +90,8 @@ async def test_create_routine_from_template_and_scope(client):
     routine = r.json()
     assert routine["trigger_type"] == "event"
     assert routine["event_type"] == "mail.received"
-    assert routine["event_filter"] == {"important": True}
+    # Importance is decided by the model now, not by an event filter.
+    assert routine["event_filter"] in (None, {})
 
     # Another user cannot create routines on this bot.
     r = await client.post(

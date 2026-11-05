@@ -203,101 +203,6 @@ async def list_messages(
     return list(r.scalars().all()), total
 
 
-async def analyze_message(user_id: int, message_id: int) -> None:
-    """Summarise one message and flag important mail; notify on importance."""
-    from sqlalchemy import select
-    from core.database.session import async_session
-    from plugins.mail.backend.models import MailMessage
-
-    async with async_session() as db:
-        msg = (await db.execute(
-            select(MailMessage).where(
-                MailMessage.id == message_id,
-                MailMessage.user_id == user_id,
-            )
-        )).scalar_one_or_none()
-        if msg is None:
-            return
-
-        fallback = {
-            "summary": (msg.preview or msg.subject or "(无正文)")[:300],
-            # Keep the IMAP importance flag; never silently clear it.
-            "important": bool(msg.important),
-            "actions": [],
-        }
-        result = fallback
-        if settings.mail_llm_analysis_enabled and settings.llm_api_key:
-            try:
-                from openai import AsyncOpenAI
-
-                client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-                prompt = (
-                    f"主题: {msg.subject or ''}\n"
-                    f"发件人: {msg.from_address or ''}\n"
-                    f"时间: {msg.date or ''}\n\n"
-                    f"正文:\n{(msg.content or msg.preview or '')[:6000]}"
-                )
-                resp = await client.chat.completions.create(
-                    model=settings.llm_model,
-                    messages=[
-                        {"role": "system", "content": (
-                            "你是用户的私人邮件助理。请判断这封邮件是否重要、是否需要用户处理，"
-                            "并给出简短中文摘要。只返回 JSON: "
-                            '{"summary": "1-2 句摘要", "important": true/false, '
-                            '"actions": [{"text": "建议动作", "type": "reply|todo|schedule|none"}]}。'
-                            "重要 = 需要尽快阅读/回复/决策，或来自领导、客户、账单、合同、验证码。"
-                            "促销、订阅、普通通知不算重要。actions 最多 2 条。"
-                        )},
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.2,
-                )
-                raw = resp.choices[0].message.content or ""
-                m = re.search(r"\{.*\}", raw, re.S)
-                if m:
-                    parsed = json.loads(m.group(0))
-                    result = {
-                        "summary": str(parsed.get("summary") or "").strip() or fallback["summary"],
-                        "important": bool(parsed.get("important")),
-                        "actions": [
-                            a if isinstance(a, dict) else {"text": str(a), "type": "none"}
-                            for a in (parsed.get("actions") or [])
-                        ][:2],
-                    }
-            except Exception as e:
-                print(f"[mail] analyze error: {e}")
-
-        msg.ai_summary = result["summary"]
-        msg.ai_actions = result["actions"]
-        msg.important = result["important"]
-        await db.commit()
-
-        if msg.important and settings.mail_llm_analysis_enabled:
-            try:
-                from plugins.notifications.backend.router import notify_user
-                from plugins.notifications.backend.service import create_notification
-
-                n = await create_notification(
-                    db, user_id,
-                    f"📬 重要邮件: {msg.subject or '(无主题)'}",
-                    result["summary"][:500],
-                    "mail",
-                    "/mail",
-                    actions=[{"key": "open", "label": "打开邮件", "kind": "open", "link": "/mail"}],
-                    dedupe_key=f"mail:{msg.id}",
-                )
-                await db.commit()
-                await notify_user(user_id, {
-                    "type": "new_notification",
-                    "id": n.id,
-                    "title": f"📬 重要邮件: {msg.subject or '(无主题)'}",
-                    "body": result["summary"][:500],
-                    "link": "/mail",
-                })
-            except Exception as e:
-                print(f"[mail] notify error: {e}")
-
-
 async def sync_account(account_id: int, limit: int | None = None) -> dict:
     """Pull new messages for one account and analyse them."""
     from sqlalchemy import select
@@ -379,32 +284,36 @@ async def sync_account(account_id: int, limit: int | None = None) -> dict:
 
 
 async def _after_ingest(user_id: int, message_id: int) -> None:
+    """Emit mail.received; any LLM analysis is a Bot routine's job.
+
+    The message row is left untouched — routines decide importance and whether
+    to notify, but never rewrite the mailbox data.
+    """
     from sqlalchemy import select
     from core.database.session import async_session
     from plugins.mail.backend.models import MailMessage
 
-    await analyze_message(user_id, message_id)
-
-    ingest_payload: dict | None = None
     async with async_session() as db:
         msg = (await db.execute(
             select(MailMessage).where(MailMessage.id == message_id)
         )).scalar_one_or_none()
         if msg is None:
             return
-        if settings.memory_external_extract_enabled and msg.important:
-            ingest_payload = {
-                "subject": msg.subject,
-                "content": msg.content or msg.preview or "",
-                "from": msg.from_address,
-            }
         try:
             from core.events.recorder import record_event
 
             await record_event(
                 db, user_id, "mail.received", "email", msg.id,
                 f"新邮件: {msg.subject or ''}",
-                {"from": msg.from_address, "important": msg.important},
+                {
+                    "message_id": msg.id,
+                    "from": msg.from_address or "",
+                    "to": msg.to_addresses or "",
+                    "subject": msg.subject or "",
+                    "date": str(msg.date or ""),
+                    "preview": (msg.preview or "")[:1000],
+                    "content": (msg.content or msg.preview or "")[:6000],
+                },
             )
         except Exception:
             pass
@@ -422,24 +331,6 @@ async def _after_ingest(user_id: int, message_id: int) -> None:
         except Exception:
             pass
         await db.commit()
-
-    # External mail is untrusted: it may only create review candidates. Run the
-    # LLM extraction outside the DB session so a slow provider cannot pin a
-    # pooled connection for the whole mailbox sync.
-    if ingest_payload:
-        try:
-            from core.memory_service import ingest_text
-
-            await ingest_text(
-                user_id,
-                f"{ingest_payload['subject'] or ''}\n{ingest_payload['content']}",
-                source_type="email",
-                source_id=message_id,
-                source_ref={"subject": ingest_payload["subject"], "from": ingest_payload["from"]},
-                trust="untrusted",
-            )
-        except Exception as e:
-            print(f"[mail] memory extract error: {e}")
 
 
 async def sync_due_accounts(interval_seconds: int) -> dict:
