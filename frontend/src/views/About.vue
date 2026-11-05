@@ -17,9 +17,6 @@
               </span>
             </div>
             <p class="hero-sub">AI 对你的长期理解 · 每一项都可以被修正或遗忘</p>
-            <div class="hero-tags" v-if="profile.interests?.length">
-              <span v-for="i in profile.interests.slice(0, 6)" :key="i" class="soft-tag">{{ i }}</span>
-            </div>
           </div>
         </div>
         <div class="hero-actions">
@@ -31,22 +28,28 @@
       </div>
 
       <div class="hero-stats">
-        <button v-for="s in stats" :key="s.key" class="hero-stat" @click="scrollTo(s.target)">
+        <button v-for="s in stats" :key="s.key" class="hero-stat" @click="openTab(s.tab)">
           <span class="num" :class="s.key">{{ s.value }}</span>
           <span class="label">{{ s.label }}</span>
-          <span class="hint">查看</span>
         </button>
       </div>
     </section>
 
-    <nav class="anchor-nav">
-      <button v-for="a in anchors" :key="a.id" class="anchor-pill" @click="scrollTo(a.id)">
-        {{ a.label }}
+    <nav class="about-tabs">
+      <button
+        v-for="t in tabs"
+        :key="t.key"
+        class="about-tab"
+        :class="{ active: tab === t.key }"
+        @click="tab = t.key"
+      >
+        {{ t.label }}
+        <span v-if="t.count" class="tab-count">{{ t.count }}</span>
       </button>
     </nav>
 
-    <div v-if="loading" class="about-grid">
-      <div class="page-card skeleton-card" v-for="n in 4" :key="n">
+    <div v-if="loading" class="overview-grid">
+      <div class="page-card skeleton-card" v-for="n in 3" :key="n">
         <div class="sk-line w40"></div>
         <div class="sk-line w90"></div>
         <div class="sk-line w70"></div>
@@ -54,11 +57,14 @@
       </div>
     </div>
 
-    <div v-else class="about-grid">
-      <section id="understanding" class="page-card understanding-card reveal" style="--d: 0ms">
+    <div
+      v-else
+      class="tab-panel"
+      :class="tab === 'overview' ? 'overview-grid' : (tab === 'memory' ? 'memory-stack' : 'graph-single')"
+    >
+      <section v-if="tab === 'overview'" id="understanding" class="page-card understanding-card reveal" style="--d: 0ms">
         <div class="section-head">
           <div class="section-title">
-            <span class="section-icon">✦</span>
             <h3>AI 对你的理解</h3>
           </div>
           <span class="muted" v-if="profile.last_analysis">更新于 {{ fmt(profile.last_analysis) }}</span>
@@ -107,10 +113,9 @@
         />
       </section>
 
-      <section id="profile" class="page-card profile-card reveal" style="--d: 60ms">
+      <section v-if="tab === 'overview'" id="profile" class="page-card profile-card reveal" style="--d: 60ms">
         <div class="section-head">
           <div class="section-title">
-            <span class="section-icon">◎</span>
             <h3>我的画像</h3>
           </div>
           <el-button link type="primary" @click="$router.push('/settings')">完善</el-button>
@@ -145,19 +150,13 @@
         </div>
       </section>
 
-      <section id="entities" class="page-card entity-card reveal" style="--d: 120ms">
+      <section v-if="tab === 'graph'" id="entities" class="page-card entity-card reveal" style="--d: 0ms">
         <div class="section-head">
           <div class="section-title">
-            <span class="section-icon">◇</span>
             <h3>实体图谱</h3>
-            <span class="count" v-if="entities.length">{{ entities.length }}</span>
           </div>
           <div class="entity-tools">
-            <div class="graph-legend">
-              <span><i class="legend-dot person"></i>人物</span>
-              <span><i class="legend-dot project"></i>项目</span>
-              <span><i class="legend-dot term"></i>术语</span>
-            </div>
+            <span class="graph-summary" v-if="entities.length">{{ entities.length }} 个实体 · {{ entityLinks.length }} 条关系</span>
             <el-select v-model="entityType" size="small" clearable placeholder="全部类型" style="width:118px" @change="loadEntities">
               <el-option label="人物" value="person" />
               <el-option label="项目" value="project" />
@@ -195,14 +194,20 @@
               <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
             </el-popconfirm>
           </div>
-          <div v-else class="graph-tip">点击任一节点查看实体详情。</div>
+          <div class="graph-foot">
+            <div class="graph-legend">
+              <span><i class="legend-dot person"></i>人物</span>
+              <span><i class="legend-dot project"></i>项目</span>
+              <span><i class="legend-dot term"></i>术语</span>
+            </div>
+            <span class="muted">{{ selectedEntity ? '再次点击节点可取消选择' : '点击节点查看详情' }}</span>
+          </div>
         </template>
       </section>
 
-      <section id="reviews" class="page-card review-card reveal" style="--d: 180ms">
+      <section v-if="tab === 'overview'" id="reviews" class="page-card review-card reveal" style="--d: 180ms">
         <div class="section-head">
           <div class="section-title">
-            <span class="section-icon">↻</span>
             <h3>最近回顾</h3>
           </div>
           <el-button link type="primary" @click="$router.push('/insights')">查看全部</el-button>
@@ -218,10 +223,21 @@
         </div>
       </section>
 
-      <section id="candidates" class="page-card full-row candidates-card reveal" style="--d: 220ms">
+      <div v-if="tab === 'memory'" class="memory-status">
+        <div class="memory-status-item">
+          <b>{{ candidates.length }}</b>
+          <span>待审核</span>
+        </div>
+        <div class="memory-status-item">
+          <b>{{ records.length }}</b>
+          <span>长期记忆</span>
+        </div>
+        <p class="muted">每日凌晨自动整理；低置信度的候选会先放在这里等你确认。</p>
+      </div>
+
+      <section v-if="tab === 'memory' && candidates.length" id="candidates" class="page-card candidates-card reveal" style="--d: 0ms">
         <div class="section-head">
           <div class="section-title">
-            <span class="section-icon">✓</span>
             <h3>待审核记忆</h3>
             <span class="count warn" v-if="candidates.length">{{ candidates.length }}</span>
           </div>
@@ -256,10 +272,9 @@
         </transition-group>
       </section>
 
-      <section id="records" class="page-card full-row records-card reveal" style="--d: 260ms">
+      <section v-if="tab === 'memory'" id="records" class="page-card records-card reveal" style="--d: 60ms">
         <div class="section-head">
           <div class="section-title">
-            <span class="section-icon">▤</span>
             <h3>长期记忆</h3>
             <span class="count" v-if="records.length">{{ records.length }}</span>
           </div>
@@ -343,14 +358,8 @@ const kindOptions = [
   { label: '项目', value: 'project' },
 ]
 
-const anchors = [
-  { id: 'understanding', label: '理解' },
-  { id: 'profile', label: '画像' },
-  { id: 'entities', label: '图谱' },
-  { id: 'reviews', label: '回顾' },
-  { id: 'candidates', label: '待审核' },
-  { id: 'records', label: '长期记忆' },
-]
+type TabKey = 'overview' | 'memory' | 'graph'
+const tab = ref<TabKey>('overview')
 
 const initial = computed(() => (profile.value.name || '我').slice(0, 1))
 
@@ -358,11 +367,17 @@ const selectedEntity = computed(() =>
   entities.value.find((e) => e.id === selectedEntityId.value) || null,
 )
 
+const tabs = computed(() => [
+  { key: 'overview' as TabKey, label: '概览', count: 0 },
+  { key: 'memory' as TabKey, label: '记忆库', count: candidates.value.length },
+  { key: 'graph' as TabKey, label: '关系图谱', count: entities.value.length },
+])
+
 const stats = computed(() => [
-  { key: 'records', label: '长期记忆', value: records.value.length, target: 'records' },
-  { key: 'candidates', label: '待审核', value: candidates.value.length, target: 'candidates' },
-  { key: 'entities', label: '实体', value: entities.value.length, target: 'entities' },
-  { key: 'reviews', label: '回顾', value: reviews.value.length, target: 'reviews' },
+  { key: 'records', label: '长期记忆', value: records.value.length, tab: 'memory' as TabKey },
+  { key: 'candidates', label: '待审核', value: candidates.value.length, tab: 'memory' as TabKey },
+  { key: 'entities', label: '实体', value: entities.value.length, tab: 'graph' as TabKey },
+  { key: 'reviews', label: '回顾', value: reviews.value.length, tab: 'overview' as TabKey },
 ])
 
 const filteredRecords = computed(() => {
@@ -374,8 +389,9 @@ const filteredRecords = computed(() => {
   })
 })
 
-function scrollTo(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+function openTab(next: TabKey) {
+  tab.value = next
+  document.querySelector('.about-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function toggleRecord(id: number) {
@@ -577,12 +593,6 @@ onMounted(async () => {
   background: rgba(255, 255, 255, .13); border: 1px solid rgba(255, 255, 255, .18);
 }
 .hero-sub { margin: 7px 0 0; font-size: 12.5px; color: rgba(238, 242, 255, .62); }
-.hero-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-.soft-tag {
-  font-size: 11.5px; padding: 3px 10px; border-radius: 999px;
-  background: rgba(255, 255, 255, .09); color: #e0e7ff;
-  border: 1px solid rgba(255, 255, 255, .07);
-}
 .hero-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .hero-actions :deep(.el-button) {
   background: rgba(255, 255, 255, .09);
@@ -615,23 +625,49 @@ onMounted(async () => {
 .hero-stat .num { font-size: 23px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .hero-stat .num.candidates { color: #fbbf24; }
 .hero-stat .label { font-size: 11.5px; color: rgba(238, 242, 255, .6); }
-.hero-stat .hint { font-size: 10px; color: rgba(238, 242, 255, .33); margin-top: 3px; }
 
-.anchor-nav {
-  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;
+.about-tabs {
+  display: flex; gap: 4px; width: max-content; max-width: 100%;
+  padding: 4px; border-radius: 12px; background: #eef1f7; overflow-x: auto;
   scrollbar-width: none;
 }
-.anchor-nav::-webkit-scrollbar { display: none; }
-.anchor-pill {
-  flex-shrink: 0; border: 1px solid #e4e9f3; background: #fff; color: #5b667a;
-  font-size: 12px; padding: 6px 13px; border-radius: 999px; cursor: pointer;
-  transition: all .15s;
+.about-tabs::-webkit-scrollbar { display: none; }
+.about-tab {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+  border: none; background: transparent; color: #64748b;
+  font-size: 13px; padding: 7px 16px; border-radius: 9px; cursor: pointer;
+  transition: color .15s, background .15s, box-shadow .15s;
 }
-.anchor-pill:hover { border-color: #c7d2fe; color: var(--brand-500); background: #f7f8ff; }
+.about-tab:hover { color: #4338ca; }
+.about-tab.active {
+  background: #fff; color: #312e81; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(49, 46, 129, .12);
+}
+.tab-count {
+  font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+  background: #eef2ff; color: #4f46e5;
+}
 
-.about-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
-.full-row { grid-column: 1 / -1; }
+.tab-panel { animation: fade-in .22s ease both; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.overview-grid {
+  display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 16px; align-items: start;
+}
+.review-card { grid-column: 1 / -1; }
+.memory-stack { display: flex; flex-direction: column; gap: 16px; }
+.graph-single { display: block; }
 section[id] { scroll-margin-top: 12px; }
+
+.memory-status {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding: 12px 18px; border-radius: 14px;
+  background: #fff; border: 1px solid #e8edf8;
+}
+.memory-status-item { display: flex; align-items: baseline; gap: 6px; }
+.memory-status-item b { font-size: 19px; color: #312e81; font-variant-numeric: tabular-nums; }
+.memory-status-item span { font-size: 11.5px; color: #94a3b8; }
+.memory-status .muted { margin: 0 0 0 auto; font-size: 11.5px; }
 
 .reveal { animation: rise .45s cubic-bezier(.2, .7, .3, 1) both; animation-delay: var(--d, 0ms); }
 @keyframes rise {
@@ -641,11 +677,10 @@ section[id] { scroll-margin-top: 12px; }
 
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .section-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.section-title h3 { margin: 0; font-size: 15px; color: #111827; }
-.section-icon {
-  width: 25px; height: 25px; border-radius: 8px; flex-shrink: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #eef2ff, #f5f3ff); color: #4f46e5; font-size: 13px;
+.section-title h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; color: #111827; }
+.section-title h3::before {
+  content: ''; width: 3px; height: 14px; border-radius: 2px;
+  background: linear-gradient(180deg, #6366f1, #a855f7);
 }
 .count {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
@@ -713,6 +748,8 @@ section[id] { scroll-margin-top: 12px; }
 .project-name { font-size: 13px; color: #303133; }
 
 .entity-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.graph-summary { font-size: 11.5px; color: #94a3b8; }
+.entity-card :deep(.entity-graph) { height: 560px; }
 .graph-legend { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: #64748b; }
 .graph-legend span { display: inline-flex; align-items: center; gap: 4px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
@@ -736,7 +773,10 @@ section[id] { scroll-margin-top: 12px; }
 .entity-avatar.term { background: #fffbeb; color: #d97706; }
 .entity-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .entity-name { font-size: 13px; color: #303133; font-weight: 500; }
-.graph-tip { margin-top: 10px; font-size: 11.5px; color: #94a3b8; }
+.graph-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 10px; font-size: 11.5px;
+}
 
 .review-list { display: flex; flex-direction: column; }
 .review-row { padding: 12px 0; border-bottom: 1px solid #f4f5f8; }
@@ -835,7 +875,7 @@ section[id] { scroll-margin-top: 12px; }
 @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
 @media (max-width: 960px) {
-  .about-grid { grid-template-columns: 1fr; }
+  .overview-grid { grid-template-columns: 1fr; }
   .record-grid { grid-template-columns: 1fr; }
   .hero-top { flex-direction: column; }
   .hero-actions { justify-content: flex-start; }
@@ -853,14 +893,18 @@ section[id] { scroll-margin-top: 12px; }
   .hero-stat .num { font-size: 20px; }
   .hero-actions { width: 100%; }
   .hero-actions :deep(.el-button) { flex: 1; }
+  .about-tabs { width: 100%; }
+  .about-tab { flex: 1; justify-content: center; padding: 7px 10px; }
+  .memory-status { gap: 12px; padding: 10px 14px; }
+  .memory-status .muted { width: 100%; margin-left: 0; }
   .section-head { flex-wrap: wrap; gap: 8px; }
   .record-toolbar { gap: 8px; }
   .record-search { width: 100%; }
   .record-kind { width: 118px; }
   .candidate-row { flex-direction: column; }
   .candidate-actions { width: 100%; justify-content: flex-end; }
-  .entity-row { padding: 8px 0; }
   .entity-tools { width: 100%; justify-content: space-between; }
+  .entity-card :deep(.entity-graph) { height: 380px; }
   .entity-detail { flex-direction: column; align-items: flex-start; }
 }
 

@@ -1,8 +1,19 @@
 import json
+import re
 from core.config.settings import settings
 
 DOCS_COLLECTION = "omnidocs"
 ENTITIES_COLLECTION = "entities"
+
+# Names the extractor should never turn into graph nodes: API routes, code
+# identifiers, operation verbs and test placeholders.
+ENTITY_STOPWORDS = {
+    "id", "run", "runs", "routine", "routines", "bot", "bots", "mcp",
+    "note", "notes", "memory", "memories", "automation", "plugin", "plugins",
+    "创建", "修改", "删除", "更新", "查询", "保存", "导入",
+    "创建笔记", "修改笔记", "删除笔记", "文件库导入",
+}
+_INVALID_ENTITY_NAME = re.compile(r"[{}<>/\\|=]|^[A-Za-z]$")
 
 
 async def index_content(
@@ -63,7 +74,7 @@ async def extract_and_store_entities(user_id: int, content: str, source_type: st
         resp = await client.chat.completions.create(
             model=settings.llm_model,
             messages=[
-                {"role": "system", "content": "从文本中提取实体（人物、项目、术语），以JSON格式返回数组：[{\"name\":\"实体名\",\"type\":\"person|project|term\"}]。只返回JSON，不要其他文字。"},
+                {"role": "system", "content": "从文本中提取稳定的实体（人物、项目、产品、术语），以JSON格式返回数组：[{\"name\":\"实体名\",\"type\":\"person|project|term\"}]。不要提取代码路径、API 路由、操作动词、单个字母或测试占位符。只返回JSON，不要其他文字。"},
                 {"role": "user", "content": text_in},
             ],
             temperature=0.1,
@@ -83,7 +94,9 @@ async def extract_and_store_entities(user_id: int, content: str, source_type: st
         for ent in entities:
             name = ent.get("name", "").strip()
             etype = ent.get("type", "term")
-            if not name:
+            if not name or len(name) < 2:
+                continue
+            if name.lower() in ENTITY_STOPWORDS or _INVALID_ENTITY_NAME.search(name):
                 continue
 
             vector = await generate_embedding(name)

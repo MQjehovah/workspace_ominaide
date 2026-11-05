@@ -9,6 +9,17 @@ def _is_internal(event) -> bool:
     return (event.event_type or "").startswith(("bot.run.", "mail.received", "dingtalk."))
 
 
+# Internal CRUD namespaces produce API routes and code identifiers, not user
+# knowledge, so they are never sent to the entity extractor.
+_INTERNAL_ENTITY_SOURCES = {"bots", "mcp", "automation", "plugins"}
+
+
+def _skip_entities(event) -> bool:
+    if _is_internal(event):
+        return True
+    return (event.event_type or "").split(".")[0] in _INTERNAL_ENTITY_SOURCES
+
+
 async def indexing_handler(event):
     if not settings.data_layer_enabled or _is_internal(event):
         return
@@ -23,7 +34,7 @@ async def indexing_handler(event):
 
 
 async def entity_handler(event):
-    if not settings.memory_layer_enabled or _is_internal(event):
+    if not settings.memory_layer_enabled or _skip_entities(event):
         return
     from core.ai.indexer import extract_and_store_entities
     await extract_and_store_entities(
