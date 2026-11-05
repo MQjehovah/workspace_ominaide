@@ -280,10 +280,3 @@ async def test_memory_graph_is_user_scoped(client):
     assert r.status_code == 200
     assert r.json()["nodes"] == []
     assert r.json()["edges"] == []
-
-
-async def test_extract_without_llm_queues_nothing(client):
-    token, _ = await _new_user(client)
-    r = await client.post("/api/memory/extract", json={"hours": 24}, headers=auth(token))
-    assert r.status_code == 200, r.text
-    assert r.json()["queued"] == 0

@@ -181,38 +181,6 @@ async def ingest_text(
     return count
 
 
-async def ingest_recent_chats(user_id: int, hours: int = 24) -> int:
-    """Extract long-term memories from the user's recent chat messages."""
-    from plugins.chat.backend.models import ChatMessage
-
-    since = datetime.utcnow() - timedelta(hours=max(1, hours))
-    async with async_session() as db:
-        rows = list((await db.execute(
-            select(ChatMessage).where(
-                ChatMessage.user_id == user_id,
-                ChatMessage.created_at >= since,
-            ).order_by(ChatMessage.id).limit(300)
-        )).scalars().all())
-    if not rows:
-        return 0
-    lines = []
-    for m in rows:
-        # Only user-authored text is trusted for long-term memory; assistant
-        # output may contain hallucinations and must not become a "fact".
-        if m.role != "user":
-            continue
-        lines.append(f"用户: {(m.content or '')[:800]}")
-    text = "\n".join(lines)[-16000:]
-    return await ingest_text(
-        user_id,
-        text,
-        source_type="chat",
-        source_id=rows[-1].id,
-        source_ref={"session_id": rows[-1].session_id, "message_id": rows[-1].id},
-        trust="trusted",
-    )
-
-
 async def list_candidates(user_id: int, status: str = "pending", limit: int = 100):
     async with async_session() as db:
         q = select(MemoryCandidate).where(MemoryCandidate.user_id == user_id)

@@ -69,9 +69,14 @@ class Settings(BaseSettings):
     rss_refresh_interval_seconds: int = 1800
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
-    # Unified memory extraction for external message events (mail/DingTalk),
-    # handled by the event worker instead of per-plugin code.
-    memory_event_extract_enabled: bool = True
+    # Daily memory agent auto-approves candidates at or above this confidence.
+    memory_auto_approve_threshold: int = 85
+    # Lightweight DingTalk message sync (no LLM) feeding the daily memory agent.
+    dingtalk_sync_enabled: bool = True
+    dingtalk_sync_hour: int = 1
+    dingtalk_sync_minute: int = 45
+    dingtalk_sync_hours: int = 24
+    dingtalk_sync_max_messages: int = 200
     intelligence_layer_enabled: bool = True
     coding_workspace_root: str = "/workspace"
     coding_max_turns: int = 40

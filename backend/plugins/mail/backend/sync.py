@@ -306,13 +306,14 @@ async def _after_ingest(user_id: int, message_id: int) -> None:
                 db, user_id, "mail.received", "email", msg.id,
                 f"新邮件: {msg.subject or ''}",
                 {
+                    # Events are a lightweight index: the agent calls mail_read
+                    # only when it decides the full body is needed.
                     "message_id": msg.id,
                     "from": msg.from_address or "",
                     "to": msg.to_addresses or "",
                     "subject": msg.subject or "",
                     "date": str(msg.date or ""),
-                    "preview": (msg.preview or "")[:1000],
-                    "content": (msg.content or msg.preview or "")[:6000],
+                    "preview": (msg.preview or "")[:300],
                 },
             )
         except Exception:

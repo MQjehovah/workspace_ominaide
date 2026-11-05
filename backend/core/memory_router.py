@@ -108,10 +108,6 @@ class CandidateApprove(BaseModel):
     pass
 
 
-class ExtractRequest(BaseModel):
-    hours: int = 24
-
-
 class RecordUpdate(BaseModel):
     content: str | None = None
     importance: int | None = None
@@ -193,15 +189,6 @@ async def forget_record(record_id: int, user: dict = Depends(get_current_user)):
     if not ok:
         raise HTTPException(status_code=404, detail="Memory not found")
     return {"message": "Forgotten"}
-
-
-@router.post("/extract")
-async def extract_memories(req: ExtractRequest | None = None, user: dict = Depends(get_current_user)):
-    from core.memory_service import ingest_recent_chats
-
-    req = req or ExtractRequest()
-    count = await ingest_recent_chats(user["id"], max(1, min(req.hours, 168)))
-    return {"queued": count}
 
 
 @router.post("/consolidate")

@@ -26,7 +26,6 @@
           <el-tooltip content="刷新" placement="top">
             <el-button :icon="Refresh" circle :loading="refreshing" @click="refreshAll" />
           </el-tooltip>
-          <el-button :icon="MagicStick" :loading="extracting" @click="extractMemories">整理记忆</el-button>
           <el-button :icon="Edit" @click="$router.push('/settings')">编辑资料</el-button>
         </div>
       </div>
@@ -213,7 +212,7 @@
           <span class="muted">来自对话、邮件或外部消息；确认后才会进入长期记忆。</span>
         </div>
         <div v-if="candidates.length === 0" class="empty-soft">
-          <p>没有待审核的记忆。点「整理记忆」从最近的对话中抽取。</p>
+          <p>没有待审核的记忆。每日凌晨会自动分析聊天和事件，低置信度的候选会出现在这里。</p>
         </div>
         <transition-group name="list" tag="div" class="candidate-list">
           <div
@@ -298,7 +297,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, MagicStick, Refresh, Search } from '@element-plus/icons-vue'
+import { Edit, Refresh, Search } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 
@@ -309,7 +308,6 @@ const entityType = ref('')
 const reviews = ref<any[]>([])
 const candidates = ref<any[]>([])
 const records = ref<any[]>([])
-const extracting = ref(false)
 const refreshing = ref(false)
 const loading = ref(true)
 
@@ -401,19 +399,6 @@ async function loadMemory() {
   } catch {
     candidates.value = []
     records.value = []
-  }
-}
-
-async function extractMemories() {
-  extracting.value = true
-  try {
-    const { data } = await client.post('/memory/extract', { hours: 24 })
-    ElMessage.success(`已整理，新增 ${data.queued || 0} 条候选记忆`)
-    await loadMemory()
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '整理失败')
-  } finally {
-    extracting.value = false
   }
 }
 

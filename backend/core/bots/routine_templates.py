@@ -6,6 +6,27 @@ a routine with the user's bot in one call.
 
 ROUTINE_TEMPLATES: list[dict] = [
     {
+        "key": "daily_memory",
+        "name": "每日记忆整理",
+        "description": "每天凌晨回顾聊天、邮件、钉钉和活动，形成长期记忆；高置信度自动通过。",
+        "trigger_type": "cron",
+        "cron_expr": "0 2 * * *",
+        "prompt": (
+            "你是记忆整理助手，按步骤执行：\n"
+            "1. 调用 `list_recent_chats`，参数 hours=24、limit=100，读取全部会话。\n"
+            "2. 调用 `list_activities`，参数 days=1、limit=100，读取当天事件"
+            "（邮件、钉钉、文件、笔记、日程、待办）。\n"
+            "3. 事件只带标题和预览；需要邮件正文时，用事件详情里的 message_id 调用 `mail_read`，"
+            "最多读取 20 封，不要把所有邮件都读完。\n"
+            "4. 只提取稳定的、跨会话仍然成立的信息：用户的事实、偏好、承诺/截止、重要关系、项目。"
+            "不要提取一次性操作、闲聊、临时状态或模型猜测。每条 content 必须自含，不要用代词，最多 8 条。\n"
+            "5. 为每条给出 confidence（0-100）：用户明确陈述或承诺给 85-100，推测或弱信号给 50-84。\n"
+            "6. 最后调用 `propose_memory` 提交，source_type 用 activity。\n"
+            "工具名必须精确，不要拼接或臆造工具名。"
+            "这是后台整理任务，不要发通知，不要修改任何原始数据。"
+        ),
+    },
+    {
         "key": "morning_brief",
         "name": "晨间简报",
         "description": "每天汇总天气、日程、待办、通知和未读资讯，生成口语化晨报。",

@@ -12,6 +12,7 @@ CHECK_INTERVAL = 60  # seconds between checks
 
 _last_mail_sync = 0.0
 _last_rss_refresh = 0.0
+_last_dingtalk_sync_date: str | None = None
 
 
 async def _check_reminders():
@@ -143,9 +144,122 @@ async def _refresh_rss() -> None:
         print(f"[scheduler] rss refresh loop error: {e}")
 
 
+def _unwrap(payload, key: str):
+    data = payload.get("data", payload) if isinstance(payload, dict) else payload
+    for _ in range(4):
+        if isinstance(data, dict) and key in data:
+            return data[key]
+        if isinstance(data, dict) and isinstance(data.get("data"), (dict, list)):
+            data = data["data"]
+            continue
+        break
+    return []
+
+
+async def _sync_dingtalk() -> None:
+    """No-LLM sync: turn recent DingTalk messages into events for the memory agent."""
+    from core.config.settings import settings as _settings
+
+    try:
+        from mcp_servers.dingtalk.dws_client import run_dws
+        from core.database.session import async_session
+        from core.events.bus import record_event
+        from core.events.models import UserActivity
+        from core.mcp_hub.models import McpServer
+        from sqlalchemy import select
+
+        now = datetime.now()
+        start = (now - timedelta(hours=_settings.dingtalk_sync_hours)).astimezone().replace(microsecond=0)
+        start_iso = start.isoformat()
+        end_iso = now.astimezone().replace(microsecond=0).isoformat()
+
+        payload = await run_dws(
+            ["chat", "+recent-conversations", "--start", start_iso, "--format", "json"],
+            timeout=120,
+        )
+        conversations = _unwrap(payload, "conversations")
+        if not conversations:
+            return
+
+        async with async_session() as db:
+            users = list((await db.execute(
+                select(McpServer.user_id).where(
+                    McpServer.slug == "dingtalk", McpServer.enabled == True  # noqa: E712
+                )
+            )).scalars().all())
+        user_ids = sorted(set(users)) or [1]
+
+        for user_id in user_ids:
+            existing: set[str] = set()
+            async with async_session() as db:
+                rows = await db.execute(
+                    select(UserActivity.details).where(
+                        UserActivity.user_id == user_id,
+                        UserActivity.event_type == "dingtalk.message",
+                        UserActivity.created_at >= now - timedelta(days=2),
+                    )
+                )
+                for (details,) in rows:
+                    if isinstance(details, dict) and details.get("message_id"):
+                        existing.add(str(details["message_id"]))
+
+            stored = 0
+            for conv in conversations[:50]:
+                conv_id = conv.get("conversationId") or conv.get("conversation_id")
+                conv_name = conv.get("name") or conv_id or "钉钉会话"
+                if not conv_id:
+                    continue
+                try:
+                    msg_payload = await run_dws(
+                        [
+                            "chat", "+chat-messages",
+                            "--conversation-id", str(conv_id),
+                            "--start", start_iso, "--end", end_iso,
+                            "--order", "asc", "--page-all", "--max-items", "30",
+                            "--format", "json",
+                        ],
+                        timeout=180,
+                    )
+                except Exception:
+                    continue
+                messages = _unwrap(msg_payload, "messages") or []
+                async with async_session() as db:
+                    for msg in messages:
+                        message_id = str(msg.get("messageId") or "")
+                        if not message_id or message_id in existing:
+                            continue
+                        text = str(msg.get("text") or "").strip()
+                        if not text:
+                            continue
+                        sender = str(msg.get("sender") or "")
+                        await record_event(
+                            db, user_id, "dingtalk.message", "dingtalk", None,
+                            f"钉钉 · {conv_name} · {sender}",
+                            {
+                                "conversation": conv_name,
+                                "conversation_id": str(conv_id),
+                                "sender": sender,
+                                "message_id": message_id,
+                                "preview": text[:200],
+                                "time": str(msg.get("createTime") or ""),
+                            },
+                        )
+                        existing.add(message_id)
+                        stored += 1
+                        if stored >= _settings.dingtalk_sync_max_messages:
+                            break
+                    await db.commit()
+                if stored >= _settings.dingtalk_sync_max_messages:
+                    break
+            if stored:
+                print(f"[scheduler] dingtalk synced: {stored} message(s) for user {user_id}")
+    except Exception as e:
+        print(f"[scheduler] dingtalk sync error: {e}")
+
+
 async def scheduler_loop():
     """Check every 60s. Only reminders and fetching live here — no LLM calls."""
-    global _last_mail_sync, _last_rss_refresh
+    global _last_mail_sync, _last_rss_refresh, _last_dingtalk_sync_date
     while True:
         try:
             await _check_reminders()
@@ -159,6 +273,16 @@ async def scheduler_loop():
             if _settings.rss_refresh_enabled and _clock() - _last_rss_refresh >= _settings.rss_refresh_interval_seconds:
                 _last_rss_refresh = _clock()
                 await _refresh_rss()
+
+            if _settings.dingtalk_sync_enabled and _last_dingtalk_sync_date != today_key:
+                scheduled = now.replace(
+                    hour=_settings.dingtalk_sync_hour,
+                    minute=_settings.dingtalk_sync_minute,
+                    second=0, microsecond=0,
+                )
+                if now >= scheduled:
+                    _last_dingtalk_sync_date = today_key
+                    await _sync_dingtalk()
         except Exception as e:
             print(f"[scheduler] error: {e}")
 
