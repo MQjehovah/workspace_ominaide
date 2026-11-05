@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     weather_lon: str = ""          # 例 "121.47"；留空 = 不下发天气
     ha_token: str = ""             # HA 长期访问令牌
     mail_encryption_key: str = ""
+    # Backend-first mail: pull IMAP incrementally and analyse new messages.
+    mail_sync_enabled: bool = True
+    mail_sync_interval_seconds: int = 300
+    mail_max_per_sync: int = 20
+    # Backend-first RSS: refresh feeds even when no desktop client is online.
+    rss_refresh_enabled: bool = True
+    rss_refresh_interval_seconds: int = 1800
+    rss_digest_enabled: bool = True
+    rss_digest_hour: int = 8
+    rss_digest_minute: int = 0
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
     intelligence_layer_enabled: bool = True

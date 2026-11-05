@@ -58,25 +58,27 @@ async def create_schedule_event(user_id: int, args: dict) -> dict:
 
 
 async def list_recent_emails(user_id: int, args: dict) -> dict:
-    """List recent emails reported by the user's mail client. Returns subject, sender and preview."""
+    """List recent emails synced by the backend. Returns subject, sender and preview."""
     limit = min(int(args.get("limit", 10)), 50)
     only_important = bool(args.get("important", False))
     async with async_session() as db:
-        from plugins.mail.backend.models import MailEvent
-        q = select(MailEvent).where(MailEvent.user_id == user_id)
+        from plugins.mail.backend.models import MailMessage
+        q = select(MailMessage).where(MailMessage.user_id == user_id)
         if only_important:
-            q = q.where(MailEvent.important == True)
-        q = q.order_by(MailEvent.created_at.desc()).limit(limit)
+            q = q.where(MailMessage.important == True)
+        q = q.order_by(MailMessage.date.desc(), MailMessage.id.desc()).limit(limit)
         r = await db.execute(q)
-        events = r.scalars().all()
+        messages = r.scalars().all()
         return {"emails": [{
-            "id": e.id,
-            "subject": e.subject,
-            "from": e.from_address,
-            "date": e.date or (str(e.created_at) if e.created_at else ""),
-            "preview": (e.preview or "")[:300],
-            "important": bool(e.important),
-        } for e in events]}
+            "id": m.id,
+            "subject": m.subject,
+            "from": m.from_address,
+            "date": str(m.date) if m.date else (str(m.created_at) if m.created_at else ""),
+            "preview": (m.preview or "")[:300],
+            "summary": m.ai_summary,
+            "important": bool(m.important),
+            "read": bool(m.read),
+        } for m in messages]}
 
 
 async def search_articles(user_id: int, args: dict) -> dict:

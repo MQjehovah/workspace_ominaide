@@ -23,9 +23,10 @@
         <div v-if="!selectedEntry" class="entry-list">
           <div class="entry-toolbar">
             <span style="font-size:13px;font-weight:600;color:#1a1a2e">{{ pageTitle }}</span>
-            <div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <el-button size="small" type="primary" plain @click="loadDigest" :loading="digestLoading">今日摘要</el-button>
               <el-button size="small" @click="refreshActiveFeed" :loading="refreshing">刷新</el-button>
-              <span style="font-size:12px;color:#909399;margin-left:8px">共 {{ total }} 条</span>
+              <span style="font-size:12px;color:#909399">共 {{ total }} 条</span>
             </div>
           </div>
           <div v-for="e in entries" :key="e.id" class="entry-row" :class="{unread:!e.read}" @click="openEntry(e)">
@@ -53,6 +54,16 @@
         </div>
       </div>
     </div>
+
+    <el-dialog v-model="showDigest" title="今日资讯摘要" width="520px">
+      <p class="digest-summary">{{ digest?.summary || '暂无未读资讯' }}</p>
+      <div v-if="digest?.items?.length" class="digest-list">
+        <div v-for="item in digest.items" :key="item.id" class="digest-item">
+          <span class="digest-feed">{{ item.feed }}</span>
+          <span class="digest-title">{{ item.title }}</span>
+        </div>
+      </div>
+    </el-dialog>
 
     <el-dialog v-model="showAdd" title="添加订阅" width="420px">
       <el-form @submit.prevent="handleAdd" :model="addForm">
@@ -86,6 +97,22 @@ const refreshing = ref(false)
 const showAdd = ref(false)
 const adding = ref(false)
 const addForm = ref({ url: '' })
+const showDigest = ref(false)
+const digestLoading = ref(false)
+const digest = ref<any>(null)
+
+async function loadDigest() {
+  digestLoading.value = true
+  try {
+    const { data } = await client.get('/rss/digest', { params: { hours: 24 } })
+    digest.value = data
+    showDigest.value = true
+  } catch {
+    ElMessage.error('生成摘要失败')
+  } finally {
+    digestLoading.value = false
+  }
+}
 
 const pageTitle = computed(() => {
   if (searchQ.value) return `搜索: ${searchQ.value}`
@@ -177,6 +204,11 @@ onMounted(() => { loadFeeds(); loadEntries() })
 .back-btn { border:none;background:transparent;cursor:pointer;font-size:14px;color:#409EFF;padding:0; }
 .reader-title { font-size:22px; font-weight:700; color:#1a1a2e; margin:0 0 8px; }
 .reader-meta { display:flex; gap:16px; font-size:13px; color:#909399; margin-bottom:20px; }
+.digest-summary { font-size: 14px; line-height: 1.8; color: #303133; margin: 0 0 14px; }
+.digest-list { border-top: 1px solid #f0f2f5; padding-top: 10px; }
+.digest-item { display: flex; gap: 8px; font-size: 13px; line-height: 1.9; color: #606266; }
+.digest-feed { flex-shrink: 0; color: #909399; font-size: 12px; }
+.digest-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reader-body { font-size:15px; line-height:1.8; color:#333; }
 .reader-body img { max-width:100%; }
 </style>

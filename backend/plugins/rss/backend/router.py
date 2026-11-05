@@ -75,6 +75,18 @@ async def star_entry(entry_id: int, user=Depends(get_current_user), db: AsyncSes
     return {"starred": starred}
 
 
+@router.get("/digest")
+async def rss_digest(
+    hours: int = Query(24, ge=1, le=168),
+    user=Depends(get_current_user),
+):
+    """Summarise unread articles; works even when no desktop client is online."""
+    from plugins.rss.backend.digest import generate_rss_digest
+
+    digest = await generate_rss_digest(user["id"], hours=hours, notify=False)
+    return digest or {"count": 0, "items": [], "summary": ""}
+
+
 @router.get("/search")
 async def search(
     q: str,

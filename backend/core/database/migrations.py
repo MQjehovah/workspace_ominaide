@@ -48,6 +48,10 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("projects")}
             if "is_git" not in cols:
                 result.append("projects_is_git")
+        if "plugin_mail_accounts" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("plugin_mail_accounts")}
+            if "sync_enabled" not in cols:
+                result.append("mail_sync_state")
         # LONGTEXT widening is only meaningful on MySQL; PostgreSQL TEXT is unbounded.
         if dialect == "mysql" and "plugin_notes" in table_names:
             cols = {c["name"]: c["type"] for c in inspector.get_columns("plugin_notes")}
@@ -75,5 +79,12 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE bot_runs ADD COLUMN parent_run_id INTEGER NULL"))
             elif table == "projects_is_git":
                 await conn.execute(text(f"ALTER TABLE projects ADD COLUMN is_git BOOLEAN DEFAULT {bool_true}"))
+            elif table == "mail_sync_state":
+                await conn.execute(text(f"ALTER TABLE plugin_mail_accounts ADD COLUMN sync_enabled BOOLEAN DEFAULT {bool_true}"))
+                await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN folder VARCHAR(100) DEFAULT 'INBOX'"))
+                await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN last_uid INTEGER DEFAULT 0"))
+                await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN uidvalidity INTEGER NULL"))
+                await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN last_sync_at TIMESTAMP NULL"))
+                await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN sync_error TEXT NULL"))
             elif table == "plugin_notes":
                 await conn.execute(text("ALTER TABLE plugin_notes MODIFY content LONGTEXT NULL"))

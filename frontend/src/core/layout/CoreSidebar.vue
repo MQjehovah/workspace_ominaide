@@ -25,6 +25,7 @@
       </el-menu-item>
       <el-menu-item index="/schedule"><el-icon><Calendar /></el-icon><span>日程</span></el-menu-item>
       <el-menu-item index="/rss"><el-icon><Promotion /></el-icon><span>资讯</span></el-menu-item>
+      <el-menu-item index="/mail"><el-icon><Message /></el-icon><span>邮件</span></el-menu-item>
       <el-menu-item index="/files">
         <el-icon><Folder /></el-icon>
         <span>文件</span>
@@ -78,7 +79,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound, Sunrise } from '@element-plus/icons-vue'
+import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound, Sunrise, Message } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()

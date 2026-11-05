@@ -1,11 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
-from .schemas import MailAccountCreate, MailAccountUpdate, MailAccountResponse, MailEventCreate, MailEventResponse
+from .schemas import (
+    MailAccountCreate,
+    MailAccountUpdate,
+    MailAccountResponse,
+    MailAccountSyncResponse,
+    MailEventCreate,
+    MailEventResponse,
+    MailMessageDetail,
+    MailMessageResponse,
+)
 from . import service as mail_service
-from .models import MailEvent
+from . import sync as mail_sync
+from .models import MailAccount, MailEvent, MailMessage
 
 router = APIRouter(prefix="/api/plugins/mail", tags=["mail"])
 
@@ -52,6 +62,117 @@ async def delete_account(
     if not ok:
         raise HTTPException(status_code=404, detail="Account not found")
     return {"message": "Account deleted"}
+
+
+@router.post("/accounts/{account_id}/sync", response_model=MailAccountSyncResponse)
+async def sync_account(
+    account_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pull new mail for one account right now (backend IMAP)."""
+    exists = (await db.execute(
+        select(MailAccount).where(
+            MailAccount.id == account_id, MailAccount.user_id == user["id"]
+        )
+    )).scalar_one_or_none()
+    if exists is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return await mail_sync.sync_account(account_id)
+
+
+@router.post("/sync")
+async def sync_due_mail(user: dict = Depends(get_current_user)):
+    """Sync every due account for the current user."""
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        r = await db.execute(
+            select(MailAccount.id).where(
+                MailAccount.user_id == user["id"],
+                MailAccount.sync_enabled == True,
+            )
+        )
+        ids = [row[0] for row in r.all()]
+    total = 0
+    for account_id in ids:
+        result = await mail_sync.sync_account(account_id)
+        total += int(result.get("new") or 0)
+    return {"accounts": len(ids), "new": total}
+
+
+@router.get("/messages")
+async def list_messages(
+    account_id: int | None = Query(None),
+    unread: bool = False,
+    important: bool = False,
+    starred: bool = False,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    items, total = await mail_sync.list_messages(
+        db, user["id"], account_id, unread, important, starred, page, page_size
+    )
+    return {
+        "items": [MailMessageResponse.model_validate(m) for m in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/messages/{message_id}", response_model=MailMessageDetail)
+async def get_message(
+    message_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    msg = (await db.execute(
+        select(MailMessage).where(
+            MailMessage.id == message_id, MailMessage.user_id == user["id"]
+        )
+    )).scalar_one_or_none()
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return msg
+
+
+@router.put("/messages/{message_id}/read")
+async def mark_message_read(
+    message_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    msg = (await db.execute(
+        select(MailMessage).where(
+            MailMessage.id == message_id, MailMessage.user_id == user["id"]
+        )
+    )).scalar_one_or_none()
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    msg.read = True
+    await db.flush()
+    return {"message": "Read"}
+
+
+@router.put("/messages/{message_id}/star")
+async def star_message(
+    message_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    msg = (await db.execute(
+        select(MailMessage).where(
+            MailMessage.id == message_id, MailMessage.user_id == user["id"]
+        )
+    )).scalar_one_or_none()
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    msg.starred = not msg.starred
+    await db.flush()
+    return {"starred": msg.starred}
 
 
 @router.post("/events", response_model=MailEventResponse, status_code=201)

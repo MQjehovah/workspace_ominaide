@@ -10,6 +10,9 @@ CHECK_INTERVAL = 60  # seconds between checks
 _sent_today: set[int] = set()  # track which user_ids got briefing today
 _last_review_date: str | None = None   # day whose review was generated with notification
 _backfilled_review_date: str | None = None  # day whose missing reviews were backfilled
+_last_mail_sync = 0.0
+_last_rss_refresh = 0.0
+_last_rss_digest_date: str | None = None
 
 
 async def _briefing_review_line(user_id: int) -> str:
@@ -460,6 +463,54 @@ async def _daily_event_analysis():
         print(f"[scheduler] daily analysis error: {e}")
 
 
+async def _sync_mail() -> None:
+    """Backend-first mail: pull due IMAP accounts even with no desktop online."""
+    try:
+        from core.config.settings import settings as _settings
+        from plugins.mail.backend.sync import sync_due_accounts
+
+        result = await sync_due_accounts(_settings.mail_sync_interval_seconds)
+        if result.get("new"):
+            print(f"[scheduler] mail synced: {result['new']} new message(s)")
+    except Exception as e:
+        print(f"[scheduler] mail sync error: {e}")
+
+
+async def _refresh_rss() -> None:
+    """Backend-first RSS: refresh feeds on a timer, independent of clients."""
+    try:
+        from sqlalchemy import or_, select
+        from core.config.settings import settings as _settings
+        from core.database.session import async_session
+        from plugins.rss.backend.models import Feed
+        from plugins.rss.backend.service import fetch_feed_content
+
+        cutoff = datetime.utcnow() - timedelta(seconds=_settings.rss_refresh_interval_seconds)
+        async with async_session() as db:
+            r = await db.execute(
+                select(Feed.id).where(
+                    or_(Feed.last_fetch == None, Feed.last_fetch < cutoff)
+                )
+            )
+            feed_ids = [row[0] for row in r.all()]
+
+        for feed_id in feed_ids:
+            async with async_session() as db:
+                feed = (await db.execute(select(Feed).where(Feed.id == feed_id))).scalar_one_or_none()
+                if feed is None:
+                    continue
+                try:
+                    new = await fetch_feed_content(db, feed)
+                    await db.commit()
+                    if new:
+                        print(f"[scheduler] rss {feed.url}: {new} new")
+                except Exception as e:
+                    await db.rollback()
+                    print(f"[scheduler] rss refresh error {feed_id}: {e}")
+    except Exception as e:
+        print(f"[scheduler] rss refresh loop error: {e}")
+
+
 async def _active_user_ids() -> list[int]:
     from sqlalchemy import select
     from core.auth.domain.models import User
@@ -503,6 +554,7 @@ async def scheduler_loop():
     periodic event scanning, and once-daily preference/memory analysis."""
     global _last_event_scan, _last_daily_scan, _last_daily_scan_date
     global _last_review_date, _backfilled_review_date
+    global _last_mail_sync, _last_rss_refresh, _last_rss_digest_date
     while True:
         try:
             now = datetime.now()
@@ -524,6 +576,27 @@ async def scheduler_loop():
                 await _daily_event_analysis()
 
             from core.config.settings import settings as _settings
+
+            if _settings.mail_sync_enabled and _clock() - _last_mail_sync >= _settings.mail_sync_interval_seconds:
+                _last_mail_sync = _clock()
+                await _sync_mail()
+
+            if _settings.rss_refresh_enabled and _clock() - _last_rss_refresh >= _settings.rss_refresh_interval_seconds:
+                _last_rss_refresh = _clock()
+                await _refresh_rss()
+
+            if (_settings.rss_digest_enabled
+                    and _last_rss_digest_date != today_key
+                    and now.hour == _settings.rss_digest_hour
+                    and now.minute == _settings.rss_digest_minute):
+                _last_rss_digest_date = today_key
+                from plugins.rss.backend.digest import generate_rss_digest
+
+                for uid in await _active_user_ids():
+                    try:
+                        await generate_rss_digest(uid, notify=True)
+                    except Exception as e:
+                        print(f"[scheduler] rss digest error for user {uid}: {e}")
 
             # Daily review: generate today's review at a fixed local time, and
             # backfill yesterday once per day in case the server was offline.

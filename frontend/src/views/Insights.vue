@@ -91,7 +91,7 @@ function todayISO() {
 async function load() {
   loading.value = true
   try {
-    const { data } = await client.get('/api/insights/daily', { params: { days: days.value } })
+    const { data } = await client.get('/insights/daily', { params: { days: days.value } })
     items.value = data || []
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '加载回顾失败')
@@ -103,7 +103,7 @@ async function load() {
 async function generateToday() {
   generating.value = true
   try {
-    await client.post('/api/insights/daily/run', { day: todayISO(), force: true })
+    await client.post('/insights/daily/run', { day: todayISO(), force: true })
     ElMessage.success('今日回顾已生成')
     await load()
   } catch (e: any) {

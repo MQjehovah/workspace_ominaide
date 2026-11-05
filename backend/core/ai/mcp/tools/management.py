@@ -378,30 +378,51 @@ async def read_file_content(user_id: int, args: dict) -> MCPCallResponse:
 # ---------------------------------------------------------------------------
 
 async def mail_read(user_id: int, args: dict) -> MCPCallResponse:
-    from plugins.mail.backend.models import MailEvent
+    from plugins.mail.backend.models import MailEvent, MailMessage
 
     try:
-        event_id = _int(args, "mail_id")
+        mail_id = _int(args, "mail_id")
     except ValueError as e:
         return _err(str(e))
     async with async_session() as db:
-        event = (
+        message = (
             await db.execute(
-                select(MailEvent).where(
-                    MailEvent.id == event_id, MailEvent.user_id == user_id
+                select(MailMessage).where(
+                    MailMessage.id == mail_id, MailMessage.user_id == user_id
                 )
             )
         ).scalar_one_or_none()
-    if event is None:
-        return _err(f"邮件 #{event_id} 不存在")
+        if message is None:
+            # Backward compatibility with emails reported by older desktop clients.
+            event = (
+                await db.execute(
+                    select(MailEvent).where(
+                        MailEvent.id == mail_id, MailEvent.user_id == user_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if event is None:
+                return _err(f"邮件 #{mail_id} 不存在")
+            return _ok(
+                "\n".join(
+                    [
+                        f"主题：{event.subject or '(无主题)'}",
+                        f"发件人：{event.from_address or '-'}",
+                        f"时间：{event.date or '-'}",
+                        "",
+                        (event.content or event.preview or "(无正文)")[:15000],
+                    ]
+                )
+            )
     return _ok(
         "\n".join(
             [
-                f"主题：{event.subject or '(无主题)'}",
-                f"发件人：{event.from_address or '-'}",
-                f"时间：{event.date or '-'}",
+                f"主题：{message.subject or '(无主题)'}",
+                f"发件人：{message.from_address or '-'}",
+                f"时间：{message.date or '-'}",
+                f"摘要：{message.ai_summary or '-'}",
                 "",
-                (event.content or event.preview or "(无正文)")[:15000],
+                (message.content or message.preview or "(无正文)")[:15000],
             ]
         )
     )

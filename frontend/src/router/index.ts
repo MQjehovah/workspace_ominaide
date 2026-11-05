@@ -88,6 +88,11 @@ const router = createRouter({
           path: 'rss',
           name: 'RSS',
           component: () => import('@/views/RSS.vue')
+        },
+        {
+          path: 'mail',
+          name: '邮件',
+          component: () => import('@/views/Mail.vue')
         }
       ]
     }

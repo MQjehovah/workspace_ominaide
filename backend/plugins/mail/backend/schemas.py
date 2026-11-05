@@ -41,9 +41,47 @@ class MailAccountResponse(BaseModel):
     smtp_tls: bool
     username: str
     password: str
+    sync_enabled: bool = True
+    folder: str | None = None
+    last_uid: int = 0
+    last_sync_at: datetime | None = None
+    sync_error: str | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+class MailAccountSyncResponse(BaseModel):
+    account_id: int
+    new: int = 0
+    fetched: int = 0
+    skipped: bool = False
+    error: str | None = None
+
+
+class MailMessageResponse(BaseModel):
+    id: int
+    user_id: int
+    account_id: int
+    uid: int
+    message_id: str | None = None
+    subject: str | None = None
+    from_address: str | None = None
+    to_addresses: str | None = None
+    date: datetime | None = None
+    preview: str | None = None
+    has_attachments: bool = False
+    important: bool = False
+    ai_summary: str | None = None
+    ai_actions: list | None = None
+    read: bool = False
+    starred: bool = False
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class MailMessageDetail(MailMessageResponse):
+    content: str | None = None
 
 
 class MailEventCreate(BaseModel):
