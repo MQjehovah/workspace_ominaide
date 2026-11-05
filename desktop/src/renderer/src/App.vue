@@ -7,6 +7,7 @@
     <ScreenshotPanel v-else-if="view === 'screenshot'" />
     <ScreenshotEditor v-else-if="view === 'screenshot-editor'" />
     <PluginManager v-else-if="view === 'plugin-manager'" />
+    <QuickCapture v-else-if="view === 'quick-capture'" />
     <audio ref="audioRef" preload="auto" @ended="onAudioEnded" @timeupdate="onTimeUpdate" @loadedmetadata="onLoadedMeta" />
   </div>
   <div v-else-if="error" class="error">{{ error }}</div>
@@ -22,6 +23,7 @@ import PluginManager from './components/PluginManager.vue'
 import LoginPage from './components/LoginPage.vue'
 import ScreenshotPanel from './components/ScreenshotPanel.vue'
 import ScreenshotEditor from './components/ScreenshotEditor.vue'
+import QuickCapture from './components/QuickCapture.vue'
 
 const ready = ref(false)
 const error = ref('')

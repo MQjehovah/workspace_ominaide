@@ -19,6 +19,7 @@ protocol.registerSchemesAsPrivileged([
 let mainPanel: BrowserWindow | null = null
 let loginWindow: BrowserWindow | null = null
 let searchWindow: BrowserWindow | null = null
+let quickCaptureWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 
@@ -63,6 +64,24 @@ function showMainPanel() {
   })
 }
 
+function showQuickCapture() {
+  getConfig().then(cfg => {
+    if (!cfg.token) { showLogin(); return }
+    if (quickCaptureWindow) {
+      quickCaptureWindow.show()
+      quickCaptureWindow.focus()
+      return
+    }
+    quickCaptureWindow = createRenderer('quick-capture', {
+      width: 560, height: 320, resizable: false,
+    })
+    quickCaptureWindow.setAlwaysOnTop(true, 'floating')
+    quickCaptureWindow.setSkipTaskbar(true)
+    quickCaptureWindow.center()
+    quickCaptureWindow.on('closed', () => { quickCaptureWindow = null })
+  })
+}
+
 function showSearchWindow() {
   getConfig().then(cfg => {
     if (!cfg.token) { showLogin(); return }
@@ -81,6 +100,7 @@ function createTray() {
   tray.setToolTip('OmniAide')
   const contextMenu = Menu.buildFromTemplate([
     { label: '打开 OmniAide', click: showMainPanel },
+    { label: '快速记录', click: showQuickCapture },
     { type: 'separator' },
     { label: '退出', click: () => { isQuitting = true; app.quit() } },
   ])
@@ -123,7 +143,11 @@ app.whenReady().then(async () => {
   await initPlugins()
   createTray()
   const cfg = await getConfig()
-  await setupShortcut({ search: showSearchWindow, toggle: showMainPanel })
+  await setupShortcut({
+    search: showSearchWindow,
+    toggle: showMainPanel,
+    quickCapture: showQuickCapture,
+  })
   if (cfg.token) {
     const { startBackendChannel } = await import('./backendChannel')
     startBackendChannel().catch(() => {})
