@@ -38,7 +38,6 @@ TOOL_RISK = {
     "list_recent_emails": RISK_READ,
     "get_current_time": RISK_READ,
     "save_memory": RISK_WRITE,
-    "propose_memory": RISK_WRITE,
     "create_schedule_event": RISK_WRITE,
     "update_schedule_event": RISK_WRITE,
     "delete_schedule_event": RISK_WRITE,

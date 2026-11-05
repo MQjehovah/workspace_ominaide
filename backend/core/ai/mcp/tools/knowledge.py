@@ -27,55 +27,6 @@ def _snippet(text: str | None, width: int = 220) -> str:
     return text[:width] + ("…" if len(text) > width else "")
 
 
-async def propose_memory(user_id: int, args: dict) -> MCPCallResponse:
-    """Queue review candidates from the model's own analysis (no second LLM call)."""
-    items = args.get("items")
-    if not isinstance(items, list) or not items:
-        return _err("items is required")
-    source_type = str(args.get("source_type") or "chat")[:32]
-    source_id = args.get("source_id")
-    try:
-        source_id = int(source_id) if source_id is not None else None
-    except (TypeError, ValueError):
-        source_id = None
-    source_ref = args.get("source_ref") if isinstance(args.get("source_ref"), dict) else None
-    # External content is never auto-approved; it goes to the review queue.
-    trust = "untrusted" if source_type in ("email", "dingtalk", "rss", "external") else "trusted"
-
-    from core.bots.context import get_current_bot_id
-    from core.database.session import async_session
-    from core.memory_service import queue_candidate
-
-    bot_id = get_current_bot_id()
-    created = 0
-    async with async_session() as db:
-        for item in items[:8]:
-            if not isinstance(item, dict):
-                continue
-            content = str(item.get("content") or "").strip()
-            if len(content) < 6:
-                continue
-            try:
-                confidence = int(item.get("confidence") or 60)
-            except (TypeError, ValueError):
-                confidence = 60
-            row = await queue_candidate(
-                db, user_id,
-                str(item.get("kind") or "fact"),
-                content,
-                confidence=confidence,
-                source_type=source_type,
-                source_id=source_id,
-                source_ref=source_ref,
-                trust=trust,
-                bot_id=bot_id,
-            )
-            if row is not None:
-                created += 1
-        await db.commit()
-    return _ok(f"已提交 {created} 条候选记忆，等待用户审核")
-
-
 async def search_knowledge(user_id: int, args: dict) -> MCPCallResponse:
     """Vector search over everything indexed for the user (omnidocs)."""
     query = (args.get("query") or "").strip()
@@ -196,39 +147,5 @@ TOOLS = [
             },
         ),
         save_memory,
-    ),
-    (
-        MCPTool(
-            name="propose_memory",
-            description=(
-                "提交待审核的长期记忆候选（不直接生效）。分析邮件、对话等外部内容时，"
-                "把值得跨会话保留的事实/偏好/承诺/项目提交到这里，由用户确认。"
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "items": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "kind": {
-                                    "type": "string",
-                                    "enum": ["fact", "preference", "commitment", "relationship", "project"],
-                                },
-                                "content": {"type": "string", "description": "自含的一条记忆，不要用代词"},
-                                "confidence": {"type": "integer", "description": "0-100"},
-                            },
-                            "required": ["content"],
-                        },
-                        "description": "最多 8 条",
-                    },
-                    "source_type": {"type": "string", "description": "email/chat/dingtalk/rss"},
-                    "source_id": {"type": "integer", "description": "来源对象 id（如邮件 id）"},
-                },
-                "required": ["items"],
-            },
-        ),
-        propose_memory,
     ),
 ]

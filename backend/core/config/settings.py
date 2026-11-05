@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     rss_refresh_interval_seconds: int = 1800
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
+    # Unified memory extraction for external message events (mail/DingTalk),
+    # handled by the event worker instead of per-plugin code.
+    memory_event_extract_enabled: bool = True
     intelligence_layer_enabled: bool = True
     coding_workspace_root: str = "/workspace"
     coding_max_turns: int = 40

@@ -62,8 +62,16 @@ async def _process_event(payload: dict):
         return
     async with async_session() as db:
         from sqlalchemy import select
-        r = await db.execute(select(UserEvent).where(UserEvent.id == event_id))
-        event = r.scalar_one_or_none()
+
+        # The queue push happens before the producer commits, so the row may not
+        # be visible yet. Retry briefly instead of dropping the event.
+        event = None
+        for _ in range(5):
+            r = await db.execute(select(UserEvent).where(UserEvent.id == event_id))
+            event = r.scalar_one_or_none()
+            if event is not None:
+                break
+            await asyncio.sleep(0.2)
         if not event:
             return
         for handler in _handlers:
