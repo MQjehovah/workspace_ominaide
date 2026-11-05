@@ -113,7 +113,7 @@
       </el-table-column>
       <el-table-column prop="mime_type" label="类型" width="150" show-overflow-tooltip />
       <el-table-column label="修改时间" width="170">
-        <template #default="{ row }">{{ (row.updated_at || row.created_at || '').replace('T', ' ').slice(0, 16) }}</template>
+        <template #default="{ row }">{{ fmtTime(row.updated_at || row.created_at) }}</template>
       </el-table-column>
       <el-table-column width="150" fixed="right">
         <template #default="{ row }">
@@ -162,7 +162,7 @@
       <div v-if="previewFileItem">
         <p class="muted">
           {{ previewFileItem.mime_type }} · {{ store.formatSize(previewFileItem.size) }} ·
-          {{ (previewFileItem.updated_at || previewFileItem.created_at || '').replace('T', ' ').slice(0, 19) }}
+          {{ fmtTime(previewFileItem.updated_at || previewFileItem.created_at) }}
         </p>
         <div v-if="isImage" class="preview-center">
           <img :src="previewSrc" style="max-width:100%; max-height:500px" />
@@ -189,6 +189,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useFileStore, type FileItem } from '@/stores/core/file'
 import { apiUrl } from '@/api/base'
 import client from '@/api/client'
+import { formatBackendDate } from '@/utils/date'
 import {
   Delete, Document, Download, Edit, Folder, FolderAdd, Grid, Headset, List, Loading,
   MoreFilled, Picture, Rank, Reading, RefreshLeft, Search, Star, StarFilled, Upload, VideoCamera,
@@ -203,6 +204,10 @@ const searchText = ref('')
 const currentPath = ref('/')
 const trashMode = ref(false)
 let searchTimer: any = null
+
+function fmtTime(value?: string | null) {
+  return value ? formatBackendDate(value) : '—'
+}
 
 const pathSegments = computed(() => currentPath.value.split('/').filter(Boolean))
 const previewMime = computed(() => previewFileItem.value?.mime_type || '')

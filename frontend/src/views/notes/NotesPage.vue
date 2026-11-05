@@ -65,7 +65,7 @@
               @click="openSearchResult(n)"
             >
               <div class="search-result-title">{{ n.title || '无标题' }}</div>
-              <div class="search-result-meta">{{ (n.updated_at || '').slice(0, 16).replace('T', ' ') }}</div>
+              <div class="search-result-meta">{{ fmtDate(n.updated_at) }}</div>
             </div>
             <el-empty v-if="!noteSearchLoading && !noteSearchResults.length" description="没有匹配的笔记" :image-size="50" />
           </template>
@@ -219,8 +219,13 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ChatDotRound, Clock, Delete, Download, FolderAdd, Link, Menu, MoreFilled, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '@/api/client'
+import { formatBackendDate } from '@/utils/date'
 import TipTapEditor from './TipTapEditor.vue'
 import TreeNode from './TreeNode.vue'
+
+function fmtDate(value?: string | null) {
+  return value ? formatBackendDate(value) : ''
+}
 
 const tree = ref<any[]>([])
 const currentId = ref<number | null>(null)

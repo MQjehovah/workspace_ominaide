@@ -58,6 +58,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Setting, SwitchButton, Bell } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import client from '@/api/client'
+import { parseBackendDate } from '@/utils/date'
 import GlobalSearch from './GlobalSearch.vue'
 
 defineEmits<{ 'toggle-sidebar': [] }>()
@@ -140,7 +141,8 @@ async function markAllRead() {
 }
 function formatTime(iso: string) {
   if (!iso) return ''
-  const d = new Date(iso)
+  const d = parseBackendDate(iso)
+  if (isNaN(d.getTime())) return ''
   const now = new Date()
   const diff = now.getTime() - d.getTime()
   if (diff < 60000) return '刚刚'

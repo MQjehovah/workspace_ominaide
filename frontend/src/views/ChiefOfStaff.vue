@@ -3,7 +3,10 @@
     <div class="page-header">
       <div>
         <h2>幕僚长</h2>
-        <p class="page-sub">统一收件箱、会议准备、每日简报与周报</p>
+        <p class="page-sub">
+          把邮件、资讯、日程、待办、钉钉和长期记忆合成一个工作台：
+          现在该处理什么、会前看什么、这周怎么复盘。
+        </p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="reload">刷新</el-button>
     </div>
