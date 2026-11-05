@@ -60,19 +60,24 @@ class Settings(BaseSettings):
     ha_token: str = ""             # HA 长期访问令牌
     mail_encryption_key: str = ""
     # Backend-first mail: pull IMAP incrementally and analyse new messages.
+    # IMAP fetching itself is free; per-message LLM analysis costs tokens and is
+    # off by default. Move it to a Bot trigger if you want it.
     mail_sync_enabled: bool = True
     mail_sync_interval_seconds: int = 300
     mail_max_per_sync: int = 20
+    mail_llm_analysis_enabled: bool = False
     # Backend-first RSS: refresh feeds even when no desktop client is online.
     rss_refresh_enabled: bool = True
     rss_refresh_interval_seconds: int = 1800
-    rss_digest_enabled: bool = True
+    # Digest generation calls the LLM: opt in via a Bot trigger instead.
+    rss_digest_enabled: bool = False
     rss_digest_hour: int = 8
     rss_digest_minute: int = 0
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
     # Extract candidate memories from important external content (mail/DingTalk).
-    memory_external_extract_enabled: bool = True
+    # Each extraction is an LLM call; opt in explicitly.
+    memory_external_extract_enabled: bool = False
     intelligence_layer_enabled: bool = True
     coding_workspace_root: str = "/workspace"
     coding_max_turns: int = 40
@@ -108,14 +113,16 @@ class Settings(BaseSettings):
     web_search_max_results: int = 5
     web_fetch_max_bytes: int = 2_000_000
     web_fetch_max_chars: int = 12_000
-    # Proactive morning briefing (server local time).
-    morning_brief_enabled: bool = True
+    # Scheduled LLM jobs are opt-in now: create them as Bot triggers instead of
+    # letting the backend spend tokens invisibly.
+    morning_brief_enabled: bool = False
     morning_brief_hour: int = 7
     morning_brief_minute: int = 30
-    # Daily review: analyse today's activities + conversations once, after the day ends.
-    daily_review_enabled: bool = True
+    daily_review_enabled: bool = False
     daily_review_hour: int = 22
     daily_review_minute: int = 0
+    event_scan_enabled: bool = False        # every 15 min urgent-event scan
+    daily_analysis_enabled: bool = False    # daily user-profile refresh
     # Bot runs: persistent execution, heartbeat and recovery.
     bot_run_concurrency: int = 2
     bot_run_max_turns: int = 20

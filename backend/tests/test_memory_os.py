@@ -321,6 +321,9 @@ async def test_important_mail_creates_untrusted_candidate(client, monkeypatch):
     async def fake_extract(text: str):
         return [{"kind": "commitment", "content": "客户要求周五前提交预算方案", "confidence": 88}]
 
+    from core.config.settings import settings as _settings
+
+    monkeypatch.setattr(_settings, "memory_external_extract_enabled", True)
     monkeypatch.setattr(mail_sync, "analyze_message", fake_analyze)
     monkeypatch.setattr(memory_service, "_llm_extract", fake_extract)
 

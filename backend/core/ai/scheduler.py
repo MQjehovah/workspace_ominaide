@@ -266,6 +266,45 @@ _last_daily_scan_date = None  # date string of the last daily analysis
 
 MAX_EVENTS_PER_BATCH = 40  # cap for a single LLM batch (prevent prompt overflow)
 
+_STATE_KEY = "event_scan_cursor"
+
+
+async def _load_event_cursor():
+    """Load the scan cursor from the DB so restarts don't re-read old events."""
+    from datetime import datetime
+    from sqlalchemy import text
+    from core.database.session import engine
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS scheduler_state ("
+                "key VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL)"
+            ))
+            row = (await conn.execute(
+                text("SELECT value FROM scheduler_state WHERE key = :k"),
+                {"k": _STATE_KEY},
+            )).first()
+        if not row:
+            return None
+        ts_text, event_id = str(row[0]).split("|", 1)
+        return datetime.fromisoformat(ts_text), int(event_id)
+    except Exception as e:
+        print(f"[scheduler] cursor load error: {e}")
+        return None
+
+
+async def _save_event_cursor(cursor) -> None:
+    from sqlalchemy import text
+    from core.database.session import engine
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "INSERT INTO scheduler_state(key, value) VALUES (:k, :v) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+            ), {"k": _STATE_KEY, "v": f"{cursor[0].isoformat()}|{cursor[1]}"})
+    except Exception as e:
+        print(f"[scheduler] cursor save error: {e}")
+
 
 async def _fetch_new_events(db, cursor, limit=MAX_EVENTS_PER_BATCH):
     from sqlalchemy import select, or_, and_
@@ -300,9 +339,9 @@ async def _scan_events():
     global _last_event_cursor
 
     now = datetime.utcnow()
-    cursor = _last_event_cursor
+    cursor = _last_event_cursor or await _load_event_cursor()
     if cursor is None:
-        # First scan (or after restart): only today's events — never read the whole history.
+        # Very first run only: start from today's events, never the whole history.
         cursor = (now.replace(hour=0, minute=0, second=0, microsecond=0), 0)
 
     try:
@@ -310,6 +349,7 @@ async def _scan_events():
             events = await _fetch_new_events(db, cursor)
             if not events:
                 _last_event_cursor = (now, 0)
+                await _save_event_cursor(_last_event_cursor)
                 return  # nothing new — don't call the LLM
 
             # Never mix users in one prompt or notify the wrong account.
@@ -373,6 +413,7 @@ async def _scan_events():
 
                 from plugins.notifications.backend.service import create_notification
                 from plugins.notifications.backend.router import notify_user
+                event_ids = [e.id for e in group]
                 n = await create_notification(
                     db, user_id,
                     "🔔 重要事项提醒",
@@ -380,9 +421,14 @@ async def _scan_events():
                     "important",
                     "/",
                     actions=[{"key": "open", "label": "查看", "kind": "open", "link": "/activities"}],
-                    dedupe_key=f"important:{user_id}:{summary[:80]}",
+                    # Key on the source events, not the LLM summary text (which
+                    # changes between runs); permanent so one event notifies once.
+                    dedupe_key=f"important:{user_id}:{min(event_ids)}-{max(event_ids)}",
+                    dedupe_minutes=None,
                 )
                 await db.commit()
+                if getattr(n, "_deduped", False):
+                    continue
                 try:
                     await notify_user(user_id, {
                         "type": "new_notification",
@@ -394,9 +440,10 @@ async def _scan_events():
                 except Exception:
                     pass
 
-            # Advance the cursor past everything we just processed.
+            # Advance and persist the cursor past everything just processed.
             last = events[-1]
             _last_event_cursor = (last.created_at, last.id)
+            await _save_event_cursor(_last_event_cursor)
     except Exception as e:
         print(f"[scheduler] event scan error: {e}")
 
@@ -620,16 +667,20 @@ async def scheduler_loop():
 
             await _check_reminders()
 
-            if _clock() - _last_event_scan >= EVENT_SCAN_INTERVAL:
+            from core.config.settings import settings as _settings
+
+            # Both scans call the LLM. They are opt-in so background token spend
+            # stays visible; use the matching Bot trigger templates instead.
+            if _settings.event_scan_enabled and _clock() - _last_event_scan >= EVENT_SCAN_INTERVAL:
                 _last_event_scan = _clock()
                 await _scan_events()
 
-            if _last_daily_scan_date != today_key and _clock() - _last_daily_scan >= DAILY_SCAN_INTERVAL:
+            if (_settings.daily_analysis_enabled
+                    and _last_daily_scan_date != today_key
+                    and _clock() - _last_daily_scan >= DAILY_SCAN_INTERVAL):
                 _last_daily_scan = _clock()
                 _last_daily_scan_date = today_key
                 await _daily_event_analysis()
-
-            from core.config.settings import settings as _settings
 
             if _settings.mail_sync_enabled and _clock() - _last_mail_sync >= _settings.mail_sync_interval_seconds:
                 _last_mail_sync = _clock()

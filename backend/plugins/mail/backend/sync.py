@@ -221,11 +221,12 @@ async def analyze_message(user_id: int, message_id: int) -> None:
 
         fallback = {
             "summary": (msg.preview or msg.subject or "(无正文)")[:300],
-            "important": False,
+            # Keep the IMAP importance flag; never silently clear it.
+            "important": bool(msg.important),
             "actions": [],
         }
         result = fallback
-        if settings.llm_api_key:
+        if settings.mail_llm_analysis_enabled and settings.llm_api_key:
             try:
                 from openai import AsyncOpenAI
 
@@ -271,7 +272,7 @@ async def analyze_message(user_id: int, message_id: int) -> None:
         msg.important = result["important"]
         await db.commit()
 
-        if msg.important:
+        if msg.important and settings.mail_llm_analysis_enabled:
             try:
                 from plugins.notifications.backend.router import notify_user
                 from plugins.notifications.backend.service import create_notification

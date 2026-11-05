@@ -220,7 +220,7 @@ async def test_run_lifecycle_and_cancel(client, user_token):
     assert "cancelled" in r.text
 
 
-async def test_routine_crud_and_seed(client, user_token):
+async def test_routine_crud_and_seed(client, user_token, monkeypatch):
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
@@ -253,10 +253,12 @@ async def test_routine_crud_and_seed(client, user_token):
     )
     assert r.status_code == 422
 
-    # Seed is idempotent and creates the morning briefing routine.
+    # Seed is idempotent and creates the morning briefing routine when enabled.
     from core.bots import routines as routine_service
     from core.bots.routines import seed_default_routines
+    from core.config.settings import settings
 
+    monkeypatch.setattr(settings, "morning_brief_enabled", True)
     await seed_default_routines()
     await seed_default_routines()
     me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
