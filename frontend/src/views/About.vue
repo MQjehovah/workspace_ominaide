@@ -547,7 +547,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.about-page { max-width: 1180px; display: flex; flex-direction: column; gap: 16px; }
+.about-page { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.about-page .page-card { padding: 18px 20px; }
 
 .hero {
   position: relative; overflow: hidden;
@@ -661,7 +662,7 @@ section[id] { scroll-margin-top: 12px; }
 
 .memory-status {
   display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
-  padding: 12px 18px; border-radius: 14px;
+  padding: 12px 20px; border-radius: 14px;
   background: #fff; border: 1px solid #e8edf8;
 }
 .memory-status-item { display: flex; align-items: baseline; gap: 6px; }
@@ -884,6 +885,7 @@ section[id] { scroll-margin-top: 12px; }
 
 @media (max-width: 640px) {
   .about-page { gap: 12px; }
+  .about-page .page-card { padding: 14px; }
   .hero { padding: 18px 16px 14px; border-radius: 16px; }
   .avatar { width: 54px; height: 54px; border-radius: 17px; font-size: 22px; }
   .hero-name-row h1 { font-size: 19px; }
