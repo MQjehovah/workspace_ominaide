@@ -90,58 +90,7 @@ function createImapClient(acc: MailAccount) {
   })
 }
 
-// ---- New-email detection & cloud reporting ----
-
-async function reportNewEmails(acc: MailAccount, emails: EmailSummary[]) {
-  const seenKey = `mail_seen_${acc.id}`
-  let seen: number[] = []
-  try {
-    seen = (await pluginCtx?.storage?.get(seenKey)) || []
-  } catch { /* ignore */ }
-  const seenSet = new Set(seen)
-  let changed = false
-  for (const email of emails) {
-    if (seenSet.has(email.uid)) continue
-    seenSet.add(email.uid)
-    changed = true
-    // Report every new email to the cloud; the LLM decides importance there.
-    try {
-      await pluginCtx?.api?.post('/plugins/mail/events', {
-        account_id: String(acc.id),
-        uid: email.uid,
-        subject: email.subject,
-        from_address: email.from,
-        date: email.date,
-        preview: email.preview,
-        content: email.text,
-      })
-    } catch (e: any) {
-      console.error('[mail] report to cloud failed:', e?.message || e)
-    }
-  }
-  if (changed) {
-    try {
-      await pluginCtx?.storage?.set(seenKey, Array.from(seenSet).slice(-500))
-    } catch { /* ignore */ }
-  }
-}
-
-async function refreshAndReport() {
-  const accounts = await getAccounts()
-  for (const acc of accounts) {
-    try {
-      const emails = await getCachedOrFetch(acc, true)
-      await reportNewEmails(acc, emails)
-    } catch (e: any) {
-      console.error('[mail] refresh error:', e?.message || e)
-    }
-  }
-  // The cloud LLM reviews all events periodically and pushes important-item
-  // notifications via WebSocket; the host shows them as system notifications.
-  try {
-    await pluginCtx?.signal?.('panel:updated')
-  } catch { /* ignore */ }
-}
+// New-mail detection, analysis and notifications are handled by the backend.
 
 export default {
   panel: Panel,
@@ -326,15 +275,10 @@ export default {
       }
     })
 
-    // Periodic refresh: detect new mail, report to cloud, notify for important items.
-    const REFRESH_INTERVAL = 5 * 60 * 1000
-    refreshTimer = setInterval(() => {
-      refreshAndReport().catch(() => {})
-    }, REFRESH_INTERVAL)
-    // Initial background check (skip if accounts not configured yet)
-    setTimeout(() => {
-      refreshAndReport().catch(() => {})
-    }, 15000)
+    // Mail ingestion and analysis now live in the backend (incremental IMAP,
+    // summaries, importance, notifications). The desktop plugin stays a reader:
+    // no periodic IMAP polling or duplicate uploads from here.
+    refreshTimer = null
   },
   deactivate() {
     if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
