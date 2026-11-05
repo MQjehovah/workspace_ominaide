@@ -119,7 +119,11 @@
                     <h4>触发器</h4>
                     <p>定时或事件触发后，Bot 会创建一条 run。</p>
                   </div>
-                  <el-button type="primary" :icon="Plus" @click="openRoutineDialog()">新建例程</el-button>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <el-button :icon="Grid" @click="openTemplates">模板</el-button>
+                    <el-button :icon="MagicStick" @click="openNL">一句话创建</el-button>
+                    <el-button type="primary" :icon="Plus" @click="openRoutineDialog()">新建例程</el-button>
+                  </div>
                 </div>
                 <el-table :data="routines" size="small" empty-text="还没有例程">
                   <el-table-column prop="name" label="名称" min-width="140" />
@@ -146,9 +150,11 @@
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="190" fixed="right">
+                  <el-table-column label="操作" width="300" fixed="right">
                     <template #default="{ row }">
                       <el-button link type="primary" :icon="VideoPlay" @click="runRoutine(row)">运行</el-button>
+                      <el-button link @click="openDryRun(row)">试运行</el-button>
+                      <el-button link @click="openRoutineRuns(row)">记录</el-button>
                       <el-button link @click="openRoutineDialog(row)">编辑</el-button>
                       <el-popconfirm title="删除这个例程？" @confirm="deleteRoutine(row)">
                         <template #reference><el-button link type="danger">删除</el-button></template>
@@ -335,6 +341,97 @@
       </template>
     </el-dialog>
 
+    <!-- Automation templates -->
+    <el-dialog v-model="templateDialog" title="自动化模板" width="760px">
+      <p class="muted" style="margin-top:0">选择一个模板，立即为当前 Bot 创建例程；创建后可在列表中调整时间和 Prompt。</p>
+      <div v-loading="loadingTemplates" class="tpl-grid">
+        <div v-for="t in templates" :key="t.key" class="tpl-card" @click="useTemplate(t)">
+          <div class="tpl-head">
+            <span class="tpl-name">{{ t.name }}</span>
+            <el-tag size="small" :type="t.trigger_type === 'cron' ? 'primary' : 'warning'">
+              {{ t.trigger_type === 'cron' ? t.cron_expr : t.event_type }}
+            </el-tag>
+          </div>
+          <div class="tpl-desc">{{ t.description }}</div>
+          <div class="tpl-action">点击创建 →</div>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- Natural-language rule -->
+    <el-dialog v-model="nlDialog" title="用一句话创建自动化" width="580px">
+      <el-input
+        v-model="nlText"
+        type="textarea"
+        :rows="3"
+        placeholder="例如：每天 8:30 帮我总结今天的日程和待办；每次上传文件后帮我生成摘要"
+      />
+      <div v-if="nlDraft" class="nl-preview">
+        <div><b>{{ nlDraft.name }}</b></div>
+        <div class="muted">
+          {{ nlDraft.trigger_type === 'cron' ? `定时：${nlDraft.cron_expr}` : `事件：${nlDraft.event_type || '手动'}` }}
+          <span v-if="nlDraft.explanation"> · {{ nlDraft.explanation }}</span>
+        </div>
+        <div class="nl-prompt">{{ nlDraft.prompt }}</div>
+      </div>
+      <template #footer>
+        <el-button @click="nlDialog = false">取消</el-button>
+        <el-button :loading="parsingNL" @click="parseNL">解析</el-button>
+        <el-button type="primary" :disabled="!nlDraft" @click="applyNLDraft">继续编辑并保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Dry run -->
+    <el-dialog v-model="dryDialog" title="试运行（不会执行）" width="620px">
+      <div v-if="dryResult">
+        <el-alert type="warning" :closable="false" show-icon
+          title="试运行只生成执行计划，不会调用工具、读取文件或修改数据。" />
+        <div class="detail-block" style="margin-top:14px">
+          <div class="muted">触发条件</div>
+          <div>{{ dryResult.trigger }}</div>
+        </div>
+        <div v-if="dryResult.schedule?.next_runs?.length" class="detail-block">
+          <div class="muted">接下来三次</div>
+          <div v-for="t in dryResult.schedule.next_runs" :key="t">{{ t }}</div>
+        </div>
+        <div class="detail-block">
+          <div class="muted">任务</div>
+          <pre>{{ dryResult.prompt }}</pre>
+        </div>
+        <div class="detail-block">
+          <div class="muted">执行计划</div>
+          <pre>{{ dryResult.plan }}</pre>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- Routine run history -->
+    <el-drawer v-model="routineRunsDrawer" :title="`例程记录 · ${routineRunsTitle}`" size="620px">
+      <div v-loading="routineRunsLoading">
+        <div class="muted" style="margin-bottom:10px">
+          近 30 天：{{ routineRunStats.total || 0 }} 次
+          <span v-for="(cnt, st) in routineRunStats.by_status || {}" :key="st"> · {{ st }} {{ cnt }}</span>
+        </div>
+        <el-table :data="routineRuns" size="small" empty-text="还没有运行记录" @row-click="openRun">
+          <el-table-column prop="id" label="#" width="70" />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="trigger" label="触发" width="90" />
+          <el-table-column label="时间" width="160">
+            <template #default="{ row }">{{ fmt(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column label="输出" min-width="160">
+            <template #default="{ row }">
+              <span class="muted">{{ (row.output || row.error || '').slice(0, 80) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-drawer>
+
     <!-- Memory dialog -->
     <el-dialog v-model="memoryDialog" title="添加记忆" width="520px">
       <el-form :model="memoryForm" label-width="80px">
@@ -420,7 +517,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  Edit, MagicStick, Plus, Refresh, VideoPlay,
+  Edit, Grid, MagicStick, Plus, Refresh, VideoPlay,
 } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
@@ -457,6 +554,21 @@ const routineForm = reactive({
   name: '', trigger_type: 'cron', cron_expr: '30 7 * * *',
   event_type: '', event_filter: '', prompt: '', enabled: true,
 })
+
+const templateDialog = ref(false)
+const templates = ref<any[]>([])
+const loadingTemplates = ref(false)
+const nlDialog = ref(false)
+const nlText = ref('')
+const nlDraft = ref<any>(null)
+const parsingNL = ref(false)
+const dryDialog = ref(false)
+const dryResult = ref<any>(null)
+const routineRunsDrawer = ref(false)
+const routineRuns = ref<any[]>([])
+const routineRunsTitle = ref('')
+const routineRunsLoading = ref(false)
+const routineRunStats = ref<any>({})
 
 const memoryDialog = ref(false)
 const savingMemory = ref(false)
@@ -781,6 +893,102 @@ async function deleteRoutine(row: any) {
   }
 }
 
+async function openTemplates() {
+  templateDialog.value = true
+  if (templates.value.length) return
+  loadingTemplates.value = true
+  try {
+    const r = await client.get('/automation/templates')
+    templates.value = r.data?.templates || []
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '加载模板失败')
+  } finally {
+    loadingTemplates.value = false
+  }
+}
+
+async function useTemplate(t: any) {
+  if (!selectedId.value) return
+  try {
+    await client.post('/automation/from-template', {
+      bot_id: selectedId.value,
+      template_key: t.key,
+    })
+    templateDialog.value = false
+    await loadRoutines()
+    ElMessage.success(`已创建「${t.name}」`)
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '创建失败')
+  }
+}
+
+function openNL() {
+  nlText.value = ''
+  nlDraft.value = null
+  nlDialog.value = true
+}
+
+async function parseNL() {
+  if (!nlText.value.trim()) {
+    ElMessage.warning('先描述一下这条自动化')
+    return
+  }
+  parsingNL.value = true
+  try {
+    const r = await client.post('/automation/parse', { text: nlText.value.trim() })
+    nlDraft.value = r.data?.draft || null
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '解析失败')
+  } finally {
+    parsingNL.value = false
+  }
+}
+
+function applyNLDraft() {
+  if (!nlDraft.value) return
+  const d = nlDraft.value
+  nlDialog.value = false
+  openRoutineDialog({
+    name: d.name,
+    trigger_type: d.trigger_type,
+    cron_expr: d.cron_expr,
+    event_type: d.event_type,
+    event_filter: d.event_filter,
+    prompt: d.prompt,
+    enabled: true,
+  })
+}
+
+async function openDryRun(row: any) {
+  try {
+    const r = await client.post(`/automation/routines/${row.id}/dry-run`)
+    dryResult.value = r.data
+    dryDialog.value = true
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '试运行失败')
+  }
+}
+
+async function openRoutineRuns(row: any) {
+  routineRunsTitle.value = row.name || `#${row.id}`
+  routineRunsDrawer.value = true
+  routineRunsLoading.value = true
+  try {
+    const [runsRes, statsRes] = await Promise.all([
+      client.get(`/automation/routines/${row.id}/runs`, { params: { limit: 50 } }),
+      client.get(`/automation/routines/${row.id}/stats`, { params: { days: 30 } }),
+    ])
+    routineRuns.value = runsRes.data || []
+    routineRunStats.value = statsRes.data || {}
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '加载记录失败')
+    routineRuns.value = []
+    routineRunStats.value = {}
+  } finally {
+    routineRunsLoading.value = false
+  }
+}
+
 function openMemoryDialog() {
   memoryForm.content = ''
   memoryForm.kind = 'fact'
@@ -964,6 +1172,15 @@ watch(() => route.query.tab, (value) => {
 .detail-block h4 { margin: 0 0 6px; font-size: 13px; color: #2c3550; }
 .detail-block pre { margin: 0; background: #f7f9fc; border: 1px solid #edf0f5; border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: #2c3550; max-height: 260px; overflow: auto; }
 .detail-block pre.error { background: #fff5f5; border-color: #ffd6d6; color: #c45656; }
+.tpl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-height: 120px; }
+.tpl-card { border: 1px solid #edf0f5; border-radius: 10px; padding: 12px 14px; cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .15s; background: #fff; }
+.tpl-card:hover { border-color: #b9d4ff; box-shadow: 0 4px 14px rgba(64,158,255,.12); transform: translateY(-1px); }
+.tpl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tpl-name { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+.tpl-desc { font-size: 12px; color: #606266; line-height: 1.7; margin-top: 8px; }
+.tpl-action { font-size: 12px; color: #409eff; margin-top: 10px; }
+.nl-preview { margin-top: 14px; padding: 12px 14px; border-radius: 8px; background: #f5f9ff; border: 1px solid #d9e9ff; }
+.nl-prompt { margin-top: 8px; font-size: 13px; color: #303133; line-height: 1.7; white-space: pre-wrap; }
 @media (max-width: 980px) {
   .console-grid { grid-template-columns: 1fr; }
   .bot-list { position: static; }

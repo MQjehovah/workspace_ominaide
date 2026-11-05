@@ -170,6 +170,9 @@ app.include_router(bots_router)
 app.include_router(runs_router)
 app.include_router(approvals_router)
 
+from core.bots.automation_router import router as automation_router
+app.include_router(automation_router)
+
 from core.ai.search_router import router as search_router
 app.include_router(search_router)
 
