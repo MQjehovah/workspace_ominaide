@@ -213,10 +213,10 @@ const unread = ref(0)
 const pendingTodos = computed(() => todos.value.filter(t => t.status !== 'done'))
 
 const stats = computed(() => [
-  { label: '文件', value: counts.files, icon: Folder, color: '#409EFF', bg: '#ecf5ff', path: '/files' },
-  { label: '笔记', value: counts.notes, icon: Document, color: '#8B5CF6', bg: '#f3efff', path: '/notes' },
-  { label: '待办', value: pendingTodos.value.length, icon: Check, color: '#10B981', bg: '#e8f8f1', path: '/apps/todo' },
-  { label: '未读通知', value: unread.value, icon: Bell, color: '#F59E0B', bg: '#fff7e6', path: '/notifications' },
+  { label: '文件', value: counts.files, icon: Folder, color: '#4f46e5', bg: '#eef2ff', path: '/files' },
+  { label: '笔记', value: counts.notes, icon: Document, color: '#7c3aed', bg: '#f5f3ff', path: '/notes' },
+  { label: '待办', value: pendingTodos.value.length, icon: Check, color: '#059669', bg: '#ecfdf5', path: '/apps/todo' },
+  { label: '未读通知', value: unread.value, icon: Bell, color: '#d97706', bg: '#fffbeb', path: '/notifications' },
 ])
 
 const quickLinks = [
@@ -323,45 +323,59 @@ onUnmounted(() => {
 .hero {
   display: flex; align-items: center; justify-content: space-between; gap: 24px;
   padding: 28px 30px; border-radius: 18px; margin-bottom: 18px;
-  background: linear-gradient(120deg, #1a1a2e 0%, #16213e 48%, #0f3460 100%);
+  background:
+    radial-gradient(600px 260px at 88% -30%, rgba(168, 85, 247, .4), transparent 62%),
+    radial-gradient(520px 240px at 4% 120%, rgba(56, 189, 248, .22), transparent 60%),
+    linear-gradient(120deg, #171436 0%, #26205e 48%, #3b1670 100%);
   color: #fff; position: relative; overflow: hidden;
+  box-shadow: 0 24px 50px -30px rgba(49, 46, 129, .8);
 }
 .hero::after {
   content: ''; position: absolute; right: -80px; top: -120px; width: 320px; height: 320px;
-  border-radius: 50%; background: radial-gradient(circle, rgba(64,158,255,.38), transparent 68%);
+  border-radius: 50%; background: radial-gradient(circle, rgba(129,140,248,.35), transparent 68%);
 }
-.hero-kicker { font-size: 13px; color: #a9c6ff; letter-spacing: .5px; }
+.hero-kicker { font-size: 13px; color: #c7d2fe; letter-spacing: .5px; }
 .hero h1 { font-size: 30px; font-weight: 700; margin: 8px 0 6px; letter-spacing: -.5px; }
-.hero-sub { font-size: 13px; color: #b8c4dc; }
+.hero-sub { font-size: 13px; color: rgba(199, 210, 254, .72); }
 .hero-actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 .hero-actions :deep(.el-button) { border-radius: 9px; }
+.hero-actions :deep(.el-button:not(.el-button--primary)) {
+  background: rgba(255, 255, 255, .1);
+  border-color: rgba(255, 255, 255, .2);
+  color: #eef2ff;
+}
+.hero-actions :deep(.el-button:not(.el-button--primary):hover) {
+  background: rgba(255, 255, 255, .18);
+  border-color: rgba(255, 255, 255, .28);
+}
 .hero-side { position: relative; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .hero-ring {
   position: absolute; inset: 0; border-radius: 50%;
   border: 1px solid rgba(255,255,255,.18);
-  box-shadow: inset 0 0 40px rgba(64,158,255,.22);
+  box-shadow: inset 0 0 40px rgba(129,140,248,.28);
 }
 .hero-badge { position: relative; text-align: center; }
 .hero-badge-value { display: block; font-size: 28px; font-weight: 700; }
-.hero-badge-label { font-size: 12px; color: #a9c6ff; }
+.hero-badge-label { font-size: 12px; color: #c7d2fe; }
 
 .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
 .stat-card {
   display: flex; align-items: center; gap: 12px; padding: 16px 18px; text-align: left;
   background: #fff; border: 1px solid var(--color-border); border-radius: 14px; cursor: pointer;
-  transition: transform .15s, box-shadow .15s;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .03);
+  transition: transform .15s, box-shadow .15s, border-color .15s;
 }
-.stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15,52,96,.08); }
+.stat-card:hover { transform: translateY(-2px); border-color: #dbe3f5; box-shadow: 0 14px 30px -20px rgba(30, 41, 59, .45); }
 .stat-icon { width: 40px; height: 40px; border-radius: 11px; font-size: 20px; flex-shrink: 0; }
 .stat-body { flex: 1; min-width: 0; }
-.stat-value { font-size: 24px; font-weight: 700; color: #1a1a2e; line-height: 1.1; }
-.stat-label { font-size: 12px; color: #909399; margin-top: 3px; }
-.stat-arrow { color: #c0c4cc; }
+.stat-value { font-size: 24px; font-weight: 700; color: #111827; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat-label { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+.stat-arrow { color: #cbd5e1; }
 
 .block { margin-bottom: 16px; }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 0; }
-.card-head h3 { margin: 0; font-size: 14px; font-weight: 600; color: #1a1a2e; }
-.card-sub { display: block; margin-top: 4px; font-size: 11px; color: #a0a4ad; }
+.card-head h3 { margin: 0; font-size: 14.5px; font-weight: 600; color: #111827; }
+.card-sub { display: block; margin-top: 4px; font-size: 11.5px; color: #9aa5b8; }
 .card-body { padding: 16px 20px 20px; }
 
 .timeline { display: flex; flex-direction: column; gap: 2px; }
@@ -383,13 +397,13 @@ onUnmounted(() => {
 .activity-list { display: flex; flex-direction: column; }
 .activity-item { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed #f0f2f5; }
 .activity-item:last-child { border-bottom: none; }
-.activity-dot { width: 7px; height: 7px; border-radius: 50%; background: #409EFF; margin-top: 6px; flex-shrink: 0; }
+.activity-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand-500); margin-top: 6px; flex-shrink: 0; }
 .activity-summary { font-size: 13px; color: #3a4256; }
 .activity-meta { font-size: 11px; color: #a0a4ad; margin-top: 2px; }
 
 .quick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .quick-item { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 14px 8px; border-radius: 11px; border: 1px solid #eef0f4; background: #fafbfd; color: #4b5563; font-size: 12px; cursor: pointer; transition: all .15s; }
-.quick-item:hover { border-color: #cfe3ff; background: #f2f8ff; color: #409EFF; }
+.quick-item:hover { border-color: #c7d2fe; background: #f5f7ff; color: var(--brand-500); }
 
 .info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13px; border-bottom: 1px solid #f5f6f8; }
 .info-row:last-child { border-bottom: none; }

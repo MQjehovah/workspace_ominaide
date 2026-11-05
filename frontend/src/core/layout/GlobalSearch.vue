@@ -2,10 +2,10 @@
   <div class="global-search" v-click-outside="closeResults">
     <el-input
       v-model="keyword"
-      placeholder="全局搜索 文件/笔记/资讯..."
+      class="search-input"
+      placeholder="搜索文件 / 笔记 / 资讯"
       clearable
       :prefix-icon="Search"
-      style="width: 280px"
       @focus="open = true"
       @input="onInput"
       @keyup.enter="doSearch"
@@ -127,15 +127,38 @@ function onInput() {
 
 <style scoped>
 .global-search { position: relative; }
-.search-results {
-  position: absolute; top: 42px; right: 0; width: 360px; max-height: 420px; overflow-y: auto;
-  background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 1000;
+.search-input { width: 260px; }
+.search-input :deep(.el-input__wrapper) {
+  background: #f2f5fa;
+  box-shadow: none;
+  border-radius: 9px;
+  padding: 1px 12px;
+  transition: background .15s, box-shadow .15s;
 }
-.search-group { padding: 6px 0; border-bottom: 1px solid #f5f5f5; }
+.search-input :deep(.el-input__wrapper:hover) { background: #edf1f8; }
+.search-input :deep(.el-input__wrapper.is-focus) {
+  background: #fff;
+  box-shadow: 0 0 0 1px #c7d2fe inset, 0 6px 18px -12px rgba(79, 70, 229, .6) !important;
+}
+.search-input :deep(.el-input__inner) { font-size: 12.5px; }
+.search-input :deep(.el-input__prefix-inner) { color: #94a3b8; }
+.search-results {
+  position: absolute; top: 44px; right: 0; width: 360px; max-height: 420px; overflow-y: auto;
+  background: #fff; border: 1px solid #e7ebf3; border-radius: 12px;
+  box-shadow: 0 24px 50px -24px rgba(16, 24, 40, .45); z-index: 1000;
+  padding: 4px 0;
+}
+.search-group { padding: 5px 0; border-bottom: 1px solid #f3f6fb; }
 .search-group:last-child { border-bottom: none; }
-.search-group-title { font-size: 11px; color: #909399; padding: 4px 14px; font-weight: 600; }
-.search-item { display: flex; align-items: center; gap: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; color: #333; }
-.search-item:hover { background: #f0f7ff; }
+.search-group-title {
+  font-size: 10.5px; color: #94a3b8; padding: 5px 14px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px;
+}
+.search-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+  cursor: pointer; font-size: 13px; color: #334155; border-radius: 8px; margin: 0 6px;
+}
+.search-item:hover { background: #f2f5ff; color: var(--brand-600); }
 .search-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-item-meta { font-size: 11px; color: #909399; flex-shrink: 0; }
 </style>

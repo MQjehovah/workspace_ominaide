@@ -1,8 +1,11 @@
 <template>
   <div class="sidebar" :class="{ collapsed }">
     <div class="sidebar-header">
-      <span class="logo-text" v-if="!collapsed">OmniAide</span>
-      <span class="logo-text" v-else>OA</span>
+      <div class="brand-mark">O</div>
+      <div class="brand-text" v-if="!collapsed">
+        <span class="logo-text">OmniAide</span>
+        <span class="logo-sub">SELF-HOSTED</span>
+      </div>
     </div>
 
     <el-menu
@@ -11,6 +14,7 @@
       :router="true"
       class="sidebar-menu"
     >
+      <div class="menu-label" v-if="!collapsed">工作台</div>
       <el-menu-item index="/dashboard">
         <el-icon><DataAnalysis /></el-icon>
         <span>仪表盘</span>
@@ -55,8 +59,8 @@
         <span>项目</span>
       </el-menu-item>
 
-      <div class="menu-divider"></div>
       <div class="menu-label" v-if="!collapsed">管理</div>
+      <div class="menu-divider" v-else></div>
       <el-menu-item index="/bots">
         <el-icon><ChatDotRound /></el-icon>
         <span>助手管理</span>
@@ -78,8 +82,11 @@
     <div class="sidebar-footer">
       <el-dropdown v-if="auth.user" trigger="click" @command="handleCmd">
         <div class="user-btn">
-          <el-avatar :size="32">{{ displayName[0]?.toUpperCase() }}</el-avatar>
-          <span class="user-name" v-if="!collapsed">{{ displayName }}</span>
+          <el-avatar :size="30">{{ displayName[0]?.toUpperCase() }}</el-avatar>
+          <div class="user-meta" v-if="!collapsed">
+            <span class="user-name">{{ displayName }}</span>
+            <span class="user-role">本地私有化部署</span>
+          </div>
         </div>
         <template #dropdown>
           <el-dropdown-menu>
@@ -113,28 +120,96 @@ function handleCmd(cmd: string) {
 <style scoped>
 .sidebar {
   width: var(--sidebar-width);
-  background: var(--color-sidebar);
+  background:
+    radial-gradient(600px 240px at 20% -10%, rgba(99, 102, 241, .22), transparent 60%),
+    linear-gradient(180deg, #0b1220 0%, #0e1629 55%, #111c33 100%);
+  border-right: 1px solid rgba(255, 255, 255, .05);
   display: flex;
   flex-direction: column;
-  transition: width .2s;
+  transition: width .2s ease;
   overflow: hidden;
   flex-shrink: 0;
 }
 .sidebar.collapsed { width: var(--sidebar-collapsed-width); }
-.sidebar-header { height: var(--header-height); display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(255,255,255,.06); }
-.logo-text { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 1px; }
-.sidebar-menu { flex: 1; background: transparent; border-right: none; padding: 8px 0; }
-.sidebar-menu :deep(.el-menu-item) { color: var(--color-sidebar-text); height: 44px; line-height: 44px; margin: 2px 8px; border-radius: 8px; font-size: 13px; }
-.sidebar-menu :deep(.el-menu-item:hover) { background: var(--color-sidebar-hover); color: #fff; }
-.sidebar-menu :deep(.el-menu-item.is-active) { background: var(--color-sidebar-active); color: var(--color-sidebar-active-text); }
-.sidebar-menu :deep(.el-menu-item .el-icon) { font-size: 18px; margin-right: 10px; }
-.sidebar.collapsed :deep(.el-menu-item .el-icon) { margin-right: 0; }
-.menu-divider { height: 1px; background: rgba(255,255,255,.06); margin: 8px 12px; }
-.menu-label { font-size: 11px; font-weight: 600; color: var(--color-sidebar-text); text-transform: uppercase; letter-spacing: .5px; padding: 8px 16px 4px; }
-.sidebar-footer { border-top: 1px solid rgba(255,255,255,.06); padding: 12px; }
+
+.sidebar-header {
+  height: var(--header-height);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 16px; flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .05);
+}
+.sidebar.collapsed .sidebar-header { justify-content: center; padding: 0; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  box-shadow: 0 6px 16px -8px rgba(99, 102, 241, .9);
+}
+.brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.logo-text { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: .3px; }
+.logo-sub { font-size: 9px; letter-spacing: 1.6px; color: #64748b; }
+
+.sidebar-menu { flex: 1; background: transparent; border-right: none; padding: 10px 0; overflow-y: auto; overflow-x: hidden; }
+.sidebar-menu::-webkit-scrollbar { width: 4px; }
+
+.menu-label {
+  font-size: 10.5px; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: 1px;
+  padding: 10px 22px 6px;
+}
+.menu-divider { height: 1px; background: rgba(255, 255, 255, .06); margin: 10px 16px; }
+
+.sidebar-menu :deep(.el-menu-item) {
+  position: relative;
+  color: var(--color-sidebar-text);
+  height: 40px; line-height: 40px;
+  margin: 2px 10px; border-radius: 9px;
+  font-size: 13px;
+  transition: background .15s, color .15s;
+}
+.sidebar-menu :deep(.el-menu-item:hover) {
+  background: rgba(255, 255, 255, .06);
+  color: #e2e8f0;
+}
+.sidebar-menu :deep(.el-menu-item.is-active) {
+  background: rgba(99, 102, 241, .18);
+  color: #fff;
+  font-weight: 500;
+}
+.sidebar-menu :deep(.el-menu-item.is-active::before) {
+  content: '';
+  position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 18px; border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #818cf8, #a855f7);
+}
+.sidebar-menu :deep(.el-menu-item .el-icon) {
+  font-size: 17px; margin-right: 11px; color: #7c8aa5;
+  transition: color .15s;
+}
+.sidebar-menu :deep(.el-menu-item:hover .el-icon) { color: #c7d2fe; }
+.sidebar-menu :deep(.el-menu-item.is-active .el-icon) { color: #a5b4fc; }
+.sidebar.collapsed .sidebar-menu :deep(.el-menu-item) { margin: 3px 9px; }
+.sidebar.collapsed .sidebar-menu :deep(.el-menu-item .el-icon) { margin-right: 0; }
+
+.sidebar-footer {
+  border-top: 1px solid rgba(255, 255, 255, .06);
+  padding: 10px;
+  flex-shrink: 0;
+}
 .sidebar-footer :deep(.el-dropdown) { display: block; width: 100%; }
-.user-btn { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 4px; border-radius: 8px; width: 100%; }
-.user-btn:hover { background: var(--color-sidebar-hover); }
-.user-name { font-size: 13px; color: var(--color-sidebar-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-.sidebar.collapsed .user-name { display: none; }
+.user-btn {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  padding: 7px 8px; border-radius: 10px;
+  transition: background .15s;
+}
+.user-btn:hover { background: rgba(255, 255, 255, .06); }
+.user-btn :deep(.el-avatar) {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  font-size: 12px; flex-shrink: 0;
+}
+.user-meta { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.user-name { font-size: 12.5px; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-role { font-size: 10px; color: #64748b; white-space: nowrap; }
+.sidebar.collapsed .user-btn { justify-content: center; padding: 6px 0; }
 </style>

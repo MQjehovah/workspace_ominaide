@@ -211,6 +211,19 @@ class McpHub:
             tool_registry.unregister(name)
             policy.unregister_tool_risk(name)
 
+    async def _ensure_conn(self, server_id: int, user_id: int | None,
+                           force: bool = False) -> McpConnection:
+        conn = self._conns.get(server_id)
+        if conn is not None and not force and conn.alive:
+            return conn
+        info = await self.connect_server(server_id, user_id)
+        if info.get("status") != "connected":
+            raise McpError("MCP 服务器未连接")
+        conn = self._conns.get(server_id)
+        if conn is None:
+            raise McpError("MCP 服务器未连接")
+        return conn
+
     async def call_external(self, server_id: int, tool_name: str, user_id: int,
                             arguments: dict, run_id: int | None = None) -> MCPCallResponse:
         started = time.monotonic()
@@ -223,15 +236,17 @@ class McpHub:
             if server is None:
                 raise McpError("MCP 服务器不存在")
             audit_name = f"{server.slug}__{tool_name}"
-            conn = self._conns.get(server_id)
-            if conn is None:
-                info = await self.connect_server(server_id, user_id)
-                if info.get("status") != "connected":
-                    raise McpError("MCP 服务器未连接")
-                conn = self._conns.get(server_id)
-            if conn is None:
-                raise McpError("MCP 服务器未连接")
-            result = await conn.call_tool(tool_name, arguments or {})
+            conn = await self._ensure_conn(server_id, user_id)
+            try:
+                result = await conn.call_tool(tool_name, arguments or {})
+            except McpError as e:
+                # A long-lived stdio connection can go stale (transport closed,
+                # child restarted). Reconnect once and retry instead of failing.
+                if "超时" not in str(e):
+                    raise
+                print(f"[mcp] {server.slug} 超时，重连后重试 {tool_name}")
+                conn = await self._ensure_conn(server_id, user_id, force=True)
+                result = await conn.call_tool(tool_name, arguments or {})
             if result.get("isError"):
                 status = "error"
                 error = _content_text(result)[:1000]

@@ -24,6 +24,11 @@ class McpError(RuntimeError):
 
 
 class McpConnection:
+    @property
+    def alive(self) -> bool:
+        """False when the child process or its response reader is gone."""
+        return True
+
     async def start(self) -> None:
         raise NotImplementedError
 
@@ -82,11 +87,29 @@ class StdioMcpConnection(McpConnection):
         if not isinstance(init, dict):
             raise McpError("MCP initialize 返回格式错误")
 
+    @property
+    def alive(self) -> bool:
+        if self._closed or self.proc is None:
+            return False
+        if self.proc.returncode is not None:
+            return False
+        return bool(self._reader_task and not self._reader_task.done())
+
+    def _fail_pending(self, reason: str) -> None:
+        for fut in list(self._pending.values()):
+            if not fut.done():
+                fut.set_exception(McpError(reason))
+        self._pending.clear()
+
     async def _read_loop(self) -> None:
         assert self.proc and self.proc.stdout
         while not self._closed:
             line = await self.proc.stdout.readline()
             if not line:
+                # Child exited: fail in-flight requests immediately instead of
+                # letting every caller wait for the 30s timeout.
+                self._closed = True
+                self._fail_pending("MCP 服务已退出")
                 break
             try:
                 msg = json.loads(line.decode("utf-8", errors="replace"))
@@ -120,8 +143,8 @@ class StdioMcpConnection(McpConnection):
             await self.proc.stdin.drain()
 
     async def request(self, method: str, params: dict | None = None) -> Any:
-        if not self.proc or not self.proc.stdin:
-            raise McpError("MCP 服务未启动")
+        if self._closed or not self.proc or not self.proc.stdin:
+            raise McpError("MCP 服务未启动或已关闭")
         self._next_id += 1
         req_id = self._next_id
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
