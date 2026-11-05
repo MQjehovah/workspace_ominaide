@@ -1,4 +1,7 @@
-from sqlalchemy import Column, Integer, String, BigInteger, Boolean, DateTime, ForeignKey, JSON, func
+from sqlalchemy import (
+    Column, Integer, String, BigInteger, Boolean, DateTime, ForeignKey, JSON,
+    UniqueConstraint, func,
+)
 from core.database.base import Base
 
 
@@ -27,3 +30,20 @@ class SyncEvent(Base):
     checksum = Column(String(64), nullable=True)
     status = Column(String(20), default="pending")
     created_at = Column(DateTime, server_default=func.now())
+
+
+class SyncSetting(Base):
+    """Small user-scoped key/value document synced across desktop devices."""
+
+    __tablename__ = "sync_settings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "namespace", "key", name="uq_sync_setting"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    namespace = Column(String(64), nullable=False, index=True)
+    key = Column(String(64), nullable=False)
+    value = Column(JSON, nullable=True)
+    device_id = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

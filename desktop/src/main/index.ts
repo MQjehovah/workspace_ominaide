@@ -1,10 +1,11 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, protocol, net, session } from 'electron'
 import { join, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { initPlugins, getProcessManager } from './plugin/host'
+import { initPlugins, getProcessManager, setPluginEnabled } from './plugin/host'
 import { registerIpcHandlers } from './ipc'
 import { setupShortcut } from './shortcut'
 import { startSync, stopSync } from './sync/syncWorker'
+import { startSettingsSync, stopSettingsSync } from './sync/settingsSync'
 import { getConfig } from './config'
 import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window'
 import { registerMcpIpc, abortAllAgentSessions } from './mcp/ipc'
@@ -143,11 +144,29 @@ app.whenReady().then(async () => {
   await initPlugins()
   createTray()
   const cfg = await getConfig()
-  await setupShortcut({
+  const shortcutCallbacks = {
     search: showSearchWindow,
     toggle: showMainPanel,
     quickCapture: showQuickCapture,
-  })
+  }
+  await setupShortcut(shortcutCallbacks)
+  if (cfg.token) {
+    startSettingsSync(async (changed) => {
+      if (changed.shortcut || changed.customShortcuts) {
+        await setupShortcut(shortcutCallbacks)
+      }
+      if (changed.disabledPlugins) {
+        const before = new Set<string>(changed.disabledPlugins.from || [])
+        const after = new Set<string>(changed.disabledPlugins.to || [])
+        for (const id of before) {
+          if (!after.has(id)) await setPluginEnabled(id, true)
+        }
+        for (const id of after) {
+          if (!before.has(id)) await setPluginEnabled(id, false)
+        }
+      }
+    })
+  }
   if (cfg.token) {
     const { startBackendChannel } = await import('./backendChannel')
     startBackendChannel().catch(() => {})
@@ -164,6 +183,7 @@ ipcMain.handle('window:quit', () => { isQuitting = true; app.quit() })
 app.on('window-all-closed', () => {})
 app.on('before-quit', () => {
   isQuitting = true
+  stopSettingsSync()
   getProcessManager().stopAll()
   closeAllPluginWindows()
   abortAllAgentSessions()

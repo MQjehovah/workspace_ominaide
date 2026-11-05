@@ -45,3 +45,23 @@ class SyncFolderResponse(BaseModel):
 
 class SyncFolderListResponse(BaseModel):
     folders: list[SyncFolderResponse]
+
+
+# ---- Cross-device settings ----
+
+class SyncSettingUpdate(BaseModel):
+    value: object | None = None
+    device_id: str | None = None
+
+
+class SyncSettingResponse(BaseModel):
+    key: str
+    value: object | None = None
+    device_id: str | None = None
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SyncSettingListResponse(BaseModel):
+    items: list[SyncSettingResponse]

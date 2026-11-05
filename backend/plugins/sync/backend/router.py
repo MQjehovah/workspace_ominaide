@@ -3,8 +3,20 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
-from plugins.sync.backend.schemas import SyncEventResponse, SyncEventListResponse, SyncFolderResponse, SyncFolderCreate, SyncFolderUpdate, SyncFolderListResponse
-from plugins.sync.backend.models import SyncFolder, SyncEvent
+from datetime import datetime
+
+from plugins.sync.backend.schemas import (
+    SyncEventResponse,
+    SyncEventListResponse,
+    SyncFolderResponse,
+    SyncFolderCreate,
+    SyncFolderUpdate,
+    SyncFolderListResponse,
+    SyncSettingListResponse,
+    SyncSettingResponse,
+    SyncSettingUpdate,
+)
+from plugins.sync.backend.models import SyncFolder, SyncEvent, SyncSetting
 from plugins.sync.backend.service import get_sync_events, mark_synced, mark_conflicted
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
@@ -113,3 +125,52 @@ async def report_conflict(
     await mark_conflicted(db, user["id"], event_id)
     await db.commit()
     return {"message": "Event marked as conflicted"}
+
+
+# ---- Cross-device settings ----
+
+@router.get("/settings/{namespace}", response_model=SyncSettingListResponse)
+async def list_sync_settings(
+    namespace: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (await db.execute(
+        select(SyncSetting).where(
+            SyncSetting.user_id == user["id"],
+            SyncSetting.namespace == namespace,
+        )
+    )).scalars().all()
+    return SyncSettingListResponse(
+        items=[SyncSettingResponse.model_validate(r) for r in rows]
+    )
+
+
+@router.put("/settings/{namespace}/{key}", response_model=SyncSettingResponse)
+async def put_sync_setting(
+    namespace: str,
+    key: str,
+    req: SyncSettingUpdate,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    row = (await db.execute(
+        select(SyncSetting).where(
+            SyncSetting.user_id == user["id"],
+            SyncSetting.namespace == namespace,
+            SyncSetting.key == key,
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        row = SyncSetting(
+            user_id=user["id"],
+            namespace=namespace,
+            key=key,
+        )
+        db.add(row)
+    row.value = req.value
+    row.device_id = req.device_id
+    row.updated_at = datetime.utcnow()
+    await db.flush()
+    await db.refresh(row)
+    return SyncSettingResponse.model_validate(row)
