@@ -1,6 +1,6 @@
 <template>
-  <div class="page-wrapper">
-    <div class="page-header">
+  <div class="page-wrapper" :class="{ embedded }">
+    <div class="page-header" v-if="!embedded">
       <div>
         <h2>幕僚长</h2>
         <p class="page-sub">
@@ -212,6 +212,8 @@ import { Refresh } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { parseBackendDate } from '@/utils/date'
 
+withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+
 const tab = ref('triage')
 const loading = ref(false)
 const triage = ref<any>(null)
@@ -416,6 +418,8 @@ onMounted(loadTriage)
 .draft-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
 .draft-input { margin-bottom: 10px; }
 .muted { color: #909399; font-size: 12px; }
+.page-wrapper.embedded { padding: 0; max-width: none; }
+.page-wrapper.embedded :deep(.el-tabs__header) { margin-bottom: 12px; }
 @media (max-width: 760px) {
   .prep-form, .prep-columns, .weekly-grid { grid-template-columns: 1fr; }
   .triage-item { flex-direction: column; }

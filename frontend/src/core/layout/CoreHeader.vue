@@ -6,7 +6,7 @@
       </button>
       <div class="crumb">
         <span class="crumb-dot"></span>
-        <span class="breadcrumb">{{ route.name }}</span>
+        <span class="breadcrumb">{{ route.meta.title || route.name }}</span>
       </div>
     </div>
     <div class="header-right">

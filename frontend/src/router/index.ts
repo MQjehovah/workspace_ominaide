@@ -17,101 +17,119 @@ const router = createRouter({
         {
           path: 'dashboard',
           name: 'Dashboard',
+          meta: { title: '仪表盘' },
           component: () => import('@/views/Dashboard.vue')
         },
         {
           path: 'bots',
-          name: '助手管理',
+          name: 'BotConsole',
+          meta: { title: '助手管理' },
           component: () => import('@/views/BotConsole.vue')
         },
         {
           path: 'activities',
-          name: '活动',
+          name: 'Activity',
+          meta: { title: '活动' },
           component: () => import('@/views/Activity.vue')
         },
         {
           path: 'insights',
-          name: '每日回顾',
+          name: 'Insights',
+          meta: { title: '每日回顾' },
           component: () => import('@/views/Insights.vue')
         },
         {
           path: 'cos',
-          name: '幕僚长',
-          component: () => import('@/views/ChiefOfStaff.vue')
+          redirect: { path: '/dashboard', query: { tab: 'cos' } }
         },
         {
           path: 'about',
-          name: '关于我',
+          name: 'About',
+          meta: { title: '关于我' },
           component: () => import('@/views/About.vue')
         },
         {
           path: 'chat',
-          name: '对话',
+          name: 'Chat',
+          meta: { title: '对话' },
           component: () => import('@/views/Chat.vue')
         },
         {
           path: 'notifications',
-          name: '通知',
+          name: 'Notifications',
+          meta: { title: '通知' },
           component: () => import('@/views/Notifications.vue')
         },
         {
           path: 'files',
           name: 'Files',
+          meta: { title: '文件' },
           component: () => import('@/views/Files.vue')
         },
         {
           path: 'settings',
           name: 'Settings',
+          meta: { title: '设置' },
           component: () => import('@/views/Settings.vue')
         },
         {
           path: 'notes',
           name: 'Notes',
+          meta: { title: '笔记' },
           component: () => import('@/views/notes/NotesPage.vue')
         },
         {
           path: 'device',
           name: 'Device',
+          meta: { title: '设备' },
           component: () => import('@/views/Device.vue')
         },
         {
           path: 'projects',
           name: 'Projects',
+          meta: { title: '项目' },
           component: () => import('@/views/Projects.vue')
         },
         {
           path: 'apps/:pluginName/:pathMatch(.*)*',
           name: 'PluginHost',
+          meta: { title: '插件' },
           component: () => import('@/core/layout/PluginHost.vue')
         },
         {
           path: 'admin/users',
           name: 'AdminUsers',
+          meta: { title: '用户管理' },
           component: () => import('@/views/AdminUsers.vue')
         },
         {
           path: 'admin/plugins',
           name: 'AdminPlugins',
+          meta: { title: '插件市场' },
           component: () => import('@/views/AdminPlugins.vue')
         },
         {
           path: 'mcp',
-          name: 'MCP 管理',
+          name: 'McpServers',
+          meta: { title: 'MCP 管理' },
           component: () => import('@/views/McpServers.vue')
         },
         {
           path: 'schedule',
           name: 'Schedule',
+          meta: { title: '日程' },
           component: () => import('@/views/Schedule.vue')
         },
         {
           path: 'rss',
           name: 'RSS',
+          meta: { title: '资讯' },
           component: () => import('@/views/RSS.vue')
         },
         {
           path: 'mail',
-          name: '邮件',
+          name: 'Mail',
+          meta: { title: '邮件' },
           component: () => import('@/views/Mail.vue')
         }
       ]

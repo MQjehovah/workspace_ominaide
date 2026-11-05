@@ -9,74 +9,105 @@
     </div>
 
     <el-menu
+      ref="menuRef"
       :default-active="route.path"
       :collapse="collapsed"
       :router="true"
+      :default-openeds="defaultOpeneds"
       class="sidebar-menu"
     >
-      <div class="menu-label" v-if="!collapsed">工作台</div>
       <el-menu-item index="/dashboard">
         <el-icon><DataAnalysis /></el-icon>
         <span>仪表盘</span>
-      </el-menu-item>
-      <el-menu-item index="/activities">
-        <el-icon><TrendCharts /></el-icon>
-        <span>活动</span>
       </el-menu-item>
       <el-menu-item index="/chat">
         <el-icon><ChatLineRound /></el-icon>
         <span>对话</span>
       </el-menu-item>
-      <el-menu-item index="/insights">
-        <el-icon><Sunrise /></el-icon>
-        <span>每日回顾</span>
+      <el-menu-item index="/schedule">
+        <el-icon><Calendar /></el-icon>
+        <span>日程</span>
       </el-menu-item>
-      <el-menu-item index="/cos">
-        <el-icon><Briefcase /></el-icon>
-        <span>幕僚长</span>
-      </el-menu-item>
-      <el-menu-item index="/about">
-        <el-icon><UserFilled /></el-icon>
-        <span>关于我</span>
-      </el-menu-item>
-      <el-menu-item index="/schedule"><el-icon><Calendar /></el-icon><span>日程</span></el-menu-item>
-      <el-menu-item index="/rss"><el-icon><Promotion /></el-icon><span>资讯</span></el-menu-item>
-      <el-menu-item index="/mail"><el-icon><Message /></el-icon><span>邮件</span></el-menu-item>
-      <el-menu-item index="/files">
-        <el-icon><Folder /></el-icon>
-        <span>文件</span>
-      </el-menu-item>
-      <el-menu-item index="/notes">
-        <el-icon><Document /></el-icon>
-        <span>笔记</span>
-      </el-menu-item>
-      <el-menu-item index="/device">
-        <el-icon><Cellphone /></el-icon>
-        <span>设备</span>
-      </el-menu-item>
-      <el-menu-item index="/projects">
-        <el-icon><Cpu /></el-icon>
-        <span>项目</span>
+      <el-menu-item index="/mail">
+        <el-icon><Message /></el-icon>
+        <span>邮件</span>
       </el-menu-item>
 
-      <div class="menu-label" v-if="!collapsed">管理</div>
-      <div class="menu-divider" v-else></div>
-      <el-menu-item index="/bots">
-        <el-icon><ChatDotRound /></el-icon>
-        <span>助手管理</span>
-      </el-menu-item>
-      <el-menu-item index="/admin/users">
-        <el-icon><User /></el-icon>
-        <span>用户管理</span>
-      </el-menu-item>
-      <el-menu-item index="/admin/plugins">
-        <el-icon><Monitor /></el-icon>
-        <span>插件市场</span>
-      </el-menu-item>
-      <el-menu-item index="/mcp">
-        <el-icon><Connection /></el-icon>
-        <span>MCP 管理</span>
-      </el-menu-item>
+      <el-sub-menu index="content">
+        <template #title>
+          <el-icon><Folder /></el-icon>
+          <span>内容</span>
+        </template>
+        <el-menu-item index="/notes">
+          <el-icon><Document /></el-icon>
+          <span>笔记</span>
+        </el-menu-item>
+        <el-menu-item index="/files">
+          <el-icon><FolderOpened /></el-icon>
+          <span>文件</span>
+        </el-menu-item>
+        <el-menu-item index="/rss">
+          <el-icon><Promotion /></el-icon>
+          <span>资讯</span>
+        </el-menu-item>
+      </el-sub-menu>
+
+      <el-sub-menu index="projects">
+        <template #title>
+          <el-icon><Cpu /></el-icon>
+          <span>项目</span>
+        </template>
+        <el-menu-item index="/projects">
+          <el-icon><Cpu /></el-icon>
+          <span>项目与运行</span>
+        </el-menu-item>
+        <el-menu-item index="/device">
+          <el-icon><Cellphone /></el-icon>
+          <span>设备</span>
+        </el-menu-item>
+      </el-sub-menu>
+
+      <el-sub-menu index="me">
+        <template #title>
+          <el-icon><User /></el-icon>
+          <span>我的</span>
+        </template>
+        <el-menu-item index="/about">
+          <el-icon><UserFilled /></el-icon>
+          <span>关于我</span>
+        </el-menu-item>
+        <el-menu-item index="/insights">
+          <el-icon><Sunrise /></el-icon>
+          <span>每日回顾</span>
+        </el-menu-item>
+        <el-menu-item index="/activities">
+          <el-icon><TrendCharts /></el-icon>
+          <span>活动</span>
+        </el-menu-item>
+      </el-sub-menu>
+
+      <el-sub-menu index="admin">
+        <template #title>
+          <el-icon><Setting /></el-icon>
+          <span>管理</span>
+        </template>
+        <el-menu-item index="/bots">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>助手管理</span>
+        </el-menu-item>
+        <el-menu-item index="/mcp">
+          <el-icon><Connection /></el-icon>
+          <span>MCP 管理</span>
+        </el-menu-item>
+        <el-menu-item index="/admin/plugins">
+          <el-icon><Monitor /></el-icon>
+          <span>插件市场</span>
+        </el-menu-item>
+        <el-menu-item index="/admin/users">
+          <el-icon><User /></el-icon>
+          <span>用户管理</span>
+        </el-menu-item>
+      </el-sub-menu>
     </el-menu>
 
     <div class="sidebar-footer">
@@ -100,9 +131,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound, Sunrise, Message, ChatLineRound, UserFilled, Connection, Briefcase } from '@element-plus/icons-vue'
+import {
+  Folder, FolderOpened, Document, User, UserFilled, Monitor, Setting, SwitchButton,
+  DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound,
+  Sunrise, Message, ChatLineRound, Connection,
+} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()
@@ -110,6 +145,22 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const displayName = computed(() => auth.user?.username || auth.user?.email || '用户')
+
+const menuRef = ref<any>(null)
+const defaultOpeneds = ref<string[]>([])
+const parentGroups: Record<string, string> = {
+  '/notes': 'content', '/files': 'content', '/rss': 'content',
+  '/projects': 'projects', '/device': 'projects',
+  '/about': 'me', '/insights': 'me', '/activities': 'me',
+  '/bots': 'admin', '/mcp': 'admin', '/admin/plugins': 'admin', '/admin/users': 'admin',
+}
+
+watch(() => route.path, (path) => {
+  const group = parentGroups[path]
+  if (!group) return
+  if (!defaultOpeneds.value.includes(group)) defaultOpeneds.value.push(group)
+  nextTick(() => menuRef.value?.open?.(group))
+}, { immediate: true })
 
 function handleCmd(cmd: string) {
   if (cmd === 'settings') router.push('/settings')
@@ -153,14 +204,8 @@ function handleCmd(cmd: string) {
 .sidebar-menu { flex: 1; background: transparent; border-right: none; padding: 10px 0; overflow-y: auto; overflow-x: hidden; }
 .sidebar-menu::-webkit-scrollbar { width: 4px; }
 
-.menu-label {
-  font-size: 10.5px; font-weight: 600; color: #64748b;
-  text-transform: uppercase; letter-spacing: 1px;
-  padding: 10px 22px 6px;
-}
-.menu-divider { height: 1px; background: rgba(255, 255, 255, .06); margin: 10px 16px; }
-
-.sidebar-menu :deep(.el-menu-item) {
+.sidebar-menu :deep(.el-menu-item),
+.sidebar-menu :deep(.el-sub-menu__title) {
   position: relative;
   color: var(--color-sidebar-text);
   height: 40px; line-height: 40px;
@@ -168,6 +213,7 @@ function handleCmd(cmd: string) {
   font-size: 13px;
   transition: background .15s, color .15s;
 }
+.sidebar-menu :deep(.el-sub-menu__title:hover),
 .sidebar-menu :deep(.el-menu-item:hover) {
   background: rgba(255, 255, 255, .06);
   color: #e2e8f0;
@@ -183,14 +229,37 @@ function handleCmd(cmd: string) {
   width: 3px; height: 18px; border-radius: 0 3px 3px 0;
   background: linear-gradient(180deg, #818cf8, #a855f7);
 }
-.sidebar-menu :deep(.el-menu-item .el-icon) {
+.sidebar-menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
+  color: #fff;
+}
+.sidebar-menu :deep(.el-menu-item .el-icon),
+.sidebar-menu :deep(.el-sub-menu__title .el-icon) {
   font-size: 17px; margin-right: 11px; color: #7c8aa5;
   transition: color .15s;
 }
-.sidebar-menu :deep(.el-menu-item:hover .el-icon) { color: #c7d2fe; }
+.sidebar-menu :deep(.el-menu-item:hover .el-icon),
+.sidebar-menu :deep(.el-sub-menu__title:hover .el-icon) { color: #c7d2fe; }
 .sidebar-menu :deep(.el-menu-item.is-active .el-icon) { color: #a5b4fc; }
-.sidebar.collapsed .sidebar-menu :deep(.el-menu-item) { margin: 3px 9px; }
-.sidebar.collapsed .sidebar-menu :deep(.el-menu-item .el-icon) { margin-right: 0; }
+
+/* Nested items: indented, lighter, no extra margin noise. */
+.sidebar-menu :deep(.el-sub-menu .el-menu) { background: transparent; }
+.sidebar-menu :deep(.el-sub-menu .el-menu-item) {
+  margin: 1px 10px 1px 16px;
+  padding-left: 34px !important;
+  height: 36px; line-height: 36px;
+  font-size: 12.5px;
+}
+.sidebar-menu :deep(.el-sub-menu .el-sub-menu__title) {
+  padding-left: 42px !important;
+}
+.sidebar-menu :deep(.el-sub-menu .el-menu-item .el-icon) { font-size: 15px; }
+.sidebar-menu :deep(.el-sub-menu .el-menu-item.is-active::before) { left: -16px; }
+.sidebar-menu :deep(.el-sub-menu__icon-arrow) { font-size: 11px; opacity: .5; }
+
+.sidebar.collapsed .sidebar-menu :deep(.el-menu-item),
+.sidebar.collapsed .sidebar-menu :deep(.el-sub-menu__title) { margin: 3px 9px; }
+.sidebar.collapsed .sidebar-menu :deep(.el-menu-item .el-icon),
+.sidebar.collapsed .sidebar-menu :deep(.el-sub-menu__title .el-icon) { margin-right: 0; }
 
 .sidebar-footer {
   border-top: 1px solid rgba(255, 255, 255, .06);
