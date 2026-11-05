@@ -96,7 +96,14 @@ async def test_mail_password_encrypted(client, admin_token):
         "password": "super-secret-password",
     }, headers=auth(admin_token))
     assert r.status_code == 201, r.text
-    # Response returns decrypted password to the owner
+    account_id = r.json()["id"]
+    # Passwords are never included in account list/create responses.
+    assert "password" not in r.json()
+    # The owner can fetch it explicitly when a legacy client needs IMAP.
+    r = await client.get(
+        f"/api/plugins/mail/accounts/{account_id}/secret", headers=auth(admin_token)
+    )
+    assert r.status_code == 200, r.text
     assert r.json()["password"] == "super-secret-password"
     # The DB must not store plaintext
     import sqlite3
