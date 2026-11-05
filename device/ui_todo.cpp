@@ -117,8 +117,11 @@ bool popCompleteReq(int& todoId) {
 
 void setBrief(const Brief& b) {
     if (!uii::ready()) return;
-    uii::lock();
 
+    // 时钟页天气：在取锁之前调用，setWeather 内部会自行加锁。
+    setWeather(b.weatherTemp, b.weatherCode);
+
+    uii::lock();
     lv_label_set_text(s_hdrTime, b.serverTime);
     lv_obj_clean(s_list);
 

@@ -456,6 +456,8 @@ static void playWav(uint32_t rate, const uint8_t* data, size_t len) {
     size_t off = 0;
     uint32_t t0 = millis();
     while (off < len) {
+        // 播报中允许唤醒词/KEY3 立即打断（简报、TTS 同样生效）。
+        if (bargeRequested()) break;
         size_t n = min((len - off) / 2, (size_t)(CHUNK / 2));
         const int16_t* src = (const int16_t*)(data + off);
         for (size_t i = 0; i < n; i++) { stereo[2 * i] = src[i]; stereo[2 * i + 1] = src[i]; }
@@ -926,6 +928,34 @@ static bool onVoiceEvent(const char* type, const char* text,
     return true;
 }
 
+static bool voiceStreamCb(const char* type, const char* text,
+                          const uint8_t* pcm, size_t len, uint32_t rate, void* ud) {
+    if (!strcmp(type, "transcript")) {
+        if (text && text[0]) {
+            setState(ST_VOICE, text, 0xffd740);
+            ui::busy(text);
+        }
+        return true;
+    }
+    if (!strcmp(type, "delta")) {
+        return true;  // 文本已由 OmniAide 累加到 reply
+    }
+    if (!strcmp(type, "status")) {
+        if (text && text[0]) {
+            setState(ST_VOICE, text, 0xffd740);
+            ui::busy(text);
+        }
+        return true;
+    }
+    if (!strcmp(type, "audio") && pcm && len) {
+        setState(ST_PLAY, "播报中 ...", 0x00e5ff);
+        ui::busy("播报中 ...");
+        // false = 被唤醒词/KEY3 打断，OmniAide 会立即中止 HTTP 流。
+        return playPcm16k(pcm, len, rate);
+    }
+    return true;
+}
+
 void askFlow() {
     static char transcript[512], reply[1024];
 
@@ -934,17 +964,31 @@ void askFlow() {
     voiceAbort = false;
     srPause();
 
-    // Stable path: full WAV from /api/chat/voice. PCM streaming playback on
-    // this codec still shows repeat/reverse artifacts, so keep it off for now.
-    bool ok = oa.voiceAsk(recBuf, recLen, REC_RATE, ttsBuf, TTS_MAX_BYTES,
-                          transcript, sizeof(transcript), reply, sizeof(reply))
+    // Primary path: one ASR call + streaming reply + sentence-level playback.
+    bool ok = oa.voiceAskStream(recBuf, recLen, REC_RATE,
+                                transcript, sizeof(transcript),
+                                reply, sizeof(reply), voiceStreamCb)
               && (transcript[0] || reply[0]);
-    if (ok && oa.voiceData > 0) {
-        setState(ST_PLAY, "播报中 ...", 0x00e5ff);
-        ui::busy("播报中 ...");
-        playWav(oa.voiceRate, ttsBuf + oa.voiceOff, oa.voiceData);
+
+    // Fallback: if streaming is unavailable, use the stable full-WAV path.
+    if (!ok && !transcript[0] && !reply[0]) {
+        oa.voiceData = 0;
+        ok = oa.voiceAsk(recBuf, recLen, REC_RATE, ttsBuf, TTS_MAX_BYTES,
+                         transcript, sizeof(transcript), reply, sizeof(reply))
+             && (transcript[0] || reply[0]);
+        if (ok && oa.voiceData > 0) {
+            setState(ST_PLAY, "播报中 ...", 0x00e5ff);
+            ui::busy("播报中 ...");
+            playWav(oa.voiceRate, ttsBuf + oa.voiceOff, oa.voiceData);
+        }
     }
     ui::busy(nullptr);
+
+    if (voiceAbort) {
+        voiceAbort = false;
+        setState(ST_READY, "已打断，继续说 Hi ESP", 0xffab40);
+        delay(400);
+    }
 
     if (transcript[0]) ui::chatAppend("user", transcript);
     if (reply[0]) ui::chatAppend("assistant", reply);
