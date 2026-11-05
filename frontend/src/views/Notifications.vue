@@ -45,6 +45,12 @@
         <el-tag v-if="!n.read" size="small" type="warning">未读</el-tag>
       </div>
     </div>
+
+    <NotificationDetail
+      v-model="detailVisible"
+      :notification="selected"
+      @open="openLink"
+    />
   </div>
 </template>
 
@@ -55,12 +61,15 @@ import { Bell, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
+import NotificationDetail from '@/core/layout/NotificationDetail.vue'
 
 const router = useRouter()
 const notifications = ref<any[]>([])
 const unreadCount = ref(0)
 const filter = ref<'all' | 'unread'>('all')
 const loading = ref(false)
+const selected = ref<any>(null)
+const detailVisible = ref(false)
 
 function formatTime(value: string) {
   return value ? formatBackendDate(value) : ''
@@ -83,6 +92,8 @@ async function load() {
 }
 
 async function openNotification(n: any) {
+  selected.value = n
+  detailVisible.value = true
   if (!n.read) {
     try {
       await client.put(`/notifications/${n.id}/read`)
@@ -91,10 +102,13 @@ async function openNotification(n: any) {
       window.dispatchEvent(new CustomEvent('omniaide:notification'))
     } catch { /* ignore */ }
   }
-  if (n.link) {
-    if (/^https?:\/\//.test(n.link)) window.open(n.link, '_blank')
-    else router.push(n.link)
-  }
+}
+
+function openLink() {
+  const link = selected.value?.link
+  if (!link) return
+  if (/^https?:\/\//.test(link)) window.open(link, '_blank')
+  else router.push(link)
 }
 
 async function runAction(n: any, action: any) {

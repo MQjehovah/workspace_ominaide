@@ -24,7 +24,7 @@
               <button v-if="unreadCount > 0" class="notif-clear" @click.stop="markAllRead">全部已读</button>
             </div>
             <div v-if="notifications.length === 0" class="notif-empty">暂无通知</div>
-            <div v-for="n in notifications" :key="n.id" class="notif-item" :class="{ unread: !n.read }" @click="markRead(n)">
+            <div v-for="n in notifications" :key="n.id" class="notif-item" :class="{ unread: !n.read }" @click="openDetail(n)">
               <div class="notif-dot" v-if="!n.read"></div>
               <div class="notif-body">
                 <div class="notif-title">{{ n.title }}</div>
@@ -54,6 +54,12 @@
         </template>
       </el-dropdown>
     </div>
+
+    <NotificationDetail
+      v-model="detailVisible"
+      :notification="selected"
+      @open="openLink"
+    />
   </div>
 </template>
 
@@ -65,6 +71,7 @@ import { useAuthStore } from '@/stores/auth'
 import client from '@/api/client'
 import { parseBackendDate } from '@/utils/date'
 import GlobalSearch from './GlobalSearch.vue'
+import NotificationDetail from './NotificationDetail.vue'
 
 defineEmits<{ 'toggle-sidebar': [] }>()
 const route = useRoute()
@@ -124,7 +131,12 @@ function onBellVisible(visible: boolean) {
 async function fetchUnreadCount() {
   try { const r = await client.get('/notifications/unread-count'); unreadCount.value = r.data.count || 0 } catch { /* ignore */ }
 }
-async function markRead(n: any) {
+const selected = ref<any>(null)
+const detailVisible = ref(false)
+
+async function openDetail(n: any) {
+  selected.value = n
+  detailVisible.value = true
   if (!n.read) {
     try {
       await client.put(`/notifications/${n.id}/read`)
@@ -132,10 +144,13 @@ async function markRead(n: any) {
       unreadCount.value = Math.max(0, unreadCount.value - 1)
     } catch { /* ignore */ }
   }
-  if (n.link) {
-    if (/^https?:\/\//.test(n.link)) window.open(n.link, '_blank')
-    else router.push(n.link)
-  }
+}
+
+function openLink() {
+  const link = selected.value?.link
+  if (!link) return
+  if (/^https?:\/\//.test(link)) window.open(link, '_blank')
+  else router.push(link)
 }
 async function markAllRead() {
   try {
