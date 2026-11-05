@@ -8,10 +8,16 @@
     }"
   >
     <div
-      :class="['tree-item', { active: node.id === currentId && !node.is_folder, dragging: dragging }]"
-      :style="{ paddingLeft: 12 + depth * 16 + 'px' }"
+      :class="['tree-item', {
+        active: node.id === currentId,
+        folder: node.is_folder,
+        note: !node.is_folder,
+        'has-children': hasChildren,
+        dragging: dragging,
+      }]"
+      :style="{ paddingLeft: 8 + depth * 15 + 'px' }"
       draggable="true"
-      @click="$emit('select', node.id)"
+      @click="onClick"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
       @dragover.prevent="onDragOver"
@@ -21,8 +27,10 @@
       <span v-if="hasChildren" class="toggle" @click.stop="expanded = !expanded">
         {{ expanded ? '▾' : '▸' }}
       </span>
-      <span v-else class="bullet">·</span>
+      <span v-else class="toggle-spacer"></span>
+      <span class="node-icon" :class="{ folder: node.is_folder }">{{ iconOf }}</span>
       <span class="item-title">{{ node.title || '无标题' }}</span>
+      <span v-if="node.is_folder" class="folder-badge">文件夹</span>
       <div class="item-actions" @click.stop>
         <el-button text size="small" :icon="Plus" @click="$emit('createChild', node.id)" />
         <el-popconfirm title="确定删除？" @confirm="$emit('delete', node.id)">
@@ -32,7 +40,7 @@
         </el-popconfirm>
       </div>
     </div>
-    <div v-if="hasChildren && expanded">
+    <div v-if="hasChildren && expanded" class="children">
       <TreeNode
         v-for="child in node.children || []"
         :key="child.id"
@@ -44,15 +52,15 @@
         @delete="(id: number) => $emit('delete', id)"
         @move="(src: number, tgt: number, pos: 'before' | 'after' | 'inside') => $emit('move', src, tgt, pos)"
       />
-      <div v-if="node.is_folder && !node.children?.length" class="empty-hint" :style="{ paddingLeft: 30 + depth * 16 + 'px' }">
-        空文件夹
-      </div>
+    </div>
+    <div v-if="node.is_folder && !node.children?.length" class="empty-hint" :style="{ paddingLeft: 34 + depth * 15 + 'px' }">
+      空文件夹
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Plus, Delete } from '@element-plus/icons-vue'
 
 const props = defineProps<{ node: any; currentId: number | null; depth: number }>()
@@ -63,10 +71,37 @@ const emit = defineEmits<{
   move: [sourceId: number, targetId: number, position: 'before' | 'after' | 'inside']
 }>()
 
-const expanded = ref(true)
+// Only the first level starts expanded: rendering the whole 400+ node tree at
+// once made the notes page feel slow.
+const expanded = ref(props.depth < 1)
 const dragging = ref(false)
 const dropPos = ref<'before' | 'after' | 'inside' | null>(null)
-const hasChildren = computed(() => props.node.children?.length > 0 || props.node.is_folder)
+const hasChildren = computed(() => (props.node.children?.length || 0) > 0)
+
+const iconOf = computed(() => {
+  if (props.node.icon) return props.node.icon
+  if (props.node.is_folder) return '📁'
+  return hasChildren.value ? '📝' : '📄'
+})
+
+function contains(node: any, id: number | null): boolean {
+  if (!node || id == null) return false
+  if (node.id === id) return true
+  return (node.children || []).some((child: any) => contains(child, id))
+}
+
+// Auto-expand the branch that contains the active note.
+watch(() => props.currentId, (id) => {
+  if (!expanded.value && contains(props.node, id)) expanded.value = true
+}, { immediate: true })
+
+function onClick() {
+  if (props.node.is_folder) {
+    if (hasChildren.value) expanded.value = !expanded.value
+    return
+  }
+  emit('select', props.node.id)
+}
 
 function onDragStart(e: DragEvent) {
   if (!e.dataTransfer) return
@@ -85,26 +120,10 @@ function onDragOver(e: DragEvent) {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
   const y = e.clientY - rect.top
   const h = rect.height
-  const folderSource = Array.from(e.dataTransfer.types).includes('application/x-omni-folder')
-  if (folderSource) {
-    // Folders are top-level containers: only reorder among root nodes.
-    if ((props.node.parent_id ?? null) !== null) {
-      dropPos.value = null
-      return
-    }
-    dropPos.value = y < h * 0.5 ? 'before' : 'after'
-    return
-  }
-
-  if (props.node.is_folder) {
-    if (y < h * 0.25) dropPos.value = 'before'
-    else if (y > h * 0.75) dropPos.value = 'after'
-    else dropPos.value = 'inside'
-  } else {
-    if (y < h * 0.3) dropPos.value = 'before'
-    else if (y > h * 0.7) dropPos.value = 'after'
-    else dropPos.value = 'inside'
-  }
+  // Any node can act as a container now that folders may nest.
+  if (y < h * 0.28) dropPos.value = 'before'
+  else if (y > h * 0.72) dropPos.value = 'after'
+  else dropPos.value = 'inside'
 }
 
 function onDragLeave() {
@@ -128,17 +147,48 @@ function onDrop(e: DragEvent) {
 
 <style scoped>
 .tree-node { position: relative; }
-.tree-node.drag-over-before > .tree-item { box-shadow: inset 0 2px 0 #2f80ed; }
-.tree-node.drag-over-after > .tree-item { box-shadow: inset 0 -2px 0 #2f80ed; }
-.tree-node.drag-over-inside > .tree-item { background: #e8f3ff; outline: 2px dashed #2f80ed; outline-offset: -2px; }
-.tree-item { display:flex; align-items:center; gap:4px; padding:8px 10px; margin:1px 0; border-radius:8px; cursor:pointer; font-size:13px; transition: background .15s, color .15s; }
-.tree-item:hover { background:#f3f7fc; }
-.tree-item.active { background:#eaf3ff; color:#1d6fd8; font-weight:600; }
-.tree-item.dragging { opacity:.4; }
-.toggle { width:16px; text-align:center; flex-shrink:0; font-size:12px; color:#8b95a5; cursor:pointer; }
-.bullet { width:16px; text-align:center; flex-shrink:0; color:#c7ced8; }
-.item-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.item-actions { display:none; gap:2px; flex-shrink:0; }
-.tree-item:hover .item-actions { display:flex; }
-.empty-hint { font-size:11px; color:#b5bdc9; padding:3px 0 5px; }
+.tree-node.drag-over-before > .tree-item { box-shadow: inset 0 2px 0 var(--brand-500); }
+.tree-node.drag-over-after > .tree-item { box-shadow: inset 0 -2px 0 var(--brand-500); }
+.tree-node.drag-over-inside > .tree-item { background: #eef2ff; outline: 2px dashed #a5b4fc; outline-offset: -2px; }
+
+.tree-item {
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 8px 6px 0; margin: 1px 0; border-radius: 8px;
+  cursor: pointer; font-size: 13px;
+  transition: background .15s, color .15s;
+}
+.tree-item:hover { background: #f4f7fc; }
+.tree-item.active { background: #eef2ff; color: #3730a3; font-weight: 600; }
+.tree-item.dragging { opacity: .4; }
+
+.tree-item.folder { font-weight: 600; color: #334155; }
+.tree-item.folder .item-title { letter-spacing: .1px; }
+
+.toggle {
+  width: 16px; text-align: center; flex-shrink: 0;
+  font-size: 11px; color: #94a3b8; cursor: pointer;
+  transition: color .15s;
+}
+.toggle:hover { color: #475569; }
+.toggle-spacer { width: 16px; flex-shrink: 0; }
+
+.node-icon {
+  width: 18px; flex-shrink: 0; text-align: center;
+  font-size: 13px; line-height: 1;
+}
+.node-icon.folder { font-size: 14px; }
+
+.item-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.folder-badge {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 500;
+  color: #94a3b8; background: #f1f5f9;
+  padding: 1px 6px; border-radius: 999px;
+}
+
+.item-actions { display: none; gap: 2px; flex-shrink: 0; }
+.tree-item:hover .item-actions { display: flex; }
+.empty-hint { font-size: 11px; color: #b5bdc9; padding: 3px 0 5px; }
+
+.children { position: relative; }
 </style>

@@ -114,6 +114,10 @@
           </div>
         </div>
         <div class="note-editor-shell">
+          <div v-if="noteLoading" class="note-loading">
+            <span class="note-spinner"></span>
+            加载笔记…
+          </div>
           <TipTapEditor ref="editorRef" :key="currentId" v-model="noteContent" @update:model-value="autoSave" />
         </div>
       </main>
@@ -232,6 +236,9 @@ const currentId = ref<number | null>(null)
 const noteTitle = ref('')
 const noteContent = ref('')
 const loading = ref(true)
+const noteLoading = ref(false)
+const noteCache = new Map<number, { title: string; content: string }>()
+let openSeq = 0
 const saveStatus = ref('已保存')
 const editorRef = ref<any>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -349,15 +356,31 @@ async function openNote(id: number) {
   const allNotes = flattenTree(tree.value)
   const note = allNotes.find((n: any) => n.id === id)
   if (note?.is_folder) return
+  if (currentId.value === id && !noteLoading.value) return
   currentId.value = id
   if (isMobile.value) mobileListOpen.value = false
+
+  const seq = ++openSeq
+  const cached = noteCache.get(id)
+  if (cached) {
+    noteTitle.value = cached.title
+    noteContent.value = cached.content
+  }
+  noteLoading.value = !cached
   try {
     const res = await client.get(`/plugins/notes/${id}`)
+    if (seq !== openSeq) return
     const n = res.data
-    noteTitle.value = n.title || ''
-    noteContent.value = n.content || ''
+    if (!cached || n.title !== cached.title || n.content !== cached.content) {
+      noteTitle.value = n.title || ''
+      noteContent.value = n.content || ''
+    }
+    noteCache.set(id, { title: n.title || '', content: n.content || '' })
     saveStatus.value = '已保存'
   } catch (e) { console.error(e) }
+  finally {
+    if (seq === openSeq) noteLoading.value = false
+  }
 }
 
 async function saveNote() {
@@ -367,7 +390,11 @@ async function saveNote() {
     await client.put(`/plugins/notes/${currentId.value}`, {
       title: noteTitle.value, content: noteContent.value,
     })
-    await loadTree()
+    // Update the tree node in place: reloading the whole tree on every autosave
+    // was the main cause of the notes page feeling slow.
+    const node = flattenTree(tree.value).find((n: any) => n.id === currentId.value)
+    if (node) node.title = noteTitle.value
+    noteCache.set(currentId.value, { title: noteTitle.value, content: noteContent.value })
     saveStatus.value = '已保存'
   } catch (e) {
     saveStatus.value = '保存失败'
@@ -687,7 +714,20 @@ onUnmounted(() => {
 .title-input :deep(.el-input__wrapper) { border: none; box-shadow: none !important; padding: 0; background: transparent; }
 .note-meta { display: flex; gap: 10px; margin-top: 6px; color: #9aa3b2; font-size: 12px; }
 .note-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex: 0 1 auto; flex-wrap: wrap; padding-top: 4px; }
-.note-editor-shell { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 0 20px 8px; }
+.note-editor-shell { position: relative; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 0 20px 8px; }
+.note-loading {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  background: rgba(255, 255, 255, .86);
+  backdrop-filter: blur(2px);
+  color: #64748b; font-size: 13px;
+}
+.note-spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid #dbe3f5; border-top-color: var(--brand-500);
+  animation: note-spin .7s linear infinite;
+}
+@keyframes note-spin { to { transform: rotate(360deg); } }
 .notes-empty { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #e5eaf1; border-radius: 14px; }
 .hidden-file { display: none; }
 .rag-panel { display: flex; flex-direction: column; gap: 12px; }
