@@ -80,12 +80,21 @@ async function getCachedOrFetch(acc: MailAccount, force = false): Promise<EmailS
   return emails
 }
 
-function createImapClient(acc: MailAccount) {
+async function ensurePassword(acc: MailAccount): Promise<string> {
+  if (acc.password) return acc.password
+  // The backend no longer includes passwords in the account list.
+  const data = await pluginCtx?.api?.get(`/plugins/mail/accounts/${acc.id}/secret`)
+  acc.password = data?.password || ''
+  return acc.password
+}
+
+async function createImapClient(acc: MailAccount) {
+  const password = await ensurePassword(acc)
   return new ImapClient({
     host: acc.imapHost,
     port: acc.imapPort,
     user: acc.username,
-    password: acc.password,
+    password,
     tls: acc.imapTls,
   })
 }
@@ -181,7 +190,7 @@ export default {
       if (args.smtpPort !== undefined) payload.smtp_port = args.smtpPort
       if (args.smtpTls !== undefined) payload.smtp_tls = args.smtpTls
       if (args.username !== undefined) payload.username = args.username
-      if (args.password !== undefined) payload.password = args.password
+      if (args.password) payload.password = args.password
       try {
         const acc = await context.api?.put(`/plugins/mail/accounts/${args?.id}`, payload)
         if (acc) {
@@ -223,7 +232,7 @@ export default {
       const acc = accounts.find(a => a.id === args?.accountId || a.id === Number(args?.accountId))
       if (!acc || !args?.uid) return { success: false, error: 'Account not found' }
       try {
-        const client = createImapClient(acc)
+        const client = await createImapClient(acc)
         await client.connect()
         await client.login()
         await client.selectMailbox('INBOX')
@@ -258,7 +267,7 @@ export default {
           host: acc.smtpHost,
           port: acc.smtpPort,
           secure: acc.smtpTls,
-          auth: { user: acc.username, pass: acc.password },
+          auth: { user: acc.username, pass: await ensurePassword(acc) },
         })
 
         await transporter.sendMail({
@@ -289,7 +298,7 @@ let refreshTimer: any = null
 
 async function fetchInbox(acc: MailAccount): Promise<EmailSummary[]> {
   try {
-    const client = createImapClient(acc)
+    const client = await createImapClient(acc)
 
     await client.connect()
     await client.login()

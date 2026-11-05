@@ -40,7 +40,6 @@ class MailAccountResponse(BaseModel):
     smtp_port: int
     smtp_tls: bool
     username: str
-    password: str
     sync_enabled: bool = True
     folder: str | None = None
     last_uid: int = 0

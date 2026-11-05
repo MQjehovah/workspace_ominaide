@@ -64,6 +64,23 @@ async def delete_account(
     return {"message": "Account deleted"}
 
 
+@router.get("/accounts/{account_id}/secret")
+async def get_account_secret(
+    account_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Owner-only password retrieval for legacy desktop IMAP use.
+
+    The account list never includes passwords; clients must ask explicitly and
+    must not cache the value in logs or shared storage.
+    """
+    password = await mail_service.get_account_secret(db, user["id"], account_id)
+    if password is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {"password": password}
+
+
 @router.post("/accounts/{account_id}/sync", response_model=MailAccountSyncResponse)
 async def sync_account(
     account_id: int,

@@ -164,6 +164,28 @@ async def test_mail_messages_api_is_scoped(client, monkeypatch):
     assert r.json()["total"] == 0
 
 
+async def test_account_list_hides_password_and_secret_is_owner_only(client):
+    token_a, _ = await _new_user(client)
+    token_b, _ = await _new_user(client)
+    account_id = await _create_account(client, token_a)
+
+    r = await client.get("/api/plugins/mail/accounts", headers=auth(token_a))
+    assert r.status_code == 200, r.text
+    account = next(a for a in r.json() if a["id"] == account_id)
+    assert "password" not in account
+
+    r = await client.get(
+        f"/api/plugins/mail/accounts/{account_id}/secret", headers=auth(token_a)
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["password"] == "secret"
+
+    r = await client.get(
+        f"/api/plugins/mail/accounts/{account_id}/secret", headers=auth(token_b)
+    )
+    assert r.status_code == 404
+
+
 async def test_manual_sync_requires_ownership(client, monkeypatch):
     from plugins.mail.backend import sync as mail_sync
 

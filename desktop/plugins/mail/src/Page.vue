@@ -62,7 +62,7 @@
           <input v-model="form.name" placeholder="显示名称（如：工作邮箱）" />
           <input v-model="form.email" placeholder="邮箱地址" />
           <input v-model="form.username" placeholder="用户名（通常和邮箱相同）" />
-          <input v-model="form.password" type="password" placeholder="密码/授权码" />
+          <input v-model="form.password" type="password" placeholder="密码/授权码（编辑时留空保持不变）" />
 
           <div class="field-group">
             <label>IMAP 设置</label>
@@ -195,8 +195,8 @@ async function refreshAll() {
 
 async function saveAccount() {
   formError.value = ''
-  if (!form.value.email || !form.value.password) {
-    formError.value = '邮箱和密码为必填'
+  if (!form.value.email || (!editAccountId.value && !form.value.password)) {
+    formError.value = editAccountId.value ? '邮箱为必填' : '邮箱和密码为必填'
     return
   }
   try {

@@ -1,5 +1,7 @@
+import { BrowserWindow, dialog } from 'electron'
 import { listTools, callTool } from './mcp-manager'
 import { listSkillSummaries } from './skills'
+import { getConfig } from '../config'
 
 export interface AgentRequest {
   sessionId: string
@@ -85,6 +87,34 @@ function buildUserContent(message: string, images: string[]): string | any[] {
 
 function serializeToolResult(content: string, error: boolean): string {
   return error ? `[错误] ${content}` : content
+}
+
+const RISKY_LOCAL_TOOLS = new Set(['write_file', 'delete_path', 'run_command'])
+
+/** Ask the user before the desktop Agent writes, deletes or runs a command. */
+async function approveTool(name: string, args: any): Promise<boolean> {
+  if (!RISKY_LOCAL_TOOLS.has(name)) return true
+  const cfg = await getConfig()
+  if (cfg.desktopAgentApproval === false) return true
+
+  const detail = name === 'run_command'
+    ? String(args?.command || '')
+    : String(args?.path || '')
+  const options = {
+    type: 'warning' as const,
+    title: '需要确认的工具操作',
+    message: `AI 请求执行：${name}`,
+    detail: detail.slice(0, 500) || '(无参数)',
+    buttons: ['允许一次', '拒绝'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  }
+  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+  const result = win && !win.isDestroyed()
+    ? await dialog.showMessageBox(win, options)
+    : await dialog.showMessageBox(options)
+  return result.response === 0
 }
 
 export async function runAgentSession(req: AgentRequest, emit: (p: AgentPayload) => void, signal: AbortSignal, opts: AgentRunOptions = {}): Promise<void> {
@@ -246,6 +276,20 @@ export async function runAgentSession(req: AgentRequest, emit: (p: AgentPayload)
         const name = tc.name
         totalTools++
         emit({ sessionId: req.sessionId, type: 'tool_call', name, arguments: args })
+
+        const allowed = await approveTool(name, args)
+        if (!allowed) {
+          const denied = `用户拒绝了 ${name} 的调用，未执行任何修改。`
+          emit({ sessionId: req.sessionId, type: 'tool_result', name, content: denied, error: true })
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id || `call_${idx}`,
+            content: serializeToolResult(denied, true),
+          })
+          trimContext(messages, maxContextChars)
+          continue
+        }
+
         const result = await callTool(name, args)
         const safeContent = truncate(result.content || '')
         emit({ sessionId: req.sessionId, type: 'tool_result', name, content: safeContent, error: result.error })

@@ -5,19 +5,24 @@ from .schemas import MailAccountCreate, MailAccountUpdate
 from core.crypto import encrypt_secret, decrypt_secret
 
 
-def _decrypt(acc: MailAccount) -> MailAccount:
-    import copy
-    clone = copy.copy(acc)
-    clone.password = decrypt_secret(acc.password)
-    return clone
-
-
 async def list_accounts(db: AsyncSession, user_id: int) -> list[MailAccount]:
     result = await db.execute(
         select(MailAccount).where(MailAccount.user_id == user_id)
         .order_by(MailAccount.id)
     )
-    return [_decrypt(a) for a in result.scalars().all()]
+    return list(result.scalars().all())
+
+
+async def get_account_secret(db: AsyncSession, user_id: int, account_id: int) -> str | None:
+    """Return the decrypted password only for an explicit, owner-only request."""
+    acc = (await db.execute(
+        select(MailAccount).where(
+            MailAccount.id == account_id, MailAccount.user_id == user_id
+        )
+    )).scalar_one_or_none()
+    if acc is None:
+        return None
+    return decrypt_secret(acc.password)
 
 
 async def create_account(db: AsyncSession, user_id: int, req: MailAccountCreate) -> MailAccount:
@@ -37,7 +42,7 @@ async def create_account(db: AsyncSession, user_id: int, req: MailAccountCreate)
     db.add(acc)
     await db.flush()
     await db.refresh(acc)
-    return _decrypt(acc)
+    return acc
 
 
 async def update_account(db: AsyncSession, user_id: int, account_id: int, req: MailAccountUpdate) -> MailAccount | None:
@@ -65,11 +70,11 @@ async def update_account(db: AsyncSession, user_id: int, account_id: int, req: M
         acc.smtp_tls = req.smtp_tls
     if req.username is not None:
         acc.username = req.username
-    if req.password is not None:
+    if req.password:
         acc.password = encrypt_secret(req.password)
     await db.flush()
     await db.refresh(acc)
-    return _decrypt(acc)
+    return acc
 
 
 async def delete_account(db: AsyncSession, user_id: int, account_id: int) -> bool:
