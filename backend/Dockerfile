@@ -19,4 +19,9 @@ RUN (groupadd -g 1000 omniaide || true) && \
 COPY . .
 RUN find /app -name '__pycache__' -type d -prune -exec rm -rf {} + || true
 
+# Root only: the sandbox user (agent, uid 1001) must not read backend sources or
+# the mounted uploads under /app. Matches the runtime hardening; keeps it baked
+# into the image instead of relying on a post-start chmod.
+RUN chmod 700 /app
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--ws-ping-interval", "20", "--ws-ping-timeout", "30"]
