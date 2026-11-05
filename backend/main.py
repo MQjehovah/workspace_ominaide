@@ -179,6 +179,9 @@ app.include_router(insights_router)
 from core.memory_router import router as memory_router
 app.include_router(memory_router)
 
+from core.cos.router import router as cos_router
+app.include_router(cos_router)
+
 from core.events.router import router as activities_router
 app.include_router(activities_router)
 

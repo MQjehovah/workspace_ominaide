@@ -27,6 +27,10 @@
         <el-icon><Sunrise /></el-icon>
         <span>每日回顾</span>
       </el-menu-item>
+      <el-menu-item index="/cos">
+        <el-icon><Briefcase /></el-icon>
+        <span>幕僚长</span>
+      </el-menu-item>
       <el-menu-item index="/about">
         <el-icon><UserFilled /></el-icon>
         <span>关于我</span>
@@ -91,7 +95,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound, Sunrise, Message, ChatLineRound, UserFilled, Connection } from '@element-plus/icons-vue'
+import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound, Sunrise, Message, ChatLineRound, UserFilled, Connection, Briefcase } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()
