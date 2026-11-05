@@ -152,11 +152,18 @@
             <h3>实体图谱</h3>
             <span class="count" v-if="entities.length">{{ entities.length }}</span>
           </div>
-          <el-select v-model="entityType" size="small" clearable placeholder="全部类型" style="width:118px" @change="loadEntities">
-            <el-option label="人物" value="person" />
-            <el-option label="项目" value="project" />
-            <el-option label="术语" value="term" />
-          </el-select>
+          <div class="entity-tools">
+            <div class="graph-legend">
+              <span><i class="legend-dot person"></i>人物</span>
+              <span><i class="legend-dot project"></i>项目</span>
+              <span><i class="legend-dot term"></i>术语</span>
+            </div>
+            <el-select v-model="entityType" size="small" clearable placeholder="全部类型" style="width:118px" @change="loadEntities">
+              <el-option label="人物" value="person" />
+              <el-option label="项目" value="project" />
+              <el-option label="术语" value="term" />
+            </el-select>
+          </div>
         </div>
         <p v-if="!entitiesSupported" class="muted">
           当前数据库不支持实体图谱（需要 PostgreSQL + pgvector）。画像与回顾不受影响。
@@ -164,23 +171,32 @@
         <div v-else-if="entities.length === 0" class="empty-soft">
           <p>还没有抽取到实体。多聊聊人、项目和术语，它们会出现在这里。</p>
         </div>
-        <div v-else class="entity-list">
-          <div v-for="e in entities" :key="e.id" class="entity-row">
-            <div class="entity-main">
-              <span class="entity-avatar" :class="e.type">{{ (e.name || '?').slice(0, 1) }}</span>
+        <template v-else>
+          <EntityGraph
+            ref="graphRef"
+            :nodes="entities"
+            :links="entityLinks"
+            :selected-id="selectedEntityId"
+            @select="selectEntity"
+          />
+          <div v-if="selectedEntity" class="entity-detail">
+            <div class="entity-detail-main">
+              <span class="entity-avatar" :class="selectedEntity.type">{{ (selectedEntity.name || '?').slice(0, 1) }}</span>
               <div class="entity-text">
-                <span class="entity-name">{{ e.name }}</span>
-                <span class="muted" v-if="e.sources?.length">来自 {{ e.sources.length }} 处内容</span>
+                <span class="entity-name">{{ selectedEntity.name }}</span>
+                <span class="muted">
+                  {{ typeLabel(selectedEntity.type) }}
+                  · 来自 {{ selectedEntity.source_count || 0 }} 处内容
+                  <template v-if="selectedEntity.last_seen"> · 最近 {{ fmt(selectedEntity.last_seen) }}</template>
+                </span>
               </div>
-              <el-tag size="small" effect="plain" :type="e.type === 'person' ? 'primary' : (e.type === 'project' ? 'success' : 'info')">
-                {{ typeLabel(e.type) }}
-              </el-tag>
             </div>
-            <el-popconfirm title="忘掉这个实体？不会删除原始内容。" @confirm="forgetEntity(e)">
+            <el-popconfirm title="忘掉这个实体？不会删除原始内容。" @confirm="forgetEntity(selectedEntity)">
               <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
             </el-popconfirm>
           </div>
-        </div>
+          <div v-else class="graph-tip">点击任一节点查看实体详情。</div>
+        </template>
       </section>
 
       <section id="reviews" class="page-card review-card reveal" style="--d: 180ms">
@@ -300,11 +316,15 @@ import { ElMessage } from 'element-plus'
 import { Edit, Refresh, Search } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
+import EntityGraph from '@/components/EntityGraph.vue'
 
 const profile = ref<any>({ contacts: [], projects: [], interests: [], habits: [], insights: {} })
 const entities = ref<any[]>([])
+const entityLinks = ref<any[]>([])
 const entitiesSupported = ref(true)
 const entityType = ref('')
+const selectedEntityId = ref<string | null>(null)
+const graphRef = ref<any>(null)
 const reviews = ref<any[]>([])
 const candidates = ref<any[]>([])
 const records = ref<any[]>([])
@@ -333,6 +353,10 @@ const anchors = [
 ]
 
 const initial = computed(() => (profile.value.name || '我').slice(0, 1))
+
+const selectedEntity = computed(() =>
+  entities.value.find((e) => e.id === selectedEntityId.value) || null,
+)
 
 const stats = computed(() => [
   { key: 'records', label: '长期记忆', value: records.value.length, target: 'records' },
@@ -443,21 +467,32 @@ async function loadProfile() {
 
 async function loadEntities() {
   try {
-    const { data } = await client.get('/memory/entities', {
+    const { data } = await client.get('/memory/entities/graph', {
       params: { limit: 200, ...(entityType.value ? { entity_type: entityType.value } : {}) },
     })
-    entities.value = data.items || []
+    entities.value = data.nodes || []
+    entityLinks.value = data.links || []
     entitiesSupported.value = data.supported !== false
+    if (!entities.value.some((e: any) => e.id === selectedEntityId.value)) {
+      selectedEntityId.value = null
+    }
   } catch {
     entities.value = []
+    entityLinks.value = []
     entitiesSupported.value = false
+    selectedEntityId.value = null
   }
+}
+
+function selectEntity(id: string) {
+  selectedEntityId.value = selectedEntityId.value === id ? null : id
 }
 
 async function forgetEntity(e: any) {
   try {
     await client.delete(`/memory/entities/${encodeURIComponent(e.id)}`)
     ElMessage.success(`已遗忘「${e.name}」`)
+    selectedEntityId.value = null
     await loadEntities()
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.detail || '遗忘失败')
@@ -677,13 +712,19 @@ section[id] { scroll-margin-top: 12px; }
 .project-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .project-name { font-size: 13px; color: #303133; }
 
-.entity-list { display: flex; flex-direction: column; }
-.entity-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 9px 0; border-bottom: 1px solid #f4f5f8;
-  transition: background .15s;
+.entity-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.graph-legend { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: #64748b; }
+.graph-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.legend-dot.person { background: #6366f1; }
+.legend-dot.project { background: #10b981; }
+.legend-dot.term { background: #f59e0b; }
+.entity-detail {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 12px; padding: 10px 12px; border-radius: 12px;
+  background: #f8faff; border: 1px solid #e8edf8;
 }
-.entity-row:last-child { border-bottom: none; }
+.entity-detail-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .entity-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .entity-avatar {
   width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0;
@@ -692,8 +733,10 @@ section[id] { scroll-margin-top: 12px; }
 }
 .entity-avatar.person { background: #eef2ff; color: #4f46e5; }
 .entity-avatar.project { background: #ecfdf5; color: #059669; }
+.entity-avatar.term { background: #fffbeb; color: #d97706; }
 .entity-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .entity-name { font-size: 13px; color: #303133; font-weight: 500; }
+.graph-tip { margin-top: 10px; font-size: 11.5px; color: #94a3b8; }
 
 .review-list { display: flex; flex-direction: column; }
 .review-row { padding: 12px 0; border-bottom: 1px solid #f4f5f8; }
@@ -817,6 +860,8 @@ section[id] { scroll-margin-top: 12px; }
   .candidate-row { flex-direction: column; }
   .candidate-actions { width: 100%; justify-content: flex-end; }
   .entity-row { padding: 8px 0; }
+  .entity-tools { width: 100%; justify-content: space-between; }
+  .entity-detail { flex-direction: column; align-items: flex-start; }
 }
 
 @media (prefers-reduced-motion: reduce) {

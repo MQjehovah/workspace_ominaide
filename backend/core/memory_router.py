@@ -104,6 +104,74 @@ async def list_entities(
     return {"items": items, "counts": counts, "supported": True}
 
 
+@router.get("/entities/graph")
+async def entity_graph(
+    entity_type: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    """Entities plus links between entities that share the same source."""
+    if engine.dialect.name != "postgresql":
+        return {"nodes": [], "links": [], "counts": {}, "supported": False}
+    try:
+        async with engine.begin() as conn:
+            rows = (await conn.execute(
+                text(
+                    "SELECT doc_key, title, metadata, created_at FROM embeddings "
+                    "WHERE collection = 'entities' AND user_id = :uid "
+                    "ORDER BY created_at DESC LIMIT :limit"
+                ),
+                {"uid": user["id"], "limit": limit},
+            )).mappings().all()
+    except Exception as e:
+        print(f"[memory] entity graph error: {e}")
+        return {"nodes": [], "links": [], "counts": {}, "supported": False}
+
+    nodes = []
+    counts: dict[str, int] = {}
+    groups: dict[str, list[str]] = {}
+    for row in rows:
+        meta = _loads(row["metadata"]) or {}
+        etype = meta.get("type") or "term"
+        # Bot memories are mirrored into the same collection but are not
+        # entities; they have no sources and would only add isolated dots.
+        if etype == "memory":
+            continue
+        if entity_type and etype != entity_type:
+            continue
+        node_id = row["doc_key"]
+        counts[etype] = counts.get(etype, 0) + 1
+        nodes.append({
+            "id": node_id,
+            "name": row["title"],
+            "type": etype,
+            "source_count": len(meta.get("sources") or []),
+            "first_seen": meta.get("first_seen"),
+            "last_seen": meta.get("last_seen"),
+        })
+        for src in meta.get("sources") or []:
+            if not isinstance(src, dict) or src.get("id") is None:
+                continue
+            groups.setdefault(f"{src.get('type') or 'unknown'}:{src['id']}", []).append(node_id)
+
+    weights: dict[tuple[str, str], int] = {}
+    for ids in groups.values():
+        unique = sorted(set(ids))
+        # A source shared by too many entities would turn into a hairball.
+        if len(unique) < 2 or len(unique) > 12:
+            continue
+        for i in range(len(unique)):
+            for j in range(i + 1, len(unique)):
+                key = (unique[i], unique[j])
+                weights[key] = weights.get(key, 0) + 1
+
+    links = [
+        {"source": a, "target": b, "weight": w, "relation": "同一来源"}
+        for (a, b), w in weights.items()
+    ]
+    return {"nodes": nodes, "links": links, "counts": counts, "supported": True}
+
+
 class CandidateApprove(BaseModel):
     pass
 

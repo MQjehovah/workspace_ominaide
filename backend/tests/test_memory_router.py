@@ -56,3 +56,9 @@ async def test_entity_graph_degrades_gracefully_on_sqlite(client):
 
     r = await client.delete("/api/memory/entities/ent_x_1", headers=auth(token))
     assert r.status_code == 404
+
+    r = await client.get("/api/memory/entities/graph", headers=auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["nodes"] == []
+    assert r.json()["links"] == []
+    assert r.json()["supported"] is False
