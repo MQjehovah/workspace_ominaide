@@ -3,9 +3,15 @@ ENV TZ=Asia/Shanghai
 WORKDIR /app
 
 # git/ssh are required by the coding agent (delivery + deploy-key push).
+# node/npm run the DingTalk Workspace CLI (`dws`) used by the MCP hub.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git openssh-client ca-certificates && \
+    apt-get install -y --no-install-recommends git openssh-client ca-certificates nodejs npm tar && \
     rm -rf /var/lib/apt/lists/*
+
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install -g dingtalk-workspace-cli@1.0.62
+ENV DWS_CONFIG_DIR=/data/dws
+RUN mkdir -p /data/dws
 
 COPY requirements.txt .
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \

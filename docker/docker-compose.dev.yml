@@ -9,6 +9,7 @@ services:
       - "8000:8000"
     volumes:
       - ../backend:/app
+      - dws_data:/data/dws
     environment:
       - DATABASE_URL=mysql+aiomysql://omniaide:omniaide_pass@mysql:3306/omniaide
       - MINIO_ENDPOINT=minio:9000

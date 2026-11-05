@@ -44,6 +44,18 @@
 | **Wave 8** | 隐私与权限中心 | 插件权限执行、禁用即停、采集透明化 | 已完成（shell/storage/notification/screenshot/remote 按 manifest 执行；api 保持兼容不拦截） |
 | **Wave 9** | 跨端同步 / Coding 工作台 / 记忆图谱 / 快速捕获 | 设置同步（快捷键/禁用插件/审批开关）、Coding 工作台、关于我/实体图谱、全局快速记录 | 已完成 |
 
+## MCP Hub（2026-11-05 追加）
+
+新增统一 MCP 管理层，详见 `docs/mcp-hub.md`：
+
+- `mcp_servers / mcp_tools / mcp_calls` 三张表
+- stdio + HTTP MCP 客户端；启动自动连接、工具发现、命名空间 `server__tool`
+- 现有 builtin 工具与外部 MCP 工具统一出现在 `/api/mcp/tools`
+- 动态风险注册到 Bot 策略；写操作仍走审批
+- 钉钉作为标准 MCP Server（`mcp_servers/dingtalk`），内部调用 `dws`
+- Web「MCP 管理」页：Server CRUD、连接、工具风险、调用审计
+- 容器镜像内置 Node + `dws`，`DWS_CONFIG_DIR=/data/dws`，无需桌面 Bridge
+
 ## 实施日志（2026-11-05）
 
 | 提交 | 内容 |
