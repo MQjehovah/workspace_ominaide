@@ -1,13 +1,30 @@
 """Daily scheduler: generate briefing at 9:30 AM and push as notification."""
 import asyncio
 from time import time as _clock
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 
 BRIEFING_HOUR = 9
 BRIEFING_MINUTE = 30
 CHECK_INTERVAL = 60  # seconds between checks
 
 _sent_today: set[int] = set()  # track which user_ids got briefing today
+_last_review_date: str | None = None   # day whose review was generated with notification
+_backfilled_review_date: str | None = None  # day whose missing reviews were backfilled
+
+
+async def _briefing_review_line(user_id: int) -> str:
+    """Yesterday's review, placed at the top of the morning briefing."""
+    from core.ai.daily_insights import ensure_daily_insight
+
+    yesterday = date.today() - timedelta(days=1)
+    try:
+        row = await ensure_daily_insight(user_id, yesterday)
+    except Exception as e:
+        print(f"[scheduler] review line error: {e}")
+        return ""
+    if row is None or not row.summary:
+        return ""
+    return f"昨日回顾：{row.summary[:400]}"
 
 
 async def _send_briefing(user_id: int):
@@ -76,6 +93,7 @@ async def _send_briefing(user_id: int):
         if weather:
             weather_text = f"{weather.get('temp')}℃，{wmo.get(int(weather.get('code') or -1), '天气未知')}"
         weather_line = f"天气：{weather_text}\n" if weather_text else ""
+        review_line = await _briefing_review_line(user_id)
 
         ev_lines = [
             f"{e.start_time.strftime('%H:%M')} {e.title}" for e in events
@@ -84,6 +102,8 @@ async def _send_briefing(user_id: int):
         rss_lines = [e.title for e in rss] or ["没有新的订阅文章"]
 
         data = (
+            f"{review_line}\n" if review_line else ""
+        ) + (
             f"日期：{now.strftime('%Y-%m-%d 星期') + '日一二三四五六'[now.weekday()]}\n"
             f"{weather_line}"
             f"今日日程：{'；'.join(ev_lines)}\n"
@@ -112,7 +132,8 @@ async def _send_briefing(user_id: int):
             briefing = (resp.choices[0].message.content or "").strip()
         if not briefing:
             briefing = (
-                f"早上好。今天{weather_text}。"
+                (f"{review_line}。" if review_line else "")
+                + f"早上好。今天{weather_text}。"
                 f"今日日程：{'；'.join(ev_lines)}。"
                 f"待办：{'；'.join(todo_lines)}。"
             )
@@ -435,23 +456,53 @@ async def _daily_event_analysis():
             await db.commit()
             print(f"[scheduler] daily analysis done ({len(events)} events, {len(merged['projects'])} projects)")
 
-            # Turn the dormant insight engine on: mine 30-day patterns and store
-            # them in profile.preferences.insights for proactive suggestions.
-            if settings.intelligence_layer_enabled and user_ids:
-                from core.ai.insights import discover_insights
-                for uid in sorted(user_ids):
-                    try:
-                        await discover_insights(uid)
-                    except Exception as e:
-                        print(f"[scheduler] insights error for user {uid}: {e}")
     except Exception as e:
         print(f"[scheduler] daily analysis error: {e}")
+
+
+async def _active_user_ids() -> list[int]:
+    from sqlalchemy import select
+    from core.auth.domain.models import User
+    from core.database.session import async_session
+
+    try:
+        async with async_session() as db:
+            r = await db.execute(select(User.id).where(User.is_active == True))
+            return [row[0] for row in r.all() if row[0] is not None]
+    except Exception as e:
+        print(f"[scheduler] active users error: {e}")
+        return []
+
+
+async def _generate_daily_reviews(notify: bool = True) -> None:
+    """Generate today's review for every active user (once, at the configured time)."""
+    from core.ai.daily_insights import generate_daily_insight
+
+    today = date.today()
+    for uid in await _active_user_ids():
+        try:
+            await generate_daily_insight(uid, today, force=False, notify=notify)
+        except Exception as e:
+            print(f"[scheduler] daily review error for user {uid}: {e}")
+
+
+async def _backfill_yesterday_reviews() -> None:
+    """Make sure yesterday's review exists (e.g. server was off at review time)."""
+    from core.ai.daily_insights import ensure_daily_insight
+
+    yesterday = date.today() - timedelta(days=1)
+    for uid in await _active_user_ids():
+        try:
+            await ensure_daily_insight(uid, yesterday)
+        except Exception as e:
+            print(f"[scheduler] review backfill error for user {uid}: {e}")
 
 
 async def scheduler_loop():
     """Background loop: check time every 60s, trigger briefing at 9:30, event reminders,
     periodic event scanning, and once-daily preference/memory analysis."""
     global _last_event_scan, _last_daily_scan, _last_daily_scan_date
+    global _last_review_date, _backfilled_review_date
     while True:
         try:
             now = datetime.now()
@@ -473,6 +524,19 @@ async def scheduler_loop():
                 await _daily_event_analysis()
 
             from core.config.settings import settings as _settings
+
+            # Daily review: generate today's review at a fixed local time, and
+            # backfill yesterday once per day in case the server was offline.
+            if _settings.daily_review_enabled:
+                if (_last_review_date != today_key
+                        and now.hour == _settings.daily_review_hour
+                        and now.minute == _settings.daily_review_minute):
+                    _last_review_date = today_key
+                    await _generate_daily_reviews(notify=True)
+                if _backfilled_review_date != today_key:
+                    _backfilled_review_date = today_key
+                    await _backfill_yesterday_reviews()
+
             if (_settings.morning_brief_enabled
                     and now.hour == _settings.morning_brief_hour
                     and now.minute == _settings.morning_brief_minute):

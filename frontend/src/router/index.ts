@@ -30,6 +30,11 @@ const router = createRouter({
           component: () => import('@/views/Activity.vue')
         },
         {
+          path: 'insights',
+          name: '每日回顾',
+          component: () => import('@/views/Insights.vue')
+        },
+        {
           path: 'notifications',
           name: '通知',
           component: () => import('@/views/Notifications.vue')

@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     morning_brief_enabled: bool = True
     morning_brief_hour: int = 7
     morning_brief_minute: int = 30
+    # Daily review: analyse today's activities + conversations once, after the day ends.
+    daily_review_enabled: bool = True
+    daily_review_hour: int = 22
+    daily_review_minute: int = 0
     # Bot runs: persistent execution, heartbeat and recovery.
     bot_run_concurrency: int = 2
     bot_run_max_turns: int = 20

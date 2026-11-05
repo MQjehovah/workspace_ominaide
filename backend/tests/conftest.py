@@ -8,7 +8,8 @@ except OSError:
     pass
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["LLM_API_KEY"] = ""
-os.environ["MINIO_ENDPOINT"] = "localhost:9000"
+# Use a closed port so MinIO startup probes fail fast in tests (no 15s DNS/connect wait).
+os.environ["MINIO_ENDPOINT"] = "127.0.0.1:1"
 
 import pytest
 import pytest_asyncio

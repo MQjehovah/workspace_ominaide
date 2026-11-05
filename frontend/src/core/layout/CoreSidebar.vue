@@ -19,6 +19,10 @@
         <el-icon><TrendCharts /></el-icon>
         <span>活动</span>
       </el-menu-item>
+      <el-menu-item index="/insights">
+        <el-icon><Sunrise /></el-icon>
+        <span>每日回顾</span>
+      </el-menu-item>
       <el-menu-item index="/schedule"><el-icon><Calendar /></el-icon><span>日程</span></el-menu-item>
       <el-menu-item index="/rss"><el-icon><Promotion /></el-icon><span>资讯</span></el-menu-item>
       <el-menu-item index="/files">
@@ -74,7 +78,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound } from '@element-plus/icons-vue'
+import { Folder, Document, User, Monitor, Setting, SwitchButton, DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound, Sunrise } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ collapsed: boolean }>()

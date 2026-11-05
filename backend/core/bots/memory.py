@@ -254,6 +254,16 @@ async def _profile_block(user_id: int) -> str | None:
         return None
 
 
+async def _insight_block(user_id: int) -> str | None:
+    """Recent daily reviews, so the assistant remembers what just happened."""
+    try:
+        from core.ai.daily_insights import build_insight_context
+
+        return await build_insight_context(user_id, days=2)
+    except Exception:
+        return None
+
+
 async def build_bot_context(
     user_id: int, bot: Bot | None = None, query: str = ""
 ) -> str | None:
@@ -263,6 +273,10 @@ async def build_bot_context(
     profile = await _profile_block(user_id)
     if profile:
         parts.append(profile)
+
+    insight = await _insight_block(user_id)
+    if insight:
+        parts.append(insight)
 
     # L1 bot memory (or all memories in legacy mode).
     if bot is not None:

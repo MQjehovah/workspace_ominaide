@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
     import core.coding.models  # noqa
     import plugins.projects.backend.models  # noqa
     import core.bots.models  # noqa
+    import core.ai.insight_models  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -171,6 +172,9 @@ app.include_router(approvals_router)
 
 from core.ai.search_router import router as search_router
 app.include_router(search_router)
+
+from core.ai.insights_router import router as insights_router
+app.include_router(insights_router)
 
 from core.events.router import router as activities_router
 app.include_router(activities_router)
