@@ -18,7 +18,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import CoreSidebar from './CoreSidebar.vue'
 import CoreHeader from './CoreHeader.vue'
 import AssistantPanel from './AssistantPanel.vue'
@@ -30,6 +30,7 @@ const mobileOpen = ref(false)
 const contentRef = ref<HTMLElement | null>(null)
 const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 
 function syncViewport() {
   isMobile.value = window.innerWidth <= 768
@@ -45,6 +46,15 @@ watch(() => route.path, () => {
   mobileOpen.value = false
   contentRef.value?.scrollTo({ top: 0 })
 })
+
+// Admin-only pages must not stay reachable from the address bar either.
+watch(
+  () => [!!route.meta.admin, auth.user?.is_admin] as const,
+  ([adminOnly, isAdmin]) => {
+    if (adminOnly && auth.user && !isAdmin) router.replace('/dashboard')
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   syncViewport()

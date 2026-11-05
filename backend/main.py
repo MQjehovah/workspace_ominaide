@@ -85,7 +85,14 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 
-app = FastAPI(title="OmniAide API", version="0.1.0", lifespan=lifespan)
+from core.responses import UTCJSONResponse
+
+app = FastAPI(
+    title="OmniAide API",
+    version="0.1.0",
+    lifespan=lifespan,
+    default_response_class=UTCJSONResponse,
+)
 
 from core.config.settings import settings as app_settings
 

@@ -73,11 +73,11 @@
         <el-icon><ChatDotRound /></el-icon>
         <span>助手管理</span>
       </el-menu-item>
-      <el-menu-item index="/admin/users">
+      <el-menu-item v-if="isAdmin" index="/admin/users">
         <el-icon><User /></el-icon>
         <span>用户管理</span>
       </el-menu-item>
-      <el-menu-item index="/admin/plugins">
+      <el-menu-item v-if="isAdmin" index="/admin/plugins">
         <el-icon><Monitor /></el-icon>
         <span>插件市场</span>
       </el-menu-item>
@@ -122,6 +122,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const displayName = computed(() => auth.user?.username || auth.user?.email || '用户')
+const isAdmin = computed(() => !!auth.user?.is_admin)
 
 function handleCmd(cmd: string) {
   if (cmd === 'settings') router.push('/settings')

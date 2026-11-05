@@ -105,12 +105,16 @@ async function doSearch() {
   grouped.semantic = []
   total.value = 0
   try {
-    const [filesRes, rssRes, semRes] = await Promise.allSettled([
+    const [filesRes, notesRes, rssRes, semRes] = await Promise.allSettled([
       client.get('/files', { params: { search: q, page_size: 5 } }),
+      client.get('/plugins/notes/search', { params: { q } }),
       client.get('/rss/search', { params: { q, page_size: 5 } }),
       client.post('/search', { q, top_k: 5 }).catch(() => null)
     ])
     if (filesRes.status === 'fulfilled') grouped.files = (filesRes.value.data?.files || []).filter((f: any) => !f.is_folder)
+    if (notesRes.status === 'fulfilled') {
+      grouped.notes = (Array.isArray(notesRes.value.data) ? notesRes.value.data : []).slice(0, 5)
+    }
     if (rssRes.status === 'fulfilled') grouped.articles = (rssRes.value.data?.items || [])
     if (semRes.status === 'fulfilled' && semRes.value) grouped.semantic = (semRes.value.data?.results || [])
     total.value = grouped.files.length + grouped.notes.length + grouped.articles.length + grouped.semantic.length

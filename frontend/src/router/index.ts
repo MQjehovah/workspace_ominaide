@@ -101,13 +101,13 @@ const router = createRouter({
         {
           path: 'admin/users',
           name: 'AdminUsers',
-          meta: { title: '用户管理' },
+          meta: { title: '用户管理', admin: true },
           component: () => import('@/views/AdminUsers.vue')
         },
         {
           path: 'admin/plugins',
           name: 'AdminPlugins',
-          meta: { title: '插件市场' },
+          meta: { title: '插件市场', admin: true },
           component: () => import('@/views/AdminPlugins.vue')
         },
         {

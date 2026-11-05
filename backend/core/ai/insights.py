@@ -1,7 +1,27 @@
 """Insight discovery — mines activity + schedule data to build a picture of the
 user's work patterns, and produces natural-language insights & proactive suggestions."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+
+def _local_tz():
+    """User-facing hour buckets use Asia/Shanghai regardless of DB timezone."""
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo("Asia/Shanghai")
+    except Exception:  # tzdata missing in slim images
+        return timezone(timedelta(hours=8))
+
+
+LOCAL_TZ = _local_tz()
+
+
+def _local(ts: datetime | None) -> datetime | None:
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(LOCAL_TZ)
 
 
 async def discover_insights(user_id: int):
@@ -39,9 +59,10 @@ async def discover_insights(user_id: int):
                 app = d.get("app") or "未知"
                 mins = int(d.get("minutes") or 0)
                 app_minutes[app] = app_minutes.get(app, 0) + mins
-                if e.created_at:
-                    hour_minutes[e.created_at.hour] = hour_minutes.get(e.created_at.hour, 0) + mins
-                    weekday_minutes[e.created_at.weekday()] = weekday_minutes.get(e.created_at.weekday(), 0) + mins
+                local = _local(e.created_at)
+                if local:
+                    hour_minutes[local.hour] = hour_minutes.get(local.hour, 0) + mins
+                    weekday_minutes[local.weekday()] = weekday_minutes.get(local.weekday(), 0) + mins
                 sessions.append(mins)
 
             top_apps = sorted(app_minutes.items(), key=lambda x: -x[1])[:8]
@@ -60,12 +81,18 @@ async def discover_insights(user_id: int):
             recurring = [{"title": t, "count": c} for t, c in sr.all() if c >= 2]
 
             # ---- Focus / activity volume by hour (from all events) ----
+            # Aggregated in Python: func.hour() is MySQL-only and the column is
+            # stored as UTC, so SQL grouping would also bucket the wrong hour.
             ar = await db.execute(
-                select(func.hour(UserActivity.created_at), func.count())
-                .where(UserActivity.user_id == user_id, UserActivity.created_at >= since)
-                .group_by(func.hour(UserActivity.created_at))
+                select(UserActivity.created_at).where(
+                    UserActivity.user_id == user_id, UserActivity.created_at >= since
+                )
             )
-            active_hours = {h: c for h, c in ar.all()}
+            active_hours: dict[int, int] = {}
+            for (ts,) in ar.all():
+                local = _local(ts)
+                if local:
+                    active_hours[local.hour] = active_hours.get(local.hour, 0) + 1
             busiest_hour = max(active_hours.items(), key=lambda x: x[1])[0] if active_hours else None
 
             aggregate = {
@@ -110,7 +137,7 @@ async def discover_insights(user_id: int):
             raw = resp.choices[0].message.content or ""
             m = re.search(r"\{.*\}", raw, re.S)
             insights = {
-                "generated_at": now.isoformat(),
+                "generated_at": now.replace(tzinfo=timezone.utc).isoformat(),
                 "aggregate": aggregate,
                 "routine": "",
                 "patterns": [],
