@@ -152,6 +152,19 @@ async def search(
     return out
 
 
+async def delete_source(user_id: int, source_type: str, source_id: int) -> None:
+    """Remove every chunk indexed for one business object."""
+    await ensure_vector_schema()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "DELETE FROM embeddings WHERE user_id = :user_id "
+                "AND source_type = :source_type AND source_id = :source_id"
+            ),
+            {"user_id": user_id, "source_type": source_type, "source_id": source_id},
+        )
+
+
 async def delete(collection: str, doc_key: str) -> None:
     await ensure_vector_schema()
     async with engine.begin() as conn:

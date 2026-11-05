@@ -292,6 +292,14 @@ async def permanent_delete(db: AsyncSession, user_id: int, file_id: int):
     await db.delete(file_record)
     await db.flush()
 
+    # Don't leave deleted files retrievable through semantic search.
+    try:
+        from core.ai import vector_store
+
+        await vector_store.delete_source(user_id, "file", file_id)
+    except Exception:
+        pass
+
 
 async def _rewrite_descendant_paths(
     db: AsyncSession, user_id: int, old_path: str, new_path: str, exclude_id: int | None = None

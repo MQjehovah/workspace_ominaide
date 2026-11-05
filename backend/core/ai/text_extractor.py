@@ -11,17 +11,20 @@ async def extract_text(file_path: str, mime_type: str | None = None) -> str:
         except Exception:
             return ""
 
-    if ext == '.pdf':
+    if ext in ('.pdf', '.docx', '.xlsx', '.xlsm', '.pptx'):
+        # Reuse the same extractors as knowledge-base import so semantic search
+        # indexes real document text instead of just the filename.
         try:
-            import subprocess
-            result = subprocess.run(['pdftotext', file_path, '-'], capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                return result.stdout[:32000]
-        except Exception:
-            pass
-        return os.path.basename(file_path)
+            from plugins.notes.backend.importers import extract_document
 
-    if ext in ('.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt'):
+            with open(file_path, 'rb') as f:
+                data = f.read()
+            _, text = extract_document(os.path.basename(file_path), data)
+            return (text or "").strip()[:32000]
+        except Exception:
+            return os.path.basename(file_path)
+
+    if ext in ('.doc', '.xls', '.ppt'):
         return os.path.basename(file_path)
 
     if ext in ('.py', '.js', '.ts', '.jsx', '.tsx', '.html', '.css', '.scss', '.java', '.cpp', '.c', '.h', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.sh', '.bat', '.ps1'):

@@ -25,37 +25,154 @@ class SearchResponse(BaseModel):
     results: list[SearchResult]
 
 
+async def _keyword_search(user_id: int, q: str, types: list[str] | None, limit: int) -> list[SearchResult]:
+    """Database LIKE fallback so search still works without embeddings."""
+    from sqlalchemy import or_, select
+    from core.database.session import async_session
+
+    like = f"%{q}%"
+    wanted = set(types or [])
+    out: list[SearchResult] = []
+
+    async with async_session() as db:
+        if not wanted or "file" in wanted:
+            from plugins.files.backend.models import File
+
+            rows = list((await db.execute(
+                select(File).where(
+                    File.user_id == user_id,
+                    File.status == "active",
+                    File.is_folder == False,
+                    File.original_name.ilike(like),
+                ).limit(limit)
+            )).scalars().all())
+            out.extend(SearchResult(
+                type="file", title=f.original_name,
+                snippet=f"{f.folder_path or '/'} · {f.size or 0} bytes",
+                score=0.5, source_id=f.id, link="/files",
+            ) for f in rows)
+
+        if not wanted or "note" in wanted:
+            from plugins.notes.backend.models import PluginNote
+
+            rows = list((await db.execute(
+                select(PluginNote).where(
+                    PluginNote.user_id == user_id,
+                    PluginNote.is_folder == 0,
+                    or_(PluginNote.title.ilike(like), PluginNote.content.ilike(like)),
+                ).limit(limit)
+            )).scalars().all())
+            out.extend(SearchResult(
+                type="note", title=n.title or "无标题",
+                snippet=(n.content or "")[:200],
+                score=0.5, source_id=n.id, link=f"/notes?id={n.id}",
+            ) for n in rows)
+
+        if not wanted or "rss_entry" in wanted:
+            from plugins.rss.backend.models import Entry, Feed
+
+            rows = list((await db.execute(
+                select(Entry).join(Feed, Entry.feed_id == Feed.id).where(
+                    Feed.user_id == user_id,
+                    or_(Entry.title.ilike(like), Entry.summary.ilike(like), Entry.content.ilike(like)),
+                ).limit(limit)
+            )).scalars().all())
+            out.extend(SearchResult(
+                type="rss_entry", title=e.title or "",
+                snippet=(e.summary or "")[:200],
+                score=0.45, source_id=e.id, link="/rss",
+            ) for e in rows)
+
+        if not wanted or "event" in wanted:
+            from plugins.schedule.backend.models import Event
+
+            rows = list((await db.execute(
+                select(Event).where(
+                    Event.user_id == user_id,
+                    or_(Event.title.ilike(like), Event.notes.ilike(like)),
+                ).limit(limit)
+            )).scalars().all())
+            out.extend(SearchResult(
+                type="event", title=e.title,
+                snippet=(e.notes or e.start_time.strftime("%Y-%m-%d %H:%M"))[:200],
+                score=0.45, source_id=e.id, link="/schedule",
+            ) for e in rows)
+
+        if not wanted or "email" in wanted:
+            try:
+                from plugins.mail.backend.models import MailMessage
+
+                rows = list((await db.execute(
+                    select(MailMessage).where(
+                        MailMessage.user_id == user_id,
+                        or_(
+                            MailMessage.subject.ilike(like),
+                            MailMessage.preview.ilike(like),
+                            MailMessage.content.ilike(like),
+                        ),
+                    ).limit(limit)
+                )).scalars().all())
+                out.extend(SearchResult(
+                    type="email", title=m.subject or "(无主题)",
+                    snippet=(m.ai_summary or m.preview or "")[:200],
+                    score=0.45, source_id=m.id, link="/mail",
+                ) for m in rows)
+            except Exception:
+                pass
+
+    return out
+
+
 @router.post("/search", response_model=SearchResponse)
 async def search(req: SearchRequest, user: dict = Depends(get_current_user)):
-    if not settings.data_layer_enabled:
+    q = (req.q or "").strip()
+    if not q:
         return SearchResponse(results=[])
+
+    results: list[SearchResult] = []
+    seen: set[tuple] = set()
+
+    # Keyword results are always available, even when embeddings are offline.
     try:
-        from core.ai.embeddings import generate_embedding
-        from core.ai import vector_store
-
-        vector = await generate_embedding(req.q)
-        if vector is None:
-            return SearchResponse(results=[])
-
-        hits = await vector_store.search(
-            "omnidocs",
-            user["id"],
-            vector,
-            limit=req.top_k,
-            source_types=req.types,
-        )
-
-        items = []
-        for h in hits:
-            items.append(SearchResult(
-                type=h.get("source_type") or "unknown",
-                title=h.get("title") or "",
-                snippet=(h.get("content") or "")[:200],
-                score=h.get("score", 0.0),
-                source_id=h.get("source_id"),
-                link=f"/{h.get('source_type', '')}/{h.get('source_id', '')}",
-            ))
-        return SearchResponse(results=items)
+        for item in await _keyword_search(user["id"], q, req.types, req.top_k):
+            key = (item.type, item.source_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(item)
     except Exception as e:
-        print(f"[search] error: {e}")
-        return SearchResponse(results=[])
+        print(f"[search] keyword error: {e}")
+
+    # Semantic results enrich the keyword pass when the vector store is available.
+    if settings.data_layer_enabled:
+        try:
+            from core.ai.embeddings import generate_embedding
+            from core.ai import vector_store
+
+            vector = await generate_embedding(q)
+            if vector is not None:
+                hits = await vector_store.search(
+                    "omnidocs",
+                    user["id"],
+                    vector,
+                    limit=req.top_k,
+                    source_types=req.types,
+                )
+                for h in hits:
+                    key = (h.get("source_type") or "unknown", h.get("source_id"))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    results.append(SearchResult(
+                        type=h.get("source_type") or "unknown",
+                        title=h.get("title") or "",
+                        snippet=(h.get("content") or "")[:200],
+                        score=h.get("score", 0.0),
+                        source_id=h.get("source_id"),
+                        link=f"/{h.get('source_type', '')}/{h.get('source_id', '')}",
+                    ))
+        except Exception as e:
+            print(f"[search] semantic error: {e}")
+
+    results.sort(key=lambda x: x.score, reverse=True)
+    return SearchResponse(results=results[:req.top_k])

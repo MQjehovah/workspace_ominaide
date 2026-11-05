@@ -1,5 +1,5 @@
 import asyncio
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.ai.indexer import index_content
 from plugins.notes.backend.models import PluginNote
@@ -226,6 +226,13 @@ async def delete_note(db: AsyncSession, user_id: int, note_id: int):
                 await db.delete(obj)
     await db.delete(note)
     await db.flush()
+    try:
+        from core.ai import vector_store
+
+        for nid in all_ids:
+            await vector_store.delete_source(user_id, "note", nid)
+    except Exception:
+        pass
 
 
 async def get_tree(db: AsyncSession, user_id: int) -> list[dict]:
@@ -313,7 +320,10 @@ async def search_notes(
         PluginNote.user_id == user_id,
         PluginNote.is_folder == 0,
     ).where(
-        PluginNote.title.ilike(f"%{query}%")
+        or_(
+            PluginNote.title.ilike(f"%{query}%"),
+            PluginNote.content.ilike(f"%{query}%"),
+        )
     ).order_by(PluginNote.updated_at.desc()).limit(20)
     result = await db.execute(q)
     return list(result.scalars().all())

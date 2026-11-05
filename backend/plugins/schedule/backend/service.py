@@ -83,4 +83,10 @@ async def delete_event(db: AsyncSession, user_id: int, event_id: int) -> bool:
         return False
     await db.delete(ev)
     await db.flush()
+    try:
+        from core.ai import vector_store
+
+        await vector_store.delete_source(user_id, "event", event_id)
+    except Exception:
+        pass
     return True
