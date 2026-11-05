@@ -1,12 +1,5 @@
 <template>
   <div class="page-wrapper dashboard">
-    <div class="view-switch">
-      <button :class="{ active: view === 'overview' }" @click="setView('overview')">概览</button>
-      <button :class="{ active: view === 'cos' }" @click="setView('cos')">幕僚长</button>
-      <span class="switch-hint">收件箱 · 简报 · 会议准备 · 周报</span>
-    </div>
-
-    <template v-if="view === 'overview'">
     <section class="hero">
       <div class="hero-main">
         <div class="hero-kicker">{{ greeting }}，{{ displayName }}</div>
@@ -178,16 +171,12 @@
         </div>
       </el-col>
     </el-row>
-    </template>
-
-    <ChiefOfStaff v-else embedded />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import ChiefOfStaff from './ChiefOfStaff.vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ArrowRight, Bell, Calendar, Check, Cpu, Document, Folder, Promotion, TrendCharts,
 } from '@element-plus/icons-vue'
@@ -196,21 +185,7 @@ import { useAuthStore } from '@/stores/auth'
 import { formatBackendDate, relTime } from '@/utils/date'
 
 const router = useRouter()
-const route = useRoute()
 const auth = useAuthStore()
-
-type DashView = 'overview' | 'cos'
-const view = ref<DashView>(route.query.tab === 'cos' ? 'cos' : 'overview')
-
-function setView(next: DashView) {
-  view.value = next
-  router.replace({ path: '/dashboard', query: next === 'cos' ? { tab: 'cos' } : {} })
-}
-
-watch(() => route.query.tab, (tab) => {
-  const next: DashView = tab === 'cos' ? 'cos' : 'overview'
-  if (next !== view.value) view.value = next
-})
 
 const displayName = computed(() => auth.user?.username || '朋友')
 const greeting = computed(() => {
@@ -345,23 +320,6 @@ onUnmounted(() => {
 
 <style scoped>
 .dashboard { max-width: 1280px; margin: 0 auto; }
-.view-switch {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px; margin-bottom: 16px;
-  background: #eef1f8; border-radius: 11px;
-}
-.view-switch button {
-  border: none; background: transparent; cursor: pointer;
-  padding: 7px 16px; border-radius: 8px;
-  font-size: 13px; color: #64748b;
-  transition: background .15s, color .15s, box-shadow .15s;
-}
-.view-switch button:hover { color: #334155; }
-.view-switch button.active {
-  background: #fff; color: #111827; font-weight: 600;
-  box-shadow: 0 2px 10px -4px rgba(16, 24, 40, .28);
-}
-.switch-hint { margin-left: 8px; font-size: 11.5px; color: #94a3b8; }
 .hero {
   display: flex; align-items: center; justify-content: space-between; gap: 24px;
   padding: 28px 30px; border-radius: 18px; margin-bottom: 18px;
@@ -463,9 +421,6 @@ onUnmounted(() => {
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero-side { display: none; }
   .hero h1 { font-size: 24px; }
-  .switch-hint { display: none; }
-  .view-switch { width: 100%; }
-  .view-switch button { flex: 1; }
 }
 @media (max-width: 600px) {
   .hero { flex-direction: column; align-items: flex-start; padding: 20px; }

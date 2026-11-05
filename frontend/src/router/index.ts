@@ -40,7 +40,9 @@ const router = createRouter({
         },
         {
           path: 'cos',
-          redirect: { path: '/dashboard', query: { tab: 'cos' } }
+          name: 'ChiefOfStaff',
+          meta: { title: '幕僚长' },
+          component: () => import('@/views/ChiefOfStaff.vue')
         },
         {
           path: 'about',
