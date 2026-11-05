@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     import plugins.sync.backend.models  # noqa
     import plugins.todo.backend.models  # noqa
     import plugins.notes.backend.models  # noqa
+    import plugins.mail.backend.models  # noqa
     import plugins.music.backend.models  # noqa
     import core.events.models  # noqa
     import plugins.notifications.backend.models  # noqa
@@ -120,17 +121,12 @@ app.include_router(plugin_router)
 from core.plugin.marketplace import router as marketplace_router
 app.include_router(marketplace_router)
 
-from plugins.files.backend.router import router as file_router
-app.include_router(file_router)
-
-from plugins.sync.backend.router import router as sync_router
-app.include_router(sync_router)
+# Manifest-backed plugins (files / sync / todo / notes / mail / device) are
+# mounted once by core.plugin.registry.discover_plugins during startup.
+# Only modules without a manifest are included manually here.
 
 from plugins.music.backend.router import router as music_router
 app.include_router(music_router)
-
-from plugins.todo.backend.router import router as todo_router
-app.include_router(todo_router)
 
 from plugins.remote.backend.router import router as remote_router
 from plugins.remote.backend.router import ws_router as remote_ws_router
@@ -139,9 +135,6 @@ app.include_router(remote_ws_router)
 
 from plugins.chat.backend.router import router as chat_router
 app.include_router(chat_router)
-
-from plugins.notes.backend.router import router as notes_router
-app.include_router(notes_router)
 
 from plugins.schedule.backend.router import router as schedule_router
 app.include_router(schedule_router)
@@ -154,12 +147,6 @@ app.include_router(notifications_router)
 
 from plugins.rss.backend.router import router as rss_router
 app.include_router(rss_router)
-
-try:
-    from plugins.mail.backend.router import router as mail_router
-    app.include_router(mail_router)
-except ModuleNotFoundError:
-    pass
 
 from core.ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)

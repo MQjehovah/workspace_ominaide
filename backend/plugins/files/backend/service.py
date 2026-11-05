@@ -30,6 +30,26 @@ def _join_path(parent: str | None, name: str) -> str:
     return f"{parent.rstrip('/')}/{name}" if parent != "/" else f"/{name}"
 
 
+async def _emit_sync_change(
+    db: AsyncSession, user_id: int, event_type: str, file_record: File,
+    file_id: int | None = None,
+) -> None:
+    """Publish a change to enabled sync folders (best-effort, never blocks files)."""
+    try:
+        from plugins.sync.backend.service import notify_file_change
+
+        await notify_file_change(
+            db,
+            user_id,
+            event_type,
+            _join_path(file_record.folder_path, file_record.original_name),
+            file_id=file_id if file_id is not None else file_record.id,
+            file_size=file_record.size,
+        )
+    except Exception as e:
+        print(f"[files] sync event error: {e}")
+
+
 def _generate_object_key(user_id: int, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
     unique = uuid.uuid4().hex
@@ -55,6 +75,7 @@ async def create_folder(
     db.add(folder)
     await db.flush()
     await db.refresh(folder)
+    await _emit_sync_change(db, user_id, "created", folder)
     return folder
 
 
@@ -114,6 +135,7 @@ async def confirm_upload(db: AsyncSession, user_id: int, file_id: int) -> File:
         metadata={"link": f"/files/{file_record.id}"},
     ))
 
+    await _emit_sync_change(db, user_id, "created", file_record)
     return file_record
 
 
@@ -208,6 +230,7 @@ async def save_generated_file(
             metadata={"link": f"/files/{file_record.id}"},
         ))
 
+    await _emit_sync_change(db, user_id, "created", file_record)
     return file_record
 
 
@@ -260,6 +283,7 @@ async def trash_file(db: AsyncSession, user_id: int, file_id: int) -> File:
     file_record.status = "trash"
     file_record.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+    await _emit_sync_change(db, user_id, "deleted", file_record)
     return file_record
 
 
@@ -273,6 +297,7 @@ async def restore_file(db: AsyncSession, user_id: int, file_id: int) -> File:
     file_record.status = "active"
     file_record.deleted_at = None
     await db.flush()
+    await _emit_sync_change(db, user_id, "created", file_record)
     return file_record
 
 
@@ -289,6 +314,7 @@ async def permanent_delete(db: AsyncSession, user_id: int, file_id: int):
     except Exception:
         pass
 
+    await _emit_sync_change(db, user_id, "deleted", file_record, file_id=None)
     await db.delete(file_record)
     await db.flush()
 
@@ -336,6 +362,7 @@ async def rename_file(db: AsyncSession, user_id: int, file_id: int, new_name: st
     file_record.original_name = new_name
     await db.flush()
     await db.refresh(file_record)
+    await _emit_sync_change(db, user_id, "renamed", file_record)
     return file_record
 
 
@@ -356,4 +383,5 @@ async def move_file(db: AsyncSession, user_id: int, file_id: int, new_folder_pat
     file_record.folder_path = new_folder_path
     await db.flush()
     await db.refresh(file_record)
+    await _emit_sync_change(db, user_id, "moved", file_record)
     return file_record

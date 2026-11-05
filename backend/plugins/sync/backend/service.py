@@ -50,6 +50,41 @@ async def publish_file_change(
     return event
 
 
+async def notify_file_change(
+    db: AsyncSession,
+    user_id: int,
+    event_type: str,
+    file_path: str,
+    file_id: int | None = None,
+    file_size: int | None = None,
+) -> int:
+    """Fan a file change out to every enabled sync folder that contains it."""
+    from plugins.sync.backend.models import SyncFolder
+
+    folders = (await db.execute(
+        select(SyncFolder).where(
+            SyncFolder.user_id == user_id,
+            SyncFolder.enabled == True,  # noqa: E712
+        )
+    )).scalars().all()
+    published = 0
+    for folder in folders:
+        base = (folder.server_path or "/").rstrip("/") or "/"
+        if base != "/" and file_path != base and not file_path.startswith(base + "/"):
+            continue
+        await publish_file_change(
+            db,
+            user_id,
+            folder.id,
+            event_type,
+            file_path,
+            file_id=file_id,
+            file_size=file_size,
+        )
+        published += 1
+    return published
+
+
 async def get_sync_events(
     db: AsyncSession,
     user_id: int,
