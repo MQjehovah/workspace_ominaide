@@ -518,11 +518,6 @@ async function handleMove(sourceId: number, targetId: number, position: 'before'
     index = (ti >= 0 ? ti : 0) + (position === 'after' ? 1 : 0)
   }
 
-  if (source.is_folder && parentId !== null) {
-    ElMessage.warning('文件夹不能嵌套，只能放在顶层')
-    return
-  }
-
   try {
     await client.post(`/plugins/notes/${sourceId}/move`, { parent_id: parentId, sort_order: index })
     await loadTree()
@@ -537,7 +532,12 @@ async function createFolder() {
       inputPattern: /\S+/,
       inputErrorMessage: '名称不能为空',
     })
-    await client.post('/plugins/notes', { title: value.trim(), content: '', is_folder: true })
+    const all = flattenTree(tree.value)
+    const current = all.find((n: any) => n.id === currentId.value)
+    const parentId = current ? (current.is_folder ? current.id : (current.parent_id ?? null)) : null
+    await client.post('/plugins/notes', {
+      title: value.trim(), content: '', is_folder: true, parent_id: parentId,
+    })
     await loadTree()
     ElMessage.success('文件夹已创建')
   } catch { /* cancelled */ }

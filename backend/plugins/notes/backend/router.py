@@ -190,11 +190,12 @@ async def move_note(
 @router.post("", response_model=NoteResponse, status_code=201)
 async def create_note(
     req: NoteCreate,
+    defer_index: bool = Query(False),
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        note = await notes_service.create_note(db, user["id"], req)
+        note = await notes_service.create_note(db, user["id"], req, defer_index=defer_index)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     await record_event(db, user["id"], "note.created", "note", note.id, f"创建笔记: {note.title}")

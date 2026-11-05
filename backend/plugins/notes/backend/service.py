@@ -13,18 +13,30 @@ def _index_text(content: str | None) -> str:
     return note_content_to_text(content)
 
 
+# Bulk imports can queue hundreds of notes at once. Without a cap every note
+# opens its own DB session in the background and exhausts the connection pool.
+_INDEX_SEMAPHORE = asyncio.Semaphore(2)
+
+
+async def _run_index(coro) -> None:
+    async with _INDEX_SEMAPHORE:
+        try:
+            await coro
+        except Exception:
+            pass
+
+
 def _schedule_rag_index(user_id: int, note: PluginNote) -> None:
     """Index chunks/terms in the background; never blocks the save request."""
     if note.is_folder:
         return
-    asyncio.create_task(index_note_rag(
+    asyncio.create_task(_run_index(index_note_rag(
         user_id, note.id, note.title, note.content
-    ))
+    )))
 
 
-async def create_note(db: AsyncSession, user_id: int, req: NoteCreate) -> PluginNote:
-    if req.is_folder and req.parent_id is not None:
-        raise ValueError("Folders cannot be nested")
+async def create_note(db: AsyncSession, user_id: int, req: NoteCreate,
+                      *, defer_index: bool = False) -> PluginNote:
     if req.parent_id is not None:
         parent = await db.get(PluginNote, req.parent_id)
         if not parent or parent.user_id != user_id:
@@ -50,15 +62,15 @@ async def create_note(db: AsyncSession, user_id: int, req: NoteCreate) -> Plugin
     await db.flush()
     await db.refresh(note)
 
-    if not note.is_folder:
-        asyncio.create_task(index_content(
+    if not note.is_folder and not defer_index:
+        asyncio.create_task(_run_index(index_content(
             user_id=user_id,
             source_type='note',
             source_id=note.id,
             title=note.title,
             content=_index_text(note.content),
             metadata={"link": f"/notes/{note.id}"},
-        ))
+        )))
         _schedule_rag_index(user_id, note)
 
     return note
@@ -106,14 +118,14 @@ async def update_note(
     await db.refresh(note)
 
     if not note.is_folder:
-        asyncio.create_task(index_content(
+        asyncio.create_task(_run_index(index_content(
             user_id=user_id,
             source_type='note',
             source_id=note.id,
             title=note.title,
             content=_index_text(note.content),
             metadata={"link": f"/notes/{note.id}"},
-        ))
+        )))
         _schedule_rag_index(user_id, note)
 
     return note
@@ -187,14 +199,14 @@ async def restore_version(db: AsyncSession, user_id: int, note_id: int, version_
     await db.flush()
     await db.refresh(note)
     if not note.is_folder:
-        asyncio.create_task(index_content(
+        asyncio.create_task(_run_index(index_content(
             user_id=user_id,
             source_type='note',
             source_id=note.id,
             title=note.title,
             content=_index_text(note.content),
             metadata={"link": f"/notes/{note.id}"},
-        ))
+        )))
         _schedule_rag_index(user_id, note)
     return note
 
@@ -219,13 +231,13 @@ async def delete_note(db: AsyncSession, user_id: int, note_id: int):
     from sqlalchemy import delete as _delete
     await db.execute(_delete(NoteVersion).where(NoteVersion.note_id.in_(all_ids)))
     await delete_note_rag(db, all_ids)
-    for nid in all_ids:
-        if nid != note.id:
-            obj = await db.get(PluginNote, nid)
-            if obj:
-                await db.delete(obj)
-    await db.delete(note)
-    await db.flush()
+    # Delete deepest children first: the self-referential FK has no ON DELETE
+    # CASCADE, so removing a parent before its children violates the constraint.
+    for nid in reversed(all_ids):
+        obj = await db.get(PluginNote, nid)
+        if obj:
+            await db.delete(obj)
+            await db.flush()
     try:
         from core.ai import vector_store
 
@@ -265,8 +277,6 @@ async def move_note(db: AsyncSession, user_id: int, note_id: int, parent_id: int
         raise ValueError("Note not found")
     if parent_id == note.id:
         raise ValueError("Cannot move a note into itself")
-    if note.is_folder and parent_id is not None:
-        raise ValueError("Folders cannot be nested")
 
     if parent_id is not None:
         parent = await get_note(db, user_id, parent_id)
