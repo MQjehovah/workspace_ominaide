@@ -1,12 +1,17 @@
 <template>
   <div class="page-wrapper about-page">
     <section class="hero">
+      <div class="blob b1"></div>
+      <div class="blob b2"></div>
       <div class="hero-top">
         <div class="hero-id">
-          <div class="avatar">{{ initial }}</div>
+          <div class="avatar-wrap">
+            <div class="avatar">{{ initial }}</div>
+            <span class="status-dot" title="正在学习"></span>
+          </div>
           <div class="hero-text">
             <div class="hero-name-row">
-              <h2>{{ profile.name || '还没有填写姓名' }}</h2>
+              <h1>{{ profile.name || '还没有填写姓名' }}</h1>
               <span class="hero-badge" v-if="profile.role || profile.company">
                 {{ [profile.role, profile.company].filter(Boolean).join(' · ') }}
               </span>
@@ -18,21 +23,40 @@
           </div>
         </div>
         <div class="hero-actions">
+          <el-tooltip content="刷新" placement="top">
+            <el-button :icon="Refresh" circle :loading="refreshing" @click="refreshAll" />
+          </el-tooltip>
           <el-button :icon="MagicStick" :loading="extracting" @click="extractMemories">整理记忆</el-button>
-          <el-button :icon="Edit" type="primary" plain @click="$router.push('/settings')">编辑资料</el-button>
+          <el-button :icon="Edit" @click="$router.push('/settings')">编辑资料</el-button>
         </div>
       </div>
 
       <div class="hero-stats">
-        <div v-for="s in stats" :key="s.key" class="hero-stat">
+        <button v-for="s in stats" :key="s.key" class="hero-stat" @click="scrollTo(s.target)">
           <span class="num" :class="s.key">{{ s.value }}</span>
           <span class="label">{{ s.label }}</span>
-        </div>
+          <span class="hint">查看</span>
+        </button>
       </div>
     </section>
 
-    <div class="about-grid">
-      <section class="page-card understanding-card">
+    <nav class="anchor-nav">
+      <button v-for="a in anchors" :key="a.id" class="anchor-pill" @click="scrollTo(a.id)">
+        {{ a.label }}
+      </button>
+    </nav>
+
+    <div v-if="loading" class="about-grid">
+      <div class="page-card skeleton-card" v-for="n in 4" :key="n">
+        <div class="sk-line w40"></div>
+        <div class="sk-line w90"></div>
+        <div class="sk-line w70"></div>
+        <div class="sk-line w80"></div>
+      </div>
+    </div>
+
+    <div v-else class="about-grid">
+      <section id="understanding" class="page-card understanding-card reveal" style="--d: 0ms">
         <div class="section-head">
           <div class="section-title">
             <span class="section-icon">✦</span>
@@ -84,7 +108,7 @@
         />
       </section>
 
-      <section class="page-card profile-card">
+      <section id="profile" class="page-card profile-card reveal" style="--d: 60ms">
         <div class="section-head">
           <div class="section-title">
             <span class="section-icon">◎</span>
@@ -122,14 +146,14 @@
         </div>
       </section>
 
-      <section class="page-card entity-card">
+      <section id="entities" class="page-card entity-card reveal" style="--d: 120ms">
         <div class="section-head">
           <div class="section-title">
             <span class="section-icon">◇</span>
             <h3>实体图谱</h3>
             <span class="count" v-if="entities.length">{{ entities.length }}</span>
           </div>
-          <el-select v-model="entityType" size="small" clearable placeholder="全部类型" style="width:120px" @change="loadEntities">
+          <el-select v-model="entityType" size="small" clearable placeholder="全部类型" style="width:118px" @change="loadEntities">
             <el-option label="人物" value="person" />
             <el-option label="项目" value="project" />
             <el-option label="术语" value="term" />
@@ -144,12 +168,14 @@
         <div v-else class="entity-list">
           <div v-for="e in entities" :key="e.id" class="entity-row">
             <div class="entity-main">
-              <span class="entity-avatar">{{ (e.name || '?').slice(0, 1) }}</span>
+              <span class="entity-avatar" :class="e.type">{{ (e.name || '?').slice(0, 1) }}</span>
               <div class="entity-text">
                 <span class="entity-name">{{ e.name }}</span>
                 <span class="muted" v-if="e.sources?.length">来自 {{ e.sources.length }} 处内容</span>
               </div>
-              <el-tag size="small" effect="plain">{{ typeLabel(e.type) }}</el-tag>
+              <el-tag size="small" effect="plain" :type="e.type === 'person' ? 'primary' : (e.type === 'project' ? 'success' : 'info')">
+                {{ typeLabel(e.type) }}
+              </el-tag>
             </div>
             <el-popconfirm title="忘掉这个实体？不会删除原始内容。" @confirm="forgetEntity(e)">
               <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
@@ -158,7 +184,7 @@
         </div>
       </section>
 
-      <section class="page-card review-card">
+      <section id="reviews" class="page-card review-card reveal" style="--d: 180ms">
         <div class="section-head">
           <div class="section-title">
             <span class="section-icon">↻</span>
@@ -169,44 +195,53 @@
         <div v-if="reviews.length === 0" class="empty-soft">
           <p>还没有每日回顾。每天结束时会自动生成一份。</p>
         </div>
-        <div v-for="r in reviews" :key="r.id" class="review-row">
-          <div class="review-date">{{ r.day }}</div>
-          <div class="review-summary">{{ r.summary }}</div>
+        <div class="review-list">
+          <div v-for="r in reviews" :key="r.id" class="review-row">
+            <div class="review-date">{{ r.day }}</div>
+            <div class="review-summary">{{ r.summary }}</div>
+          </div>
         </div>
       </section>
 
-      <section class="page-card full-row candidates-card">
+      <section id="candidates" class="page-card full-row candidates-card reveal" style="--d: 220ms">
         <div class="section-head">
           <div class="section-title">
             <span class="section-icon">✓</span>
             <h3>待审核记忆</h3>
-            <span class="count" v-if="candidates.length">{{ candidates.length }}</span>
+            <span class="count warn" v-if="candidates.length">{{ candidates.length }}</span>
           </div>
           <span class="muted">来自对话、邮件或外部消息；确认后才会进入长期记忆。</span>
         </div>
         <div v-if="candidates.length === 0" class="empty-soft">
           <p>没有待审核的记忆。点「整理记忆」从最近的对话中抽取。</p>
         </div>
-        <div v-for="c in candidates" :key="c.id" class="candidate-row">
-          <div class="candidate-main">
-            <div class="candidate-content">{{ c.content }}</div>
-            <div class="candidate-meta">
-              <el-tag size="small" effect="plain">{{ kindLabel(c.kind) }}</el-tag>
-              <el-tag size="small" :type="c.trust === 'trusted' ? 'success' : 'warning'">
-                {{ c.trust === 'trusted' ? '可信来源' : '外部内容' }}
-              </el-tag>
-              <span class="muted">置信度 {{ c.confidence }}</span>
-              <span class="muted" v-if="c.source_type">{{ c.source_type }}</span>
+        <transition-group name="list" tag="div" class="candidate-list">
+          <div
+            v-for="c in candidates"
+            :key="c.id"
+            class="candidate-row"
+            :class="c.trust === 'trusted' ? 'trusted' : 'untrusted'"
+          >
+            <div class="candidate-main">
+              <div class="candidate-content">{{ c.content }}</div>
+              <div class="candidate-meta">
+                <el-tag size="small" effect="plain">{{ kindLabel(c.kind) }}</el-tag>
+                <el-tag size="small" :type="c.trust === 'trusted' ? 'success' : 'warning'">
+                  {{ c.trust === 'trusted' ? '可信来源' : '外部内容' }}
+                </el-tag>
+                <span class="muted">置信度 {{ c.confidence }}</span>
+                <span class="muted" v-if="c.source_type">{{ c.source_type }}</span>
+              </div>
+            </div>
+            <div class="candidate-actions">
+              <el-button size="small" type="primary" @click="approveCandidate(c)">记住</el-button>
+              <el-button size="small" @click="rejectCandidate(c)">忽略</el-button>
             </div>
           </div>
-          <div class="candidate-actions">
-            <el-button size="small" type="primary" @click="approveCandidate(c)">记住</el-button>
-            <el-button size="small" @click="rejectCandidate(c)">忽略</el-button>
-          </div>
-        </div>
+        </transition-group>
       </section>
 
-      <section class="page-card full-row records-card">
+      <section id="records" class="page-card full-row records-card reveal" style="--d: 260ms">
         <div class="section-head">
           <div class="section-title">
             <span class="section-icon">▤</span>
@@ -215,33 +250,55 @@
           </div>
           <span class="muted">Bot 每次对话会按相关度读取；每条都可以遗忘。</span>
         </div>
+
+        <div class="record-toolbar" v-if="records.length">
+          <el-input
+            v-model="recordQuery"
+            size="small"
+            clearable
+            :prefix-icon="Search"
+            placeholder="搜索记忆内容"
+            class="record-search"
+          />
+          <el-select v-model="recordKind" size="small" clearable placeholder="全部类型" class="record-kind">
+            <el-option v-for="k in kindOptions" :key="k.value" :label="k.label" :value="k.value" />
+          </el-select>
+          <span class="muted">{{ filteredRecords.length }} / {{ records.length }}</span>
+        </div>
+
         <div v-if="records.length === 0" class="empty-soft">
           <p>还没有长期记忆。审核通过的候选记忆会沉淀在这里。</p>
         </div>
-        <div class="record-grid">
-          <div v-for="r in records" :key="r.id" class="record-card">
-            <div class="record-content">{{ r.content }}</div>
-            <div class="record-foot">
-              <el-tag size="small" effect="plain">{{ kindLabel(r.kind) }}</el-tag>
+        <div v-else-if="filteredRecords.length === 0" class="empty-soft">
+          <p>没有匹配的记忆，换个关键词试试。</p>
+        </div>
+        <transition-group v-else name="list" tag="div" class="record-grid">
+          <article v-for="r in filteredRecords" :key="r.id" class="record-card">
+            <div class="record-head">
+              <span class="kind-chip" :class="r.kind">{{ kindLabel(r.kind) }}</span>
               <span class="importance" :title="`重要度 ${r.importance}`">
                 <i v-for="n in 5" :key="n" class="dot" :class="{ on: n <= importanceOf(r) }"></i>
               </span>
-              <span class="muted">{{ fmt(r.updated_at) }}</span>
               <el-popconfirm title="忘掉这条记忆？不会删除原始内容。" @confirm="forgetRecord(r)">
-                <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
+                <template #reference><button class="record-forget">遗忘</button></template>
               </el-popconfirm>
             </div>
-          </div>
-        </div>
+            <p class="record-content" :class="{ expanded: expanded.has(r.id) }">{{ r.content }}</p>
+            <button v-if="isLong(r.content)" class="record-more" @click="toggleRecord(r.id)">
+              {{ expanded.has(r.id) ? '收起' : '展开' }}
+            </button>
+            <div class="record-time">{{ fmt(r.updated_at) }}</div>
+          </article>
+        </transition-group>
       </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, MagicStick } from '@element-plus/icons-vue'
+import { Edit, MagicStick, Refresh, Search } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 
@@ -253,15 +310,60 @@ const reviews = ref<any[]>([])
 const candidates = ref<any[]>([])
 const records = ref<any[]>([])
 const extracting = ref(false)
+const refreshing = ref(false)
+const loading = ref(true)
+
+const recordQuery = ref('')
+const recordKind = ref('')
+const expanded = reactive(new Set<number>())
+
+const kindOptions = [
+  { label: '事实', value: 'fact' },
+  { label: '偏好', value: 'preference' },
+  { label: '承诺', value: 'commitment' },
+  { label: '关系', value: 'relationship' },
+  { label: '项目', value: 'project' },
+]
+
+const anchors = [
+  { id: 'understanding', label: '理解' },
+  { id: 'profile', label: '画像' },
+  { id: 'entities', label: '图谱' },
+  { id: 'reviews', label: '回顾' },
+  { id: 'candidates', label: '待审核' },
+  { id: 'records', label: '长期记忆' },
+]
 
 const initial = computed(() => (profile.value.name || '我').slice(0, 1))
 
 const stats = computed(() => [
-  { key: 'records', label: '长期记忆', value: records.value.length },
-  { key: 'candidates', label: '待审核', value: candidates.value.length },
-  { key: 'entities', label: '实体', value: entities.value.length },
-  { key: 'reviews', label: '回顾', value: reviews.value.length },
+  { key: 'records', label: '长期记忆', value: records.value.length, target: 'records' },
+  { key: 'candidates', label: '待审核', value: candidates.value.length, target: 'candidates' },
+  { key: 'entities', label: '实体', value: entities.value.length, target: 'entities' },
+  { key: 'reviews', label: '回顾', value: reviews.value.length, target: 'reviews' },
 ])
+
+const filteredRecords = computed(() => {
+  const q = recordQuery.value.trim().toLowerCase()
+  return records.value.filter((r) => {
+    if (recordKind.value && r.kind !== recordKind.value) return false
+    if (!q) return true
+    return String(r.content || '').toLowerCase().includes(q)
+  })
+})
+
+function scrollTo(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function toggleRecord(id: number) {
+  if (expanded.has(id)) expanded.delete(id)
+  else expanded.add(id)
+}
+
+function isLong(text: string) {
+  return String(text || '').length > 120
+}
 
 function fmt(value: string) {
   return value ? formatBackendDate(value) : ''
@@ -318,8 +420,9 @@ async function extractMemories() {
 async function approveCandidate(c: any) {
   try {
     await client.post(`/memory/candidates/${c.id}/approve`)
+    candidates.value = candidates.value.filter((x) => x.id !== c.id)
     ElMessage.success('已记住')
-    await loadMemory()
+    await Promise.all([loadMemory()])
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '操作失败')
   }
@@ -328,7 +431,7 @@ async function approveCandidate(c: any) {
 async function rejectCandidate(c: any) {
   try {
     await client.post(`/memory/candidates/${c.id}/reject`)
-    await loadMemory()
+    candidates.value = candidates.value.filter((x) => x.id !== c.id)
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '操作失败')
   }
@@ -337,8 +440,8 @@ async function rejectCandidate(c: any) {
 async function forgetRecord(r: any) {
   try {
     await client.delete(`/memory/records/${r.id}`)
+    records.value = records.value.filter((x) => x.id !== r.id)
     ElMessage.success('已遗忘')
-    await loadMemory()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '操作失败')
   }
@@ -385,8 +488,25 @@ async function loadReviews() {
   }
 }
 
-onMounted(async () => {
+async function loadAll() {
   await Promise.all([loadProfile(), loadEntities(), loadReviews(), loadMemory()])
+}
+
+async function refreshAll() {
+  refreshing.value = true
+  try {
+    await loadAll()
+  } finally {
+    refreshing.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    await loadAll()
+  } finally {
+    loading.value = false
+  }
 })
 </script>
 
@@ -394,103 +514,150 @@ onMounted(async () => {
 .about-page { max-width: 1180px; display: flex; flex-direction: column; gap: 16px; }
 
 .hero {
-  position: relative;
-  overflow: hidden;
-  border-radius: 18px;
-  padding: 22px 24px 18px;
+  position: relative; overflow: hidden;
+  border-radius: 20px; padding: 24px 26px 20px;
   background:
-    radial-gradient(1200px 260px at 10% -40%, rgba(99, 102, 241, .35), transparent 60%),
-    radial-gradient(900px 240px at 90% -30%, rgba(168, 85, 247, .28), transparent 60%),
-    linear-gradient(135deg, #1e1b4b, #312e81 60%, #4c1d95);
+    radial-gradient(700px 280px at 8% -60%, rgba(99, 102, 241, .55), transparent 62%),
+    radial-gradient(620px 260px at 92% -40%, rgba(168, 85, 247, .45), transparent 62%),
+    linear-gradient(135deg, #151238, #241d5c 55%, #3b1670);
   color: #eef2ff;
-  box-shadow: 0 18px 40px -22px rgba(49, 46, 129, .65);
+  box-shadow: 0 26px 54px -30px rgba(49, 46, 129, .8);
 }
-.hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.blob {
+  position: absolute; border-radius: 50%; filter: blur(60px); opacity: .5;
+  animation: float 12s ease-in-out infinite;
+}
+.blob.b1 { width: 260px; height: 260px; left: -80px; bottom: -140px; background: #6366f1; }
+.blob.b2 { width: 220px; height: 220px; right: 6%; top: -120px; background: #a855f7; animation-delay: -6s; }
+@keyframes float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(14px, -12px, 0) scale(1.08); }
+}
+
+.hero-top { position: relative; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 .hero-id { display: flex; gap: 16px; align-items: center; min-width: 0; }
+.avatar-wrap { position: relative; flex-shrink: 0; }
 .avatar {
-  width: 66px; height: 66px; border-radius: 20px; flex-shrink: 0;
-  background: linear-gradient(135deg, #a5b4fc, #c4b5fd);
-  color: #312e81; font-size: 26px; font-weight: 700;
+  width: 68px; height: 68px; border-radius: 22px;
+  background: linear-gradient(135deg, #c7d2fe, #ddd6fe);
+  color: #312e81; font-size: 27px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 8px 24px -8px rgba(165, 180, 252, .8);
+  box-shadow: 0 12px 28px -14px rgba(199, 210, 254, .9);
+}
+.status-dot {
+  position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px;
+  border-radius: 50%; background: #34d399; border: 3px solid #241d5c;
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, .18);
 }
 .hero-text { min-width: 0; }
 .hero-name-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.hero-name-row h2 { margin: 0; font-size: 22px; letter-spacing: .5px; color: #fff; }
+.hero-name-row h1 { margin: 0; font-size: 23px; letter-spacing: .2px; color: #fff; }
 .hero-badge {
-  font-size: 12px; padding: 2px 10px; border-radius: 999px;
-  background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .18);
+  font-size: 11.5px; padding: 3px 10px; border-radius: 999px;
+  background: rgba(255, 255, 255, .13); border: 1px solid rgba(255, 255, 255, .18);
 }
-.hero-sub { margin: 6px 0 0; font-size: 12.5px; color: rgba(238, 242, 255, .66); }
+.hero-sub { margin: 7px 0 0; font-size: 12.5px; color: rgba(238, 242, 255, .62); }
 .hero-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .soft-tag {
-  font-size: 11.5px; padding: 2px 9px; border-radius: 999px;
-  background: rgba(255, 255, 255, .1); color: #e0e7ff;
+  font-size: 11.5px; padding: 3px 10px; border-radius: 999px;
+  background: rgba(255, 255, 255, .09); color: #e0e7ff;
+  border: 1px solid rgba(255, 255, 255, .07);
 }
-.hero-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.hero-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .hero-actions :deep(.el-button) {
-  background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .22); color: #eef2ff;
+  background: rgba(255, 255, 255, .09);
+  border-color: rgba(255, 255, 255, .2);
+  color: #eef2ff;
 }
-.hero-actions :deep(.el-button--primary) { background: #6366f1; border-color: #818cf8; }
-.hero-actions :deep(.el-button:hover) { background: rgba(255, 255, 255, .18); }
+.hero-actions :deep(.el-button:hover) {
+  background: rgba(255, 255, 255, .17);
+  border-color: rgba(255, 255, 255, .3);
+  color: #fff;
+}
 
 .hero-stats {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px; margin-top: 20px;
+  position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px; margin-top: 22px;
 }
 .hero-stat {
-  background: rgba(255, 255, 255, .08);
+  display: flex; flex-direction: column; gap: 1px; text-align: left;
+  padding: 11px 14px; border-radius: 13px; cursor: pointer;
+  background: rgba(255, 255, 255, .07);
   border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 12px; padding: 10px 14px;
-  display: flex; flex-direction: column; gap: 2px;
-  backdrop-filter: blur(4px);
+  color: #eef2ff;
+  transition: background .18s, transform .18s, border-color .18s;
 }
-.hero-stat .num { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.2; }
+.hero-stat:hover {
+  background: rgba(255, 255, 255, .13);
+  border-color: rgba(255, 255, 255, .22);
+  transform: translateY(-2px);
+}
+.hero-stat .num { font-size: 23px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .hero-stat .num.candidates { color: #fbbf24; }
-.hero-stat .label { font-size: 12px; color: rgba(238, 242, 255, .6); }
+.hero-stat .label { font-size: 11.5px; color: rgba(238, 242, 255, .6); }
+.hero-stat .hint { font-size: 10px; color: rgba(238, 242, 255, .33); margin-top: 3px; }
+
+.anchor-nav {
+  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.anchor-nav::-webkit-scrollbar { display: none; }
+.anchor-pill {
+  flex-shrink: 0; border: 1px solid #e4e9f3; background: #fff; color: #5b667a;
+  font-size: 12px; padding: 6px 13px; border-radius: 999px; cursor: pointer;
+  transition: all .15s;
+}
+.anchor-pill:hover { border-color: #c7d2fe; color: var(--brand-500); background: #f7f8ff; }
 
 .about-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .full-row { grid-column: 1 / -1; }
+section[id] { scroll-margin-top: 12px; }
+
+.reveal { animation: rise .45s cubic-bezier(.2, .7, .3, 1) both; animation-delay: var(--d, 0ms); }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .section-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.section-title h3 { margin: 0; font-size: 15px; color: #1a1a2e; }
+.section-title h3 { margin: 0; font-size: 15px; color: #111827; }
 .section-icon {
-  width: 24px; height: 24px; border-radius: 8px; flex-shrink: 0;
+  width: 25px; height: 25px; border-radius: 8px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  background: #eef2ff; color: #4f46e5; font-size: 13px;
+  background: linear-gradient(135deg, #eef2ff, #f5f3ff); color: #4f46e5; font-size: 13px;
 }
 .count {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
   background: #eef4ff; color: #2f6fbf; font-size: 11px; font-weight: 600;
 }
+.count.warn { background: #fff7e6; color: #b45309; }
 
 .block { margin-top: 16px; }
 .block:first-of-type { margin-top: 0; }
-.block-title { font-size: 12px; color: #909399; margin-bottom: 8px; letter-spacing: .3px; }
+.block-title { font-size: 11.5px; color: #94a3b8; margin-bottom: 8px; letter-spacing: .4px; }
 .block.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 
 .routine-quote {
   margin: 0 0 4px; padding: 14px 16px; border-radius: 12px;
-  background: linear-gradient(135deg, #f5f9ff, #eef4ff);
-  border: 1px solid #dbe7ff; border-left: 3px solid #6366f1;
+  background: linear-gradient(135deg, #f7f9ff, #eef2ff);
+  border: 1px solid #e2e8ff; border-left: 3px solid #6366f1;
   font-size: 13.5px; line-height: 1.85; color: #2c3550;
 }
 
 .tag-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .interest-chip {
-  font-size: 12px; padding: 3px 11px; border-radius: 999px;
-  background: #f4f6fb; color: #4b5563; border: 1px solid #e8ecf5;
+  font-size: 12px; padding: 4px 12px; border-radius: 999px;
+  background: #f5f7fc; color: #4b5563; border: 1px solid #e9edf6;
+  transition: all .15s;
 }
+.interest-chip:hover { border-color: #c7d2fe; background: #f5f7ff; color: var(--brand-600); }
 
 .tick-list { margin: 0; padding: 0; list-style: none; }
 .tick-list li {
-  position: relative; padding-left: 18px; font-size: 13px; line-height: 1.85; color: #606266;
+  position: relative; padding-left: 18px; font-size: 13px; line-height: 1.85; color: #5b667a;
 }
-.tick-list li::before {
-  content: '✓'; position: absolute; left: 0; top: 0;
-  color: #22c55e; font-size: 12px;
-}
+.tick-list li::before { content: '✓'; position: absolute; left: 0; top: 0; color: #10b981; font-size: 11px; }
 .tick-list.pattern li::before { content: '◎'; color: #6366f1; }
 
 .suggestion-list { display: flex; flex-direction: column; gap: 8px; }
@@ -498,7 +665,9 @@ onMounted(async () => {
   display: flex; gap: 10px; align-items: flex-start;
   font-size: 13px; line-height: 1.7; color: #334155;
   background: #f8faff; border: 1px solid #eef2ff; border-radius: 10px; padding: 9px 12px;
+  transition: border-color .15s, background .15s;
 }
+.suggestion-row:hover { background: #f4f7ff; border-color: #dbe4ff; }
 .suggestion-dot {
   width: 6px; height: 6px; border-radius: 50%; background: #6366f1;
   margin-top: 8px; flex-shrink: 0;
@@ -508,7 +677,8 @@ onMounted(async () => {
 .contact-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
 .contact-avatar {
   width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-  background: #eef2ff; color: #4f46e5; font-size: 13px; font-weight: 600;
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff); color: #4f46e5;
+  font-size: 13px; font-weight: 600;
   display: flex; align-items: center; justify-content: center;
 }
 .contact-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
@@ -526,6 +696,7 @@ onMounted(async () => {
 .entity-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 9px 0; border-bottom: 1px solid #f4f5f8;
+  transition: background .15s;
 }
 .entity-row:last-child { border-bottom: none; }
 .entity-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -534,37 +705,85 @@ onMounted(async () => {
   background: #f3f0ff; color: #7c3aed; font-size: 12px; font-weight: 600;
   display: flex; align-items: center; justify-content: center;
 }
+.entity-avatar.person { background: #eef2ff; color: #4f46e5; }
+.entity-avatar.project { background: #ecfdf5; color: #059669; }
 .entity-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .entity-name { font-size: 13px; color: #303133; font-weight: 500; }
 
+.review-list { display: flex; flex-direction: column; }
 .review-row { padding: 12px 0; border-bottom: 1px solid #f4f5f8; }
 .review-row:last-child { border-bottom: none; padding-bottom: 0; }
 .review-date {
-  display: inline-block; font-size: 11px; color: #6366f1; font-weight: 600;
-  background: #eef2ff; padding: 1px 8px; border-radius: 999px; margin-bottom: 6px;
+  display: inline-block; font-size: 11px; color: #4f46e5; font-weight: 600;
+  background: #eef2ff; padding: 1px 9px; border-radius: 999px; margin-bottom: 6px;
 }
-.review-summary { font-size: 13px; line-height: 1.75; color: #303133; }
+.review-summary { font-size: 13px; line-height: 1.78; color: #334155; }
 
-.candidate-row, .record-row {
+.candidate-list { display: flex; flex-direction: column; }
+.candidate-row {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;
-  padding: 12px 0; border-bottom: 1px solid #f4f5f8;
+  padding: 12px 14px; margin-bottom: 8px;
+  border-radius: 11px; border: 1px solid #eef1f7; background: #fcfdff;
+  border-left: 3px solid #e2e8f0;
+  transition: border-color .15s, box-shadow .15s;
 }
-.candidate-row:last-child, .record-row:last-child { border-bottom: none; }
-.candidate-main, .record-main { min-width: 0; flex: 1; }
-.candidate-content, .record-content { font-size: 13px; line-height: 1.7; color: #303133; }
+.candidate-row.trusted { border-left-color: #10b981; }
+.candidate-row.untrusted { border-left-color: #f59e0b; }
+.candidate-row:hover { box-shadow: 0 10px 24px -20px rgba(16, 24, 40, .4); }
+.candidate-main { min-width: 0; flex: 1; }
+.candidate-content { font-size: 13px; line-height: 1.7; color: #303133; }
 .candidate-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .candidate-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
+.record-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.record-search { width: 240px; }
+.record-kind { width: 118px; }
+
 .record-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .record-card {
-  border: 1px solid #eef0f6; border-radius: 12px; padding: 12px 14px;
-  background: #fcfcfe; transition: border-color .18s, box-shadow .18s;
+  border: 1px solid #eef0f6; border-radius: 13px; padding: 13px 15px;
+  background: linear-gradient(180deg, #fdfdff, #fafbff);
+  transition: border-color .18s, box-shadow .18s, transform .18s;
 }
-.record-card:hover { border-color: #dbe3f5; box-shadow: 0 10px 24px -18px rgba(49, 46, 129, .5); }
-.record-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+.record-card:hover {
+  border-color: #dbe3f5;
+  box-shadow: 0 16px 32px -26px rgba(30, 41, 59, .55);
+  transform: translateY(-1px);
+}
+.record-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.kind-chip {
+  font-size: 10.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+  background: #eef2ff; color: #4f46e5;
+}
+.kind-chip.preference { background: #f5f3ff; color: #7c3aed; }
+.kind-chip.commitment { background: #fffbeb; color: #b45309; }
+.kind-chip.relationship { background: #fdf2f8; color: #be185d; }
+.kind-chip.project { background: #ecfdf5; color: #047857; }
 .importance { display: inline-flex; gap: 3px; align-items: center; }
 .importance .dot { width: 5px; height: 5px; border-radius: 50%; background: #e2e8f0; display: inline-block; }
 .importance .dot.on { background: #f59e0b; }
+.record-forget {
+  margin-left: auto; border: none; background: transparent; cursor: pointer;
+  font-size: 11px; color: #cbd5e1; transition: color .15s;
+}
+.record-card:hover .record-forget { color: #f87171; }
+.record-content {
+  margin: 0; font-size: 13px; line-height: 1.72; color: #303133;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  white-space: pre-wrap; word-break: break-word;
+}
+.record-content.expanded { display: block; -webkit-line-clamp: unset; }
+.record-more {
+  margin-top: 6px; border: none; background: none; padding: 0; cursor: pointer;
+  font-size: 11.5px; color: var(--brand-500);
+}
+.record-more:hover { color: var(--brand-600); }
+.record-time { margin-top: 8px; font-size: 11px; color: #a6b0c0; }
+
+.list-enter-active, .list-leave-active { transition: all .2s ease; }
+.list-enter-from { opacity: 0; transform: translateY(6px); }
+.list-leave-to { opacity: 0; transform: scale(.98); }
+.list-leave-active { position: absolute; }
 
 .empty-soft {
   border: 1px dashed #e4e8f2; border-radius: 12px; padding: 18px;
@@ -572,13 +791,51 @@ onMounted(async () => {
 }
 .empty-soft p { margin: 0; font-size: 12.5px; line-height: 1.7; color: #9aa3b2; }
 
-.muted { color: #909399; font-size: 12px; }
+.muted { color: #94a3b8; font-size: 12px; }
+
+.skeleton-card { padding: 18px; }
+.sk-line {
+  height: 12px; border-radius: 6px; margin-bottom: 10px;
+  background: linear-gradient(90deg, #f1f4f9 25%, #e9edf5 37%, #f1f4f9 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+.sk-line.w40 { width: 40%; }
+.sk-line.w70 { width: 70%; }
+.sk-line.w80 { width: 80%; }
+.sk-line.w90 { width: 90%; }
+@keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
 @media (max-width: 960px) {
   .about-grid { grid-template-columns: 1fr; }
   .record-grid { grid-template-columns: 1fr; }
   .hero-top { flex-direction: column; }
-  .hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-actions { justify-content: flex-start; }
   .block.two-col { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .about-page { gap: 12px; }
+  .hero { padding: 18px 16px 14px; border-radius: 16px; }
+  .avatar { width: 54px; height: 54px; border-radius: 17px; font-size: 22px; }
+  .hero-name-row h1 { font-size: 19px; }
+  .hero-sub { font-size: 12px; }
+  .hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }
+  .hero-stat { padding: 10px 12px; }
+  .hero-stat .num { font-size: 20px; }
+  .hero-actions { width: 100%; }
+  .hero-actions :deep(.el-button) { flex: 1; }
+  .section-head { flex-wrap: wrap; gap: 8px; }
+  .record-toolbar { gap: 8px; }
+  .record-search { width: 100%; }
+  .record-kind { width: 118px; }
+  .candidate-row { flex-direction: column; }
+  .candidate-actions { width: 100%; justify-content: flex-end; }
+  .entity-row { padding: 8px 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob, .reveal, .sk-line { animation: none !important; }
+  .record-card, .hero-stat { transition: none; }
 }
 </style>

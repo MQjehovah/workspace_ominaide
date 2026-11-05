@@ -212,7 +212,7 @@ onUnmounted(() => {
 .bell-badge { margin-right: 2px; }
 .bell-badge :deep(.el-badge__content) { border: none; }
 
-.notification-menu { width: 330px; max-height: 420px; overflow-y: auto; padding: 6px 0 0; }
+.notification-menu { width: min(330px, calc(100vw - 28px)); max-height: 420px; overflow-y: auto; padding: 6px 0 0; }
 .notif-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 16px 10px; border-bottom: 1px solid #f1f4f9;

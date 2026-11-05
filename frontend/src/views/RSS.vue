@@ -211,4 +211,15 @@ onMounted(() => { loadFeeds(); loadEntries() })
 .digest-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reader-body { font-size:15px; line-height:1.8; color:#333; }
 .reader-body img { max-width:100%; }
+
+@media (max-width: 860px) {
+  .rss-layout { flex-direction: column; height: auto; }
+  .rss-sidebar {
+    width: 100%; max-height: 210px; overflow-y: auto;
+    border-right: none; border-bottom: 1px solid var(--color-border);
+  }
+  .reader { padding: 16px; max-width: 100%; }
+  .reader-body { font-size: 14.5px; line-height: 1.75; }
+  .entry-row-meta { flex-wrap: wrap; }
+}
 </style>

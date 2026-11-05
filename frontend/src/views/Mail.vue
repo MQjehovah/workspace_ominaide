@@ -291,4 +291,13 @@ onMounted(async () => {
 .detail-label { font-size: 12px; font-weight: 600; color: #1a1a2e; margin: 14px 0 6px; }
 .detail-summary { background: #f5f7fa; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #606266; line-height: 1.8; }
 .detail-body { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.8; color: #303133; background: #fafbfc; border-radius: 8px; padding: 12px; }
+
+@media (max-width: 860px) {
+  .mail-layout { grid-template-columns: 1fr; gap: 10px; min-height: 0; }
+  .account-pane { max-height: 168px; overflow-y: auto; }
+  .message-pane { padding: 10px 12px; }
+  .header-actions { flex-wrap: wrap; }
+  .message-subject { font-size: 13.5px; }
+  .detail-body { font-size: 13.5px; }
+}
 </style>

@@ -52,6 +52,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 a { text-decoration: none; color: inherit; }
+img { max-width: 100%; }
+::selection { background: rgba(99, 102, 241, .2); }
+:focus-visible { outline: 2px solid rgba(99, 102, 241, .45); outline-offset: 2px; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -139,9 +142,15 @@ a { text-decoration: none; color: inherit; }
 
 @media (max-width: 768px) {
   :root { --header-height: 56px; }
-  .page-wrapper { padding: 14px 14px 26px; }
-  .page-header { margin-bottom: 14px; }
+  .page-wrapper { padding: 14px 14px calc(26px + env(safe-area-inset-bottom)); }
+  .page-header { margin-bottom: 14px; flex-wrap: wrap; }
   .page-header h2 { font-size: 18px; }
+  /* iOS Safari zooms the page when a focused field is below 16px. */
+  .el-input__inner,
+  .el-textarea__inner,
+  .el-select__selected-item { font-size: 16px; }
+  .el-button { min-height: 34px; }
+  .el-table .cell { white-space: normal; word-break: break-word; }
   .page-card-body { padding: 14px; }
   .el-table { max-width: 100%; }
   .el-dialog { width: calc(100vw - 24px) !important; margin-top: 8vh !important; }
@@ -152,5 +161,12 @@ a { text-decoration: none; color: inherit; }
   .el-form-item__label { width: auto !important; padding: 0 0 4px !important; text-align: left !important; }
   .el-form-item__content { width: 100%; margin-left: 0 !important; }
   .el-tabs__nav-wrap { overflow-x: auto; }
+}
+
+/* Touch devices: avoid sticky hover states and lift transforms. */
+@media (hover: none) {
+  .page-card:hover {
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .03), 0 18px 36px -30px rgba(16, 24, 40, .42);
+  }
 }
 </style>
