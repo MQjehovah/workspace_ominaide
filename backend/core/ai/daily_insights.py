@@ -319,6 +319,8 @@ async def _notify_review(db, user_id: int, row) -> None:
             (row.summary or "")[:500],
             "daily_review",
             "/insights",
+            actions=[{"key": "open", "label": "查看回顾", "kind": "open", "link": "/insights"}],
+            dedupe_key=f"daily_review:{row.day.isoformat()}",
         )
         await db.flush()
         await notify_user(user_id, {

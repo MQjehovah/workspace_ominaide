@@ -20,7 +20,8 @@ from asgi_lifespan import LifespanManager
 @pytest_asyncio.fixture(scope="session")
 async def client():
     import main
-    async with LifespanManager(main.app):
+    # Local MinIO probes can take a couple of seconds; don't race the 5s default.
+    async with LifespanManager(main.app, startup_timeout=30, shutdown_timeout=30):
         transport = ASGITransport(app=main.app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             yield c

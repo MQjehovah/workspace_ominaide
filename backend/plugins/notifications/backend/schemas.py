@@ -7,6 +7,12 @@ class NotificationResponse(BaseModel):
     body: str | None = None
     type: str = "info"
     link: str | None = None
+    actions: list | None = None
+    scheduled_at: datetime | None = None
     read: bool = False
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class NotificationActionRequest(BaseModel):
+    action: str

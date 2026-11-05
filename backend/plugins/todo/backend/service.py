@@ -54,16 +54,20 @@ async def update_todo(db: AsyncSession, user_id: int, todo_id: int, req: TodoUpd
     if not todo:
         raise ValueError("Todo not found")
 
+    fields = req.model_dump(exclude_unset=True)
     if req.title is not None:
         todo.title = req.title
     if req.description is not None:
         todo.description = req.description
     if req.status is not None:
         todo.status = req.status
+        if req.status != "done":
+            todo.reminded = False
     if req.priority is not None:
         todo.priority = req.priority
-    if req.due_date is not None:
+    if "due_date" in fields:
         todo.due_date = naive_local(req.due_date) if req.due_date else None
+        todo.reminded = False
     if req.tags is not None:
         todo.tags = req.tags
 

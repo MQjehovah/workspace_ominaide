@@ -52,6 +52,14 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("plugin_mail_accounts")}
             if "sync_enabled" not in cols:
                 result.append("mail_sync_state")
+        if "plugin_todo_items" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("plugin_todo_items")}
+            if "reminded" not in cols:
+                result.append("todo_reminded")
+        if "notifications" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("notifications")}
+            if "actions" not in cols:
+                result.append("notification_actions")
         # LONGTEXT widening is only meaningful on MySQL; PostgreSQL TEXT is unbounded.
         if dialect == "mysql" and "plugin_notes" in table_names:
             cols = {c["name"]: c["type"] for c in inspector.get_columns("plugin_notes")}
@@ -86,5 +94,11 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN uidvalidity INTEGER NULL"))
                 await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN last_sync_at TIMESTAMP NULL"))
                 await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN sync_error TEXT NULL"))
+            elif table == "todo_reminded":
+                await conn.execute(text(f"ALTER TABLE plugin_todo_items ADD COLUMN reminded BOOLEAN DEFAULT {bool_default}"))
+            elif table == "notification_actions":
+                await conn.execute(text("ALTER TABLE notifications ADD COLUMN actions JSON NULL"))
+                await conn.execute(text("ALTER TABLE notifications ADD COLUMN dedupe_key VARCHAR(200) NULL"))
+                await conn.execute(text("ALTER TABLE notifications ADD COLUMN scheduled_at TIMESTAMP NULL"))
             elif table == "plugin_notes":
                 await conn.execute(text("ALTER TABLE plugin_notes MODIFY content LONGTEXT NULL"))

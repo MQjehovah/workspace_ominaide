@@ -95,7 +95,9 @@ async def generate_rss_digest(user_id: int, hours: int = 24, notify: bool = True
 
         async with async_session() as db:
             n = await create_notification(
-                db, user_id, "📰 今日资讯摘要", summary[:800], "rss_digest", "/rss"
+                db, user_id, "📰 今日资讯摘要", summary[:800], "rss_digest", "/rss",
+                actions=[{"key": "open", "label": "阅读资讯", "kind": "open", "link": "/rss"}],
+                dedupe_key=f"rss_digest:{datetime.utcnow().date().isoformat()}",
             )
             await db.commit()
             await notify_user(user_id, {

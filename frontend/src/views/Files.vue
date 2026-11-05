@@ -397,11 +397,27 @@ async function clientDownloadUrl(fileId: number): Promise<string | null> {
   return res.data?.download_url || null
 }
 
-function downloadFile(file: FileItem) {
-  const a = document.createElement('a')
-  a.href = apiUrl(`/files/${file.id}/download`)
-  a.download = file.original_name
-  a.click()
+async function downloadFile(file: FileItem) {
+  let objectUrl = ''
+  try {
+    let href = await clientDownloadUrl(file.id)
+    if (!href) {
+      // MinIO is private: download through the authenticated API as a blob.
+      const res = await client.get(`/files/${file.id}/download`, { responseType: 'blob' })
+      objectUrl = URL.createObjectURL(res.data)
+      href = objectUrl
+    }
+    const a = document.createElement('a')
+    a.href = href
+    a.download = file.original_name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '下载失败')
+  } finally {
+    if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+  }
 }
 
 onMounted(loadFiles)

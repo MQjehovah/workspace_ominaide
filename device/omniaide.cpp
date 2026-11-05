@@ -689,7 +689,7 @@ bool OmniAide::completeTodo(int todoId) {
     if (!_ok && !login()) return false;
 
     char url[96], req[48], resp[256];
-    snprintf(url, sizeof(url), "%s/api/items/%d", _url, todoId);
+    snprintf(url, sizeof(url), "%s/api/plugins/todo/items/%d", _url, todoId);
     snprintf(req, sizeof(req), "{\"status\":\"done\"}");
     int code = httpReq(url, "PUT", req, _token, resp, sizeof(resp));
     if (code == 401) {

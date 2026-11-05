@@ -204,7 +204,7 @@ async def notification_mark_all_read(user_id: int, args: dict) -> MCPCallRespons
 
 async def notification_send(user_id: int, args: dict) -> MCPCallResponse:
     from plugins.notifications.backend import service
-    from core.wschannel.hub import host_channel
+    from plugins.notifications.backend.router import notify_user
 
     title = (args.get("title") or "").strip()
     body = (args.get("body") or "").strip() or None
@@ -216,10 +216,9 @@ async def notification_send(user_id: int, args: dict) -> MCPCallResponse:
         await db.commit()
         nid = n.id
     try:
-        await host_channel.broadcast(
+        await notify_user(
             user_id,
-            "notifications",
-            {"type": "new_notification", "id": nid, "title": title, "body": body or ""},
+            {"type": "new_notification", "id": nid, "title": title, "body": body or "", "link": link},
         )
     except Exception:
         pass

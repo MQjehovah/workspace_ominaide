@@ -28,6 +28,7 @@ class TodoResponse(BaseModel):
     status: str
     priority: int = 0
     due_date: datetime | None = None
+    reminded: bool = False
     tags: list[str] | None = None
     created_at: datetime
     updated_at: datetime

@@ -282,6 +282,8 @@ async def analyze_message(user_id: int, message_id: int) -> None:
                     result["summary"][:500],
                     "mail",
                     "/mail",
+                    actions=[{"key": "open", "label": "打开邮件", "kind": "open", "link": "/mail"}],
+                    dedupe_key=f"mail:{msg.id}",
                 )
                 await db.commit()
                 await notify_user(user_id, {

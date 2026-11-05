@@ -59,6 +59,9 @@ async def update_event(
             fields[key] = naive_local(fields[key])
     for k, v in fields.items():
         setattr(ev, k, v)
+    # A rescheduled event must be allowed to remind again.
+    if "start_time" in fields or "remind_before" in fields:
+        ev.reminded = False
     await db.flush()
     await db.refresh(ev)
 

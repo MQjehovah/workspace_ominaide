@@ -196,7 +196,7 @@ async def _check_reminders():
             )
             events = list(r.scalars().all())
 
-            reminded: list[Event] = []
+            reminded: list[tuple[int, str, str]] = []
             for ev in events:
                 delta_min = (ev.start_time - now).total_seconds() / 60
                 if delta_min <= ev.remind_before:
@@ -206,15 +206,48 @@ async def _check_reminders():
                         f"{ev.start_time.strftime('%m-%d %H:%M')} 开始",
                         "reminder",
                         "/schedule",
+                        actions=[{"key": "open", "label": "查看日程", "kind": "open", "link": "/schedule"}],
+                        dedupe_key=f"schedule:{ev.id}:{ev.start_time.isoformat()}",
                     )
                     ev.reminded = True
-                    reminded.append(ev)
+                    reminded.append((ev.user_id, f"⏰ 日程提醒: {ev.title}", "/schedule"))
+
+            # Todo deadlines: remind once when the deadline is near or just passed.
+            from plugins.todo.backend.models import PluginTodoItem
+
+            todo_window = now + timedelta(minutes=30)
+            overdue_floor = now - timedelta(hours=24)
+            todo_rows = list((await db.execute(
+                select(PluginTodoItem).where(
+                    PluginTodoItem.status != "done",
+                    PluginTodoItem.reminded == False,
+                    PluginTodoItem.due_date != None,
+                    PluginTodoItem.due_date <= todo_window,
+                    PluginTodoItem.due_date >= overdue_floor,
+                )
+            )).scalars().all())
+            for todo in todo_rows:
+                await create_notification(
+                    db, todo.user_id,
+                    f"⏳ 待办提醒: {todo.title}",
+                    f"截止 {todo.due_date.strftime('%m-%d %H:%M')}",
+                    "todo_reminder",
+                    "/apps/todo",
+                    actions=[
+                        {"key": "complete", "label": "标记完成", "kind": "complete_todo", "todo_id": todo.id},
+                        {"key": "snooze", "label": "10 分钟后", "kind": "snooze", "minutes": 10},
+                    ],
+                    dedupe_key=f"todo:{todo.id}:{todo.due_date.isoformat()}",
+                )
+                todo.reminded = True
+                reminded.append((todo.user_id, f"⏳ 待办提醒: {todo.title}", "/apps/todo"))
+
             await db.commit()
 
-            for ev in reminded:
+            for user_id, title, link in reminded:
                 try:
                     from plugins.notifications.backend.router import notify_user
-                    await notify_user(ev.user_id, {"type": "new_notification", "title": f"⏰ 日程提醒: {ev.title}"})
+                    await notify_user(user_id, {"type": "new_notification", "title": title, "link": link})
                 except Exception:
                     pass
     except Exception as e:
@@ -279,85 +312,100 @@ async def _scan_events():
                 _last_event_cursor = (now, 0)
                 return  # nothing new — don't call the LLM
 
-            items = []
+            # Never mix users in one prompt or notify the wrong account.
+            groups: dict[int, list] = {}
             for e in events:
-                ts = e.created_at.strftime("%m-%d %H:%M") if e.created_at else ""
-                detail = ""
-                if e.details:
-                    try:
-                        import json as _j
-                        detail = " " + _j.dumps(e.details, ensure_ascii=False)[:200]
-                    except Exception:
-                        pass
-                items.append(f"[{ts}] {e.event_type}: {e.summary or ''}{detail}")
-            batch = "\n".join(items)
+                groups.setdefault(e.user_id, []).append(e)
 
             from openai import AsyncOpenAI
             import json as _json
             import re
             client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-            resp = await client.chat.completions.create(
-                model=settings.llm_model,
-                messages=[
-                    {"role": "system", "content": (
-                        "你是一个个人AI助手。下面是一段时间内用户的行为事件记录，每条带时间戳[MM-DD HH:MM]。"
-                        "请直接判断【是否需要给用户发送一条提醒通知】，注意区分事件的新旧："
-                        "只把【最近 1-2 小时内发生且需要立即处理】的事项当作需要通知（如刚到的紧急邮件、即将到来的截止、刚发生的异常）。"
-                        "几小时前或更早的常规事件（如今天早些时候收到的邮件、早上的文件上传）属于历史，一律不要提醒。"
-                        "需要通知的情况：刚刚发生的紧急任务/截止期限临近、刚到的重要客户或领导邮件、需要用户尽快处理或决策的事、异常或错误。"
-                        "不需要通知的情况：历史事件、日常普通操作（普通上传、普通笔记编辑、常规订阅等）、或无需打扰用户。"
-                        "只返回 JSON，格式: {\"notify\": true/false, \"summary\": \"通知内容(简短中文2-4句，仅当notify为true时)或空字符串\"}。"
-                        "不要输出其他内容。"
-                    )},
-                    {"role": "user", "content": batch},
-                ],
-                temperature=0.1,
-            )
-            raw = resp.choices[0].message.content or ""
-            m = re.search(r"\{.*\}", raw, re.S)
-            notify = False
-            summary = ""
-            if m:
+
+            for user_id, group in groups.items():
+                items = []
+                for e in group:
+                    ts = e.created_at.strftime("%m-%d %H:%M") if e.created_at else ""
+                    detail = ""
+                    if e.details:
+                        try:
+                            detail = " " + _json.dumps(e.details, ensure_ascii=False)[:200]
+                        except Exception:
+                            pass
+                    items.append(f"[{ts}] {e.event_type}: {e.summary or ''}{detail}")
+                batch = "\n".join(items)
+
                 try:
-                    data = _json.loads(m.group(0))
-                    notify = bool(data.get("notify", data.get("important", False)))
-                    summary = str(data.get("summary") or "").strip()
+                    resp = await client.chat.completions.create(
+                        model=settings.llm_model,
+                        messages=[
+                            {"role": "system", "content": (
+                                "你是一个个人AI助手。下面是一段时间内用户的行为事件记录，每条带时间戳[MM-DD HH:MM]。"
+                                "请直接判断【是否需要给用户发送一条提醒通知】，注意区分事件的新旧："
+                                "只把【最近 1-2 小时内发生且需要立即处理】的事项当作需要通知（如刚到的紧急邮件、即将到来的截止、刚发生的异常）。"
+                                "几小时前或更早的常规事件（如今天早些时候收到的邮件、早上的文件上传）属于历史，一律不要提醒。"
+                                "需要通知的情况：刚刚发生的紧急任务/截止期限临近、刚到的重要客户或领导邮件、需要用户尽快处理或决策的事、异常或错误。"
+                                "不需要通知的情况：历史事件、日常普通操作（普通上传、普通笔记编辑、常规订阅等）、或无需打扰用户。"
+                                "只返回 JSON，格式: {\"notify\": true/false, \"summary\": \"通知内容(简短中文2-4句，仅当notify为true时)或空字符串\"}。"
+                                "不要输出其他内容。"
+                            )},
+                            {"role": "user", "content": batch},
+                        ],
+                        temperature=0.1,
+                    )
+                    raw = resp.choices[0].message.content or ""
+                except Exception as e:
+                    print(f"[scheduler] event scan llm error for user {user_id}: {e}")
+                    continue
+
+                m = re.search(r"\{.*\}", raw, re.S)
+                notify = False
+                summary = ""
+                if m:
+                    try:
+                        data = _json.loads(m.group(0))
+                        notify = bool(data.get("notify", data.get("important", False)))
+                        summary = str(data.get("summary") or "").strip()
+                    except Exception:
+                        pass
+                if not notify or not summary:
+                    continue
+
+                from plugins.notifications.backend.service import create_notification
+                from plugins.notifications.backend.router import notify_user
+                n = await create_notification(
+                    db, user_id,
+                    "🔔 重要事项提醒",
+                    summary,
+                    "important",
+                    "/",
+                    actions=[{"key": "open", "label": "查看", "kind": "open", "link": "/activities"}],
+                    dedupe_key=f"important:{user_id}:{summary[:80]}",
+                )
+                await db.commit()
+                try:
+                    await notify_user(user_id, {
+                        "type": "new_notification",
+                        "id": n.id,
+                        "title": "🔔 重要事项提醒",
+                        "body": summary,
+                        "link": "/activities",
+                    })
                 except Exception:
                     pass
 
             # Advance the cursor past everything we just processed.
             last = events[-1]
             _last_event_cursor = (last.created_at, last.id)
-            if not notify or not summary:
-                return  # LLM decided no notification is needed
-
-            from plugins.notifications.backend.service import create_notification
-            from plugins.notifications.backend.router import notify_user
-            n = await create_notification(
-                db, last.user_id,
-                "🔔 重要事项提醒",
-                summary,
-                "important",
-                "/",
-            )
-            await db.commit()
-            try:
-                await notify_user(last.user_id, {
-                    "type": "new_notification",
-                    "id": n.id,
-                    "title": "🔔 重要事项提醒",
-                    "body": summary,
-                })
-            except Exception:
-                pass
     except Exception as e:
         print(f"[scheduler] event scan error: {e}")
 
 
 async def _daily_event_analysis():
-    """Run once a day: analyse the day's events to update user preferences / permanent memory.
+    """Run once a day: analyse each user's last 24h events separately.
 
-    Processes events in capped batches so a busy day can't overflow the prompt.
+    Events are grouped by user before any LLM call so one user's data can never
+    be merged into another user's profile.
     """
     from core.config.settings import settings
     if not settings.llm_api_key:
@@ -379,69 +427,68 @@ async def _daily_event_analysis():
             if not events:
                 return
 
+            groups: dict[int, list] = {}
+            for e in events:
+                groups.setdefault(e.user_id, []).append(e)
+
             from openai import AsyncOpenAI
             import json as _json
             import re
             client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
 
-            # Accumulated profile data merged across batches.
-            merged = {"interests": [], "projects": [], "habits": [], "preferences": {}}
-            user_ids = set()
+            for uid, user_events in groups.items():
+                merged = {"interests": [], "projects": [], "habits": [], "preferences": {}}
+                for i in range(0, len(user_events), MAX_EVENTS_PER_BATCH):
+                    chunk = user_events[i:i + MAX_EVENTS_PER_BATCH]
+                    items = []
+                    for e in chunk:
+                        ts = e.created_at.strftime("%m-%d %H:%M") if e.created_at else ""
+                        items.append(f"[{ts}] {e.event_type}: {e.summary or ''}")
+                    batch = "\n".join(items)
 
-            for i in range(0, len(events), MAX_EVENTS_PER_BATCH):
-                chunk = events[i:i + MAX_EVENTS_PER_BATCH]
-                user_ids.update(e.user_id for e in chunk)
-                items = []
-                for e in chunk:
-                    ts = e.created_at.strftime("%m-%d %H:%M") if e.created_at else ""
-                    items.append(f"[{ts}] {e.event_type}: {e.summary or ''}")
-                batch = "\n".join(items)
+                    resp = await client.chat.completions.create(
+                        model=settings.llm_model,
+                        messages=[
+                            {"role": "system", "content": (
+                                "你是一个个人AI助手，负责从用户的行为事件中提取长期有效的用户画像与偏好，用于永久记忆。"
+                                "分析：用户关注的项目/领域、常用工具与工作习惯、重要联系人/团队、时间安排规律、兴趣偏好、"
+                                "需要记住的长期事项。只返回 JSON，格式: "
+                                "{\"interests\": [\"兴趣/领域\"], \"projects\": [{\"name\": \"项目名\", \"status\": \"进行中/已完成\"}], "
+                                "\"habits\": [\"工作习惯\"], \"preferences\": {\"偏好键\": \"值\"}}。不要输出其他内容。"
+                            )},
+                            {"role": "user", "content": batch},
+                        ],
+                        temperature=0.2,
+                    )
+                    raw = resp.choices[0].message.content or ""
+                    m = re.search(r"\{.*\}", raw, re.S)
+                    if not m:
+                        continue
+                    try:
+                        data = _json.loads(m.group(0))
+                    except Exception:
+                        continue
+                    merged["interests"].extend(data.get("interests") or [])
+                    merged["habits"].extend(data.get("habits") or [])
+                    merged["projects"].extend(data.get("projects") or [])
+                    if isinstance(data.get("preferences"), dict):
+                        merged["preferences"].update(data["preferences"])
 
-                resp = await client.chat.completions.create(
-                    model=settings.llm_model,
-                    messages=[
-                        {"role": "system", "content": (
-                            "你是一个个人AI助手，负责从用户的行为事件中提取长期有效的用户画像与偏好，用于永久记忆。"
-                            "分析：用户关注的项目/领域、常用工具与工作习惯、重要联系人/团队、时间安排规律、兴趣偏好、"
-                            "需要记住的长期事项。只返回 JSON，格式: "
-                            "{\"interests\": [\"兴趣/领域\"], \"projects\": [{\"name\": \"项目名\", \"status\": \"进行中/已完成\"}], "
-                            "\"habits\": [\"工作习惯\"], \"preferences\": {\"偏好键\": \"值\"}}。不要输出其他内容。"
-                        )},
-                        {"role": "user", "content": batch},
-                    ],
-                    temperature=0.2,
-                )
-                raw = resp.choices[0].message.content or ""
-                m = re.search(r"\{.*\}", raw, re.S)
-                if not m:
-                    continue
-                try:
-                    data = _json.loads(m.group(0))
-                except Exception:
-                    continue
-                merged["interests"].extend(data.get("interests") or [])
-                merged["habits"].extend(data.get("habits") or [])
-                merged["projects"].extend(data.get("projects") or [])
-                if isinstance(data.get("preferences"), dict):
-                    merged["preferences"].update(data["preferences"])
+                merged["interests"] = list(dict.fromkeys(merged["interests"]))
+                merged["habits"] = list(dict.fromkeys(merged["habits"]))
+                seen = set()
+                projects = []
+                for p in merged["projects"]:
+                    name = (p.get("name") if isinstance(p, dict) else str(p))
+                    if name and name not in seen:
+                        seen.add(name)
+                        projects.append(p)
+                merged["projects"] = projects
 
-            # De-duplicate accumulated lists.
-            merged["interests"] = list(dict.fromkeys(merged["interests"]))
-            merged["habits"] = list(dict.fromkeys(merged["habits"]))
-            seen = set()
-            projects = []
-            for p in merged["projects"]:
-                name = (p.get("name") if isinstance(p, dict) else str(p))
-                if name and name not in seen:
-                    seen.add(name)
-                    projects.append(p)
-            merged["projects"] = projects
-
-            # Update the user's profile preferences (long-term memory).
-            for uid in user_ids:
                 pr = (await db.execute(select(UserProfile).where(UserProfile.user_id == uid))).scalar_one_or_none()
                 if pr is None:
-                    continue
+                    pr = UserProfile(user_id=uid)
+                    db.add(pr)
                 prefs = {}
                 try:
                     if pr.preferences:
@@ -456,8 +503,9 @@ async def _daily_event_analysis():
                 if merged["preferences"]:
                     prefs["profile"] = merged["preferences"]
                 pr.preferences = _json.dumps(prefs, ensure_ascii=False)
+
             await db.commit()
-            print(f"[scheduler] daily analysis done ({len(events)} events, {len(merged['projects'])} projects)")
+            print(f"[scheduler] daily analysis done ({len(events)} events, {len(groups)} users)")
 
     except Exception as e:
         print(f"[scheduler] daily analysis error: {e}")
