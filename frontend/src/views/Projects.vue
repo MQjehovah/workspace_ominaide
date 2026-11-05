@@ -65,7 +65,7 @@
               </div>
               <el-button :icon="Refresh" @click="loadRuns">刷新</el-button>
             </div>
-            <el-table :data="runs" size="small" empty-text="还没有运行记录">
+            <el-table :data="runs" size="small" empty-text="还没有运行记录" @row-click="openRunDetail">
               <el-table-column prop="id" label="#" width="60" />
               <el-table-column label="状态" width="120">
                 <template #default="{ row }">
@@ -81,6 +81,11 @@
               </el-table-column>
               <el-table-column label="时间" width="150">
                 <template #default="{ row }">{{ fmt(row.created_at) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="90">
+                <template #default="{ row }">
+                  <el-button link type="primary" @click.stop="openRunDetail(row)">详情</el-button>
+                </template>
               </el-table-column>
             </el-table>
           </div>
@@ -121,6 +126,72 @@
       </template>
     </el-dialog>
 
+    <el-drawer
+      v-model="runDrawer"
+      :title="`Coding Run #${runDetail?.id || ''}`"
+      size="720px"
+      @closed="stopRunPolling"
+    >
+      <div v-if="runDetail" v-loading="runLoading" class="run-detail">
+        <div class="run-summary">
+          <el-tag :type="statusType(runDetail.status)">{{ runDetail.status }}</el-tag>
+          <span class="muted">触发：{{ runDetail.trigger }}</span>
+          <span class="muted">创建：{{ fmt(runDetail.created_at) }}</span>
+          <span class="muted">结束：{{ fmt(runDetail.finished_at) }}</span>
+          <div style="flex:1"></div>
+          <el-button
+            v-if="!isTerminal(runDetail.status)"
+            size="small" type="danger" plain @click="cancelRun"
+          >取消运行</el-button>
+          <el-button size="small" :icon="Refresh" @click="loadRunDetail(runDetail.id)">刷新</el-button>
+        </div>
+
+        <div class="detail-block">
+          <h4>任务</h4>
+          <pre>{{ runDetail.input || '(空)' }}</pre>
+        </div>
+        <div v-if="runDetail.error" class="detail-block">
+          <h4>错误</h4>
+          <pre class="error">{{ runDetail.error }}</pre>
+        </div>
+        <div v-if="runDetail.output" class="detail-block">
+          <h4>交付结果</h4>
+          <pre>{{ runDetail.output }}</pre>
+          <el-button v-if="prUrl" type="primary" size="small" style="margin-top:8px" tag="a" :href="prUrl" target="_blank">
+            打开 Pull Request / Compare
+          </el-button>
+        </div>
+        <div v-if="runDetail.partial" class="detail-block">
+          <h4>中间输出</h4>
+          <pre>{{ runDetail.partial }}</pre>
+        </div>
+
+        <div class="detail-block">
+          <h4>工具调用（{{ (runDetail.steps || []).length }}）</h4>
+          <el-table :data="runDetail.steps || []" size="small" empty-text="还没有工具调用">
+            <el-table-column prop="seq" label="#" width="55" />
+            <el-table-column prop="tool_name" label="工具" width="150" />
+            <el-table-column label="参数" min-width="220">
+              <template #default="{ row }">
+                <span class="args">{{ JSON.stringify(row.arguments || {}).slice(0, 200) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="结果" min-width="180">
+              <template #default="{ row }">
+                <span class="muted">{{ (row.result || '').slice(0, 160) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="80" />
+          </el-table>
+        </div>
+
+        <div class="run-footer">
+          <el-button @click="runDrawer = false">关闭</el-button>
+          <el-button type="primary" @click="retryRun">以此为任务再跑一次</el-button>
+        </div>
+      </div>
+    </el-drawer>
+
     <el-dialog v-model="runOpen" title="发起 Coding Run" width="560px">
       <el-form :model="runForm" label-width="80px">
         <el-form-item label="任务">
@@ -139,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { FolderOpened, Plus, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import client from '@/api/client'
@@ -163,6 +234,17 @@ const pathPlaceholder = computed(() =>
 const runOpen = ref(false)
 const starting = ref(false)
 const runForm = reactive({ instruction: '', branch: '' })
+
+const runDrawer = ref(false)
+const runDetail = ref<any>(null)
+const runLoading = ref(false)
+let runTimer: ReturnType<typeof setInterval> | null = null
+
+const prUrl = computed(() => {
+  const text = `${runDetail.value?.output || ''}\n${runDetail.value?.partial || ''}`
+  const m = text.match(/https:\/\/github\.com\/[^\s)<>"']+/)
+  return m ? m[0] : ''
+})
 
 function fmt(value: string) {
   return value ? formatBackendDate(value) : '—'
@@ -204,6 +286,67 @@ async function loadRuns() {
   } catch {
     runs.value = []
   }
+}
+
+function isTerminal(status: string) {
+  return ['done', 'failed', 'cancelled', 'error', 'timeout'].includes(status)
+}
+
+async function loadRunDetail(id: number) {
+  runLoading.value = true
+  try {
+    const r = await client.get(`/runs/${id}`)
+    runDetail.value = r.data
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '加载运行详情失败')
+  } finally {
+    runLoading.value = false
+  }
+}
+
+async function openRunDetail(row: any) {
+  runDrawer.value = true
+  runDetail.value = row
+  await loadRunDetail(row.id)
+  startRunPolling()
+}
+
+function startRunPolling() {
+  stopRunPolling()
+  runTimer = setInterval(async () => {
+    if (!runDetail.value || isTerminal(runDetail.value.status)) {
+      stopRunPolling()
+      await loadRuns()
+      return
+    }
+    await loadRunDetail(runDetail.value.id)
+  }, 3000)
+}
+
+function stopRunPolling() {
+  if (runTimer) {
+    clearInterval(runTimer)
+    runTimer = null
+  }
+}
+
+async function cancelRun() {
+  if (!runDetail.value) return
+  try {
+    await client.post(`/runs/${runDetail.value.id}/cancel`)
+    ElMessage.success('已请求取消')
+    await loadRunDetail(runDetail.value.id)
+    await loadRuns()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '取消失败')
+  }
+}
+
+function retryRun() {
+  runForm.instruction = runDetail.value?.input || ''
+  runForm.branch = ''
+  runDrawer.value = false
+  runOpen.value = true
 }
 
 function openCreate() {
@@ -284,6 +427,7 @@ async function startRun() {
 }
 
 onMounted(loadProjects)
+onUnmounted(stopRunPolling)
 </script>
 
 <style scoped>
@@ -307,6 +451,14 @@ onMounted(loadProjects)
 .project-head p { margin: 4px 0 0; }
 .head-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .muted { color: #909399; font-size: 12px; }
+.run-detail { font-size: 13px; }
+.run-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.detail-block { margin-bottom: 18px; }
+.detail-block h4 { margin: 0 0 6px; font-size: 13px; color: #2c3550; }
+.detail-block pre { margin: 0; background: #f7f9fc; border: 1px solid #edf0f5; border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: #2c3550; max-height: 300px; overflow: auto; }
+.detail-block pre.error { background: #fff5f5; border-color: #ffd6d6; color: #c45656; }
+.detail-block .args { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #606266; }
+.run-footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid #f0f2f5; }
 .section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .section-head h4 { margin: 0; font-size: 14px; color: #1a1a2e; }
 .section-head p { margin: 4px 0 0; font-size: 12px; color: #909399; }
