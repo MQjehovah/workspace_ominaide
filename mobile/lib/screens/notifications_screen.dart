@@ -34,6 +34,50 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     _load();
   }
 
+  Future<void> _open(Map<String, dynamic> n) async {
+    final id = n['id'];
+    if (id is! int) return;
+    final api = ApiService();
+    if (n['read'] == false) {
+      await api.markNotificationRead(id);
+    }
+    final actions = (n['actions'] as List?)?.whereType<Map>().toList() ?? [];
+    if (actions.isNotEmpty && mounted) {
+      await showModalBottomSheet<void>(
+        context: context,
+        builder: (c) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: Text(n['title'] ?? '通知', style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(n['body'] ?? ''),
+              ),
+              const Divider(height: 1),
+              for (final a in actions)
+                ListTile(
+                  leading: const Icon(Icons.bolt_outlined),
+                  title: Text((a['label'] ?? a['key'] ?? '执行').toString()),
+                  onTap: () async {
+                    Navigator.pop(c);
+                    final result = await api.actOnNotification(id, (a['key'] ?? a['kind']).toString());
+                    if (!mounted) return;
+                    if (result['todo_id'] != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已完成待办')));
+                    } else if (result['scheduled_at'] != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已稍后提醒')));
+                    }
+                    _load();
+                  },
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -60,7 +104,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           title: Text(n['title'] ?? '通知', style: TextStyle(fontWeight: unread ? FontWeight.bold : FontWeight.normal)),
                           subtitle: Text(n['body'] ?? ''),
                           isThreeLine: (n['body'] ?? '').toString().length > 40,
-                          onTap: () {},
+                          onTap: () => _open(n),
                         ),
                       );
                     },

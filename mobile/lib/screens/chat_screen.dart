@@ -20,13 +20,34 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scroll = ScrollController();
   bool _loading = false;
   bool _agentMode = false;
+  static const _sessionId = 'mobile';
 
   @override
   void initState() {
     super.initState();
+    _loadHistory();
     if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
       _input.text = widget.initialQuery!;
       WidgetsBinding.instance.addPostFrameCallback((_) => _send());
+    }
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final rows = await ApiService().loadChatHistory(sessionId: _sessionId, limit: 50);
+      if (!mounted || rows.isEmpty) return;
+      setState(() {
+        _messages.clear();
+        for (final row in rows) {
+          final role = (row['role'] ?? 'assistant').toString();
+          final content = (row['content'] ?? '').toString();
+          if (content.isEmpty) continue;
+          _messages.add(_Message(role == 'user' ? 'user' : 'assistant', content));
+        }
+      });
+      _scrollToBottom();
+    } catch (_) {
+      // Offline or first run: keep the local empty state.
     }
   }
 
@@ -34,16 +55,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _input.text.trim();
     if (text.isEmpty || _loading) return;
     _input.clear();
-    setState(() {
-      _messages.add(_Message('user', text));
-      _messages.add(_Message('assistant', ''));
-    });
-    _loading = true;
-    _scrollToBottom();
 
-    // history (last 20, excluding current empty assistant msg)
+    // History is everything already shown, before this new turn.
     final history = _messages
-        .where((m) => m.text.isNotEmpty && m.role != 'assistant')
+        .where((m) => m.text.isNotEmpty)
         .toList()
         .reversed
         .take(20)
@@ -52,24 +67,37 @@ class _ChatScreenState extends State<ChatScreen> {
         .map((m) => {'role': m.role, 'content': m.text})
         .toList();
 
+    setState(() {
+      _messages.add(_Message('user', text));
+      _messages.add(_Message('assistant', ''));
+      _loading = true;
+    });
+    _scrollToBottom();
+
     try {
       final api = ApiService();
       if (_agentMode) {
-        // agent chat (non-streaming for reliability across platforms)
-        final reply = await api.chat(text, history: history, agent: true);
+        // Agent mode persists a run and is non-streaming on mobile for reliability.
+        final reply = await api.chat(
+          text, history: history, agent: true, sessionId: _sessionId,
+        );
         if (!mounted) return;
         setState(() {
-          _messages.last.text = reply;
+          _messages.last.text = reply.isEmpty ? '（无回复）' : reply;
         });
         _scrollToBottom();
       } else {
-        // plain chat (non-streaming /api/chat) — returns full reply at once
-        final reply = await api.chat(text, history: history);
-        if (!mounted) return;
-        setState(() {
-          _messages.last.text = reply;
-        });
-        _scrollToBottom();
+        // True SSE streaming, shared context with Web/desktop.
+        await for (final chunk in api.chatStream(
+          text, history: history, sessionId: _sessionId,
+        )) {
+          if (!mounted) return;
+          setState(() => _messages.last.text += chunk);
+          _scrollToBottom();
+        }
+        if (mounted && _messages.last.text.isEmpty) {
+          setState(() => _messages.last.text = '（无回复）');
+        }
       }
     } catch (e) {
       if (!mounted) return;
@@ -77,7 +105,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _messages.last.text = '⚠️ ${e.toString()}';
       });
     } finally {
-      _loading = false;
+      if (mounted) setState(() => _loading = false);
     }
   }
 

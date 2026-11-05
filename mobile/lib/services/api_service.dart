@@ -189,6 +189,21 @@ class ApiService {
     return raw; // plain text fallback
   }
 
+  /// Build a minimal valid ProseMirror document from plain text.
+  /// Mobile edits preserve the document shape instead of saving raw text.
+  String plainTextToNoteJson(String text) {
+    final paragraphs = text.split('\n').map((line) {
+      final node = <String, dynamic>{'type': 'paragraph'};
+      if (line.isNotEmpty) {
+        node['content'] = [
+          {'type': 'text', 'text': line},
+        ];
+      }
+      return node;
+    }).toList();
+    return jsonEncode({'type': 'doc', 'content': paragraphs});
+  }
+
   void _extractText(List nodes, StringBuffer buffer) {
     for (final node in nodes) {
       if (node is! Map) continue;
@@ -250,12 +265,16 @@ class ApiService {
   }
 
   // -- Chat --
-  Future<String> chat(String message, {List<Map<String, String>>? history, bool agent = false}) async {
+  Future<String> chat(String message, {List<Map<String, String>>? history, bool agent = false, String? sessionId}) async {
     final path = agent ? '/api/chat/agent' : '/api/chat';
     final res = await http.post(
       Uri.parse('$_baseUrl$path'),
       headers: _headers,
-      body: jsonEncode({'message': message, 'history': history ?? []}),
+      body: jsonEncode({
+        'message': message,
+        'history': history ?? [],
+        if (sessionId != null) 'session_id': sessionId,
+      }),
     );
     if (res.statusCode != 200) {
       final detail = _extractError(res);
@@ -266,12 +285,28 @@ class ApiService {
   }
 
   /// Stream chat via SSE (incremental on all platforms).
-  Stream<String> chatStream(String message, {List<Map<String, String>>? history}) {
+  Stream<String> chatStream(String message, {List<Map<String, String>>? history, String? sessionId}) {
     final path = '/api/chat/stream';
     final uri = Uri.parse('$_baseUrl$path');
     final headers = <String, String>{..._headers};
-    final body = jsonEncode({'message': message, 'history': history ?? []});
+    final body = jsonEncode({
+      'message': message,
+      'history': history ?? [],
+      if (sessionId != null) 'session_id': sessionId,
+    });
     return streamChatSse(uri, headers, body);
+  }
+
+  /// Load persisted chat history so the mobile client shares context with Web/desktop.
+  Future<List<Map<String, dynamic>>> loadChatHistory({String? sessionId, int limit = 50}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (sessionId != null) q['session_id'] = sessionId;
+    final uri = Uri.parse('$_baseUrl/api/chat/history').replace(queryParameters: q);
+    final res = await http.get(uri, headers: _headers);
+    if (res.statusCode != 200) return [];
+    final dynamic d = decodeJson(res);
+    if (d is! List) return [];
+    return d.cast<Map<String, dynamic>>();
   }
 
   String _extractError(http.Response res) {
@@ -310,8 +345,10 @@ class ApiService {
   Future<List<Map<String, dynamic>>> listTodoItems() async {
     final res = await http.get(Uri.parse('$_baseUrl/api/plugins/todo/items'), headers: _headers);
     if (res.statusCode != 200) return [];
-    final d = decodeJson(res);
-    final list = d['items'] as List? ?? d as List? ?? [];
+    final dynamic d = decodeJson(res);
+    final List list = d is List
+        ? d
+        : (d is Map && d['items'] is List ? d['items'] as List : const []);
     return list.cast<Map<String, dynamic>>();
   }
 
@@ -333,12 +370,32 @@ class ApiService {
   Future<List<Map<String, dynamic>>> listNotifications({int limit = 20}) async {
     final res = await http.get(Uri.parse('$_baseUrl/api/notifications?limit=$limit'), headers: _headers);
     if (res.statusCode != 200) return [];
-    final d = decodeJson(res);
-    return (d['notifications'] as List? ?? []).cast<Map<String, dynamic>>();
+    final dynamic d = decodeJson(res);
+    if (d is! List) return [];
+    return d.cast<Map<String, dynamic>>();
   }
 
   Future<void> markNotificationsRead() async {
     await http.put(Uri.parse('$_baseUrl/api/notifications/read-all'), headers: _headers, body: '{}');
+  }
+
+  Future<void> markNotificationRead(int id) async {
+    await http.put(
+      Uri.parse('$_baseUrl/api/notifications/$id/read'),
+      headers: _headers,
+      body: '{}',
+    );
+  }
+
+  /// Execute an inline notification action (complete_todo / snooze / open).
+  Future<Map<String, dynamic>> actOnNotification(int id, String action) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/notifications/$id/action'),
+      headers: _headers,
+      body: jsonEncode({'action': action}),
+    );
+    if (res.statusCode != 200) return {};
+    return decodeJson(res) as Map<String, dynamic>;
   }
 
   // -- MCP --

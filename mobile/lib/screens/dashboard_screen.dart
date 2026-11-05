@@ -34,7 +34,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final api = ApiService();
       final todos = await api.listTodoItems();
       final notifs = await api.listNotifications();
-      final events = await api.listScheduleEvents();
+      final now = DateTime.now();
+      final start = DateTime(now.year, now.month, now.day);
+      final events = await api.listScheduleEvents(
+        start: start.toIso8601String(),
+        end: start.add(const Duration(days: 1)).toIso8601String(),
+      );
       if (!mounted) return;
       setState(() {
         _todoCount = todos.length;

@@ -203,6 +203,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   late TextEditingController _titleCtrl;
   late TextEditingController _contentCtrl;
   bool _saving = false;
+  String _originalText = '';
 
   @override
   void initState() {
@@ -222,6 +223,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         _titleCtrl.text = data['title'] ?? '';
         final raw = data['content'] ?? '';
         _contentCtrl.text = ApiService().parseNoteContent(raw);
+        _originalText = _contentCtrl.text;
         if (mounted) setState(() {});
       }
     } catch (_) {}
@@ -230,14 +232,21 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      final res = await ApiService().put('/plugins/notes/${widget.note['id']}', {
-        'title': _titleCtrl.text,
-        'content': _contentCtrl.text,
-      });
-      widget.onSaved();
-      if (!mounted) return;
+      final text = _contentCtrl.text;
+      final payload = <String, dynamic>{'title': _titleCtrl.text};
+      // Only rewrite the body when the user actually changed it, and keep a
+      // valid ProseMirror document instead of flattening the note to raw text.
+      if (text != _originalText) {
+        payload['content'] = ApiService().plainTextToNoteJson(text);
+      }
+      final res = await ApiService().put('/plugins/notes/${widget.note['id']}', payload);
       if (res.statusCode == 200) {
+        _originalText = text;
+        widget.onSaved();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存'), duration: Duration(seconds: 1)));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: ${res.statusCode}')));
       }
     } catch (_) {}
     if (mounted) setState(() => _saving = false);

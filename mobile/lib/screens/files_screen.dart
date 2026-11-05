@@ -138,9 +138,14 @@ class _FilesScreenState extends State<FilesScreen> {
         final path = await ApiService().saveFileLocally(f.id, f.originalName);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已下载到: $path')));
-        // Try to open file
-        if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].contains(ext)) {
+        // Desktop-only convenience; mobile has no `cmd`.
+        if (Platform.isWindows && ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].contains(ext)) {
           await Process.run('cmd', ['/c', 'start', '', path], runInShell: true);
+        } else if (!Platform.isWindows && ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].contains(ext)) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('文件已保存，请从系统的文件管理器中打开')),
+          );
         }
       }
     } catch (e) {

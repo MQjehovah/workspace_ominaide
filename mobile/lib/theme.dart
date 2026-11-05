@@ -18,7 +18,7 @@ ThemeData buildLightTheme() {
       titleTextStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1F2937)),
       iconTheme: const IconThemeData(color: Color(0xFF1F2937)),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 0,
       color: kCardLight,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
@@ -51,7 +51,7 @@ ThemeData buildDarkTheme() {
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: const Color(0xFF111318),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 0,
       color: const Color(0xFF1A1D24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFF2A2E37))),
