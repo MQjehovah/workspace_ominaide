@@ -206,6 +206,152 @@ class ApiService {
     return jsonEncode({'type': 'doc', 'content': paragraphs});
   }
 
+  /// Return Markdown for a note body. The web editor stores Markdown via
+  /// `getMarkdown()`, while older notes may still be ProseMirror JSON.
+  String parseNoteMarkdown(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return '';
+    try {
+      final doc = jsonDecode(text);
+      if (doc is Map && doc['type'] == 'doc' && doc['content'] is List) {
+        return _proseMirrorToMarkdown(doc['content'] as List).trim();
+      }
+    } catch (_) {}
+    return raw;
+  }
+
+  String _proseMirrorToMarkdown(List nodes, {int depth = 0}) {
+    final out = StringBuffer();
+    for (final raw in nodes) {
+      if (raw is! Map) continue;
+      final node = raw.map((k, v) => MapEntry(k.toString(), v));
+      final type = node['type']?.toString() ?? '';
+      final content = node['content'] is List ? node['content'] as List : const [];
+
+      if (type == 'text') {
+        out.write(_markedText(node));
+      } else if (type == 'paragraph') {
+        out.write(_inlineMarkdown(content));
+        out.write('\n\n');
+      } else if (type == 'heading') {
+        final level = (node['attrs']?['level'] as int?) ?? 1;
+        final hashes = '#' * level.clamp(1, 6);
+        out.write('$hashes ${_inlineMarkdown(content)}\n\n');
+      } else if (type == 'bulletList') {
+        for (final item in content) {
+          if (item is! Map) continue;
+          final body = _proseMirrorToMarkdown(
+            item['content'] is List ? item['content'] as List : const [],
+            depth: depth + 1,
+          ).trim().replaceAll('\n', '\n${'  ' * (depth + 1)}');
+          out.writeln('${'  ' * depth}- $body');
+        }
+        out.writeln();
+      } else if (type == 'orderedList') {
+        var index = 1;
+        for (final item in content) {
+          if (item is! Map) continue;
+          final body = _proseMirrorToMarkdown(
+            item['content'] is List ? item['content'] as List : const [],
+            depth: depth + 1,
+          ).trim().replaceAll('\n', '\n${'  ' * (depth + 1)}');
+          out.writeln('${'  ' * depth}$index. $body');
+          index++;
+        }
+        out.writeln();
+      } else if (type == 'listItem') {
+        out.write(_proseMirrorToMarkdown(content, depth: depth));
+      } else if (type == 'blockquote') {
+        final inner = _proseMirrorToMarkdown(content, depth: depth).trim();
+        for (final line in inner.split('\n')) {
+          out.writeln('> $line');
+        }
+        out.writeln();
+      } else if (type == 'codeBlock') {
+        final language = (node['attrs']?['language'] ?? '').toString();
+        final code = content
+            .whereType<Map>()
+            .map((e) => (e['text'] ?? '').toString())
+            .join();
+        out.writeln('```$language');
+        out.writeln(code);
+        out.writeln('```\n');
+      } else if (type == 'hardBreak') {
+        out.write('  \n');
+      } else if (type == 'horizontalRule') {
+        out.write('\n---\n\n');
+      } else if (type == 'image') {
+        final src = (node['attrs']?['src'] ?? '').toString();
+        final alt = (node['attrs']?['alt'] ?? '').toString();
+        out.write('![$alt]($src)');
+      } else if (type == 'table') {
+        final rows = content.whereType<Map>().toList();
+        for (var i = 0; i < rows.length; i++) {
+          final cells = (rows[i]['content'] is List)
+              ? (rows[i]['content'] as List).whereType<Map>().toList()
+              : const <Map>[];
+          final values = cells
+              .map((cell) => _proseMirrorToMarkdown(
+                    cell['content'] is List ? cell['content'] as List : const [],
+                    depth: depth,
+                  ).trim().replaceAll('\n', ' '))
+              .toList();
+          out.writeln('| ${values.join(' | ')} |');
+          if (i == 0) {
+            out.writeln('| ${values.map((_) => '---').join(' | ')} |');
+          }
+        }
+        out.writeln();
+      } else {
+        out.write(_proseMirrorToMarkdown(content, depth: depth));
+      }
+    }
+    return out.toString();
+  }
+
+  String _inlineMarkdown(List nodes) {
+    final out = StringBuffer();
+    for (final raw in nodes) {
+      if (raw is! Map) continue;
+      final node = raw.map((k, v) => MapEntry(k.toString(), v));
+      final type = node['type']?.toString() ?? '';
+      if (type == 'text') {
+        out.write(_markedText(node));
+      } else if (type == 'hardBreak') {
+        out.write('  \n');
+      } else if (type == 'image') {
+        final src = (node['attrs']?['src'] ?? '').toString();
+        final alt = (node['attrs']?['alt'] ?? '').toString();
+        out.write('![$alt]($src)');
+      } else if (node['content'] is List) {
+        out.write(_inlineMarkdown(node['content'] as List));
+      }
+    }
+    return out.toString();
+  }
+
+  String _markedText(Map<String, dynamic> node) {
+    var text = (node['text'] ?? '').toString();
+    final marks = (node['marks'] as List? ?? []).whereType<Map>();
+    for (final rawMark in marks) {
+      final mark = rawMark.map((k, v) => MapEntry(k.toString(), v));
+      final type = mark['type']?.toString() ?? '';
+      if (type == 'bold') {
+        text = '**$text**';
+      } else if (type == 'italic') {
+        text = '*$text*';
+      } else if (type == 'code') {
+        text = '`$text`';
+      } else if (type == 'strike') {
+        text = '~~$text~~';
+      } else if (type == 'link') {
+        final href = (mark['attrs']?['href'] ?? '').toString();
+        if (href.isNotEmpty) text = '[$text]($href)';
+      }
+    }
+    return text;
+  }
+
   void _extractText(List nodes, StringBuffer buffer) {
     for (final node in nodes) {
       if (node is! Map) continue;

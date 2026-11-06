@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({super.key});
@@ -203,7 +205,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   late TextEditingController _titleCtrl;
   late TextEditingController _contentCtrl;
   bool _saving = false;
+  bool _preview = true;
   String _originalText = '';
+  String _markdown = '';
 
   @override
   void initState() {
@@ -222,8 +226,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         final data = ApiService().decodeJson(res);
         _titleCtrl.text = data['title'] ?? '';
         final raw = data['content'] ?? '';
-        _contentCtrl.text = ApiService().parseNoteContent(raw);
-        _originalText = _contentCtrl.text;
+        final markdown = ApiService().parseNoteMarkdown(raw.toString());
+        _contentCtrl.text = markdown;
+        _markdown = markdown;
+        _originalText = markdown;
         if (mounted) setState(() {});
       }
     } catch (_) {}
@@ -234,16 +240,18 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     try {
       final text = _contentCtrl.text;
       final payload = <String, dynamic>{'title': _titleCtrl.text};
-      // Only rewrite the body when the user actually changed it, and keep a
-      // valid ProseMirror document instead of flattening the note to raw text.
+      // The web editor saves Markdown (`getMarkdown()`), so mobile writes the
+      // same format instead of flattening the note into ProseMirror JSON.
       if (text != _originalText) {
-        payload['content'] = ApiService().plainTextToNoteJson(text);
+        payload['content'] = text;
       }
       final res = await ApiService().put('/plugins/notes/${widget.note['id']}', payload);
       if (res.statusCode == 200) {
         _originalText = text;
+        _markdown = text;
         widget.onSaved();
         if (!mounted) return;
+        setState(() => _preview = true);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存'), duration: Duration(seconds: 1)));
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: ${res.statusCode}')));
@@ -270,6 +278,20 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: _preview ? '编辑' : '预览',
+            icon: Icon(_preview ? Icons.edit_outlined : Icons.visibility_outlined),
+            onPressed: () {
+              setState(() {
+                if (_preview) {
+                  _preview = false;
+                } else {
+                  _markdown = _contentCtrl.text;
+                  _preview = true;
+                }
+              });
+            },
+          ),
+          IconButton(
             icon: _saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.save),
             onPressed: _saving ? null : _save,
@@ -278,18 +300,67 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: TextField(
-          controller: _contentCtrl,
-          maxLines: null,
-          expands: true,
-          textAlignVertical: TextAlignVertical.top,
-          style: const TextStyle(fontSize: 14, height: 1.6, fontFamily: 'monospace'),
-          decoration: const InputDecoration(
-            border: InputBorder.none,
-            hintText: '开始写点什么...',
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
+        child: _preview
+            ? Markdown(
+                data: _markdown.trim().isEmpty ? '_空笔记_' : _markdown,
+                selectable: true,
+                padding: EdgeInsets.zero,
+                styleSheet: MarkdownStyleSheet(
+                  p: TextStyle(
+                    fontSize: 14,
+                    height: 1.7,
+                    color: AppPalette.of(context).ink,
+                  ),
+                  h1: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.of(context).ink,
+                  ),
+                  h2: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.of(context).ink,
+                  ),
+                  h3: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.of(context).ink,
+                  ),
+                  code: TextStyle(
+                    fontSize: 12,
+                    color: AppPalette.of(context).primary,
+                    backgroundColor: AppPalette.of(context).primarySoft,
+                  ),
+                  codeblockDecoration: BoxDecoration(
+                    color: AppPalette.of(context).primarySoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  blockquoteDecoration: BoxDecoration(
+                    color: AppPalette.of(context).primarySoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  listBullet: TextStyle(
+                    fontSize: 14,
+                    color: AppPalette.of(context).ink,
+                  ),
+                  a: TextStyle(
+                    color: AppPalette.of(context).primary,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              )
+            : TextField(
+                controller: _contentCtrl,
+                maxLines: null,
+                expands: true,
+                textAlignVertical: TextAlignVertical.top,
+                style: const TextStyle(fontSize: 14, height: 1.6),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintText: '开始写点什么...',
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
       ),
     );
   }
