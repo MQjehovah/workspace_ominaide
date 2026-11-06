@@ -52,6 +52,7 @@ TOOL_RISK = {
     "send_email": RISK_EXTERNAL,
     "send_mail": RISK_EXTERNAL,
     "send_notification": RISK_WRITE,
+    "dws_cli": RISK_WRITE,
     "create_word_document": RISK_WRITE,
     "create_presentation": RISK_WRITE,
     "list_coding_projects": RISK_READ,
