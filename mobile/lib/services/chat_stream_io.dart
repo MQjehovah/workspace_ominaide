@@ -8,22 +8,39 @@ Stream<String> streamChatSse(
   Map<String, String> headers,
   String body,
 ) async* {
-  final request = http.Request('POST', uri)
-    ..headers.addAll(headers)
-    ..body = body;
-  final streamed = await request.send();
-  if (streamed.statusCode != 200) {
-    final bytes = await streamed.stream.toBytes();
-    throw Exception(_extractError(bytes));
-  }
-  final lines = streamed.stream.transform(utf8.decoder).transform(const LineSplitter());
-  await for (final line in lines) {
-    final t = line.trim();
-    if (!t.startsWith('data: ')) continue;
-    final payload = t.substring(6).trim();
-    if (payload == '[DONE]') break;
-    try {
-      final obj = jsonDecode(payload);
+  // Use a dedicated client so cancelling the subscription (stop generating)
+  // closes the connection instead of leaving a half-open request behind.
+  final client = http.Client();
+  try {
+    final request = http.Request('POST', uri)
+      ..headers.addAll(headers)
+      ..body = body;
+    final streamed = await client
+        .send(request)
+        .timeout(const Duration(seconds: 20));
+    if (streamed.statusCode != 200) {
+      final bytes = await streamed.stream.toBytes();
+      throw Exception(_extractError(bytes));
+    }
+
+    final lines = streamed.stream
+        .timeout(const Duration(seconds: 90))
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    await for (final line in lines) {
+      final t = line.trim();
+      if (!t.startsWith('data: ')) continue;
+      final payload = t.substring(6).trim();
+      if (payload == '[DONE]') break;
+
+      dynamic obj;
+      try {
+        obj = jsonDecode(payload);
+      } on FormatException {
+        continue;
+      }
+      if (obj is! Map) continue;
+
       if (obj['type'] == 'error') {
         final message = (obj['content'] ?? '生成失败').toString();
         throw Exception(message);
@@ -32,7 +49,9 @@ Stream<String> streamChatSse(
         final content = obj['content'] as String?;
         if (content != null && content.isNotEmpty) yield content;
       }
-    } catch (_) {}
+    }
+  } finally {
+    client.close();
   }
 }
 

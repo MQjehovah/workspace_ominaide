@@ -51,15 +51,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (!mounted || ok != true) return;
     try {
       await ApiService().createScheduleEvent({
         'title': titleCtl.text,
         'start_time': dateCtl.text,
         'end_time': null,
       });
+      if (!mounted) return;
       _load();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
     }
   }

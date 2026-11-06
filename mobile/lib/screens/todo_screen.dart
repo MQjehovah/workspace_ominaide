@@ -43,11 +43,13 @@ class _TodoScreenState extends State<TodoScreen> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (!mounted || ok != true) return;
     try {
       await ApiService().createTodoItem({'title': ctl.text, 'status': 'pending', 'priority': 0});
+      if (!mounted) return;
       _load();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
     }
   }

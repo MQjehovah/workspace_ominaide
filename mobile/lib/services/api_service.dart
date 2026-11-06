@@ -12,7 +12,71 @@ import 'file_save_stub.dart'
     if (dart.library.io) 'file_save_io.dart';
 import '../config.dart';
 
+/// Thin wrapper around a single long-lived [http.Client] so requests reuse
+/// connections (TLS handshakes are expensive on mobile) and never hang forever.
+class _ApiHttp {
+  final http.Client _client = http.Client();
+  static const Duration _defaultTimeout = Duration(seconds: 20);
+
+  Future<http.Response> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) =>
+      _client.get(uri, headers: headers).timeout(timeout ?? _defaultTimeout);
+
+  Future<http.Response> post(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Encoding? encoding,
+    Duration? timeout,
+  }) =>
+      _client
+          .post(uri, headers: headers, body: body, encoding: encoding)
+          .timeout(timeout ?? _defaultTimeout);
+
+  Future<http.Response> put(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Encoding? encoding,
+    Duration? timeout,
+  }) =>
+      _client
+          .put(uri, headers: headers, body: body, encoding: encoding)
+          .timeout(timeout ?? _defaultTimeout);
+
+  Future<http.Response> delete(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration? timeout,
+  }) =>
+      _client
+          .delete(uri, headers: headers, body: body)
+          .timeout(timeout ?? _defaultTimeout);
+
+  Future<http.Response> patch(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Encoding? encoding,
+    Duration? timeout,
+  }) =>
+      _client
+          .patch(uri, headers: headers, body: body, encoding: encoding)
+          .timeout(timeout ?? _defaultTimeout);
+
+  Future<http.StreamedResponse> send(
+    http.BaseRequest request, {
+    Duration? timeout,
+  }) =>
+      _client.send(request).timeout(timeout ?? _defaultTimeout);
+}
+
 class ApiService {
+  final _http = _ApiHttp();
   String _baseUrl = kDefaultServerUrl;
   String? _token;
 
@@ -70,7 +134,7 @@ class ApiService {
   bool get isLoggedIn => _token != null;
 
   Future<String> login(String serverUrl, String username, String password) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$serverUrl/api/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
@@ -86,7 +150,7 @@ class ApiService {
 
   // -- Files --
   Future<List<FileItem>> listFiles({String folderPath = '/'}) async {
-    final res = await http.get(
+    final res = await _http.get(
       Uri.parse('$_baseUrl/api/files?page_size=100&folder_path=${Uri.encodeComponent(folderPath)}'),
       headers: _headers,
     ).timeout(const Duration(seconds: 15));
@@ -98,7 +162,7 @@ class ApiService {
   // -- Vibecoding --
   Future<List<dynamic>> listVibecodingTasks({int limit = 50}) async {
     try {
-      final res = await http.get(
+      final res = await _http.get(
         Uri.parse('$_baseUrl/api/vibecoding/tasks?limit=$limit'),
         headers: _authHeaders,
       );
@@ -112,7 +176,7 @@ class ApiService {
 
   Future<List<dynamic>> listVibecodingDevices() async {
     try {
-      final res = await http.get(
+      final res = await _http.get(
         Uri.parse('$_baseUrl/api/vibecoding/devices'),
         headers: _authHeaders,
       );
@@ -126,7 +190,7 @@ class ApiService {
 
   /// Download file bytes through backend proxy (or presigned URL).
   Future<List<int>> downloadFile(int fileId) async {
-    final dlRes = await http.get(
+    final dlRes = await _http.get(
       Uri.parse('$_baseUrl/api/files/$fileId/download-url'),
       headers: _headers,
     );
@@ -135,13 +199,17 @@ class ApiService {
     final dlUrl = dlData['download_url'] as String?;
 
     if (dlUrl != null && dlUrl.isNotEmpty) {
-      final res = await http.get(Uri.parse(dlUrl));
+      final res = await _http.get(
+        Uri.parse(dlUrl),
+        timeout: const Duration(minutes: 5),
+      );
       if (res.statusCode != 200) throw Exception('Download failed: ${res.statusCode}');
       return res.bodyBytes;
     } else {
-      final res = await http.get(
+      final res = await _http.get(
         Uri.parse('$_baseUrl/api/files/$fileId/download'),
         headers: _authHeaders,
+        timeout: const Duration(minutes: 5),
       );
       if (res.statusCode != 200) throw Exception('Download failed: ${res.statusCode}');
       return res.bodyBytes;
@@ -151,7 +219,7 @@ class ApiService {
   /// Resolve the real download URL and headers without loading the bytes.
   /// Used by the music cache to stream large files to disk.
   Future<({Uri uri, Map<String, String> headers})> getFileDownloadRequest(int fileId) async {
-    final dlRes = await http.get(
+    final dlRes = await _http.get(
       Uri.parse('$_baseUrl/api/files/$fileId/download-url'),
       headers: _headers,
     );
@@ -180,12 +248,15 @@ class ApiService {
     final request = http.MultipartRequest('POST', uri)
       ..headers.addAll(_authHeaders)
       ..files.add(await http.MultipartFile.fromPath('file', filePath, filename: filename));
-    final streamed = await request.send();
+    final streamed = await _http.send(
+      request,
+      timeout: const Duration(minutes: 10),
+    );
     if (streamed.statusCode != 200) throw Exception('Upload failed: ${streamed.statusCode}');
   }
 
   Future<Map<String, dynamic>> getUploadUrl(String filename, String folderPath) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl/api/files/upload-url'),
       headers: _headers,
       body: jsonEncode({'filename': filename, 'folder_path': folderPath}),
@@ -195,7 +266,7 @@ class ApiService {
   }
 
   Future<void> confirmUpload(int fileId) async {
-    await http.post(
+    await _http.post(
       Uri.parse('$_baseUrl/api/files/confirm'),
       headers: _headers,
       body: jsonEncode({'file_id': fileId}),
@@ -203,7 +274,7 @@ class ApiService {
   }
 
   Future<FileItem> createFolder(String name, String parentPath) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl/api/files/folder'),
       headers: _headers,
       body: jsonEncode({'name': name, 'parent_path': parentPath}),
@@ -434,39 +505,41 @@ class ApiService {
   }
 
   Future<http.Response> get(String path) async {
-    return await http
-        .get(Uri.parse('$_baseUrl/api$path'), headers: _headers)
-        .timeout(const Duration(seconds: 15));
+    return await _http.get(Uri.parse('$_baseUrl/api$path'), headers: _headers);
   }
 
   Future<http.Response> post(String path, Map<String, dynamic> body) async {
-    return await http
-        .post(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 15));
+    return await _http.post(
+      Uri.parse('$_baseUrl/api$path'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
   }
 
   Future<http.Response> put(String path, Map<String, dynamic> body) async {
-    return await http
-        .put(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 15));
+    return await _http.put(
+      Uri.parse('$_baseUrl/api$path'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
   }
 
   Future<http.Response> delete(String path) async {
-    return await http
-        .delete(Uri.parse('$_baseUrl/api$path'), headers: _headers)
-        .timeout(const Duration(seconds: 15));
+    return await _http.delete(Uri.parse('$_baseUrl/api$path'), headers: _headers);
   }
 
   Future<http.Response> patch(String path, Map<String, dynamic> body) async {
-    return await http
-        .patch(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 15));
+    return await _http.patch(
+      Uri.parse('$_baseUrl/api$path'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
   }
 
   // -- Chat --
   Future<String> chat(String message, {List<Map<String, String>>? history, bool agent = false, String? sessionId}) async {
     final path = agent ? '/api/chat/agent' : '/api/chat';
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl$path'),
       headers: _headers,
       body: jsonEncode({
@@ -474,6 +547,7 @@ class ApiService {
         'history': history ?? [],
         if (sessionId != null) 'session_id': sessionId,
       }),
+      timeout: const Duration(minutes: 2),
     );
     if (res.statusCode != 200) {
       final detail = _extractError(res);
@@ -502,7 +576,7 @@ class ApiService {
     if (sessionId != null) q['session_id'] = sessionId;
     if (beforeId != null) q['before_id'] = '$beforeId';
     final uri = Uri.parse('$_baseUrl/api/chat/history').replace(queryParameters: q);
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
+    final res = await _http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final dynamic d = decodeJson(res);
     if (d is! List) return [];
@@ -525,20 +599,20 @@ class ApiService {
     if (start != null) q['start'] = start;
     if (end != null) q['end'] = end;
     final uri = Uri.parse('$_baseUrl/api/schedule').replace(queryParameters: q.isEmpty ? null : q);
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
+    final res = await _http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final d = decodeJson(res);
     return (d as List? ?? []).cast<Map<String, dynamic>>();
   }
 
   Future<Map<String, dynamic>> createScheduleEvent(Map<String, dynamic> data) async {
-    final res = await http.post(Uri.parse('$_baseUrl/api/schedule'), headers: _headers, body: jsonEncode(data));
+    final res = await _http.post(Uri.parse('$_baseUrl/api/schedule'), headers: _headers, body: jsonEncode(data));
     if (res.statusCode != 201 && res.statusCode != 200) throw Exception(_extractError(res));
     return decodeJson(res);
   }
 
   Future<void> deleteScheduleEvent(int id) async {
-    await http.delete(Uri.parse('$_baseUrl/api/schedule/$id'), headers: _headers);
+    await _http.delete(Uri.parse('$_baseUrl/api/schedule/$id'), headers: _headers);
   }
 
   // -- Todo --
@@ -547,7 +621,7 @@ class ApiService {
     if (status != null) q['status'] = status;
     final uri = Uri.parse('$_baseUrl/api/plugins/todo/items')
         .replace(queryParameters: q);
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
+    final res = await _http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final dynamic d = decodeJson(res);
     final List list = d is List
@@ -557,17 +631,17 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> createTodoItem(Map<String, dynamic> data) async {
-    final res = await http.post(Uri.parse('$_baseUrl/api/plugins/todo/items'), headers: _headers, body: jsonEncode(data));
+    final res = await _http.post(Uri.parse('$_baseUrl/api/plugins/todo/items'), headers: _headers, body: jsonEncode(data));
     if (res.statusCode != 201 && res.statusCode != 200) throw Exception(_extractError(res));
     return decodeJson(res);
   }
 
   Future<void> updateTodoItem(int id, Map<String, dynamic> data) async {
-    await http.put(Uri.parse('$_baseUrl/api/plugins/todo/items/$id'), headers: _headers, body: jsonEncode(data));
+    await _http.put(Uri.parse('$_baseUrl/api/plugins/todo/items/$id'), headers: _headers, body: jsonEncode(data));
   }
 
   Future<void> deleteTodoItem(int id) async {
-    await http.delete(Uri.parse('$_baseUrl/api/plugins/todo/items/$id'), headers: _headers);
+    await _http.delete(Uri.parse('$_baseUrl/api/plugins/todo/items/$id'), headers: _headers);
   }
 
   // -- Notifications --
@@ -582,11 +656,11 @@ class ApiService {
   }
 
   Future<void> markNotificationsRead() async {
-    await http.put(Uri.parse('$_baseUrl/api/notifications/read-all'), headers: _headers, body: '{}');
+    await _http.put(Uri.parse('$_baseUrl/api/notifications/read-all'), headers: _headers, body: '{}');
   }
 
   Future<void> markNotificationRead(int id) async {
-    await http.put(
+    await _http.put(
       Uri.parse('$_baseUrl/api/notifications/$id/read'),
       headers: _headers,
       body: '{}',
@@ -595,7 +669,7 @@ class ApiService {
 
   /// Execute an inline notification action (complete_todo / snooze / open).
   Future<Map<String, dynamic>> actOnNotification(int id, String action) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl/api/notifications/$id/action'),
       headers: _headers,
       body: jsonEncode({'action': action}),
@@ -606,7 +680,7 @@ class ApiService {
 
   // -- MCP --
   Future<String> callMCP(String toolName, Map<String, dynamic> args) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl/api/mcp/call'),
       headers: _headers,
       body: jsonEncode({'name': toolName, 'arguments': args}),
@@ -624,7 +698,7 @@ class ApiService {
       'semantic': <Map<String, dynamic>>[],
     };
     try {
-      final filesRes = await http.get(
+      final filesRes = await _http.get(
         Uri.parse('$_baseUrl/api/files?search=${Uri.encodeComponent(query)}&page_size=10'),
         headers: _headers,
       );
@@ -637,7 +711,7 @@ class ApiService {
       }
     } catch (_) {}
     try {
-      final sourcesRes = await http.get(
+      final sourcesRes = await _http.get(
         Uri.parse('$_baseUrl/api/sources/search?q=${Uri.encodeComponent(query)}&page_size=10'),
         headers: _headers,
       );
@@ -647,7 +721,7 @@ class ApiService {
       }
     } catch (_) {}
     try {
-      final semRes = await http.post(
+      final semRes = await _http.post(
         Uri.parse('$_baseUrl/api/search'),
         headers: _headers,
         body: jsonEncode({'q': query, 'top_k': 5}),
@@ -662,7 +736,7 @@ class ApiService {
 
   // -- Audio --
   Future<List<FileItem>> listAudioFiles() async {
-    final res = await http.get(
+    final res = await _http.get(
       Uri.parse('$_baseUrl/api/files?page_size=200'),
       headers: _headers,
     );
@@ -681,37 +755,37 @@ class ApiService {
 
   // -- Playlists --
   Future<List<Map<String, dynamic>>> listPlaylists() async {
-    final res = await http.get(Uri.parse('$_baseUrl/api/music/playlists'), headers: _headers);
+    final res = await _http.get(Uri.parse('$_baseUrl/api/music/playlists'), headers: _headers);
     if (res.statusCode != 200) return [];
     return ((decodeJson(res)['playlists'] as List?) ?? []).cast<Map<String, dynamic>>();
   }
 
   Future<Map<String, dynamic>> createPlaylist(String name) async {
-    final res = await http.post(Uri.parse('$_baseUrl/api/music/playlists'),
+    final res = await _http.post(Uri.parse('$_baseUrl/api/music/playlists'),
       headers: _headers, body: jsonEncode({'name': name}));
     if (res.statusCode != 201) throw Exception('Failed to create playlist');
     return decodeJson(res);
   }
 
   Future<void> deletePlaylist(int id) async {
-    await http.delete(Uri.parse('$_baseUrl/api/music/playlists/$id'), headers: _headers);
+    await _http.delete(Uri.parse('$_baseUrl/api/music/playlists/$id'), headers: _headers);
   }
 
   Future<List<Map<String, dynamic>>> listPlaylistSongs(int playlistId) async {
-    final res = await http.get(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs'), headers: _headers);
+    final res = await _http.get(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs'), headers: _headers);
     if (res.statusCode != 200) return [];
     final data = decodeJson(res);
     return (data['songs'] as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
 
   Future<void> addSongToPlaylist(int playlistId, int fileId) async {
-    final res = await http.post(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs'),
+    final res = await _http.post(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs'),
       headers: _headers, body: jsonEncode({'file_id': fileId}));
     if (res.statusCode != 201) throw Exception('Failed to add song');
   }
 
   Future<void> removeSongFromPlaylist(int playlistId, int itemId) async {
-    await http.delete(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs/$itemId'), headers: _headers);
+    await _http.delete(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs/$itemId'), headers: _headers);
   }
 
   // -- Chat sessions --

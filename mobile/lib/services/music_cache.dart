@@ -68,12 +68,14 @@ class MusicCache {
     try {
       final request = http.Request('GET', uri);
       request.headers.addAll(headers);
-      final response = await client.send(request);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 30));
       if (response.statusCode != 200) {
         throw Exception('Download failed: ${response.statusCode}');
       }
       sink = destination.openWrite();
-      await for (final chunk in response.stream) {
+      await for (final chunk in response.stream.timeout(const Duration(seconds: 120))) {
         sink.add(chunk);
       }
       await sink.flush();
