@@ -75,7 +75,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import client from '@/api/client'
-import { parseBackendDate } from '@/utils/date'
+import { parseLocalDate } from '@/utils/date'
 
 interface ScheduleEvent {
   id: number
@@ -147,7 +147,7 @@ function getDayEvents(day: string) {
 
 function formatTime(iso: string) {
   if (!iso) return ''
-  const d = parseBackendDate(iso)
+  const d = parseLocalDate(iso)
   if (isNaN(d.getTime())) return ''
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }

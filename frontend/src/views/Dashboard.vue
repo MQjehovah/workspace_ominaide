@@ -182,7 +182,7 @@ import {
 } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-import { formatBackendDate, relTime } from '@/utils/date'
+import { formatLocalDate, relTime } from '@/utils/date'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -229,12 +229,12 @@ const quickLinks = [
 ]
 
 function eventTime(iso: string) {
-  const text = formatBackendDate(iso)
+  const text = formatLocalDate(iso)
   return text.split(' ')[1] || ''
 }
 
 function shortDate(iso: string) {
-  const text = formatBackendDate(iso)
+  const text = formatLocalDate(iso)
   const parts = text.split(' ')
   return parts.length > 1 ? parts[0].slice(5) : text
 }
