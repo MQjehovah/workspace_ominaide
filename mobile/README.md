@@ -41,7 +41,7 @@ flutter pub get
 flutter run -d chrome   # 或 Android / iOS 设备
 ```
 
-服务器地址在登录页填写，默认 `http://mqgeek.com:8000`。
+服务器地址默认 `https://mqgeek.com/ominaide`，可在登录页右上角齿轮或「我的」→ 设置中修改（不再放在账号密码表单上方）。
 
 ## 验证
 
