@@ -94,6 +94,9 @@ async def act_on_notification(
         ),
         None,
     )
+    # "snooze" is a generic inbox action; notifications don't need to declare it.
+    if action is None and req.action == "snooze":
+        action = {"kind": "snooze", "minutes": 10}
     if action is None:
         raise HTTPException(status_code=400, detail="Unknown action")
 

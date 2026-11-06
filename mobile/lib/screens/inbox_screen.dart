@@ -21,6 +21,7 @@ class _InboxScreenState extends State<InboxScreen> {
   late String _filter = widget.initialFilter;
   List<TriageItem> _items = [];
   bool _loading = true;
+  bool _error = false;
 
   static const _filters = [
     ('all', '全部'),
@@ -36,16 +37,24 @@ class _InboxScreenState extends State<InboxScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     final api = ApiService();
     TriageSnapshot? triage;
     List<Map<String, dynamic>> notifications = [];
+    var failed = false;
     try {
       triage = await api.getTriage();
-    } catch (_) {}
+    } catch (_) {
+      failed = true;
+    }
     try {
       notifications = await api.listNotifications(limit: 50);
-    } catch (_) {}
+    } catch (_) {
+      failed = true;
+    }
     if (!mounted) return;
     final items = <TriageItem>[];
     if (triage != null) {
@@ -69,6 +78,7 @@ class _InboxScreenState extends State<InboxScreen> {
     }
     setState(() {
       _items = items;
+      _error = failed && items.isEmpty;
       _loading = false;
     });
   }
@@ -101,19 +111,13 @@ class _InboxScreenState extends State<InboxScreen> {
       );
       return;
     }
-    if (item.source == 'notification' && item.id.startsWith('notification:')) {
-      final id = int.tryParse(item.id.split(':').last);
-      if (id != null) {
-        await ApiService().markNotificationRead(id);
-      }
-    }
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       backgroundColor: AppPalette.of(context).card,
-      builder: (context) {
-        final palette = AppPalette.of(context);
+      builder: (sheetContext) {
+        final palette = AppPalette.of(sheetContext);
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
@@ -140,6 +144,60 @@ class _InboxScreenState extends State<InboxScreen> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 14),
+                if (item.source == 'dingtalk') ...[
+                  FilledButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _replyDingtalk(item);
+                    },
+                    icon: const Icon(Icons.reply_rounded, size: 17),
+                    label: const Text('回复钉钉'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: palette.primary,
+                      minimumSize: const Size.fromHeight(42),
+                    ),
+                  ),
+                ],
+                if (item.source == 'notification') ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            _snoozeNotification(item);
+                          },
+                          icon: const Icon(Icons.snooze_rounded, size: 16),
+                          label: const Text('稍后提醒'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(42),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            _markNotificationRead(item);
+                          },
+                          icon: const Icon(Icons.done_rounded, size: 16),
+                          label: const Text('标记已读'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: palette.primary,
+                            minimumSize: const Size.fromHeight(42),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (item.source == 'rss' && item.summary.isNotEmpty)
+                  Text(
+                    '可在「资讯」里查看全文。',
+                    style: TextStyle(fontSize: 11, color: palette.muted),
+                  ),
               ],
             ),
           ),
@@ -147,6 +205,84 @@ class _InboxScreenState extends State<InboxScreen> {
       },
     );
     if (mounted) _load();
+  }
+
+  int? _notificationId(TriageItem item) {
+    if (!item.id.startsWith('notification:')) return null;
+    return int.tryParse(item.id.split(':').last);
+  }
+
+  Future<void> _markNotificationRead(TriageItem item) async {
+    final id = _notificationId(item);
+    if (id == null) return;
+    await ApiService().markNotificationRead(id);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已标记为已读')),
+      );
+      await _load();
+    }
+  }
+
+  Future<void> _snoozeNotification(TriageItem item) async {
+    final id = _notificationId(item);
+    if (id == null) return;
+    final result = await ApiService().actOnNotification(id, 'snooze');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result['scheduled_at'] == null ? '稍后提醒设置失败' : '已稍后提醒',
+        ),
+      ),
+    );
+    await _load();
+  }
+
+  Future<void> _replyDingtalk(TriageItem item) async {
+    final controller = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final palette = AppPalette.of(context);
+        return AlertDialog(
+          backgroundColor: palette.card,
+          title: Text(
+            '回复 ${item.title}',
+            style: TextStyle(fontSize: 16, color: palette.ink),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 3,
+            maxLines: 6,
+            decoration: const InputDecoration(hintText: '输入回复内容'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('发送'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (text == null || text.isEmpty) return;
+    final result = await ApiService().callMCP('dingtalk__send_message', {
+      'target': item.title,
+      'content': text,
+      'confirmed': true,
+    });
+    if (!mounted) return;
+    final failed = result.startsWith('Error') || result.contains('"ok": false');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(failed ? '发送失败：$result' : '已发送到钉钉')),
+    );
   }
 
   @override
@@ -225,13 +361,16 @@ class _InboxScreenState extends State<InboxScreen> {
                       child: _visible.isEmpty
                           ? ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
-                              children: const [
-                                SizedBox(height: 50),
-                                EmptyState(
-                                  icon: Icons.inbox_outlined,
-                                  title: '这里很干净',
-                                  subtitle: '没有需要处理的消息。',
-                                ),
+                              children: [
+                                const SizedBox(height: 50),
+                                if (_error)
+                                  ErrorState(onRetry: _load)
+                                else
+                                  const EmptyState(
+                                    icon: Icons.inbox_outlined,
+                                    title: '这里很干净',
+                                    subtitle: '没有需要处理的消息。',
+                                  ),
                               ],
                             )
                           : ListView.builder(

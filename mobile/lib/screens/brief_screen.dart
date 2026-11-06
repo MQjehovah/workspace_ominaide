@@ -17,6 +17,7 @@ class _BriefScreenState extends State<BriefScreen> {
   WeeklyReview? _weekly;
   bool _loading = true;
   int _tab = 0;
+  bool _error = false;
 
   @override
   void initState() {
@@ -25,7 +26,10 @@ class _BriefScreenState extends State<BriefScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     final api = ApiService();
     DailyBrief? brief;
     WeeklyReview? weekly;
@@ -39,6 +43,7 @@ class _BriefScreenState extends State<BriefScreen> {
     setState(() {
       _brief = brief;
       _weekly = weekly;
+      _error = brief == null && weekly == null;
       _loading = false;
     });
   }
@@ -85,7 +90,17 @@ class _BriefScreenState extends State<BriefScreen> {
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
-                      child: _tab == 0 ? _buildDaily(palette) : _buildWeekly(palette),
+                      child: _error
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 40),
+                                ErrorState(onRetry: _load),
+                              ],
+                            )
+                          : _tab == 0
+                              ? _buildDaily(palette)
+                              : _buildWeekly(palette),
                     ),
             ),
           ],

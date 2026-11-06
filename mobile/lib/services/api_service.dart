@@ -274,6 +274,12 @@ class ApiService {
         .timeout(const Duration(seconds: 15));
   }
 
+  Future<http.Response> patch(String path, Map<String, dynamic> body) async {
+    return await http
+        .patch(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
+        .timeout(const Duration(seconds: 15));
+  }
+
   // -- Chat --
   Future<String> chat(String message, {List<Map<String, String>>? history, bool agent = false, String? sessionId}) async {
     final path = agent ? '/api/chat/agent' : '/api/chat';
@@ -308,9 +314,10 @@ class ApiService {
   }
 
   /// Load persisted chat history so the mobile client shares context with Web/desktop.
-  Future<List<Map<String, dynamic>>> loadChatHistory({String? sessionId, int limit = 50}) async {
+  Future<List<Map<String, dynamic>>> loadChatHistory({String? sessionId, int limit = 50, int? beforeId}) async {
     final q = <String, String>{'limit': '$limit'};
     if (sessionId != null) q['session_id'] = sessionId;
+    if (beforeId != null) q['before_id'] = '$beforeId';
     final uri = Uri.parse('$_baseUrl/api/chat/history').replace(queryParameters: q);
     final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
@@ -631,6 +638,25 @@ class ApiService {
     return res.statusCode == 200;
   }
 
+  Future<bool> updateMemoryRecord(
+    int id, {
+    String? content,
+    int? importance,
+  }) async {
+    final res = await patch('/memory/records/$id', {
+      if (content != null) 'content': content,
+      if (importance != null) 'importance': importance,
+    });
+    return res.statusCode == 200;
+  }
+
+  Future<Map<String, dynamic>?> getMemoryGraph() async {
+    final res = await get('/memory/graph');
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+  }
+
   Future<Map<String, dynamic>?> getMemoryProfile() async {
     final res = await get('/memory/profile');
     if (res.statusCode != 200) return null;
@@ -673,6 +699,20 @@ class ApiService {
     if (res.statusCode != 200) return null;
     final dynamic data = decodeJson(res);
     return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+  }
+
+  Future<Map<String, dynamic>?> getProfile() async {
+    final res = await get('/auth/profile');
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+  }
+
+  Future<void> updateProfile(Map<String, dynamic> data) async {
+    final res = await put('/auth/profile', data);
+    if (res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
   }
 
   // -- Cross-device appearance settings --

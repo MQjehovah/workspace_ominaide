@@ -14,6 +14,7 @@ class ProjectsScreen extends StatefulWidget {
 class _ProjectsScreenState extends State<ProjectsScreen> {
   List<Map<String, dynamic>> _projects = [];
   bool _loading = true;
+  bool _error = false;
 
   @override
   void initState() {
@@ -22,11 +23,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     List<Map<String, dynamic>> projects = [];
     try {
       projects = await ApiService().listProjects();
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _error = true);
+    }
     if (!mounted) return;
     setState(() {
       _projects = projects;
@@ -65,8 +71,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
-                      child: _projects.isEmpty
+                      child: _error
                           ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 40),
+                                ErrorState(onRetry: _load),
+                              ],
+                            )
+                          : _projects.isEmpty
+                              ? ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: const [
                                 SizedBox(height: 50),

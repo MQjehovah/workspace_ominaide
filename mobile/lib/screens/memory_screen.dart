@@ -14,8 +14,11 @@ class MemoryScreen extends StatefulWidget {
 class _MemoryScreenState extends State<MemoryScreen> {
   List<Map<String, dynamic>> _candidates = [];
   List<Map<String, dynamic>> _records = [];
+  Map<String, dynamic>? _profile;
+  Map<String, dynamic>? _graph;
   bool _loading = true;
   int _tab = 0;
+  bool _error = false;
 
   @override
   void initState() {
@@ -24,20 +27,39 @@ class _MemoryScreenState extends State<MemoryScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     final api = ApiService();
     List<Map<String, dynamic>> candidates = [];
     List<Map<String, dynamic>> records = [];
+    Map<String, dynamic>? profile;
+    Map<String, dynamic>? graph;
+    var failed = false;
     try {
       candidates = await api.listMemoryCandidates();
-    } catch (_) {}
+    } catch (_) {
+      failed = true;
+    }
     try {
       records = await api.listMemoryRecords();
+    } catch (_) {
+      failed = true;
+    }
+    try {
+      profile = await api.getMemoryProfile();
+    } catch (_) {}
+    try {
+      graph = await api.getMemoryGraph();
     } catch (_) {}
     if (!mounted) return;
     setState(() {
       _candidates = candidates;
       _records = records;
+      _profile = profile;
+      _graph = graph;
+      _error = failed && candidates.isEmpty && records.isEmpty;
       _loading = false;
     });
   }
@@ -101,12 +123,17 @@ class _MemoryScreenState extends State<MemoryScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  _tabChip(palette, 0, '待审核 ${_candidates.length}'),
-                  const SizedBox(width: 6),
-                  _tabChip(palette, 1, '长期记忆 ${_records.length}'),
-                ],
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _tabChip(palette, 0, '待审核 ${_candidates.length}'),
+                    const SizedBox(width: 6),
+                    _tabChip(palette, 1, '长期记忆 ${_records.length}'),
+                    const SizedBox(width: 6),
+                    _tabChip(palette, 2, '关于我'),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -116,7 +143,19 @@ class _MemoryScreenState extends State<MemoryScreen> {
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
-                      child: _tab == 0 ? _buildCandidates(palette) : _buildRecords(palette),
+                      child: _error
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 40),
+                                ErrorState(onRetry: _load),
+                              ],
+                            )
+                          : _tab == 0
+                              ? _buildCandidates(palette)
+                              : _tab == 1
+                                  ? _buildRecords(palette)
+                                  : _buildAbout(palette),
                     ),
             ),
           ],
@@ -306,6 +345,15 @@ class _MemoryScreenState extends State<MemoryScreen> {
                   ),
                 ),
                 IconButton(
+                  tooltip: '修正',
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    size: 18,
+                    color: palette.muted,
+                  ),
+                  onPressed: id is int ? () => _editRecord(item) : null,
+                ),
+                IconButton(
                   tooltip: '遗忘',
                   icon: Icon(
                     Icons.delete_outline_rounded,
@@ -345,6 +393,334 @@ class _MemoryScreenState extends State<MemoryScreen> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _editRecord(Map<String, dynamic> item) async {
+    final id = item['id'];
+    if (id is! int) return;
+    final content = TextEditingController(
+      text: (item['content'] ?? '').toString(),
+    );
+    var importance = (item['importance'] as num?)?.toDouble() ?? 50;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final palette = AppPalette.of(context);
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: palette.card,
+              title: Text(
+                '修正记忆',
+                style: TextStyle(fontSize: 16, color: palette.ink),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: content,
+                      minLines: 3,
+                      maxLines: 6,
+                      decoration: const InputDecoration(labelText: '内容'),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Text(
+                          '重要度 ${importance.round()}',
+                          style: TextStyle(fontSize: 11, color: palette.muted),
+                        ),
+                        Expanded(
+                          child: Slider(
+                            value: importance,
+                            min: 0,
+                            max: 100,
+                            divisions: 20,
+                            activeColor: palette.primary,
+                            onChanged: (value) =>
+                                setDialogState(() => importance = value),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (saved == true) {
+      final ok = await ApiService().updateMemoryRecord(
+        id,
+        content: content.text.trim(),
+        importance: importance.round(),
+      );
+      if (!mounted) return;
+      if (ok) {
+        await _load();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('记忆已更新')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('保存失败，可能已有相同内容')),
+        );
+      }
+    }
+    content.dispose();
+  }
+
+  Widget _buildAbout(AppPalette palette) {
+    final profile = _profile;
+    final graph = _graph;
+    if (profile == null && graph == null) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(height: 50),
+          EmptyState(
+            icon: Icons.person_outline_rounded,
+            title: '还没有关于你的资料',
+            subtitle: '在 Web 或桌面端完善画像后，这里会显示偏好、联系人和记忆关系。',
+          ),
+        ],
+      );
+    }
+
+    final contacts = (profile?['contacts'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+    final projects = (profile?['projects'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+    final interests = (profile?['interests'] as List? ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final habits = (profile?['habits'] as List? ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    final nodes = (graph?['nodes'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+    final edges = (graph?['edges'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+    final labels = <String, String>{
+      for (final node in nodes)
+        (node['id'] ?? '').toString(): (node['label'] ?? '').toString(),
+    };
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      children: [
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '基本资料',
+                style: TextStyle(
+                  fontSize: 10,
+                  letterSpacing: 1.1,
+                  fontWeight: FontWeight.w700,
+                  color: palette.muted,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _infoLine(palette, '名字', (profile?['name'] ?? '').toString()),
+              _infoLine(palette, '职位', (profile?['role'] ?? '').toString()),
+              _infoLine(palette, '公司', (profile?['company'] ?? '').toString()),
+              _infoLine(palette, '记忆', '${_records.length} 条'),
+            ],
+          ),
+        ),
+        if (contacts.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _aboutChipsCard(
+            palette,
+            '联系人',
+            [
+              for (final c in contacts)
+                (c['name'] ?? '').toString(),
+            ],
+          ),
+        ],
+        if (projects.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _aboutChipsCard(
+            palette,
+            '项目',
+            [
+              for (final p in projects)
+                (p['name'] ?? '').toString(),
+            ],
+          ),
+        ],
+        if (interests.isNotEmpty || habits.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '偏好与习惯',
+                  style: TextStyle(
+                    fontSize: 10,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w700,
+                    color: palette.muted,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 5,
+                  runSpacing: 5,
+                  children: [
+                    for (final item in [...interests, ...habits])
+                      SourcePill(label: item, color: palette.primary),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '记忆关系',
+                    style: TextStyle(
+                      fontSize: 10,
+                      letterSpacing: 1.1,
+                      fontWeight: FontWeight.w700,
+                      color: palette.muted,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${edges.length} 条',
+                    style: TextStyle(fontSize: 10, color: palette.muted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              if (edges.isEmpty)
+                Text(
+                  '还没有建立人物/项目关系。确认记忆后会自动关联。',
+                  style: TextStyle(fontSize: 11, color: palette.muted),
+                )
+              else
+                for (final edge in edges.take(20))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TagDot(color: palette.primary, size: 4),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '${labels[edge['source']] ?? edge['source']} → '
+                            '${labels[edge['target']] ?? edge['target']}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              height: 1.5,
+                              color: palette.ink,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoLine(AppPalette palette, String label, String value) {
+    if (value.trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 50,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 11, color: palette.muted),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(fontSize: 12, color: palette.ink),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aboutChipsCard(
+    AppPalette palette,
+    String title,
+    List<String> values,
+  ) {
+    final clean = values.where((e) => e.trim().isNotEmpty).toList();
+    if (clean.isEmpty) return const SizedBox.shrink();
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 10,
+              letterSpacing: 1.1,
+              fontWeight: FontWeight.w700,
+              color: palette.muted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 5,
+            runSpacing: 5,
+            children: [
+              for (final value in clean)
+                SourcePill(label: value, color: palette.primary),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

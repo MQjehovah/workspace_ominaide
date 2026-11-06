@@ -19,6 +19,7 @@ class _MailScreenState extends State<MailScreen> {
   Map<String, dynamic>? _detail;
   bool _loading = true;
   bool _drafting = false;
+  bool _error = false;
 
   @override
   void initState() {
@@ -31,11 +32,16 @@ class _MailScreenState extends State<MailScreen> {
   }
 
   Future<void> _loadList() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     List<Map<String, dynamic>> messages = [];
     try {
       messages = await ApiService().listMailMessages();
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _error = true);
+    }
     if (!mounted) return;
     setState(() {
       _messages = messages;
@@ -44,14 +50,19 @@ class _MailScreenState extends State<MailScreen> {
   }
 
   Future<void> _loadDetail(int id) async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     Map<String, dynamic>? detail;
     try {
       detail = await ApiService().getMailMessage(id);
       if (detail != null) {
         await ApiService().put('/plugins/mail/messages/$id/read', const {});
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _error = true);
+    }
     if (!mounted) return;
     setState(() {
       _detail = detail;
@@ -182,8 +193,16 @@ class _MailScreenState extends State<MailScreen> {
               : RefreshIndicator(
                   onRefresh: _loadList,
                   color: palette.primary,
-                  child: _messages.isEmpty
+                  child: _error
                       ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            const SizedBox(height: 40),
+                            ErrorState(onRetry: _loadList),
+                          ],
+                        )
+                      : _messages.isEmpty
+                          ? ListView(
                           physics: const AlwaysScrollableScrollPhysics(),
                           children: const [
                             SizedBox(height: 50),
@@ -224,6 +243,30 @@ class _MailScreenState extends State<MailScreen> {
   Widget _buildDetail(AppPalette palette) {
     if (_loading) {
       return Center(child: CircularProgressIndicator(color: palette.primary));
+    }
+    if (_error) {
+      return Column(
+        children: [
+          PageHeader(
+            kicker: 'Mail',
+            title: '邮件详情',
+            actions: [
+              RoundIconButton(
+                icon: Icons.arrow_back_rounded,
+                onTap: () => Navigator.maybePop(context),
+              ),
+            ],
+          ),
+          Expanded(
+            child: ErrorState(
+              onRetry: () {
+                final id = widget.detailId;
+                if (id != null) _loadDetail(id);
+              },
+            ),
+          ),
+        ],
+      );
     }
     final detail = _detail;
     if (detail == null) {

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cos_models.dart';
 import '../models/space_catalog.dart';
 import '../services/api_service.dart';
+import '../services/cos_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'brief_screen.dart';
@@ -39,11 +41,122 @@ class _SpaceScreenState extends State<SpaceScreen> {
   int _inboxTotal = 0;
   int _inboxUrgent = 0;
   bool _loading = true;
+  bool _error = false;
+  Set<String> _hidden = {};
+
+  static const _hiddenKey = 'space.hidden';
 
   @override
   void initState() {
     super.initState();
+    _loadHidden();
     _load();
+  }
+
+  Future<void> _loadHidden() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _hidden = (prefs.getStringList(_hiddenKey) ?? []).toSet());
+  }
+
+  Future<void> _toggleHidden(String key) async {
+    final next = Set<String>.from(_hidden);
+    if (next.contains(key)) {
+      next.remove(key);
+    } else {
+      next.add(key);
+    }
+    setState(() => _hidden = next);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenKey, next.toList());
+  }
+
+  Future<void> _showManage() async {
+    final groups = buildSpaceCatalog();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppPalette.of(context).card,
+      builder: (sheetContext) {
+        final palette = AppPalette.of(sheetContext);
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '管理空间',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: palette.ink,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () async {
+                          setState(() => _hidden = {});
+                          if (sheetContext.mounted) {
+                            setSheetState(() => _hidden = {});
+                          }
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.remove(_hiddenKey);
+                        },
+                        child: const Text('全部显示'),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '隐藏不常用的入口，随时可以恢复。',
+                    style: TextStyle(fontSize: 11, color: palette.muted),
+                  ),
+                  const SizedBox(height: 6),
+                  for (final group in groups) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 2),
+                      child: Text(
+                        group.title,
+                        style: TextStyle(
+                          fontSize: 10,
+                          letterSpacing: 1,
+                          fontWeight: FontWeight.w700,
+                          color: palette.muted,
+                        ),
+                      ),
+                    ),
+                    for (final item in group.items)
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        value: !_hidden.contains(item.key),
+                        activeThumbColor: palette.primary,
+                        title: Text(
+                          item.label,
+                          style: TextStyle(fontSize: 13, color: palette.ink),
+                        ),
+                        secondary: Icon(
+                          item.icon,
+                          size: 18,
+                          color: item.color,
+                        ),
+                        onChanged: (value) async {
+                          await _toggleHidden(item.key);
+                          if (!sheetContext.mounted) return;
+                          setSheetState(() {});
+                        },
+                      ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<T?> _safe<T>(Future<T> future) async {
@@ -54,12 +167,12 @@ class _SpaceScreenState extends State<SpaceScreen> {
     }
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool force = false}) async {
     final api = ApiService();
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final results = await Future.wait<dynamic>([
-      _safe(api.getTriage()),
+      _safe(cosRepository.getTriage(force: force)),
       _safe(api.listNotifications(limit: 50)),
       _safe(api.listScheduleEvents(
         start: start.toIso8601String(),
@@ -83,6 +196,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
         notifications.where((n) => n['read'] == false).length;
 
     setState(() {
+      _error = results.every((value) => value == null);
       _mail = sourceCounts['mail'] ?? 0;
       _dingtalk = sourceCounts['dingtalk'] ?? 0;
       _notifications = notificationUnread;
@@ -116,13 +230,13 @@ class _SpaceScreenState extends State<SpaceScreen> {
     };
     if (target == null) return;
     await Navigator.push(context, MaterialPageRoute(builder: (_) => target));
-    if (mounted) _load();
+    if (mounted) _load(force: true);
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
-    final groups = buildSpaceCatalog(
+    final allGroups = buildSpaceCatalog(
       mailCount: _mail,
       dingtalkCount: _dingtalk,
       notificationCount: _notifications,
@@ -132,12 +246,22 @@ class _SpaceScreenState extends State<SpaceScreen> {
       fileCount: _files,
       rssCount: _rss,
     );
+    final groups = [
+      for (final group in allGroups)
+        if (group.items.any((item) => !_hidden.contains(item.key)))
+          SpaceGroupSpec(
+            title: group.title,
+            items: group.items
+                .where((item) => !_hidden.contains(item.key))
+                .toList(),
+          ),
+    ];
 
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: () => _load(force: true),
           color: palette.primary,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -160,11 +284,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
                   RoundIconButton(
                     icon: Icons.tune_rounded,
                     tooltip: '管理',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('排序与隐藏即将支持')),
-                      );
-                    },
+                    onTap: _showManage,
                   ),
                 ],
               ),
@@ -172,6 +292,13 @@ class _SpaceScreenState extends State<SpaceScreen> {
                 LinearProgressIndicator(
                   color: palette.primary,
                   backgroundColor: palette.primarySoft,
+                ),
+              if (_error)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: InlineErrorBanner(
+                    onRetry: () => _load(force: true),
+                  ),
                 ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -189,7 +316,11 @@ class _SpaceScreenState extends State<SpaceScreen> {
               for (final group in groups) ...[
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: SectionHeader(title: group.title, actionLabel: '管理'),
+                  child: SectionHeader(
+                    title: group.title,
+                    actionLabel: '管理',
+                    onAction: _showManage,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),

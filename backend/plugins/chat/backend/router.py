@@ -163,6 +163,7 @@ async def build_messages(
 async def list_history(
     limit: int = Query(50, ge=1, le=200),
     session_id: str | None = Query(None),
+    before_id: int | None = Query(None),
     bot_id: int | None = Query(None),
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -171,6 +172,8 @@ async def list_history(
     q = select(ChatMessage).where(ChatMessage.user_id == user["id"])
     if session_id:
         q = q.where(ChatMessage.session_id == session_id)
+    if before_id is not None:
+        q = q.where(ChatMessage.id < before_id)
     if bot_id is not None:
         bot = await _resolve_bot(user["id"], bot_id)
         q = q.where(

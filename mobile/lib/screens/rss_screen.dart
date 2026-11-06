@@ -14,6 +14,7 @@ class RssScreen extends StatefulWidget {
 class _RssScreenState extends State<RssScreen> {
   List<Map<String, dynamic>> _entries = [];
   bool _loading = true;
+  bool _error = false;
 
   @override
   void initState() {
@@ -22,11 +23,16 @@ class _RssScreenState extends State<RssScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     List<Map<String, dynamic>> entries = [];
     try {
       entries = await ApiService().listRssEntries();
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _error = true);
+    }
     if (!mounted) return;
     setState(() {
       _entries = entries;
@@ -113,8 +119,16 @@ class _RssScreenState extends State<RssScreen> {
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
-                      child: _entries.isEmpty
+                      child: _error
                           ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 40),
+                                ErrorState(onRetry: _load),
+                              ],
+                            )
+                          : _entries.isEmpty
+                              ? ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: const [
                                 SizedBox(height: 50),

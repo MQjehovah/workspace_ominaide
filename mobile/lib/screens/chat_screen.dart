@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/chat_session.dart';
 import '../services/api_service.dart';
@@ -33,8 +36,9 @@ class _Message {
   final String role;
   String text;
   bool error = false;
+  final int? id;
 
-  _Message(this.role, this.text);
+  _Message(this.role, this.text, {this.id});
 }
 
 class _ChatScreenState extends State<ChatScreen> {
@@ -43,6 +47,13 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scroll = ScrollController();
   bool _loading = false;
   bool _bootstrapping = false;
+  bool _hasOlder = false;
+  bool _loadingOlder = false;
+  int? _oldestId;
+  bool _contextVisible = true;
+  bool _stopRequested = false;
+  StreamSubscription<String>? _streamSub;
+  Completer<void>? _streamDone;
 
   late String _sessionId =
       widget.sessionId ?? 'mobile-${DateTime.now().microsecondsSinceEpoch}';
@@ -88,6 +99,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.clear();
       _loading = false;
       _bootstrapping = false;
+      _hasOlder = false;
+      _oldestId = null;
     });
     _input.clear();
   }
@@ -98,8 +111,25 @@ class _ChatScreenState extends State<ChatScreen> {
       _title = session.title;
       _messages.clear();
       _loading = false;
+      _hasOlder = false;
+      _oldestId = null;
     });
     await _loadHistory();
+  }
+
+  List<_Message> _messagesFromRows(List<Map<String, dynamic>> rows) {
+    final loaded = <_Message>[];
+    for (final row in rows) {
+      final role = (row['role'] ?? 'assistant').toString();
+      final content = (row['content'] ?? '').toString();
+      if (content.isEmpty) continue;
+      loaded.add(_Message(
+        role == 'user' ? 'user' : 'assistant',
+        content,
+        id: row['id'] is int ? row['id'] as int : null,
+      ));
+    }
+    return loaded;
   }
 
   Future<void> _loadHistory() async {
@@ -111,22 +141,42 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted || rows.isEmpty) return;
       // Never overwrite a turn that started before history arrived.
       if (_messages.isNotEmpty || _loading) return;
-      final loaded = <_Message>[];
-      for (final row in rows) {
-        final role = (row['role'] ?? 'assistant').toString();
-        final content = (row['content'] ?? '').toString();
-        if (content.isEmpty) continue;
-        loaded.add(_Message(role == 'user' ? 'user' : 'assistant', content));
-      }
+      final loaded = _messagesFromRows(rows);
       if (loaded.isEmpty) return;
       setState(() {
         _messages
           ..clear()
           ..addAll(loaded);
+        _oldestId = loaded.first.id;
+        _hasOlder = rows.length >= 50;
       });
       _scrollToBottom();
     } catch (_) {
       // Offline or first run: keep the local empty state.
+    }
+  }
+
+  Future<void> _loadOlder() async {
+    if (_loadingOlder || !_hasOlder || _oldestId == null) return;
+    setState(() => _loadingOlder = true);
+    try {
+      final rows = await ApiService().loadChatHistory(
+        sessionId: _sessionId,
+        limit: 50,
+        beforeId: _oldestId,
+      );
+      if (!mounted) return;
+      final loaded = _messagesFromRows(rows);
+      setState(() {
+        if (loaded.isNotEmpty) {
+          _messages.insertAll(0, loaded);
+          _oldestId = loaded.first.id;
+        }
+        _hasOlder = rows.length >= 50;
+        _loadingOlder = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingOlder = false);
     }
   }
 
@@ -156,32 +206,70 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollToBottom();
 
+    _stopRequested = false;
+    final buffer = StringBuffer();
+    var lastFlush = DateTime.now();
+    final done = Completer<void>();
+    _streamDone = done;
+    final api = ApiService();
+    _streamSub = api
+        .chatStream(
+          text,
+          history: history,
+          sessionId: _sessionId,
+        )
+        .listen(
+          (chunk) {
+            buffer.write(chunk);
+            final now = DateTime.now();
+            if (now.difference(lastFlush) >= const Duration(milliseconds: 50)) {
+              lastFlush = now;
+              if (mounted) setState(() => assistant.text = buffer.toString());
+              _scrollToBottom();
+            }
+          },
+          onError: (Object error, StackTrace stack) {
+            if (!done.isCompleted) done.completeError(error);
+          },
+          onDone: () {
+            if (!done.isCompleted) done.complete();
+          },
+          cancelOnError: true,
+        );
+
     try {
-      final api = ApiService();
-      await for (final chunk in api.chatStream(
-        text,
-        history: history,
-        sessionId: _sessionId,
-      )) {
-        if (!mounted) return;
-        setState(() => assistant.text += chunk);
-        _scrollToBottom();
-      }
-      if (mounted && assistant.text.isEmpty) {
-        setState(() => assistant.text = '（无回复）');
+      await done.future;
+      if (mounted) {
+        setState(() {
+          if (buffer.isNotEmpty) assistant.text = buffer.toString();
+          if (assistant.text.isEmpty) {
+            assistant.text = _stopRequested ? '已停止生成' : '（无回复）';
+          }
+        });
       }
     } catch (e) {
       if (!mounted) return;
+      final message = e.toString().replaceFirst('Exception: ', '');
       setState(() {
-        assistant.text = e.toString().replaceFirst('Exception: ', '');
         assistant.error = true;
+        assistant.text = buffer.isEmpty ? message : '${buffer.toString()}\n\n⚠️ $message';
       });
     } finally {
       if (mounted) setState(() => _loading = false);
+      _streamSub = null;
+      _streamDone = null;
     }
   }
 
-  Future<void> _retry() async {
+  void _stop() {
+    _stopRequested = true;
+    _streamSub?.cancel();
+    _streamSub = null;
+    final done = _streamDone;
+    if (done != null && !done.isCompleted) done.complete();
+  }
+
+  Future<void> _resendLastUser() async {
     if (_loading || _messages.isEmpty) return;
     String? lastUser;
     for (final message in _messages.reversed) {
@@ -201,6 +289,15 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _input.text = lastUser;
     await _send();
+  }
+
+  Future<void> _retry() => _resendLastUser();
+
+  void _copyMessage(String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制')),
+    );
   }
 
   void _scrollToBottom() {
@@ -410,6 +507,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _streamSub?.cancel();
+    final done = _streamDone;
+    if (done != null && !done.isCompleted) done.complete();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -424,7 +524,8 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           children: [
             _buildTopBar(palette),
-            if (widget.contextLabel != null) _buildContextBanner(palette),
+            if (widget.contextLabel != null && _contextVisible)
+              _buildContextBanner(palette),
             Expanded(
               child: _bootstrapping
                   ? Center(
@@ -435,16 +536,103 @@ class _ChatScreenState extends State<ChatScreen> {
                       : ListView.builder(
                           controller: _scroll,
                           padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                          itemCount: _messages.length,
+                          itemCount:
+                              _messages.length + (_hasOlder ? 1 : 0),
                           itemBuilder: (context, index) {
-                            final message = _messages[index];
-                            final isLast = index == _messages.length - 1;
-                            return ChatBubble(
-                              role: message.role,
-                              text: message.text,
-                              streaming: isLast && _loading,
-                              error: message.error,
-                              onRetry: message.error ? _retry : null,
+                            if (_hasOlder && index == 0) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Center(
+                                  child: TextButton.icon(
+                                    onPressed:
+                                        _loadingOlder ? null : _loadOlder,
+                                    icon: _loadingOlder
+                                        ? const SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.history_rounded,
+                                            size: 15,
+                                          ),
+                                    label: Text(
+                                      _loadingOlder ? '加载中…' : '加载更早消息',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            final messageIndex =
+                                index - (_hasOlder ? 1 : 0);
+                            final message = _messages[messageIndex];
+                            final isLast =
+                                messageIndex == _messages.length - 1;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                ChatBubble(
+                                  role: message.role,
+                                  text: message.text,
+                                  streaming: isLast && _loading,
+                                  error: message.error,
+                                  onRetry: message.error ? _retry : null,
+                                ),
+                                if (isLast &&
+                                    !_loading &&
+                                    message.role == 'assistant' &&
+                                    !message.error)
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        TextButton.icon(
+                                          onPressed: () =>
+                                              _copyMessage(message.text),
+                                          icon: const Icon(
+                                            Icons.copy_rounded,
+                                            size: 14,
+                                          ),
+                                          label: const Text('复制'),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: palette.muted,
+                                            textStyle: const TextStyle(
+                                              fontSize: 10,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                          ),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: _resendLastUser,
+                                          icon: const Icon(
+                                            Icons.refresh_rounded,
+                                            size: 14,
+                                          ),
+                                          label: const Text('重新生成'),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: palette.muted,
+                                            textStyle: const TextStyle(
+                                              fontSize: 10,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
                             );
                           },
                         ),
@@ -547,7 +735,18 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ),
-          Icon(Icons.close_rounded, size: 14, color: palette.muted),
+          InkWell(
+            onTap: () => setState(() => _contextVisible = false),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(
+                Icons.close_rounded,
+                size: 14,
+                color: palette.muted,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -659,7 +858,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               const SizedBox(width: 7),
               InkWell(
-                onTap: _loading ? null : _send,
+                onTap: _loading ? _stop : _send,
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   width: 38,
@@ -678,7 +877,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ],
                   ),
                   child: Icon(
-                    _loading ? Icons.more_horiz_rounded : Icons.send_rounded,
+                    _loading ? Icons.stop_rounded : Icons.send_rounded,
                     color: Colors.white,
                     size: 18,
                   ),

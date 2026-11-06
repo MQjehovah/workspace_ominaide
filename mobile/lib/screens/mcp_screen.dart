@@ -14,6 +14,7 @@ class McpScreen extends StatefulWidget {
 class _McpScreenState extends State<McpScreen> {
   List<Map<String, dynamic>> _servers = [];
   bool _loading = true;
+  bool _error = false;
 
   @override
   void initState() {
@@ -22,11 +23,16 @@ class _McpScreenState extends State<McpScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     List<Map<String, dynamic>> servers = [];
     try {
       servers = await ApiService().listMcpServers();
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _error = true);
+    }
     if (!mounted) return;
     setState(() {
       _servers = servers;
@@ -65,8 +71,16 @@ class _McpScreenState extends State<McpScreen> {
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
-                      child: _servers.isEmpty
+                      child: _error
                           ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 40),
+                                ErrorState(onRetry: _load),
+                              ],
+                            )
+                          : _servers.isEmpty
+                              ? ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: const [
                                 SizedBox(height: 50),

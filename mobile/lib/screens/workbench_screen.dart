@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/cos_models.dart';
 import '../models/file_item.dart';
 import '../services/api_service.dart';
+import '../services/cos_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'brief_screen.dart';
@@ -30,6 +31,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   int _unreadNotifications = 0;
   String _name = '';
   bool _loading = true;
+  bool _error = false;
 
   @override
   void initState() {
@@ -45,15 +47,15 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     }
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool force = false}) async {
     final api = ApiService();
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
 
     final results = await Future.wait<dynamic>([
-      _safe(api.getDailyBrief()),
-      _safe(api.getTriage()),
+      _safe(cosRepository.getDailyBrief(force: force)),
+      _safe(cosRepository.getTriage(force: force)),
       _safe(api.listNotifications(limit: 50)),
       _safe(api.listScheduleEvents(
         start: start.toIso8601String(),
@@ -68,6 +70,11 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     final me = results[6] as Map<String, dynamic>?;
     final notifications = (results[2] as List<Map<String, dynamic>>?) ?? [];
     setState(() {
+      _error = results[0] == null &&
+          results[1] == null &&
+          results[3] == null &&
+          results[4] == null &&
+          results[5] == null;
       _brief = results[0] as DailyBrief?;
       _triage = results[1] as TriageSnapshot?;
       _events = (results[3] as List<Map<String, dynamic>>?) ?? [];
@@ -92,7 +99,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
 
   Future<void> _pushAndRefresh(Widget page) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-    if (mounted) _load();
+    if (mounted) _load(force: true);
   }
 
   String get _greeting {
@@ -154,7 +161,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       backgroundColor: palette.background,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: () => _load(force: true),
           color: palette.primary,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -181,6 +188,10 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   children: [
+                    if (_error) ...[
+                      InlineErrorBanner(onRetry: () => _load(force: true)),
+                      const SizedBox(height: 9),
+                    ],
                     _buildHeroChat(palette),
                     const SizedBox(height: 9),
                     _buildTodayCard(palette),

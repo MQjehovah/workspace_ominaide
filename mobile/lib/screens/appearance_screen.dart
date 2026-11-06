@@ -62,6 +62,34 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     await ApiService().pushAppearanceSetting('font_scale', value);
   }
 
+  Future<void> _syncFromRemote() async {
+    try {
+      final settings = await ApiService().getAppearanceSettings();
+      if (!mounted) return;
+      if (settings.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('没有可同步的外观设置')),
+        );
+        return;
+      }
+      await appTheme.applyRemote(settings);
+      if (!mounted) return;
+      setState(() {
+        _hue = HSVColor.fromColor(appTheme.seed).hue;
+        _fontScale = appTheme.fontScale;
+        _draggingHue = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已从其他设备同步外观设置')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('同步失败，请稍后重试')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -79,6 +107,12 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
               title: '外观与主题',
               subtitle: '设置会同步到 Web 和桌面',
               actions: [
+                RoundIconButton(
+                  icon: Icons.sync_rounded,
+                  tooltip: '从其他设备同步',
+                  onTap: _syncFromRemote,
+                ),
+                const SizedBox(width: 6),
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
                   onTap: () => Navigator.maybePop(context),

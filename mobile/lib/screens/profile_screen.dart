@@ -25,6 +25,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _name = '';
   String _email = '';
   int _pendingMemories = 0;
+  Map<String, dynamic>? _profile;
 
   @override
   void initState() {
@@ -35,19 +36,104 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _load() async {
     final api = ApiService();
     Map<String, dynamic>? me;
+    Map<String, dynamic>? profile;
     List<Map<String, dynamic>> candidates = [];
     try {
       me = await api.getMe();
     } catch (_) {}
     try {
+      profile = await api.getProfile();
+    } catch (_) {}
+    try {
       candidates = await api.listMemoryCandidates();
     } catch (_) {}
     if (!mounted) return;
+    final profileName = (profile?['name'] ?? '').toString().trim();
     setState(() {
-      _name = (me?['display_name'] ?? me?['username'] ?? '').toString();
+      _profile = profile;
+      _name = profileName.isNotEmpty
+          ? profileName
+          : (me?['username'] ?? '').toString();
       _email = (me?['email'] ?? '').toString();
       _pendingMemories = candidates.length;
     });
+  }
+
+  Future<void> _editProfile() async {
+    final name = TextEditingController(text: _name);
+    final role = TextEditingController(
+      text: (_profile?['role'] ?? '').toString(),
+    );
+    final company = TextEditingController(
+      text: (_profile?['company'] ?? '').toString(),
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final palette = AppPalette.of(context);
+        return AlertDialog(
+          backgroundColor: palette.card,
+          title: Text(
+            '编辑资料',
+            style: TextStyle(fontSize: 16, color: palette.ink),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(labelText: '名字'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: role,
+                  decoration: const InputDecoration(labelText: '职位'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: company,
+                  decoration: const InputDecoration(labelText: '公司'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+    if (saved == true) {
+      try {
+        await ApiService().updateProfile({
+          'name': name.text.trim(),
+          'role': role.text.trim(),
+          'company': company.text.trim(),
+        });
+        if (!mounted) return;
+        await _load();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('资料已更新')),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存失败：$e')),
+        );
+      }
+    }
+    name.dispose();
+    role.dispose();
+    company.dispose();
   }
 
   Future<void> _logout() async {
@@ -172,12 +258,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ],
                             ),
                           ),
-                          Text(
-                            '编辑',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: palette.primary,
+                          InkWell(
+                            onTap: _editProfile,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 2,
+                              ),
+                              child: Text(
+                                '编辑',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: palette.primary,
+                                ),
+                              ),
                             ),
                           ),
                         ],

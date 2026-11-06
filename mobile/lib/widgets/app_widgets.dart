@@ -262,6 +262,85 @@ class EmptyState extends StatelessWidget {
   }
 }
 
+class ErrorState extends StatelessWidget {
+  const ErrorState({
+    super.key,
+    this.title = '加载失败',
+    this.subtitle = '检查网络后重试，或下拉刷新。',
+    required this.onRetry,
+  });
+
+  final String title;
+  final String subtitle;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    return EmptyState(
+      icon: Icons.cloud_off_rounded,
+      title: title,
+      subtitle: subtitle,
+      action: FilledButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh_rounded, size: 16),
+        label: const Text('重试'),
+        style: FilledButton.styleFrom(backgroundColor: palette.primary),
+      ),
+    );
+  }
+}
+
+class InlineErrorBanner extends StatelessWidget {
+  const InlineErrorBanner({
+    super.key,
+    this.message = '部分数据加载失败，显示的是空状态。',
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: palette.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: palette.accent.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 15, color: palette.accent),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: 10.5,
+                height: 1.5,
+                color: palette.ink,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: palette.accent,
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('重试', style: TextStyle(fontSize: 11)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class SourcePill extends StatelessWidget {
   const SourcePill({
     super.key,
