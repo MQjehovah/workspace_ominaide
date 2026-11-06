@@ -4,28 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-enum ChatMode { normal, agent }
-
-extension ChatModeX on ChatMode {
-  String get label {
-    switch (this) {
-      case ChatMode.normal:
-        return '普通';
-      case ChatMode.agent:
-        return 'Agent';
-    }
-  }
-
-  String get hint {
-    switch (this) {
-      case ChatMode.normal:
-        return '直接生成回答';
-      case ChatMode.agent:
-        return '可以调用日程、待办、文件等工具';
-    }
-  }
-}
-
 class ChatBubble extends StatelessWidget {
   const ChatBubble({
     super.key,

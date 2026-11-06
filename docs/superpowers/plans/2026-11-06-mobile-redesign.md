@@ -135,11 +135,11 @@ git commit -m "feat(mobile): four-tab shell with workbench as default"
 
 ---
 
-### Task 3: 会话数据模型与对话列表
+### Task 3: 会话数据模型与会话切换
 
 **Files:**
 - Create: `mobile/lib/models/chat_session.dart`
-- Create: `mobile/lib/screens/chat_list_screen.dart`
+- Modify: `mobile/lib/screens/chat_screen.dart`
 - Modify: `mobile/lib/services/api_service.dart`
 - Test: `mobile/test/chat_session_test.dart`
 
@@ -149,7 +149,7 @@ git commit -m "feat(mobile): four-tab shell with workbench as default"
   - `ChatSession.fromJson(Map<String, dynamic>)`
   - `Future<List<ChatSession>> ApiService.listChatSessions()`
   - `String relativeTimeLabel(DateTime?)`
-- Consumes: `ChatScreen` existing for navigation.
+- Consumes: `ChatScreen` for switching sessions inside the same page.
 
 - [ ] **Step 1: Write failing model test**
 
@@ -162,16 +162,12 @@ git commit -m "feat(mobile): four-tab shell with workbench as default"
 Run: `flutter test test/chat_session_test.dart`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement model, API method, and screen**
+- [ ] **Step 3: Implement model, API method, and session switching**
 
 - Add `listChatSessions()` calling `/api/chat/sessions`.
-- `ChatListScreen`:
-  - header "对话" + search icon + new chat icon.
-  - search filter over loaded sessions.
-  - "开始新对话" button → `ChatScreen()`.
-  - session rows with icon, title, relative time, unread dot.
-  - empty state with CTA.
-  - pull to refresh.
+- Chat tab opens latest session via `ChatScreen(autoLoadLatest: true)`.
+- Tapping the title opens a bottom sheet with 新对话 + recent sessions; selecting switches in place.
+- New chat generates a fresh session id and clears messages.
 
 - [ ] **Step 4: Run test**
 
@@ -181,8 +177,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add mobile/lib/models/chat_session.dart mobile/lib/screens/chat_list_screen.dart mobile/lib/services/api_service.dart mobile/test/chat_session_test.dart
-git commit -m "feat(mobile): chat session list and history entry"
+git add mobile/lib/models/chat_session.dart mobile/lib/screens/chat_screen.dart mobile/lib/services/api_service.dart mobile/test/chat_session_test.dart
+git commit -m "feat(mobile): open latest chat and switch sessions in place"
 ```
 
 ---
@@ -214,11 +210,11 @@ Expected: FAIL.
 - [ ] **Step 3: Implement**
 
 - Rewrite chat page with theme tokens.
-- Top bar: back, title, subtitle, history icon.
+- Top bar: back (when pushed), tappable title to switch sessions, new chat.
 - Context banner: static "已引用 2 份材料" (read from optional `contextLabel` constructor param).
 - Message list: `ChatBubble` for user/assistant; assistant rich text preserved as plain text.
-- Input: mode chips (普通/Agent/联网), attach, voice, send.
-- Keep SSE streaming and agent mode.
+- Input: attach/reference, send. No 普通/Agent mode selector.
+- Keep SSE streaming; remove the separate agent mode branch.
 - On error: bubble with error text + retry button.
 
 - [ ] **Step 4: Run tests**

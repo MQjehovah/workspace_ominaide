@@ -12,12 +12,17 @@ class ChatScreen extends StatefulWidget {
   final String? title;
   final String? contextLabel;
 
+  /// When true and no [sessionId] is given, open the most recent conversation
+  /// instead of starting a blank chat. Used by the 对话 tab.
+  final bool autoLoadLatest;
+
   const ChatScreen({
     super.key,
     this.initialQuery,
     this.sessionId,
     this.title,
     this.contextLabel,
+    this.autoLoadLatest = false,
   });
 
   @override
@@ -37,21 +42,64 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _input = TextEditingController();
   final ScrollController _scroll = ScrollController();
   bool _loading = false;
-  ChatMode _mode = ChatMode.normal;
+  bool _bootstrapping = false;
 
-  late final String _sessionId =
+  late String _sessionId =
       widget.sessionId ?? 'mobile-${DateTime.now().microsecondsSinceEpoch}';
-
-  bool get _isNewChat => widget.sessionId == null;
+  String? _title;
 
   @override
   void initState() {
     super.initState();
-    if (!_isNewChat) _loadHistory();
+    _title = widget.title;
+    _bootstrap();
     if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
       _input.text = widget.initialQuery!;
       WidgetsBinding.instance.addPostFrameCallback((_) => _send());
     }
+  }
+
+  Future<void> _bootstrap() async {
+    if (widget.sessionId != null) {
+      await _loadHistory();
+      return;
+    }
+    if (!widget.autoLoadLatest || widget.initialQuery != null) return;
+    _bootstrapping = true;
+    try {
+      final sessions = await ApiService().listChatSessions();
+      if (!mounted) return;
+      if (sessions.isNotEmpty) {
+        _sessionId = sessions.first.id;
+        _title = sessions.first.title;
+        await _loadHistory();
+      }
+    } catch (_) {
+      // Offline: stay on a blank new conversation.
+    } finally {
+      if (mounted) setState(() => _bootstrapping = false);
+    }
+  }
+
+  void _newChat() {
+    setState(() {
+      _sessionId = 'mobile-${DateTime.now().microsecondsSinceEpoch}';
+      _title = null;
+      _messages.clear();
+      _loading = false;
+      _bootstrapping = false;
+    });
+    _input.clear();
+  }
+
+  Future<void> _switchSession(ChatSession session) async {
+    setState(() {
+      _sessionId = session.id;
+      _title = session.title;
+      _messages.clear();
+      _loading = false;
+    });
+    await _loadHistory();
   }
 
   Future<void> _loadHistory() async {
@@ -98,6 +146,9 @@ class _ChatScreenState extends State<ChatScreen> {
         .toList();
 
     final assistant = _Message('assistant', '');
+    if (_title == null) {
+      _title = text.length > 20 ? '${text.substring(0, 20)}…' : text;
+    }
     setState(() {
       _messages.add(_Message('user', text));
       _messages.add(assistant);
@@ -107,31 +158,17 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final api = ApiService();
-      if (_mode == ChatMode.agent) {
-        final reply = await api.chat(
-          text,
-          history: history,
-          agent: true,
-          sessionId: _sessionId,
-        );
+      await for (final chunk in api.chatStream(
+        text,
+        history: history,
+        sessionId: _sessionId,
+      )) {
         if (!mounted) return;
-        setState(() {
-          assistant.text = reply.isEmpty ? '（无回复）' : reply;
-        });
+        setState(() => assistant.text += chunk);
         _scrollToBottom();
-      } else {
-        await for (final chunk in api.chatStream(
-          text,
-          history: history,
-          sessionId: _sessionId,
-        )) {
-          if (!mounted) return;
-          setState(() => assistant.text += chunk);
-          _scrollToBottom();
-        }
-        if (mounted && assistant.text.isEmpty) {
-          setState(() => assistant.text = '（无回复）');
-        }
+      }
+      if (mounted && assistant.text.isEmpty) {
+        setState(() => assistant.text = '（无回复）');
       }
     } catch (e) {
       if (!mounted) return;
@@ -277,7 +314,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _showHistory() async {
-    final rootNavigator = Navigator.of(context);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -294,7 +330,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 children: [
                   Text(
-                    '最近对话',
+                    '会话',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -302,6 +338,22 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.add_circle_outline, color: palette.primary),
+                    title: Text(
+                      '新对话',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: palette.primary,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _newChat();
+                    },
+                  ),
                   if (snapshot.connectionState == ConnectionState.waiting)
                     const Padding(
                       padding: EdgeInsets.all(20),
@@ -315,13 +367,28 @@ class _ChatScreenState extends State<ChatScreen> {
                         style: TextStyle(fontSize: 13, color: palette.muted),
                       ),
                     ),
-                  for (final session in items.take(20))
+                  for (final session in items.take(30))
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.chat_bubble_outline, color: palette.primary),
+                      leading: Icon(
+                        session.id == _sessionId
+                            ? Icons.chat_bubble_rounded
+                            : Icons.chat_bubble_outline,
+                        color: session.id == _sessionId
+                            ? palette.primary
+                            : palette.muted,
+                      ),
                       title: Text(
                         session.title,
-                        style: TextStyle(fontSize: 13, color: palette.ink),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: session.id == _sessionId
+                              ? FontWeight.w800
+                              : FontWeight.w500,
+                          color: palette.ink,
+                        ),
                       ),
                       subtitle: Text(
                         relativeTimeLabel(session.updatedAt),
@@ -329,14 +396,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       onTap: () {
                         Navigator.pop(sheetContext);
-                        rootNavigator.pushReplacement(
-                          MaterialPageRoute(
-                            builder: (_) => ChatScreen(
-                              sessionId: session.id,
-                              title: session.title,
-                            ),
-                          ),
-                        );
+                        _switchSession(session);
                       },
                     ),
                 ],
@@ -366,24 +426,28 @@ class _ChatScreenState extends State<ChatScreen> {
             _buildTopBar(palette),
             if (widget.contextLabel != null) _buildContextBanner(palette),
             Expanded(
-              child: _messages.isEmpty
-                  ? _buildEmpty(palette)
-                  : ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final message = _messages[index];
-                        final isLast = index == _messages.length - 1;
-                        return ChatBubble(
-                          role: message.role,
-                          text: message.text,
-                          streaming: isLast && _loading,
-                          error: message.error,
-                          onRetry: message.error ? _retry : null,
-                        );
-                      },
-                    ),
+              child: _bootstrapping
+                  ? Center(
+                      child: CircularProgressIndicator(color: palette.primary),
+                    )
+                  : _messages.isEmpty
+                      ? _buildEmpty(palette)
+                      : ListView.builder(
+                          controller: _scroll,
+                          padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final message = _messages[index];
+                            final isLast = index == _messages.length - 1;
+                            return ChatBubble(
+                              role: message.role,
+                              text: message.text,
+                              streaming: isLast && _loading,
+                              error: message.error,
+                              onRetry: message.error ? _retry : null,
+                            );
+                          },
+                        ),
             ),
             _buildComposer(palette),
           ],
@@ -401,46 +465,57 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       child: Row(
         children: [
-          RoundIconButton(
-            icon: Icons.chevron_left_rounded,
-            onTap: () => Navigator.maybePop(context),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.title ?? 'AI 助手',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: palette.ink,
-                  ),
-                ),
-                Text(
-                  _mode == ChatMode.agent ? 'Agent · 可调用工具' : '普通对话',
-                  style: TextStyle(fontSize: 10.5, color: palette.muted),
-                ),
-              ],
+          if (Navigator.of(context).canPop()) ...[
+            RoundIconButton(
+              icon: Icons.chevron_left_rounded,
+              onTap: () => Navigator.maybePop(context),
             ),
-          ),
-          RoundIconButton(
-            icon: Icons.history_rounded,
-            tooltip: '最近对话',
-            onTap: _showHistory,
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: InkWell(
+              onTap: _showHistory,
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _title ?? '新对话',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: palette.ink,
+                            ),
+                          ),
+                          Text(
+                            '点击切换会话',
+                            style: TextStyle(fontSize: 10.5, color: palette.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.expand_more_rounded,
+                      size: 17,
+                      color: palette.muted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 6),
           RoundIconButton(
-            icon: Icons.more_horiz_rounded,
-            tooltip: '更多',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('会话设置即将支持')),
-              );
-            },
+            icon: Icons.add_rounded,
+            tooltip: '新对话',
+            onTap: _newChat,
           ),
         ],
       ),
@@ -548,19 +623,6 @@ class _ChatScreenState extends State<ChatScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
-            children: [
-              _modeChip(palette, ChatMode.normal),
-              const SizedBox(width: 6),
-              _modeChip(palette, ChatMode.agent),
-              const Spacer(),
-              Text(
-                _mode.hint,
-                style: TextStyle(fontSize: 9.5, color: palette.muted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               InkWell(
@@ -625,30 +687,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _modeChip(AppPalette palette, ChatMode mode) {
-    final selected = _mode == mode;
-    return InkWell(
-      onTap: () => setState(() => _mode = mode),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: selected ? palette.primary : palette.card,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? palette.primary : palette.line),
-        ),
-        child: Text(
-          mode.label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            color: selected ? Colors.white : palette.muted,
-          ),
-        ),
       ),
     );
   }

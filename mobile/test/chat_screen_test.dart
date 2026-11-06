@@ -4,12 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omniaide_mobile/widgets/chat_bubble.dart';
 
 void main() {
-  test('mode labels', () {
-    expect(ChatMode.normal.label, '普通');
-    expect(ChatMode.agent.label, 'Agent');
-    expect(ChatMode.agent.hint, contains('工具'));
-  });
-
   testWidgets('renders a user message', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

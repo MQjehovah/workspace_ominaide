@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/notification_service.dart';
 import '../widgets/navigation_shell.dart';
-import 'chat_list_screen.dart';
+import 'chat_screen.dart';
 import 'profile_screen.dart';
 import 'space_screen.dart';
 import 'workbench_screen.dart';
@@ -16,7 +16,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static const _pages = [
-    ChatListScreen(),
+    ChatScreen(autoLoadLatest: true),
     WorkbenchScreen(),
     SpaceScreen(),
     ProfileScreen(),
