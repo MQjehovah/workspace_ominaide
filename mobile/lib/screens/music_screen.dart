@@ -22,6 +22,8 @@ class _MusicScreenState extends State<MusicScreen> {
   int? _playingIndex;
   bool _playing = false;
   bool _buffering = false;
+  bool _downloading = false;
+  String _downloadStatus = '';
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
@@ -141,6 +143,82 @@ class _MusicScreenState extends State<MusicScreen> {
     }
   }
 
+  Future<void> _downloadSongs(
+    List<Map<String, dynamic>> songs,
+    String label,
+  ) async {
+    if (_downloading || songs.isEmpty) return;
+    setState(() {
+      _downloading = true;
+      _downloadStatus = '0/${songs.length}';
+    });
+    var ok = 0;
+    var failed = 0;
+    for (var i = 0; i < songs.length; i++) {
+      final id = (songs[i]['file_id'] as num?)?.toInt();
+      if (id != null) {
+        try {
+          await MusicCache().cacheTrack(
+            id,
+            (songs[i]['name'] ?? 'track.mp3').toString(),
+          );
+          ok++;
+        } catch (_) {
+          failed++;
+        }
+      }
+      if (mounted) {
+        setState(() => _downloadStatus = '${i + 1}/${songs.length}');
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _downloading = false;
+      _downloadStatus = '';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failed == 0
+              ? '「$label」已缓存 $ok 首'
+              : '「$label」已缓存 $ok 首，$failed 首失败',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadPlaylist(Map<String, dynamic> playlist) async {
+    try {
+      final songs = await ApiService().listPlaylistSongs(playlist['id']);
+      if (!mounted) return;
+      final normalized = songs
+          .map((s) => {
+                'file_id': s['file_id'],
+                'name': s['name'] ?? s['title'] ?? 'track.mp3',
+              })
+          .toList();
+      await _downloadSongs(normalized, (playlist['name'] ?? '歌单').toString());
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('读取歌单失败: $e')),
+      );
+    }
+  }
+
+  Future<void> _downloadCurrent() async {
+    if (_currentPlaylist != null) {
+      await _downloadPlaylist(_currentPlaylist!);
+      return;
+    }
+    await _downloadSongs(
+      _allTracks
+          .map((f) => {'file_id': f.id, 'name': f.originalName})
+          .toList(),
+      '全部歌曲',
+    );
+  }
+
   String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
@@ -153,6 +231,11 @@ class _MusicScreenState extends State<MusicScreen> {
       appBar: AppBar(
         title: Text(_currentPlaylist != null ? _currentPlaylist!['name'] : '音乐'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download_outlined),
+            onPressed: _downloading ? null : _downloadCurrent,
+            tooltip: _currentPlaylist != null ? '缓存整个歌单' : '缓存全部歌曲',
+          ),
           if (_currentPlaylist != null) ...[
             IconButton(icon: const Icon(Icons.library_music_outlined), onPressed: () => setState(() {
               _currentPlaylist = null;
@@ -163,11 +246,37 @@ class _MusicScreenState extends State<MusicScreen> {
           ],
         ],
       ),
-      body: _loading
-        ? const Center(child: CircularProgressIndicator())
-        : _currentPlaylist == null && _showAll
-          ? _buildPlaylistView()
-          : _buildSongList(),
+      body: Column(
+        children: [
+          if (_downloading) ...[
+            const LinearProgressIndicator(minHeight: 2),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '正在缓存 $_downloadStatus',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _currentPlaylist == null && _showAll
+                    ? _buildPlaylistView()
+                    : _buildSongList(),
+          ),
+        ],
+      ),
       bottomSheet: _playingIndex != null ? _buildPlayer() : null,
     );
   }

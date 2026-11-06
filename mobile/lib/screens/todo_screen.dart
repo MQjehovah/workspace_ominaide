@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../services/local_cache_service.dart';
 import '../services/local_reminder_service.dart';
 
 class TodoScreen extends StatefulWidget {
@@ -20,7 +21,16 @@ class _TodoScreenState extends State<TodoScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() => _loading = _items.isEmpty);
+    if (_items.isEmpty) {
+      final cached = await LocalCacheService().readList('todo');
+      if (mounted && cached.isNotEmpty) {
+        setState(() {
+          _items = cached;
+          _loading = false;
+        });
+      }
+    }
     try {
       final items = await ApiService().listTodoItems();
       if (!mounted) return;
@@ -28,14 +38,19 @@ class _TodoScreenState extends State<TodoScreen> {
         _items = items;
         _loading = false;
       });
+      await LocalCacheService().writeJson('todo', items);
       LocalReminderService().syncTodos(items);
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _items = [];
+        if (_items.isEmpty) _items = [];
         _loading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加载失败: $e')));
+      if (_items.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('加载失败: $e')),
+        );
+      }
     }
   }
 
@@ -135,6 +150,106 @@ class _TodoScreenState extends State<TodoScreen> {
     }
   }
 
+  Future<void> _edit(Map<String, dynamic> item) async {
+    final id = item['id'];
+    if (id is! int) return;
+    final ctl = TextEditingController(text: (item['title'] ?? '').toString());
+    final rawPriority = item['priority'];
+    var priority = rawPriority is num
+        ? rawPriority.toInt()
+        : int.tryParse('$rawPriority') ?? 0;
+    var due = DateTime.tryParse((item['due_date'] ?? '').toString());
+    if (due != null && due.isUtc) due = due.toLocal();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, setDialogState) => AlertDialog(
+          title: const Text('编辑待办'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: ctl,
+                decoration: const InputDecoration(labelText: '内容'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: priority,
+                decoration: const InputDecoration(labelText: '优先级'),
+                items: const [
+                  DropdownMenuItem(value: 0, child: Text('普通')),
+                  DropdownMenuItem(value: 1, child: Text('重要')),
+                  DropdownMenuItem(value: 2, child: Text('紧急')),
+                ],
+                onChanged: (v) => setDialogState(() => priority = v ?? 0),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final date = await showDatePicker(
+                    context: c,
+                    initialDate: due ?? DateTime.now(),
+                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                    lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+                  );
+                  if (date == null || !c.mounted) return;
+                  final time = await showTimePicker(
+                    context: c,
+                    initialTime: due == null
+                        ? const TimeOfDay(hour: 18, minute: 0)
+                        : TimeOfDay.fromDateTime(due!),
+                  );
+                  if (time == null) return;
+                  setDialogState(() {
+                    due = DateTime(
+                      date.year,
+                      date.month,
+                      date.day,
+                      time.hour,
+                      time.minute,
+                    );
+                  });
+                },
+                icon: const Icon(Icons.event_outlined, size: 16),
+                label: Text(
+                  due == null ? '设置截止时间（可选）' : '截止：${_fmtDateTime(due!)}',
+                ),
+              ),
+              if (due != null)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => setDialogState(() => due = null),
+                    child: const Text('清除截止时间', style: TextStyle(fontSize: 11)),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('保存')),
+          ],
+        ),
+      ),
+    );
+    final title = ctl.text.trim();
+    ctl.dispose();
+    if (!mounted || ok != true || title.isEmpty) return;
+    try {
+      await ApiService().updateTodoItem(id, {
+        'title': title,
+        'priority': priority,
+        'due_date': due?.toIso8601String(),
+      });
+      if (!mounted) return;
+      _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: $e')));
+    }
+  }
+
   Future<void> _toggle(Map<String, dynamic> item) async {
     final id = item['id'];
     final done = item['status'] == 'done' || item['completed'] == true;
@@ -221,9 +336,18 @@ class _TodoScreenState extends State<TodoScreen> {
                                   ),
                                 ),
                           onChanged: (_) => _toggle(item),
-                          secondary: IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _delete(item),
+                          secondary: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined),
+                                onPressed: () => _edit(item),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => _delete(item),
+                              ),
+                            ],
                           ),
                         ),
                       );

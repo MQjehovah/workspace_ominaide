@@ -631,6 +631,110 @@ class _AutomationRoutineScreenState extends State<AutomationRoutineScreen> {
     }
   }
 
+  Future<void> _edit() async {
+    final nameCtl = TextEditingController(text: (_routine['name'] ?? '').toString());
+    final cronCtl = TextEditingController(text: (_routine['cron_expr'] ?? '').toString());
+    final eventCtl = TextEditingController(text: (_routine['event_type'] ?? '').toString());
+    final promptCtl = TextEditingController(text: (_routine['prompt'] ?? '').toString());
+    var trigger = (_routine['trigger_type'] ?? 'cron').toString();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('编辑自动化'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtl,
+                  decoration: const InputDecoration(labelText: '名称'),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: trigger,
+                  decoration: const InputDecoration(labelText: '触发方式'),
+                  items: const [
+                    DropdownMenuItem(value: 'cron', child: Text('定时')),
+                    DropdownMenuItem(value: 'event', child: Text('事件')),
+                    DropdownMenuItem(value: 'manual', child: Text('手动')),
+                  ],
+                  onChanged: (v) => setDialogState(() => trigger = v ?? 'cron'),
+                ),
+                if (trigger == 'cron') ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: cronCtl,
+                    decoration: const InputDecoration(
+                      labelText: 'cron 表达式',
+                      hintText: '0 8 * * *',
+                    ),
+                  ),
+                ],
+                if (trigger == 'event') ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: eventCtl,
+                    decoration: const InputDecoration(
+                      labelText: '事件类型',
+                      hintText: 'file.uploaded / mail.received / todo.completed',
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                TextField(
+                  controller: promptCtl,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(labelText: '任务说明'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final name = nameCtl.text.trim();
+    final cron = cronCtl.text.trim();
+    final event = eventCtl.text.trim();
+    final prompt = promptCtl.text.trim();
+    nameCtl.dispose();
+    cronCtl.dispose();
+    eventCtl.dispose();
+    promptCtl.dispose();
+    if (!mounted || ok != true || name.isEmpty) return;
+    try {
+      await ApiService().updateAutomationRoutine(
+        widget.botId,
+        widget.routineId,
+        {
+          'name': name,
+          'trigger_type': trigger,
+          'cron_expr': trigger == 'cron' && cron.isNotEmpty ? cron : null,
+          'event_type': trigger == 'event' && event.isNotEmpty ? event : null,
+          'prompt': prompt.isEmpty ? null : prompt,
+        },
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保存')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
   Future<void> _delete() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -694,9 +798,11 @@ class _AutomationRoutineScreenState extends State<AutomationRoutineScreen> {
                 PopupMenuButton<String>(
                   icon: Icon(Icons.more_horiz, color: palette.muted),
                   onSelected: (v) {
+                    if (v == 'edit') _edit();
                     if (v == 'delete') _delete();
                   },
                   itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('编辑')),
                     PopupMenuItem(value: 'delete', child: Text('删除')),
                   ],
                 ),

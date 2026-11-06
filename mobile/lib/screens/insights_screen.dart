@@ -64,6 +64,25 @@ class _InsightsScreenState extends State<InsightsScreen> {
     }
   }
 
+  Future<void> _backfill() async {
+    setState(() => _running = true);
+    try {
+      await ApiService().backfillInsights(days: 7);
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已补齐最近 7 天的回顾')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('补齐失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
   Future<void> _toTodo(String text) async {
     try {
       await ApiService().createTodoItem({
@@ -153,6 +172,12 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
                   onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
+                RoundIconButton(
+                  icon: Icons.calendar_month_outlined,
+                  tooltip: '补最近 7 天',
+                  onTap: _running ? null : _backfill,
                 ),
                 const SizedBox(width: 6),
                 RoundIconButton(

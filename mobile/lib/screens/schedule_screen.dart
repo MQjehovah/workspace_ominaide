@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/local_cache_service.dart';
 import '../services/local_reminder_service.dart';
 
 class ScheduleScreen extends StatefulWidget {
@@ -20,15 +21,34 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = ''; });
+    setState(() {
+      _loading = _events.isEmpty;
+      _error = '';
+    });
+    if (_events.isEmpty) {
+      final cached = await LocalCacheService().readList('schedule');
+      if (mounted && cached.isNotEmpty) {
+        setState(() {
+          _events = cached;
+          _loading = false;
+        });
+      }
+    }
     try {
       final events = await ApiService().listScheduleEvents();
       if (!mounted) return;
-      setState(() { _events = events; _loading = false; });
+      setState(() {
+        _events = events;
+        _loading = false;
+      });
+      await LocalCacheService().writeJson('schedule', events);
       LocalReminderService().syncSchedule(events);
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        if (_events.isEmpty) _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -51,27 +71,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () async {
-                  final date = await showDatePicker(
-                    context: c,
-                    initialDate: selected,
-                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                    lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
-                  );
-                  if (date == null || !c.mounted) return;
-                  final time = await showTimePicker(
-                    context: c,
-                    initialTime: TimeOfDay.fromDateTime(selected),
-                  );
-                  if (time == null) return;
-                  setDialogState(() {
-                    selected = DateTime(
-                      date.year,
-                      date.month,
-                      date.day,
-                      time.hour,
-                      time.minute,
-                    );
-                  });
+                  final picked = await _pickDateTime(c, selected);
+                  if (picked == null) return;
+                  setDialogState(() => selected = picked);
                 },
                 icon: const Icon(Icons.event_outlined, size: 16),
                 label: Text('时间：${_fmtDateTime(selected)}'),
@@ -102,6 +104,77 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
+  Future<DateTime?> _pickDateTime(BuildContext context, DateTime initial) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+    );
+    if (date == null || !context.mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (time == null) return null;
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  Future<void> _edit(Map<String, dynamic> event) async {
+    final id = (event['id'] as num?)?.toInt();
+    if (id == null) return;
+    final titleCtl = TextEditingController(text: (event['title'] ?? '').toString());
+    var selected = DateTime.tryParse((event['start_time'] ?? '').toString()) ??
+        DateTime.now().add(const Duration(hours: 1));
+    if (selected.isUtc) selected = selected.toLocal();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, setDialogState) => AlertDialog(
+          title: const Text('编辑日程'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: titleCtl,
+                decoration: const InputDecoration(labelText: '标题'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await _pickDateTime(c, selected);
+                  if (picked == null) return;
+                  setDialogState(() => selected = picked);
+                },
+                icon: const Icon(Icons.event_outlined, size: 16),
+                label: Text('时间：${_fmtDateTime(selected)}'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('保存')),
+          ],
+        ),
+      ),
+    );
+    final title = titleCtl.text.trim();
+    titleCtl.dispose();
+    if (!mounted || ok != true || title.isEmpty) return;
+    try {
+      await ApiService().updateScheduleEvent(id, {
+        'title': title,
+        'start_time': selected.toUtc().toIso8601String(),
+        'end_time': selected.add(const Duration(hours: 1)).toUtc().toIso8601String(),
+      });
+      if (!mounted) return;
+      _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: $e')));
+    }
+  }
   String _fmtDateTime(DateTime d) {
     final h = d.hour.toString().padLeft(2, '0');
     final m = d.minute.toString().padLeft(2, '0');
@@ -131,6 +204,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                               leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.primaryContainer, child: Icon(Icons.event, color: Theme.of(context).colorScheme.primary)),
                               title: Text(e['title'] ?? '无标题'),
                               subtitle: Text(_fmtTime(e['start_time']?.toString())),
+                              onTap: () => _edit(e),
                               trailing: IconButton(
                                 icon: const Icon(Icons.delete_outline),
                                 onPressed: () async {

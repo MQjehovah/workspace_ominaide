@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
+import '../services/notes_import_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'note_versions_screen.dart';
@@ -144,6 +146,129 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 
+  Future<void> _showNotesMenu() async {
+    final palette = AppPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.search, color: palette.primary),
+              title: const Text('搜索笔记'),
+              subtitle: const Text('按标题和正文搜索'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _searchNotes();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.file_upload_outlined, color: palette.primary),
+              title: const Text('从文件导入'),
+              subtitle: const Text('PDF / Word / HTML / 文本 / 音频'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importFile();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.link, color: palette.primary),
+              title: const Text('从 URL 导入'),
+              subtitle: const Text('抓取网页正文并生成笔记'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importUrl();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _searchNotes() async {
+    final note = await showSearch<Map<String, dynamic>?>(
+      context: context,
+      delegate: _NotesSearchDelegate(),
+    );
+    if (!mounted || note == null) return;
+    _openNote(note);
+  }
+
+  Future<void> _importFile() async {
+    final result = await FilePicker.platform.pickFiles();
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.path == null) return;
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('正在导入，请稍候…')),
+        );
+      }
+      await NotesImportService().importFile(file.path!, file.name);
+      await _loadNotes();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('笔记已导入')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
+  Future<void> _importUrl() async {
+    final ctl = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('从 URL 导入'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            hintText: 'https://example.com/article',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
+            child: const Text('导入'),
+          ),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (!mounted || url == null || url.isEmpty) return;
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('正在抓取网页…')),
+        );
+      }
+      await ApiService().importNoteFromUrl(url);
+      await _loadNotes();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('笔记已导入')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
   bool _isFolder(Map<String, dynamic> note) =>
       note['is_folder'] == true || note['is_folder'] == 1;
 
@@ -203,6 +328,12 @@ class _NotesScreenState extends State<NotesScreen> {
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
                   onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
+                RoundIconButton(
+                  icon: Icons.more_horiz,
+                  tooltip: '搜索与导入',
+                  onTap: _showNotesMenu,
                 ),
                 const SizedBox(width: 6),
                 RoundIconButton(
@@ -776,6 +907,85 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _NotesSearchDelegate extends SearchDelegate<Map<String, dynamic>?> {
+  _NotesSearchDelegate() : super(searchFieldLabel: '搜索笔记');
+
+  @override
+  List<Widget> buildActions(BuildContext context) => [
+        if (query.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.clear),
+            onPressed: () => query = '',
+          ),
+      ];
+
+  @override
+  Widget buildLeading(BuildContext context) => IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => close(context, null),
+      );
+
+  @override
+  Widget buildResults(BuildContext context) => _build(context);
+
+  @override
+  Widget buildSuggestions(BuildContext context) => _build(context);
+
+  Widget _build(BuildContext context) {
+    final text = query.trim();
+    if (text.isEmpty) {
+      return const Center(child: Text('输入关键词搜索笔记'));
+    }
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: ApiService().searchNotes(text),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              '搜索失败: ${snapshot.error}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          );
+        }
+        final notes = snapshot.data ?? const <Map<String, dynamic>>[];
+        if (notes.isEmpty) {
+          return const Center(child: Text('没有找到相关笔记'));
+        }
+        final palette = AppPalette.of(context);
+        return ListView.builder(
+          itemCount: notes.length,
+          itemBuilder: (context, index) {
+            final note = notes[index];
+            final content = (note['content'] ?? '').toString().replaceAll('\n', ' ');
+            return ListTile(
+              title: Text(
+                (note['title'] ?? '未命名笔记').toString(),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: palette.ink,
+                ),
+              ),
+              subtitle: content.isEmpty
+                  ? null
+                  : Text(
+                      content,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: palette.muted),
+                    ),
+              onTap: () => close(context, note),
+            );
+          },
+        );
+      },
     );
   }
 }

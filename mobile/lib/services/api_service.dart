@@ -612,6 +612,15 @@ class ApiService {
     return decodeJson(res);
   }
 
+  Future<Map<String, dynamic>> updateScheduleEvent(
+    int eventId,
+    Map<String, dynamic> data,
+  ) async {
+    final res = await put('/schedule/$eventId', data);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
   Future<void> deleteScheduleEvent(int id) async {
     await _http.delete(Uri.parse('$_baseUrl/api/schedule/$id'), headers: _headers);
   }
@@ -1258,5 +1267,35 @@ class ApiService {
     final res = await get('/plugins/notes/$noteId/similar?limit=$limit');
     if (res.statusCode != 200) throw Exception(_extractError(res));
     return _asMapList(_asMap(decodeJson(res))['results']);
+  }
+
+  Future<List<Map<String, dynamic>>> searchNotes(String query) async {
+    final res = await get(
+      '/plugins/notes/search?q=${Uri.encodeQueryComponent(query)}',
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> importNoteFromUrl(
+    String url, {
+    int? parentId,
+    String? title,
+  }) async {
+    final res = await post('/plugins/notes/import/url', {
+      'url': url,
+      if (parentId != null) 'parent_id': parentId,
+      if (title != null && title.isNotEmpty) 'title': title,
+    });
+    if (res.statusCode != 201 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> backfillInsights({int days = 7}) async {
+    final res = await post('/insights/daily/backfill?days=$days', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
   }
 }
