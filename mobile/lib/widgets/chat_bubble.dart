@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../theme/app_theme.dart';
 
@@ -74,14 +75,63 @@ class ChatBubble extends StatelessWidget {
                       ],
                     ),
                   if (error) const SizedBox(height: 4),
-                  SelectableText(
-                    text,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.65,
-                      color: isUser ? Colors.white : palette.ink,
+                  if (isUser)
+                    SelectableText(
+                      text,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.65,
+                        color: Colors.white,
+                      ),
+                    )
+                  else
+                    MarkdownBody(
+                      data: text,
+                      selectable: true,
+                      styleSheet: MarkdownStyleSheet(
+                        p: TextStyle(
+                          fontSize: 14,
+                          height: 1.65,
+                          color: palette.ink,
+                        ),
+                        h1: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: palette.ink,
+                        ),
+                        h2: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: palette.ink,
+                        ),
+                        h3: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: palette.ink,
+                        ),
+                        code: TextStyle(
+                          fontSize: 12,
+                          color: palette.primary,
+                          backgroundColor: palette.primarySoft,
+                        ),
+                        codeblockDecoration: BoxDecoration(
+                          color: palette.primarySoft,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        blockquoteDecoration: BoxDecoration(
+                          color: palette.primarySoft,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        listBullet: TextStyle(
+                          fontSize: 14,
+                          color: palette.ink,
+                        ),
+                        a: TextStyle(
+                          color: palette.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
                     ),
-                  ),
                   if (streaming && text.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 3),
