@@ -1005,4 +1005,197 @@ class ApiService {
       // Cross-device sync is best-effort; local settings remain authoritative.
     }
   }
+
+  // -- Helpers for JSON maps/lists --
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map) {
+      return data.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return {};
+  }
+
+  List<Map<String, dynamic>> _asMapList(dynamic data) {
+    if (data is! List) return [];
+    return data
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  // -- Automation routines --
+  Future<Map<String, dynamic>> automationOverview() async {
+    final res = await get('/automation/overview');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> automationTemplates() async {
+    final res = await get('/automation/templates');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    final data = _asMap(decodeJson(res));
+    return _asMapList(data['templates']);
+  }
+
+  Future<List<Map<String, dynamic>>> listBots() async {
+    final res = await get('/bots');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> listBotRoutines(int botId) async {
+    final res = await get('/bots/$botId/routines');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> parseAutomationRule(String text) async {
+    final res = await post('/automation/parse', {'text': text});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(_asMap(decodeJson(res))['draft']);
+  }
+
+  Future<Map<String, dynamic>> createAutomationFromTemplate(
+    int botId,
+    String templateKey, {
+    Map<String, dynamic>? overrides,
+  }) async {
+    final res = await post('/automation/from-template', {
+      'bot_id': botId,
+      'template_key': templateKey,
+      if (overrides != null) 'overrides': overrides,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> createAutomationRoutine(
+    int botId,
+    Map<String, dynamic> data,
+  ) async {
+    final res = await post('/bots/$botId/routines', data);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> automationRoutine(int routineId) async {
+    final res = await get('/automation/routines/$routineId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> dryRunAutomationRoutine(int routineId) async {
+    final res = await post('/automation/routines/$routineId/dry-run', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> automationRuns(
+    int routineId, {
+    int limit = 20,
+  }) async {
+    final res = await get('/automation/routines/$routineId/runs?limit=$limit');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> automationStats(
+    int routineId, {
+    int days = 30,
+  }) async {
+    final res = await get('/automation/routines/$routineId/stats?days=$days');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> updateAutomationRoutine(
+    int botId,
+    int routineId,
+    Map<String, dynamic> data,
+  ) async {
+    final res = await patch('/bots/$botId/routines/$routineId', data);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<void> deleteAutomationRoutine(int botId, int routineId) async {
+    final res = await delete('/bots/$botId/routines/$routineId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<Map<String, dynamic>> runAutomationRoutineNow(
+    int botId,
+    int routineId,
+  ) async {
+    final res = await post('/bots/$botId/routines/$routineId/run', const {});
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  // -- Daily insights --
+  Future<List<Map<String, dynamic>>> dailyInsights({int days = 7}) async {
+    final res = await get('/insights/daily?days=$days');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> runDailyInsight({String? day}) async {
+    final res = await post('/insights/daily/run', {
+      'force': true,
+      if (day != null) 'day': day,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  // -- Notes knowledge base (RAG) --
+  Future<Map<String, dynamic>> askNotes(String question, {int? topK}) async {
+    final res = await post('/plugins/notes/rag/ask', {
+      'question': question,
+      if (topK != null) 'top_k': topK,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> searchNotesRag(String query, {int? topK}) async {
+    final res = await post('/plugins/notes/rag/search', {
+      'q': query,
+      if (topK != null) 'top_k': topK,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> noteVersions(int noteId) async {
+    final res = await get('/plugins/notes/$noteId/versions');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(_asMap(decodeJson(res))['versions']);
+  }
+
+  Future<Map<String, dynamic>> noteVersion(int noteId, int versionId) async {
+    final res = await get('/plugins/notes/$noteId/versions/$versionId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> restoreNoteVersion(
+    int noteId,
+    int versionId,
+  ) async {
+    final res =
+        await post('/plugins/notes/$noteId/versions/$versionId/restore', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> similarNotes(
+    int noteId, {
+    int limit = 5,
+  }) async {
+    final res = await get('/plugins/notes/$noteId/similar?limit=$limit');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(_asMap(decodeJson(res))['results']);
+  }
 }

@@ -73,6 +73,8 @@ List<SpaceGroupSpec> buildSpaceCatalog({
         _item('schedule', '日程', Icons.event_outlined, blue, scheduleCount),
         _item('todo', '待办', Icons.check_circle_outline_rounded, orange, todoCount),
         _item('projects', '项目', Icons.grid_view_outlined, purple, projectCount),
+        _item('insights', '回顾', Icons.insights_outlined, green, 0),
+        _item('automation', '自动化', Icons.auto_mode_rounded, grey, 0),
         const SpaceItemSpec(
           key: 'cos',
           label: '幕僚长',

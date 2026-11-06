@@ -10,6 +10,8 @@ import '../widgets/app_widgets.dart';
 import 'brief_screen.dart';
 import 'device_screen.dart';
 import 'files_screen.dart';
+import 'automation_screen.dart';
+import 'insights_screen.dart';
 import 'inbox_screen.dart';
 import 'mail_screen.dart';
 import 'music_screen.dart';
@@ -219,6 +221,8 @@ class _SpaceScreenState extends State<SpaceScreen> {
       'schedule' => const ScheduleScreen(),
       'todo' => const TodoScreen(),
       'projects' => const ProjectsScreen(),
+      'insights' => const InsightsScreen(),
+      'automation' => const AutomationScreen(),
       'cos' => const BriefScreen(),
       'files' => const FilesScreen(),
       'notes' => const NotesScreen(),

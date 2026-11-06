@@ -3,6 +3,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'note_versions_screen.dart';
+import 'notes_ask_screen.dart';
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({super.key});
@@ -120,6 +122,28 @@ class _NotesScreenState extends State<NotesScreen> {
     ));
   }
 
+  Future<void> _openNoteById(int noteId, String title) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NoteEditorScreen(
+          note: {'id': noteId, 'title': title},
+          onSaved: _loadNotes,
+        ),
+      ),
+    );
+    if (mounted) _loadNotes();
+  }
+
+  Future<void> _openAsk() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotesAskScreen(onOpenNote: _openNoteById),
+      ),
+    );
+  }
+
   bool _isFolder(Map<String, dynamic> note) =>
       note['is_folder'] == true || note['is_folder'] == 1;
 
@@ -179,6 +203,12 @@ class _NotesScreenState extends State<NotesScreen> {
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
                   onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
+                RoundIconButton(
+                  icon: Icons.auto_awesome,
+                  tooltip: '问笔记',
+                  onTap: _openAsk,
                 ),
                 const SizedBox(width: 6),
                 RoundIconButton(
@@ -443,6 +473,147 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     super.dispose();
   }
 
+  int? get _noteId {
+    final id = widget.note['id'];
+    if (id is int) return id;
+    return int.tryParse('$id');
+  }
+
+  Future<void> _showMore() async {
+    final palette = AppPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.history, color: palette.primary),
+              title: const Text('版本历史'),
+              subtitle: const Text('查看并恢复之前的保存版本'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showVersions();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.hub_outlined, color: palette.primary),
+              title: const Text('相关笔记'),
+              subtitle: const Text('基于语义相似度找相关笔记'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showSimilar();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showVersions() async {
+    final id = _noteId;
+    if (id == null) return;
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NoteVersionsScreen(
+          noteId: id,
+          noteTitle: _titleCtrl.text,
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _loadContent();
+    }
+  }
+
+  Future<void> _showSimilar() async {
+    final id = _noteId;
+    if (id == null) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    List<Map<String, dynamic>> results;
+    try {
+      results = await ApiService().similarNotes(id);
+    } catch (e) {
+      if (mounted) {
+        try {
+          navigator.pop();
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('查找失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    try {
+      navigator.pop();
+    } catch (_) {}
+    if (results.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有找到相关笔记')),
+      );
+      return;
+    }
+    final palette = AppPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Text(
+              '相关笔记',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: palette.ink,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final item in results)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text((item['title'] ?? '未命名笔记').toString()),
+                subtitle: Text(
+                  (item['snippet'] ?? '').toString(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  final id = (item['note_id'] as num?)?.toInt();
+                  if (id == null) return;
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => NoteEditorScreen(
+                        note: {'id': id, 'title': item['title'] ?? '笔记'},
+                        onSaved: widget.onSaved,
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -500,6 +671,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                         }
                       });
                     },
+                  ),
+                  const SizedBox(width: 6),
+                  RoundIconButton(
+                    icon: Icons.more_horiz,
+                    tooltip: '更多',
+                    onTap: _showMore,
                   ),
                   const SizedBox(width: 6),
                   if (_saving)
