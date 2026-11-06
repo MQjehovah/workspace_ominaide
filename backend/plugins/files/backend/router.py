@@ -1,6 +1,6 @@
 import io
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Request
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import get_db
@@ -261,10 +261,11 @@ async def download_file(
 @router.get("/{file_id}/stream")
 async def stream_file(
     file_id: int,
+    request: Request,
     token: str = Query(""),
     db: AsyncSession = Depends(get_db),
 ):
-    """Stream audio file directly (no auth header needed, uses token in query)."""
+    """Stream a file with HTTP Range support for images, PDF, audio and video."""
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -280,8 +281,36 @@ async def stream_file(
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        obj = minio_client.get_object(file_record.bucket, file_record.object_key)
         mime_type = mimetypes.guess_type(file_record.original_name)[0] or "application/octet-stream"
+        total = int(file_record.size or 0)
+        range_header = request.headers.get("range") or ""
+        start, end = 0, max(0, total - 1)
+        status_code = 200
+        headers = {"Accept-Ranges": "bytes"}
+        length = 0
+
+        if range_header.startswith("bytes=") and total > 0:
+            raw = range_header[6:].split(",", 1)[0].strip()
+            start_text, _, end_text = raw.partition("-")
+            try:
+                if start_text:
+                    start = int(start_text)
+                if end_text:
+                    end = int(end_text)
+            except ValueError:
+                start, end = 0, total - 1
+            start = max(0, min(start, total - 1))
+            end = max(start, min(end, total - 1))
+            length = end - start + 1
+            status_code = 206
+            headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+
+        if length > 0:
+            obj = minio_client.get_object(
+                file_record.bucket, file_record.object_key, offset=start, length=length
+            )
+        else:
+            obj = minio_client.get_object(file_record.bucket, file_record.object_key)
 
         def gen():
             while True:
@@ -290,7 +319,7 @@ async def stream_file(
                     break
                 yield chunk
 
-        return StreamingResponse(gen(), media_type=mime_type)
+        return StreamingResponse(gen(), status_code=status_code, media_type=mime_type, headers=headers)
     except Exception:
         raise HTTPException(status_code=404, detail="File not found in storage")
 

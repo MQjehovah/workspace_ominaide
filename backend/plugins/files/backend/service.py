@@ -82,15 +82,20 @@ async def create_folder(
 async def generate_upload_url(
     db: AsyncSession, user_id: int, req: UploadUrlRequest
 ) -> tuple[str, int, str]:
+    import mimetypes
+
     object_key = _generate_object_key(user_id, req.filename)
     bucket = req.bucket or DEFAULT_BUCKET
+    mime_type = (req.mime_type or "").strip()
+    if not mime_type or mime_type == "application/octet-stream":
+        mime_type = mimetypes.guess_type(req.filename)[0] or "application/octet-stream"
 
     file_record = File(
         user_id=user_id,
         bucket=bucket,
         object_key=object_key,
         original_name=req.filename,
-        mime_type=req.mime_type or "application/octet-stream",
+        mime_type=mime_type,
         folder_path=req.folder_path,
         status="uploading",
     )

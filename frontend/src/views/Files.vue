@@ -229,10 +229,14 @@ function fmtTime(value?: string | null) {
 const pathSegments = computed(() => currentPath.value.split('/').filter(Boolean))
 const previewMime = computed(() => previewFileItem.value?.mime_type || '')
 const previewName = computed(() => previewFileItem.value?.original_name || '')
-const isImage = computed(() => previewMime.value.startsWith('image/'))
-const isAudio = computed(() => previewMime.value.startsWith('audio/'))
-const isVideo = computed(() => previewMime.value.startsWith('video/'))
-const isPdf = computed(() => previewMime.value.includes('pdf'))
+const previewExt = computed(() => (previewName.value.split('.').pop() || '').toLowerCase())
+const imageExts = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'ico', 'tif', 'tiff'])
+const audioExts = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'weba', 'wma'])
+const videoExts = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv', 'avi', 'mkv', 'wmv'])
+const isImage = computed(() => previewMime.value.startsWith('image/') || imageExts.has(previewExt.value))
+const isAudio = computed(() => previewMime.value.startsWith('audio/') || audioExts.has(previewExt.value))
+const isVideo = computed(() => previewMime.value.startsWith('video/') || videoExts.has(previewExt.value))
+const isPdf = computed(() => previewMime.value.includes('pdf') || previewExt.value === 'pdf')
 const isMarkdown = computed(() => isTextFile(previewFileItem.value) && /\.(md|markdown)$/i.test(previewName.value))
 const isText = computed(() => isTextFile(previewFileItem.value))
 const textContent = ref('')
@@ -422,7 +426,6 @@ async function previewFile(file: FileItem) {
   textContent.value = ''
   textError.value = ''
   textLoading.value = false
-  const mime = file.mime_type || ''
   if (isTextFile(file)) {
     textLoading.value = true
     try {
@@ -440,15 +443,11 @@ async function previewFile(file: FileItem) {
     }
     return
   }
-  if (mime.startsWith('image/') || mime.includes('pdf')) {
-    try {
-      const res = await clientDownloadUrl(file.id)
-      previewSrc.value = res || streamSrc(file)
-    } catch {
-      previewSrc.value = streamSrc(file)
-    }
-  } else if (mime.startsWith('audio/') || mime.startsWith('video/')) {
+  if (isImage.value || isPdf.value || isAudio.value || isVideo.value) {
+    // The authenticated stream endpoint works for every media type and avoids
+    // a second presign request (and the race when switching files quickly).
     previewSrc.value = streamSrc(file)
+    return
   }
 }
 

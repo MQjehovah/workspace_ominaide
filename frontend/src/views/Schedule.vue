@@ -3,7 +3,7 @@
     <div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
       <h2>日程</h2>
       <div class="header-actions">
-        <el-select v-model="sourceFilter" size="small" style="width:120px" @change="fetchEvents">
+        <el-select v-model="sourceFilter" size="small" style="width:120px" placeholder="全部来源" @change="fetchEvents">
           <el-option label="全部来源" value="" />
           <el-option label="钉钉" value="dingtalk" />
           <el-option label="手动" value="manual" />
@@ -14,16 +14,31 @@
     </div>
     <div class="page-card">
       <div class="page-card-body">
-        <el-calendar v-model="currentDate">
-          <template #date-cell="{ data }">
-            <div class="cal-cell" @click="selectDate(data.day)">
-              <span>{{ data.day.split('-').pop()?.replace(/^0/, '') }}</span>
-              <div class="cal-dots">
-                <span v-for="e in getDayEvents(data.day)" :key="e.id" class="cal-dot" :style="{ background: e.color || '#409EFF' }" />
+        <el-config-provider :locale="zhCn">
+          <el-calendar v-model="currentDate">
+            <template #date-cell="{ data }">
+              <div class="cal-cell" @click="selectDate(data.day)">
+                <span class="cal-num">{{ data.day.split('-').pop()?.replace(/^0/, '') }}</span>
+                <div class="cal-events">
+                  <div
+                    v-for="e in dayItems(data.day).slice(0, 4)"
+                    :key="e.id"
+                    class="cal-event"
+                    :class="e.source || 'manual'"
+                    :title="`${formatTime(e.start_time)} ${e.title}`"
+                    @click.stop="openEvent(e)"
+                  >
+                    <span class="cal-event-time">{{ formatTime(e.start_time) }}</span>
+                    <span class="cal-event-title">{{ e.title }}</span>
+                  </div>
+                  <div v-if="dayItems(data.day).length > 4" class="cal-more">
+                    +{{ dayItems(data.day).length - 4 }} 项
+                  </div>
+                </div>
               </div>
-            </div>
-          </template>
-        </el-calendar>
+            </template>
+          </el-calendar>
+        </el-config-provider>
       </div>
     </div>
 
@@ -110,6 +125,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import client from '@/api/client'
 import { parseLocalDate } from '@/utils/date'
 import ObjectComments from '@/components/ObjectComments.vue'
@@ -196,8 +212,24 @@ const dayEvents = computed(() =>
   events.value.filter(e => e.start_time?.startsWith(selectedDate.value))
 )
 
-function getDayEvents(day: string) {
-  return events.value.filter(e => e.start_time?.startsWith(day))
+const eventsByDay = computed(() => {
+  const map = new Map<string, ScheduleEvent[]>()
+  for (const event of events.value) {
+    const day = event.start_time?.slice(0, 10)
+    if (!day || event.status === 'cancelled') continue
+    if (!map.has(day)) map.set(day, [])
+    map.get(day)!.push(event)
+  }
+  return map
+})
+
+function dayItems(day: string) {
+  return eventsByDay.value.get(day) || []
+}
+
+function openEvent(event: ScheduleEvent) {
+  selectedDate.value = event.start_time.slice(0, 10)
+  drawerVisible.value = true
 }
 
 function formatTime(iso: string) {
@@ -316,9 +348,29 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.cal-cell { cursor: pointer; }
-.cal-dots { display: flex; gap: 3px; justify-content: center; margin-top: 2px; }
-.cal-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.cal-cell { height: 100%; display: flex; flex-direction: column; gap: 3px; cursor: pointer; min-width: 0; }
+.cal-num { font-size: 12px; line-height: 1.2; color: #475569; font-weight: 500; }
+.cal-events { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow: hidden; }
+.cal-event {
+  display: flex; align-items: center; gap: 4px; min-width: 0;
+  padding: 2px 4px; border-radius: 4px; border-left: 2px solid #94a3b8;
+  background: #f8fafc; font-size: 10.5px; line-height: 1.3;
+  transition: filter .12s;
+}
+.cal-event:hover { filter: brightness(.96); }
+.cal-event.dingtalk { border-left-color: #409eff; background: #eef6ff; }
+.cal-event.agent { border-left-color: #10b981; background: #ecfdf5; }
+.cal-event.manual { border-left-color: #94a3b8; background: #f8fafc; }
+.cal-event-time { flex-shrink: 0; color: #64748b; font-variant-numeric: tabular-nums; }
+.cal-event-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #334155; }
+.cal-more { font-size: 10px; color: #94a3b8; padding-left: 2px; }
+:deep(.el-calendar-day) { height: 122px; padding: 5px 6px; }
+:deep(.el-calendar-table td) { vertical-align: top; }
+@media (max-width: 900px) {
+  :deep(.el-calendar-day) { height: 102px; padding: 4px 3px; }
+  .cal-event { font-size: 10px; padding: 1px 2px; }
+  .cal-event-time { display: none; }
+}
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .event-card { border-left: 3px solid; padding: 12px; margin-bottom: 10px; border-radius: 6px; background: #fafafa; }
 .event-title { font-weight: 600; font-size: 14px; color: #1a1a2e; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
