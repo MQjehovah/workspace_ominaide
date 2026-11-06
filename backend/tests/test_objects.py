@@ -34,11 +34,20 @@ async def test_business_object_search_and_threaded_comments(client, admin_token)
 
     root = await client.post(
         f"/api/objects/note/{note_id}/comments",
-        json={"kind": "note", "content": "这是一条备注", "title": "备注标题"},
+        json={"kind": "note", "content": "这是一条备注，关键词蓝色火箭", "title": "备注标题"},
         headers=auth(admin_token),
     )
     assert root.status_code == 201, root.text
     root_id = root.json()["id"]
+
+    r = await client.get(
+        "/api/objects/search",
+        params={"q": "蓝色火箭"},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    comment_hits = [i for i in r.json()["items"] if i.get("match") == "comment"]
+    assert comment_hits and comment_hits[0]["id"] == note_id
 
     reply = await client.post(
         f"/api/objects/note/{note_id}/comments",

@@ -91,6 +91,9 @@
           <div><b>收件人：</b>{{ detail.to_addresses || '-' }}</div>
           <div><b>时间：</b>{{ formatTime(detail.date || detail.created_at) }}</div>
         </div>
+        <div class="detail-actions">
+          <el-button size="small" type="primary" plain @click="askAssistant">让助手处理</el-button>
+        </div>
         <div v-if="detail.ai_summary" class="detail-summary">
           <div class="detail-label">AI 摘要</div>
           {{ detail.ai_summary }}
@@ -128,6 +131,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import client from '@/api/client'
@@ -149,6 +153,8 @@ const showDetail = ref(false)
 const detail = ref<any>(null)
 const showAdd = ref(false)
 const creating = ref(false)
+const route = useRoute()
+const router = useRouter()
 
 const form = ref({
   name: '', email: '', username: '', password: '',
@@ -217,6 +223,11 @@ async function syncOne(id: number) {
   }
 }
 
+function askAssistant() {
+  if (!detail.value?.id) return
+  router.push({ path: '/chat', query: { ref: `mail_message:${detail.value.id}` } })
+}
+
 async function openMessage(m: any) {
   detail.value = m
   showDetail.value = true
@@ -265,6 +276,13 @@ function formatTime(value: any) {
 onMounted(async () => {
   await loadAccounts()
   await loadMessages()
+  const id = Number(route.query.message)
+  if (Number.isFinite(id) && id > 0) {
+    try {
+      const { data } = await client.get(`/plugins/mail/messages/${id}`)
+      openMessage(data)
+    } catch { /* ignore invalid deep link */ }
+  }
 })
 </script>
 
@@ -291,7 +309,8 @@ onMounted(async () => {
 .message-subject { margin: 5px 0; font-size: 14px; color: #1a1a2e; display: flex; gap: 6px; align-items: center; }
 .message-summary { font-size: 12px; color: #909399; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pager { text-align: center; padding-top: 12px; }
-.detail-meta { font-size: 13px; color: #606266; line-height: 2; margin-bottom: 14px; }
+.detail-meta { font-size: 13px; color: #606266; line-height: 2; margin-bottom: 8px; }
+.detail-actions { margin-bottom: 12px; }
 .detail-label { font-size: 12px; font-weight: 600; color: #1a1a2e; margin: 14px 0 6px; }
 .detail-summary { background: #f5f7fa; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #606266; line-height: 1.8; }
 .detail-body { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.8; color: #303133; background: #fafbfc; border-radius: 8px; padding: 12px; }

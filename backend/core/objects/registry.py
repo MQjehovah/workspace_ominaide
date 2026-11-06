@@ -369,6 +369,7 @@ async def search_objects(
     limit = max(1, min(int(limit or 20), 50))
     per_type = max(3, min(10, limit))
     results: list[dict] = []
+    seen: set[tuple[str, int]] = set()
     for object_type in selected:
         searcher = _SEARCHERS[object_type]
         try:
@@ -378,8 +379,36 @@ async def search_objects(
             continue
         for object_id in ids:
             item = await resolve_object(user_id, object_type, object_id)
-            if item is not None:
+            if item is not None and (object_type, object_id) not in seen:
+                seen.add((object_type, object_id))
+                item["match"] = "object"
                 results.append(item)
+
+    # Generated materials and comments are first-class searchable content too.
+    if query:
+        from core.objects.models import BusinessComment
+
+        async with async_session() as db:
+            rows = list((await db.execute(
+                select(BusinessComment).where(
+                    BusinessComment.user_id == user_id,
+                    BusinessComment.deleted_at.is_(None),
+                    BusinessComment.content.ilike(f"%{query}%"),
+                ).order_by(desc(BusinessComment.created_at)).limit(limit)
+            )).scalars().all())
+        for row in rows:
+            key = (row.object_type, row.object_id)
+            if key in seen:
+                continue
+            item = await resolve_object(user_id, row.object_type, row.object_id)
+            if item is None:
+                continue
+            seen.add(key)
+            item["match"] = "comment"
+            item["snippet"] = _clip(row.content, 200)
+            item["comment_id"] = row.id
+            results.append(item)
+
     results.sort(key=lambda item: str(item.get("time") or ""), reverse=True)
     return results[:limit]
 

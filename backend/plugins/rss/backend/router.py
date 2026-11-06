@@ -63,6 +63,18 @@ async def list_entries(
     return {"items": await _with_feed_titles(db, items), "total": total}
 
 
+@router.get("/entries/{entry_id}")
+async def get_entry(entry_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    row = (await db.execute(
+        select(Entry).join(Feed, Feed.id == Entry.feed_id).where(
+            Entry.id == entry_id, Feed.user_id == user["id"]
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, detail="Entry not found")
+    return (await _with_feed_titles(db, [row]))[0]
+
+
 @router.put("/entries/{entry_id}/read")
 async def read_entry(entry_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     ok = await service.mark_read(db, user["id"], entry_id)

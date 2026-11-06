@@ -49,6 +49,7 @@
             </p>
           </div>
           <div class="head-actions">
+            <el-button :icon="ChatDotRound" @click="askAssistant">让助手处理</el-button>
             <el-button :icon="ChatDotRound" @click="commentsOpen = true">评论</el-button>
             <el-button type="primary" :icon="VideoPlay" @click="openRun">发起 Coding Run</el-button>
             <el-popconfirm title="删除这个项目？会同时删除项目目录，不可恢复；历史 Run 保留。" @confirm="deleteProject">
@@ -219,6 +220,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { FolderOpened, Plus, Refresh, VideoPlay, ChatDotRound } from '@element-plus/icons-vue'
 import client from '@/api/client'
@@ -226,6 +228,8 @@ import { formatBackendDate } from '@/utils/date'
 import ObjectCommentsDrawer from '@/components/ObjectCommentsDrawer.vue'
 
 const projects = ref<any[]>([])
+const route = useRoute()
+const router = useRouter()
 const runs = ref<any[]>([])
 const selectedId = ref<number | null>(null)
 const selected = computed(() => projects.value.find(p => p.id === selectedId.value) || null)
@@ -278,6 +282,11 @@ async function loadProjects() {
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '加载项目失败')
   }
+}
+
+function askAssistant() {
+  if (!selected.value?.id) return
+  router.push({ path: '/chat', query: { ref: `project:${selected.value.id}` } })
 }
 
 function selectProject(id: number) {
@@ -436,7 +445,19 @@ async function startRun() {
   }
 }
 
-onMounted(loadProjects)
+onMounted(async () => {
+  await loadProjects()
+  const id = Number(route.query.project)
+  if (Number.isFinite(id) && id > 0) {
+    if (!projects.value.some((p) => p.id === id)) {
+      try {
+        const { data } = await client.get(`/projects/${id}`)
+        projects.value.unshift(data)
+      } catch { /* ignore invalid deep link */ }
+    }
+    if (projects.value.some((p) => p.id === id)) selectProject(id)
+  }
+})
 onUnmounted(stopRunPolling)
 </script>
 

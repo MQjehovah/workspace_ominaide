@@ -98,6 +98,7 @@
             </div>
           </div>
           <div class="note-actions">
+            <el-button text :icon="ChatDotRound" @click="askAssistant">让助手处理</el-button>
             <el-button text :icon="ChatDotRound" @click="commentsOpen = true">评论</el-button>
             <el-button text :icon="Clock" @click="openHistory">历史</el-button>
             <el-button text :icon="Download" @click="exportMarkdown">导出</el-button>
@@ -228,6 +229,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ChatDotRound, Clock, Delete, Download, FolderAdd, Link, Menu, MoreFilled, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '@/api/client'
@@ -242,6 +244,8 @@ function fmtDate(value?: string | null) {
 
 const tree = ref<any[]>([])
 const currentId = ref<number | null>(null)
+const route = useRoute()
+const router = useRouter()
 const noteTitle = ref('')
 const noteContent = ref('')
 const commentsOpen = ref(false)
@@ -360,6 +364,11 @@ async function createChildNote(parentId: number) {
     await client.post('/plugins/notes', { title: '无标题', content: '', parent_id: parentId })
     await loadTree()
   } catch (e) { console.error(e) }
+}
+
+function askAssistant() {
+  if (!currentId.value) return
+  router.push({ path: '/chat', query: { ref: `note:${currentId.value}` } })
 }
 
 async function openNote(id: number) {
@@ -633,10 +642,14 @@ function syncNotesViewport() {
   if (!isMobile.value) mobileListOpen.value = false
 }
 
-onMounted(() => {
+onMounted(async () => {
   syncNotesViewport()
   window.addEventListener('resize', syncNotesViewport)
-  loadTree()
+  await loadTree()
+  const id = Number(route.query.id)
+  if (Number.isFinite(id) && id > 0) {
+    await openNote(id)
+  }
 })
 
 onUnmounted(() => {

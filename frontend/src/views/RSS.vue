@@ -42,6 +42,7 @@
         <div v-else class="reader">
           <div class="reader-header">
             <button class="back-btn" @click="selectedEntry=null">← 返回</button>
+            <el-button size="small" type="primary" plain @click="askAssistant(selectedEntry)">让助手处理</el-button>
             <el-button :type="selectedEntry.starred ? 'warning' : 'default'" :icon="selectedEntry.starred ? 'star-filled' : 'star'" size="small" text @click="toggleStar(selectedEntry)" />
           </div>
           <h2 class="reader-title">{{ selectedEntry.title }}</h2>
@@ -82,6 +83,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import client from '@/api/client'
 import { ElMessage } from 'element-plus'
 import { parseBackendDate } from '@/utils/date'
@@ -91,6 +93,8 @@ const feeds = ref<any[]>([])
 const activeFeed = ref<number | null>(null)
 const entries = ref<any[]>([])
 const selectedEntry = ref<any>(null)
+const route = useRoute()
+const router = useRouter()
 const filter = ref('all')
 const searchQ = ref('')
 const page = ref(1)
@@ -168,6 +172,11 @@ async function refreshActiveFeed() {
   try { await client.post(`/rss/feeds/${activeFeed.value}/fetch`); loadEntries() } catch { ElMessage.error('刷新失败') }
   finally { refreshing.value = false }
 }
+function askAssistant(entry: any) {
+  if (!entry?.id) return
+  router.push({ path: '/chat', query: { ref: `rss_entry:${entry.id}` } })
+}
+
 async function openEntry(e: any) {
   selectedEntry.value = e
   if (!e.read) {
@@ -183,7 +192,16 @@ function formatTime(iso: string) {
   if (isNaN(d.getTime())) return ''
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
-onMounted(() => { loadFeeds(); loadEntries() })
+onMounted(async () => {
+  await Promise.all([loadFeeds(), loadEntries()])
+  const id = Number(route.query.entry)
+  if (Number.isFinite(id) && id > 0) {
+    try {
+      const { data } = await client.get(`/rss/entries/${id}`)
+      await openEntry(data)
+    } catch { /* ignore invalid deep link */ }
+  }
+})
 </script>
 
 <style scoped>

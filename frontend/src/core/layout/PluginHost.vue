@@ -31,6 +31,7 @@
                   {{ todo.title }}
                 </span>
                 <div style="display:flex; gap:2px">
+                  <el-button text size="small" @click.stop="askTodo(todo)">问</el-button>
                   <el-button text size="small" :icon="ChatDotRound" @click.stop="openComments(todo)" />
                   <el-button text size="small" :icon="Delete" @click.stop="deleteTodo(todo.id)" />
                 </div>
@@ -68,13 +69,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Plus, Delete, ChatDotRound } from '@element-plus/icons-vue'
 import NotesPage from '@/views/notes/NotesPage.vue'
 import ObjectCommentsDrawer from '@/components/ObjectCommentsDrawer.vue'
 import client from '@/api/client'
 
 const route = useRoute()
+const router = useRouter()
 const pluginName = computed(() => route.params.pluginName as string)
 
 interface TodoItem {
@@ -102,6 +104,10 @@ const commentTodo = ref<TodoItem | null>(null)
 function openComments(todo: TodoItem) {
   commentTodo.value = todo
   commentsOpen.value = true
+}
+
+function askTodo(todo: TodoItem) {
+  router.push({ path: '/chat', query: { ref: `todo:${todo.id}` } })
 }
 
 async function fetchTodos() {
@@ -149,7 +155,14 @@ function priorityType(p: number): string {
   return 'info'
 }
 
-onMounted(fetchTodos)
+onMounted(async () => {
+  await fetchTodos()
+  const id = Number(route.query.item)
+  if (Number.isFinite(id) && id > 0) {
+    const todo = todos.value.find((item) => item.id === id)
+    if (todo) openComments(todo)
+  }
+})
 </script>
 
 <style scoped>

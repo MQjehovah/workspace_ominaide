@@ -188,6 +188,7 @@
         <div v-if="textError" class="preview-center muted">{{ textError }}</div>
         <div class="preview-actions">
           <el-button type="primary" :icon="Download" @click="downloadFile(previewFileItem)">下载</el-button>
+          <el-button plain @click="askAssistant(previewFileItem)">让助手处理</el-button>
         </div>
         <div class="file-comments">
           <ObjectComments type="file" :object-id="previewFileItem.id" :title="previewFileItem.original_name" />
@@ -199,6 +200,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
@@ -213,6 +215,8 @@ import {
 } from '@element-plus/icons-vue'
 
 const store = useFileStore()
+const route = useRoute()
+const router = useRouter()
 const viewMode = ref<'grid' | 'list'>('grid')
 const previewVisible = ref(false)
 const previewFileItem = ref<FileItem | null>(null)
@@ -419,6 +423,11 @@ function streamSrc(file: FileItem): string {
   return apiUrl(`/files/${file.id}/stream?token=${encodeURIComponent(token)}`)
 }
 
+function askAssistant(file: FileItem | null) {
+  if (!file?.id) return
+  router.push({ path: '/chat', query: { ref: `file:${file.id}` } })
+}
+
 async function previewFile(file: FileItem) {
   previewFileItem.value = file
   previewVisible.value = true
@@ -479,7 +488,16 @@ async function downloadFile(file: FileItem) {
   }
 }
 
-onMounted(loadFiles)
+onMounted(async () => {
+  await loadFiles()
+  const id = Number(route.query.file)
+  if (Number.isFinite(id) && id > 0) {
+    try {
+      const { data } = await client.get(`/files/${id}`)
+      previewFile(data)
+    } catch { /* ignore invalid deep link */ }
+  }
+})
 </script>
 
 <style scoped>
