@@ -125,6 +125,13 @@
               text
               @click="store.toggleFavorite(row.id)"
             />
+            <el-button
+              v-if="!row.is_folder"
+              :icon="View"
+              text
+              title="预览"
+              @click="previewFile(row)"
+            />
             <el-dropdown trigger="click" @command="(cmd: string) => handleCommand(cmd, row)">
               <el-button text :icon="MoreFilled" />
               <template #dropdown>
@@ -174,7 +181,11 @@
           <video controls autoplay style="max-width:100%; max-height:500px" :src="previewSrc"></video>
         </div>
         <iframe v-else-if="isPdf" :src="previewSrc" style="width:100%; height:70vh; border:0"></iframe>
-        <div v-else class="preview-center muted">该类型暂不支持在线预览</div>
+        <div v-else-if="textLoading" class="preview-center muted">正在加载预览…</div>
+        <div v-else-if="isMarkdown" class="markdown-preview" v-html="renderedText"></div>
+        <pre v-else-if="isText" class="text-preview">{{ textContent }}</pre>
+        <div v-else class="preview-center muted">该类型暂不支持在线预览，可下载后查看。</div>
+        <div v-if="textError" class="preview-center muted">{{ textError }}</div>
         <div class="preview-actions">
           <el-button type="primary" :icon="Download" @click="downloadFile(previewFileItem)">下载</el-button>
         </div>
@@ -189,6 +200,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import { useFileStore, type FileItem } from '@/stores/core/file'
 import { apiUrl } from '@/api/base'
 import client from '@/api/client'
@@ -196,7 +209,7 @@ import { formatBackendDate } from '@/utils/date'
 import ObjectComments from '@/components/ObjectComments.vue'
 import {
   Delete, Document, Download, Edit, Folder, FolderAdd, Grid, Headset, List, Loading,
-  MoreFilled, Picture, Rank, Reading, RefreshLeft, Search, Star, StarFilled, Upload, VideoCamera,
+  MoreFilled, Picture, Rank, Reading, RefreshLeft, Search, Star, StarFilled, Upload, VideoCamera, View,
 } from '@element-plus/icons-vue'
 
 const store = useFileStore()
@@ -215,10 +228,28 @@ function fmtTime(value?: string | null) {
 
 const pathSegments = computed(() => currentPath.value.split('/').filter(Boolean))
 const previewMime = computed(() => previewFileItem.value?.mime_type || '')
+const previewName = computed(() => previewFileItem.value?.original_name || '')
 const isImage = computed(() => previewMime.value.startsWith('image/'))
 const isAudio = computed(() => previewMime.value.startsWith('audio/'))
 const isVideo = computed(() => previewMime.value.startsWith('video/'))
 const isPdf = computed(() => previewMime.value.includes('pdf'))
+const isMarkdown = computed(() => isTextFile(previewFileItem.value) && /\.(md|markdown)$/i.test(previewName.value))
+const isText = computed(() => isTextFile(previewFileItem.value))
+const textContent = ref('')
+const textLoading = ref(false)
+const textError = ref('')
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const renderedText = computed(() => DOMPurify.sanitize(md.render(textContent.value || '')))
+
+function isTextFile(file: FileItem | null): boolean {
+  if (!file || file.is_folder) return false
+  const mime = (file.mime_type || '').toLowerCase()
+  if (mime.startsWith('text/')) return true
+  if (/\.(md|markdown|txt|log|csv|tsv|json|jsonl|xml|yaml|yml|ini|conf|toml|sql|py|js|ts|tsx|jsx|vue|java|go|rs|c|cpp|h|hpp|css|scss|sh|bat|ps1|html|htm)$/i.test(file.original_name)) {
+    return true
+  }
+  return false
+}
 
 const iconMap: Record<string, any> = {
   Document, Picture, VideoCamera, Headset, Reading, Folder,
@@ -388,7 +419,27 @@ async function previewFile(file: FileItem) {
   previewFileItem.value = file
   previewVisible.value = true
   previewSrc.value = ''
+  textContent.value = ''
+  textError.value = ''
+  textLoading.value = false
   const mime = file.mime_type || ''
+  if (isTextFile(file)) {
+    textLoading.value = true
+    try {
+      const res = await client.get(`/files/${file.id}/download`, { responseType: 'blob' })
+      const blob = res.data as Blob
+      const sliced = blob.size > 1_000_000 ? blob.slice(0, 1_000_000) : blob
+      textContent.value = await sliced.text()
+      if (blob.size > 1_000_000) {
+        textContent.value += '\n\n…（文件过大，仅显示前 1MB）'
+      }
+    } catch {
+      textError.value = '文本预览加载失败，请下载查看。'
+    } finally {
+      textLoading.value = false
+    }
+    return
+  }
   if (mime.startsWith('image/') || mime.includes('pdf')) {
     try {
       const res = await clientDownloadUrl(file.id)
@@ -447,6 +498,20 @@ onMounted(loadFiles)
 .name-cell { display:flex; align-items:center; gap:8px; }
 .pager { display:flex; justify-content:center; margin-top:16px; }
 .preview-center { text-align:center; min-height:40px; }
+.text-preview {
+  max-height: 62vh; overflow: auto; margin: 0; padding: 14px;
+  background: #0f172a; color: #e2e8f0; border-radius: 10px;
+  font-size: 12.5px; line-height: 1.65; white-space: pre-wrap; word-break: break-word;
+}
+.markdown-preview {
+  max-height: 62vh; overflow: auto; padding: 4px 6px;
+  font-size: 13.5px; line-height: 1.75; color: #334155;
+}
+.markdown-preview :deep(h1), .markdown-preview :deep(h2), .markdown-preview :deep(h3) { color: #111827; }
+.markdown-preview :deep(pre) { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow: auto; }
+.markdown-preview :deep(code) { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
+.markdown-preview :deep(table) { border-collapse: collapse; width: 100%; }
+.markdown-preview :deep(th), .markdown-preview :deep(td) { border: 1px solid #e2e8f0; padding: 6px 8px; }
 .preview-actions { text-align:center; margin-top:12px; }
 .file-comments { margin-top: 18px; padding-top: 14px; border-top: 1px solid #eef1f7; }
 </style>
