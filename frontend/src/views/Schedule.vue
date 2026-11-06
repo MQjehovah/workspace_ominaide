@@ -41,6 +41,7 @@
             <div v-if="e.location" class="event-meta">地点：{{ e.location }}</div>
             <div v-if="e.source === 'dingtalk'" class="event-meta">
               <span v-if="e.external_meta?.organizer">组织者：{{ e.external_meta.organizer }}</span>
+              <span v-if="e.external_meta?.attendees?.length"> · 参会：{{ e.external_meta.attendees.map((a: any) => a.name).filter(Boolean).slice(0, 5).join('、') }}</span>
               <span v-if="e.external_meta?.rooms?.length"> · 会议室：{{ e.external_meta.rooms.map((r: any) => r.name).filter(Boolean).join('、') }}</span>
               <span v-if="e.external_meta?.meeting_room_code"> · 会议号 {{ e.external_meta.meeting_room_code }}</span>
               <a v-if="e.external_meta?.meeting_url" :href="e.external_meta.meeting_url" target="_blank" rel="noopener" class="meeting-link">加入会议</a>
