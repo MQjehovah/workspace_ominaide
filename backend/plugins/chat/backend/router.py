@@ -22,7 +22,7 @@ from core.bots.memory import build_bot_context
 from core.bots.registry import BotNotFound, get_active_bot, get_or_create_default_bot
 from plugins.chat.backend.schemas import (
     ChatRequest, ChatResponse, ChatHistoryItem, TranslateRequest, TranslateResponse,
-    AsrResponse, TtsRequest, SessionItem,
+    AsrResponse, TtsRequest, SessionItem, SessionRename,
 )
 from plugins.chat.backend.voice_stream import (
     iter_agent_events, take_sentences, tts_pcm,
@@ -241,6 +241,31 @@ async def list_sessions(
             )
             for s in r.scalars().all()
         ]
+
+
+@router.patch("/sessions/{session_id}")
+async def rename_session(
+    session_id: str,
+    req: SessionRename,
+    user: dict = Depends(get_current_user),
+):
+    from plugins.chat.backend.models import ChatSession
+    title = (req.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="title is required")
+    async with async_session() as db:
+        row = (await db.execute(
+            select(ChatSession).where(
+                ChatSession.user_id == user["id"],
+                ChatSession.session_id == session_id,
+            )
+        )).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        row.title = title[:200]
+        row.updated_at = datetime.utcnow()
+        await db.commit()
+    return {"message": "Renamed", "title": title[:200]}
 
 
 @router.delete("/sessions/{session_id}")

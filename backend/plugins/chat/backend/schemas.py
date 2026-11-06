@@ -64,3 +64,7 @@ class SessionItem(BaseModel):
     bot_id: int | None = None
 
     model_config = {"from_attributes": True}
+
+
+class SessionRename(BaseModel):
+    title: str

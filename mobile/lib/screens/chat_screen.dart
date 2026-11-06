@@ -49,11 +49,14 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _bootstrapping = false;
   bool _hasOlder = false;
   bool _loadingOlder = false;
+  bool _atBottom = true;
+  bool _showJump = false;
   int? _oldestId;
   bool _contextVisible = true;
   bool _stopRequested = false;
   StreamSubscription<String>? _streamSub;
   Completer<void>? _streamDone;
+  final ValueNotifier<bool> _canSend = ValueNotifier(false);
 
   late String _sessionId =
       widget.sessionId ?? 'mobile-${DateTime.now().microsecondsSinceEpoch}';
@@ -63,11 +66,29 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _title = widget.title;
+    _scroll.addListener(_onScroll);
+    _input.addListener(_onInputChanged);
     _bootstrap();
     if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
       _input.text = widget.initialQuery!;
       WidgetsBinding.instance.addPostFrameCallback((_) => _send());
     }
+  }
+
+  void _onInputChanged() {
+    _canSend.value = _input.text.trim().isNotEmpty;
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final atBottom =
+        _scroll.position.maxScrollExtent - _scroll.position.pixels < 80;
+    final showJump = !atBottom;
+    if (atBottom == _atBottom && showJump == _showJump) return;
+    setState(() {
+      _atBottom = atBottom;
+      _showJump = showJump;
+    });
   }
 
   Future<void> _bootstrap() async {
@@ -204,7 +225,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.add(assistant);
       _loading = true;
     });
-    _scrollToBottom();
+    _atBottom = true;
+    _scrollToBottom(force: true);
 
     _stopRequested = false;
     final buffer = StringBuffer();
@@ -300,7 +322,205 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _scrollToBottom() {
+  Future<void> _showMessageActions(_Message message, int index) async {
+    final palette = AppPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                dense: true,
+                title: Text(
+                  message.role == 'user' ? '你的消息' : 'AI 回复',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: palette.muted,
+                  ),
+                ),
+              ),
+              if (message.text.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.copy_rounded, size: 19),
+                  title: const Text('复制'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _copyMessage(message.text);
+                  },
+                ),
+              if (message.role == 'user')
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined, size: 19),
+                  title: const Text('编辑并重发'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _editUserMessage(index);
+                  },
+                ),
+              if (message.role == 'assistant' &&
+                  index == _messages.length - 1 &&
+                  !_loading)
+                ListTile(
+                  leading: const Icon(Icons.refresh_rounded, size: 19),
+                  title: const Text('重新生成'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _regenerateAt(index);
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _editUserMessage(int index) async {
+    if (_loading || index < 0 || index >= _messages.length) return;
+    final controller = TextEditingController(text: _messages[index].text);
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final palette = AppPalette.of(context);
+        return AlertDialog(
+          backgroundColor: palette.card,
+          title: Text(
+            '编辑并重发',
+            style: TextStyle(fontSize: 16, color: palette.ink),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 3,
+            maxLines: 8,
+            decoration: const InputDecoration(hintText: '修改这条消息'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('重发'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (text == null || text.isEmpty) return;
+    setState(() {
+      _messages.removeRange(index, _messages.length);
+    });
+    _input.text = text;
+    await _send();
+  }
+
+  Future<void> _regenerateAt(int assistantIndex) async {
+    if (_loading) return;
+    var userIndex = -1;
+    for (var i = assistantIndex - 1; i >= 0; i--) {
+      if (_messages[i].role == 'user') {
+        userIndex = i;
+        break;
+      }
+    }
+    if (userIndex < 0) return;
+    final text = _messages[userIndex].text;
+    setState(() {
+      _messages.removeRange(userIndex, _messages.length);
+    });
+    _input.text = text;
+    await _send();
+  }
+
+  Future<void> _renameSession(ChatSession session) async {
+    final controller = TextEditingController(text: session.title);
+    final title = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final palette = AppPalette.of(context);
+        return AlertDialog(
+          backgroundColor: palette.card,
+          title: Text(
+            '重命名会话',
+            style: TextStyle(fontSize: 16, color: palette.ink),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: '会话名称'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (title == null || title.isEmpty) return;
+    final ok = await ApiService().renameChatSession(session.id, title);
+    if (!mounted) return;
+    if (ok) {
+      if (session.id == _sessionId) setState(() => _title = title);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('会话已重命名')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('重命名失败')),
+      );
+    }
+  }
+
+  Future<void> _deleteSession(ChatSession session) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除会话？'),
+        content: Text('「${session.title}」及其消息会被删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok = await ApiService().deleteChatSession(session.id);
+    if (!mounted) return;
+    if (ok) {
+      if (session.id == _sessionId) _newChat();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('会话已删除')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('删除失败')),
+      );
+    }
+  }
+
+  void _scrollToBottom({bool force = false}) {
+    if (!force && !_atBottom) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
       _scroll.animateTo(
@@ -491,6 +711,28 @@ class _ChatScreenState extends State<ChatScreen> {
                         relativeTimeLabel(session.updatedAt),
                         style: TextStyle(fontSize: 11, color: palette.muted),
                       ),
+                      trailing: PopupMenuButton<String>(
+                        icon: Icon(
+                          Icons.more_horiz_rounded,
+                          size: 18,
+                          color: palette.muted,
+                        ),
+                        onSelected: (value) {
+                          Navigator.pop(sheetContext);
+                          if (value == 'rename') {
+                            _renameSession(session);
+                          } else if (value == 'delete') {
+                            _deleteSession(session);
+                          }
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'rename', child: Text('重命名')),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Text('删除', style: TextStyle(color: Colors.red)),
+                          ),
+                        ],
+                      ),
                       onTap: () {
                         Navigator.pop(sheetContext);
                         _switchSession(session);
@@ -510,6 +752,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _streamSub?.cancel();
     final done = _streamDone;
     if (done != null && !done.isCompleted) done.complete();
+    _scroll.removeListener(_onScroll);
+    _input.removeListener(_onInputChanged);
+    _canSend.dispose();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -527,7 +772,10 @@ class _ChatScreenState extends State<ChatScreen> {
             if (widget.contextLabel != null && _contextVisible)
               _buildContextBanner(palette),
             Expanded(
-              child: _bootstrapping
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: _bootstrapping
                   ? Center(
                       child: CircularProgressIndicator(color: palette.primary),
                     )
@@ -574,12 +822,18 @@ class _ChatScreenState extends State<ChatScreen> {
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                ChatBubble(
-                                  role: message.role,
-                                  text: message.text,
-                                  streaming: isLast && _loading,
-                                  error: message.error,
-                                  onRetry: message.error ? _retry : null,
+                                GestureDetector(
+                                  onLongPress: () => _showMessageActions(
+                                    message,
+                                    messageIndex,
+                                  ),
+                                  child: ChatBubble(
+                                    role: message.role,
+                                    text: message.text,
+                                    streaming: isLast && _loading,
+                                    error: message.error,
+                                    onRetry: message.error ? _retry : null,
+                                  ),
                                 ),
                                 if (isLast &&
                                     !_loading &&
@@ -636,6 +890,25 @@ class _ChatScreenState extends State<ChatScreen> {
                             );
                           },
                         ),
+                  ),
+                  if (_showJump)
+                    Positioned(
+                      right: 14,
+                      bottom: 14,
+                      child: FloatingActionButton.small(
+                        heroTag: null,
+                        backgroundColor: palette.card,
+                        foregroundColor: palette.primary,
+                        elevation: 2,
+                        onPressed: () {
+                          setState(() => _atBottom = true);
+                          _scrollToBottom(force: true);
+                        },
+                        child: const Icon(Icons.arrow_downward_rounded, size: 19),
+                      ),
+                    ),
+                ],
+              ),
             ),
             _buildComposer(palette),
           ],
@@ -683,7 +956,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           ),
                           Text(
-                            '点击切换会话',
+                            _loading ? '正在生成…' : '点击切换会话',
                             style: TextStyle(fontSize: 10.5, color: palette.muted),
                           ),
                         ],
@@ -857,31 +1130,42 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               const SizedBox(width: 7),
-              InkWell(
-                onTap: _loading ? _stop : _send,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [palette.primaryLight, palette.primary],
-                    ),
+              ValueListenableBuilder<bool>(
+                valueListenable: _canSend,
+                builder: (context, canSend, _) {
+                  final enabled = _loading || canSend;
+                  return InkWell(
+                    onTap: !enabled
+                        ? null
+                        : (_loading ? _stop : _send),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: palette.primary.withValues(alpha: 0.22),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+                    child: Opacity(
+                      opacity: enabled ? 1 : 0.45,
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [palette.primaryLight, palette.primary],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: palette.primary.withValues(alpha: 0.22),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _loading ? Icons.stop_rounded : Icons.send_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                       ),
-                    ],
-                  ),
-                  child: Icon(
-                    _loading ? Icons.stop_rounded : Icons.send_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
             ],
           ),

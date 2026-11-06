@@ -690,6 +690,16 @@ class ApiService {
         .toList();
   }
 
+  Future<bool> renameChatSession(String sessionId, String title) async {
+    final res = await patch('/chat/sessions/$sessionId', {'title': title});
+    return res.statusCode == 200;
+  }
+
+  Future<bool> deleteChatSession(String sessionId) async {
+    final res = await delete('/chat/sessions/$sessionId');
+    return res.statusCode == 200;
+  }
+
   // -- Chief of Staff --
   Future<DailyBrief?> getDailyBrief() async {
     final res = await get('/cos/daily-brief');
