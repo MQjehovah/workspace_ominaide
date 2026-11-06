@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/file_item.dart';
+import '../models/chat_session.dart';
+import '../models/cos_models.dart';
 import 'chat_stream_stub.dart'
     if (dart.library.html) 'chat_stream_web.dart'
     if (dart.library.io) 'chat_stream_io.dart';
@@ -506,5 +508,180 @@ class ApiService {
 
   Future<void> removeSongFromPlaylist(int playlistId, int itemId) async {
     await http.delete(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs/$itemId'), headers: _headers);
+  }
+
+  // -- Chat sessions --
+  Future<List<ChatSession>> listChatSessions() async {
+    final res = await get('/chat/sessions');
+    if (res.statusCode != 200) return [];
+    final dynamic data = decodeJson(res);
+    if (data is! List) return [];
+    return data
+        .whereType<Map>()
+        .map((e) => ChatSession.fromJson(e.map((k, v) => MapEntry(k.toString(), v))))
+        .where((s) => s.id.isNotEmpty)
+        .toList();
+  }
+
+  // -- Chief of Staff --
+  Future<DailyBrief?> getDailyBrief() async {
+    final res = await get('/cos/daily-brief');
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    if (data is! Map) return null;
+    return DailyBrief.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+  }
+
+  Future<WeeklyReview?> getWeeklyReview({int weeks = 1}) async {
+    final res = await get('/cos/weekly-review?weeks=$weeks');
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    if (data is! Map) return null;
+    return WeeklyReview.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+  }
+
+  Future<TriageSnapshot?> getTriage({int days = 3}) async {
+    final res = await get('/cos/triage?days=$days');
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    if (data is! Map) return null;
+    return TriageSnapshot.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+  }
+
+  Future<Map<String, dynamic>?> getDraftReply({
+    String source = 'mail',
+    int? messageId,
+    String? message,
+    String? subject,
+    String tone = 'professional',
+  }) async {
+    final res = await post('/cos/draft-reply', {
+      'source': source,
+      if (messageId != null) 'message_id': messageId,
+      if (message != null) 'message': message,
+      if (subject != null) 'subject': subject,
+      'tone': tone,
+    });
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+  }
+
+  // -- Mail --
+  Future<List<Map<String, dynamic>>> listMailMessages({int limit = 50}) async {
+    final res = await get('/plugins/mail/messages?page_size=$limit');
+    if (res.statusCode != 200) return [];
+    final dynamic data = decodeJson(res);
+    final List list = data is Map
+        ? (data['items'] as List? ?? const [])
+        : (data is List ? data : const []);
+    return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+  }
+
+  Future<Map<String, dynamic>?> getMailMessage(int id) async {
+    final res = await get('/plugins/mail/messages/$id');
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+  }
+
+  // -- Memory --
+  Future<List<Map<String, dynamic>>> listMemoryCandidates({String status = 'pending'}) async {
+    final res = await get('/memory/candidates?status=$status&limit=100');
+    if (res.statusCode != 200) return [];
+    final dynamic data = decodeJson(res);
+    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
+    return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listMemoryRecords() async {
+    final res = await get('/memory/records?limit=100');
+    if (res.statusCode != 200) return [];
+    final dynamic data = decodeJson(res);
+    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
+    return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+  }
+
+  Future<bool> approveMemory(int id) async {
+    final res = await post('/memory/candidates/$id/approve', const {});
+    return res.statusCode == 200;
+  }
+
+  Future<bool> rejectMemory(int id) async {
+    final res = await post('/memory/candidates/$id/reject', const {});
+    return res.statusCode == 200;
+  }
+
+  Future<bool> forgetMemory(int id) async {
+    final res = await delete('/memory/records/$id');
+    return res.statusCode == 200;
+  }
+
+  Future<Map<String, dynamic>?> getMemoryProfile() async {
+    final res = await get('/memory/profile');
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+  }
+
+  // -- Other business objects --
+  Future<List<Map<String, dynamic>>> listProjects() async {
+    final res = await get('/projects');
+    if (res.statusCode != 200) return [];
+    final dynamic data = decodeJson(res);
+    if (data is! List) return [];
+    return data.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listRssEntries({int limit = 30}) async {
+    final res = await get('/rss/entries?page_size=$limit');
+    if (res.statusCode != 200) return [];
+    final dynamic data = decodeJson(res);
+    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
+    return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listMcpServers() async {
+    final res = await get('/mcp/servers');
+    if (res.statusCode != 200) return [];
+    final dynamic data = decodeJson(res);
+    final list = data is Map
+        ? ((data['servers'] ?? data['items']) as List? ?? const [])
+        : (data is List ? data : const []);
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>?> getMe() async {
+    final res = await get('/auth/me');
+    if (res.statusCode != 200) return null;
+    final dynamic data = decodeJson(res);
+    return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+  }
+
+  // -- Cross-device appearance settings --
+  Future<Map<String, dynamic>> getAppearanceSettings() async {
+    final res = await get('/sync/settings/appearance');
+    if (res.statusCode != 200) return {};
+    final dynamic data = decodeJson(res);
+    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
+    final result = <String, dynamic>{};
+    for (final item in list.whereType<Map>()) {
+      result[(item['key'] ?? '').toString()] = item['value'];
+    }
+    return result;
+  }
+
+  Future<void> pushAppearanceSetting(String key, Object? value) async {
+    try {
+      await put('/sync/settings/appearance/$key', {
+        'value': value,
+        'device_id': 'mobile',
+      });
+    } catch (_) {
+      // Cross-device sync is best-effort; local settings remain authoritative.
+    }
   }
 }
