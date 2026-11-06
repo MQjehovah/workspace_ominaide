@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/chat_session.dart';
 import '../services/api_service.dart';
+import '../services/speech_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import '../widgets/chat_bubble.dart';
@@ -54,6 +55,8 @@ class _ChatScreenState extends State<ChatScreen> {
   int? _oldestId;
   bool _contextVisible = true;
   bool _stopRequested = false;
+  bool _listening = false;
+  String _voiceBase = '';
   StreamSubscription<String>? _streamSub;
   Completer<void>? _streamDone;
   final ValueNotifier<bool> _canSend = ValueNotifier(false);
@@ -77,6 +80,68 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _onInputChanged() {
     _canSend.value = _input.text.trim().isNotEmpty;
+  }
+
+  Future<void> _toggleVoice() async {
+    if (_loading) return;
+    if (_listening) {
+      await speechService.stop();
+      if (mounted) setState(() => _listening = false);
+      return;
+    }
+    final available = await speechService.initialize(
+      onStatus: _onSpeechStatus,
+      onError: _onSpeechError,
+    );
+    if (!mounted) return;
+    if (!available) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法使用语音识别，请检查麦克风权限')),
+      );
+      return;
+    }
+    final locale = await speechService.preferredLocale();
+    if (!mounted) return;
+    _voiceBase = _input.text.trim();
+    setState(() => _listening = true);
+    try {
+      await speechService.start(
+        localeId: locale,
+        onResult: (text, isFinal) {
+          if (!mounted || _loading) return;
+          final joined = [_voiceBase, text.trim()]
+              .where((value) => value.isNotEmpty)
+              .join(' ');
+          _input.text = joined;
+          _input.selection = TextSelection.fromPosition(
+            TextPosition(offset: _input.text.length),
+          );
+          _canSend.value = joined.isNotEmpty;
+          if (isFinal && mounted) setState(() => _listening = false);
+        },
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _listening = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('语音识别启动失败')),
+      );
+    }
+  }
+
+  void _onSpeechStatus(String status) {
+    if (!mounted || !_listening) return;
+    if (status == 'done' || status == 'notListening') {
+      setState(() => _listening = false);
+    }
+  }
+
+  void _onSpeechError(String message) {
+    if (!mounted) return;
+    setState(() => _listening = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('语音识别失败：$message')),
+    );
   }
 
   void _onScroll() {
@@ -204,6 +269,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _send() async {
     final text = _input.text.trim();
     if (text.isEmpty || _loading) return;
+    if (_listening) {
+      await speechService.stop();
+      if (mounted) setState(() => _listening = false);
+    }
     _input.clear();
 
     final history = _messages
@@ -749,6 +818,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    speechService.cancel();
     _streamSub?.cancel();
     final done = _streamDone;
     if (done != null && !done.isCompleted) done.complete();
@@ -1094,6 +1164,39 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_listening)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: palette.accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.graphic_eq_rounded,
+                      size: 15,
+                      color: palette.accent,
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        '正在听… 说完点麦克风停止',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: palette.accent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -1130,6 +1233,27 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               const SizedBox(width: 7),
+              Tooltip(
+                message: _listening ? '停止语音输入' : '语音输入',
+                child: InkWell(
+                  onTap: _loading ? null : _toggleVoice,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: _listening ? palette.accent : palette.primarySoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _listening ? Icons.stop_rounded : Icons.mic_none_rounded,
+                      size: 19,
+                      color: _listening ? Colors.white : palette.primary,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               ValueListenableBuilder<bool>(
                 valueListenable: _canSend,
                 builder: (context, canSend, _) {
