@@ -97,7 +97,7 @@
 import { ref, computed, onMounted } from 'vue'
 import client from '@/api/client'
 import { Refresh } from '@element-plus/icons-vue'
-import { parseBackendDate } from '@/utils/date'
+import { formatLocalDate, parseBackendDate } from '@/utils/date'
 
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -208,6 +208,13 @@ function detailText(d: any): string {
   const parts: string[] = []
   if (d.app) parts.push(friendlyApp(d.app))
   if (d.title) parts.push(clip(d.title, 40))
+  if (d.start_time) parts.push(`开始 ${clip(formatLocalDate(d.start_time), 16)}`)
+  if (d.end_time) parts.push(`结束 ${clip(formatLocalDate(d.end_time), 16)}`)
+  if (d.due_date) parts.push(`截止 ${clip(formatLocalDate(d.due_date), 16)}`)
+  if (d.source) parts.push(`来源 ${clip(d.source, 12)}`)
+  if (d.filename) parts.push(`文件 ${clip(d.filename, 30)}`)
+  if (d.url) parts.push(`链接 ${clip(d.url, 40)}`)
+  if (d.content_length) parts.push(`长度 ${d.content_length}`)
   if (d.tool_name) parts.push(`工具 ${d.tool_name}`)
   if (typeof d.approved === 'boolean') parts.push(d.approved ? '已批准' : '已拒绝')
   if (d.reason) parts.push(`原因：${clip(d.reason, 40)}`)
@@ -225,7 +232,15 @@ function detailText(d: any): string {
   if (d.input) parts.push(`输入：${clip(d.input, 50)}`)
   if (d.output) parts.push(`输出：${clip(d.output, 60)}`)
   if (d.error) parts.push(`错误：${clip(d.error, 50)}`)
+  if (d.notes) parts.push(`备注：${clip(d.notes, 40)}`)
+  if (d.description) parts.push(`描述：${clip(d.description, 40)}`)
   if (d.status) parts.push(`状态 ${d.status}`)
+  if (d.priority !== undefined && d.priority !== null) parts.push(`优先级 ${d.priority}`)
+  if (Array.isArray(d.tags) && d.tags.length) parts.push(`标签 ${d.tags.slice(0, 4).join(', ')}`)
+  if (d.changes && typeof d.changes === 'object') {
+    const keys = Object.keys(d.changes).slice(0, 6)
+    if (keys.length) parts.push(`变更 ${keys.join(', ')}`)
+  }
   if (d.tokens_in || d.tokens_out) parts.push(`Token ${d.tokens_in || 0}/${d.tokens_out || 0}`)
   if (d.minutes) parts.push(`${d.minutes} 分钟`)
   if (d.length) parts.push(`长度 ${d.length}`)

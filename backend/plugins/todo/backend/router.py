@@ -9,6 +9,19 @@ from plugins.todo.backend import service as todo_service
 router = APIRouter(tags=["todo-plugin"])
 
 
+def _todo_details(todo, **extra) -> dict:
+    return {
+        "todo_id": todo.id,
+        "title": todo.title,
+        "description": (todo.description or "")[:500],
+        "status": todo.status,
+        "priority": todo.priority,
+        "due_date": todo.due_date.isoformat() if todo.due_date else None,
+        "tags": todo.tags or [],
+        **extra,
+    }
+
+
 @router.post("/items", response_model=TodoResponse, status_code=201)
 async def create_todo(
     req: TodoCreate,
@@ -16,7 +29,8 @@ async def create_todo(
     db: AsyncSession = Depends(get_db),
 ):
     todo = await todo_service.create_todo(db, user["id"], req)
-    await record_event(db, user["id"], "todo.created", "todo", todo.id, f"创建待办: {todo.title}")
+    await record_event(db, user["id"], "todo.created", "todo", todo.id,
+                       f"创建待办: {todo.title}", _todo_details(todo))
     return TodoResponse.model_validate(todo)
 
 
@@ -53,8 +67,11 @@ async def update_todo(
 ):
     try:
         todo = await todo_service.update_todo(db, user["id"], todo_id, req)
-        changes = {k: v for k, v in req.model_dump(exclude_none=True).items() if v is not None}
-        await record_event(db, user["id"], "todo.updated", "todo", todo_id, f"修改待办: {todo.title}", changes)
+        changes = {k: (v[:200] if isinstance(v, str) else v)
+                   for k, v in req.model_dump(exclude_none=True).items()}
+        await record_event(db, user["id"], "todo.updated", "todo", todo_id,
+                           f"修改待办: {todo.title}",
+                           _todo_details(todo, changes=changes))
         return TodoResponse.model_validate(todo)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -69,8 +86,10 @@ async def delete_todo(
     try:
         todo = await todo_service.get_todo(db, user["id"], todo_id)
         title = todo.title if todo else ""
+        details = _todo_details(todo) if todo else {}
         await todo_service.delete_todo(db, user["id"], todo_id)
-        await record_event(db, user["id"], "todo.deleted", "todo", todo_id, f"删除待办: {title}")
+        await record_event(db, user["id"], "todo.deleted", "todo", todo_id,
+                           f"删除待办: {title}", details)
         return {"message": "Todo deleted"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

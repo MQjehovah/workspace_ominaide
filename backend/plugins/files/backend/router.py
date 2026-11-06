@@ -126,7 +126,10 @@ async def confirm_upload(
 ):
     try:
         file_record = await file_service.confirm_upload(db, user["id"], req.file_id)
-        await record_event(db, user["id"], "file.uploaded", "file", file_record.id, f"上传文件: {file_record.original_name}", {"size": file_record.size, "mime": file_record.mime_type})
+        await record_event(db, user["id"], "file.uploaded", "file", file_record.id,
+                           f"上传文件: {file_record.original_name}",
+                           {"file_id": file_record.id, "name": file_record.original_name,
+                            "size": file_record.size, "mime": file_record.mime_type})
         background_tasks.add_task(index_file_for_search, file_record, user["id"])
         return FileResponse.model_validate(file_record)
     except ValueError as e:
@@ -328,7 +331,11 @@ async def trash_file(
     try:
         f = await file_service.get_file(db, user["id"], file_id)
         await file_service.trash_file(db, user["id"], file_id)
-        if f: await record_event(db, user["id"], "file.trashed", "file", file_id, f"删除文件: {f.original_name}")
+        if f: await record_event(
+            db, user["id"], "file.trashed", "file", file_id,
+            f"删除文件: {f.original_name}",
+            {"file_id": file_id, "name": f.original_name, "size": f.size},
+        )
         return {"message": "File moved to trash"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -368,8 +375,13 @@ async def rename_file(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        existing = await file_service.get_file(db, user["id"], file_id)
+        old_name = existing.original_name if existing else ""
         file_record = await file_service.rename_file(db, user["id"], file_id, req.new_name)
-        await record_event(db, user["id"], "file.renamed", "file", file_id, f"重命名文件: {file_record.original_name}", {"old_name": file_record.original_name})
+        await record_event(db, user["id"], "file.renamed", "file", file_id,
+                           f"重命名文件: {file_record.original_name}",
+                           {"file_id": file_id, "name": file_record.original_name,
+                            "old_name": old_name})
         return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -384,7 +396,10 @@ async def move_file(
 ):
     try:
         file_record = await file_service.move_file(db, user["id"], file_id, req.new_folder_path)
-        await record_event(db, user["id"], "file.moved", "file", file_id, f"移动文件: {file_record.original_name}", {"new_path": req.new_folder_path})
+        await record_event(db, user["id"], "file.moved", "file", file_id,
+                           f"移动文件: {file_record.original_name}",
+                           {"file_id": file_id, "name": file_record.original_name,
+                            "new_path": req.new_folder_path})
         return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

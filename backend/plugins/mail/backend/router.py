@@ -238,7 +238,14 @@ async def report_mail_event(
         await record_event(
             db, user["id"], "mail.received", "email", event.id,
             f"新邮件: {event.subject or ''}",
-            {"from": event.from_address, "date": event.date, "important": event.important},
+            {
+                "message_id": event.id,
+                "from": event.from_address,
+                "subject": event.subject,
+                "date": event.date,
+                "important": event.important,
+                "preview": (event.preview or event.content or "")[:300],
+            },
         )
     except Exception:
         pass

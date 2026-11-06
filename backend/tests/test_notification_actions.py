@@ -47,6 +47,17 @@ async def _create_notification(user_id: int, actions: list, title: str = "测试
 async def test_notification_complete_todo_action(client):
     token, user_id = await _new_user(client)
     todo_id = await _create_todo(client, token, "提交周报")
+
+    r = await client.get(
+        "/api/activities",
+        params={"event_type": "todo.created", "limit": 10},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    created = [e for e in r.json() if e.get("entity_id") == todo_id]
+    assert created
+    assert created[0]["details"]["title"] == "提交周报"
+    assert created[0]["details"]["status"] == "pending"
     nid = await _create_notification(user_id, [
         {"key": "complete", "label": "完成", "kind": "complete_todo", "todo_id": todo_id},
     ])

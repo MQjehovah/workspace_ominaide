@@ -13,6 +13,19 @@ from plugins.notes.backend import importers
 router = APIRouter(prefix="/api/plugins/notes", tags=["notes-plugin"])
 
 
+def _note_details(note, **extra) -> dict:
+    content = note.content or ""
+    return {
+        "note_id": note.id,
+        "title": note.title,
+        "parent_id": note.parent_id,
+        "is_folder": bool(note.is_folder),
+        "content_length": len(content),
+        "preview": content[:500],
+        **extra,
+    }
+
+
 class MoveNoteRequest(BaseModel):
     parent_id: int | None = None
     sort_order: int | None = None
@@ -80,7 +93,8 @@ async def import_file(
         ),
     )
     await record_event(db, user["id"], "note.imported", "note", note.id,
-                       f"导入知识: {note.title}")
+                       f"导入知识: {note.title}",
+                       _note_details(note, source="file", filename=filename))
     return NoteResponse.model_validate(note)
 
 
@@ -132,7 +146,8 @@ async def import_library_file(
         ),
     )
     await record_event(db, user["id"], "note.imported", "note", note.id,
-                       f"文件库导入: {note.title}")
+                       f"文件库导入: {note.title}",
+                       _note_details(note, source="library", filename=filename))
     return NoteResponse.model_validate(note)
 
 
@@ -160,7 +175,8 @@ async def import_url(
         ),
     )
     await record_event(db, user["id"], "note.imported", "note", note.id,
-                       f"网页导入: {note.title}")
+                       f"网页导入: {note.title}",
+                       _note_details(note, source="url", url=req.url))
     return NoteResponse.model_validate(note)
 
 
@@ -198,7 +214,9 @@ async def create_note(
         note = await notes_service.create_note(db, user["id"], req, defer_index=defer_index)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    await record_event(db, user["id"], "note.created", "note", note.id, f"创建笔记: {note.title}")
+    await record_event(db, user["id"], "note.created", "note", note.id,
+                       f"创建笔记: {note.title}",
+                       _note_details(note))
     return NoteResponse.model_validate(note)
 
 
@@ -304,7 +322,10 @@ async def update_note(
 ):
     try:
         note = await notes_service.update_note(db, user["id"], note_id, req)
-        await record_event(db, user["id"], "note.updated", "note", note_id, f"修改笔记: {note.title}")
+        changes = sorted(req.model_dump(exclude_unset=True).keys())
+        await record_event(db, user["id"], "note.updated", "note", note_id,
+                           f"修改笔记: {note.title}",
+                           _note_details(note, changes=changes))
         return NoteResponse.model_validate(note)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -346,7 +367,9 @@ async def restore_note_version(
 ):
     try:
         note = await notes_service.restore_version(db, user["id"], note_id, version_id)
-        await record_event(db, user["id"], "note.restored", "note", note_id, f"恢复笔记版本: {note.title}")
+        await record_event(db, user["id"], "note.restored", "note", note_id,
+                           f"恢复笔记版本: {note.title}",
+                           _note_details(note, version_id=version_id))
         return NoteResponse.model_validate(note)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -361,8 +384,10 @@ async def delete_note(
     try:
         note = await notes_service.get_note(db, user["id"], note_id)
         title = note.title if note else "未知"
+        details = _note_details(note) if note else {}
         await notes_service.delete_note(db, user["id"], note_id)
-        await record_event(db, user["id"], "note.deleted", "note", note_id, f"删除笔记: {title}")
+        await record_event(db, user["id"], "note.deleted", "note", note_id,
+                           f"删除笔记: {title}", details)
         return {"message": "Note deleted"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

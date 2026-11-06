@@ -85,6 +85,17 @@ async def test_schedule_accepts_aware_datetimes(client, admin_token):
     event_id = r.json()["id"]
 
     r = await client.get(
+        "/api/activities",
+        params={"event_type": "schedule.created", "limit": 10},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    created = [e for e in r.json() if e.get("entity_id") == event_id]
+    assert created
+    assert created[0]["details"]["title"] == "TZ 测试日程"
+    assert created[0]["details"]["start_time"]
+
+    r = await client.get(
         "/api/schedule?start=2026-11-04T16:00:00Z&end=2026-11-05T16:00:00Z",
         headers=auth(admin_token),
     )

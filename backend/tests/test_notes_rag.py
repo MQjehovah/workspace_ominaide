@@ -19,6 +19,18 @@ async def test_notes_rag_index_search_and_status(client, admin_token):
     assert r.status_code == 201, r.text
     note_id = r.json()["id"]
 
+    r = await client.get(
+        "/api/activities",
+        params={"event_type": "note.created", "limit": 10},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    created = [e for e in r.json() if e.get("entity_id") == note_id]
+    assert created
+    assert created[0]["details"]["title"] == "Q3 预算方案"
+    assert created[0]["details"]["content_length"] > 0
+    assert "预算" in created[0]["details"]["preview"]
+
     r = await client.post(
         "/api/plugins/notes/rag/reindex",
         json={"limit": 50},

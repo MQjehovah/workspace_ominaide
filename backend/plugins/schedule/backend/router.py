@@ -14,6 +14,19 @@ from plugins.schedule.backend import service
 router = APIRouter(prefix="/api/schedule", tags=["schedule"])
 
 
+def _event_details(ev, **extra) -> dict:
+    return {
+        "event_id": ev.id,
+        "title": ev.title,
+        "start_time": ev.start_time.isoformat() if ev.start_time else None,
+        "end_time": ev.end_time.isoformat() if ev.end_time else None,
+        "notes": (ev.notes or "")[:500],
+        "color": ev.color,
+        "remind_before": ev.remind_before,
+        **extra,
+    }
+
+
 @router.get("", response_model=list[EventResponse])
 async def list_events(
     start: str | None = Query(None),
@@ -36,7 +49,8 @@ async def create_event(
     db: AsyncSession = Depends(get_db),
 ):
     ev = await service.create_event(db, user["id"], req)
-    await record_event(db, user["id"], "schedule.created", "schedule", ev.id, f"创建日程: {ev.title}")
+    await record_event(db, user["id"], "schedule.created", "schedule", ev.id,
+                       f"创建日程: {ev.title}", _event_details(ev))
     return ev
 
 
@@ -50,7 +64,10 @@ async def update_event(
     ev = await service.update_event(db, user["id"], event_id, req)
     if not ev:
         raise HTTPException(404, detail="Event not found")
-    await record_event(db, user["id"], "schedule.updated", "schedule", event_id, f"修改日程: {ev.title}")
+    changes = sorted(req.model_dump(exclude_unset=True).keys())
+    await record_event(db, user["id"], "schedule.updated", "schedule", event_id,
+                       f"修改日程: {ev.title}",
+                       _event_details(ev, changes=changes))
     return ev
 
 
@@ -62,8 +79,10 @@ async def delete_event(
 ):
     ev = await service.get_event(db, user["id"], event_id)
     title = ev.title if ev else "未知"
+    details = _event_details(ev) if ev else {}
     ok = await service.delete_event(db, user["id"], event_id)
     if not ok:
         raise HTTPException(404, detail="Event not found")
-    await record_event(db, user["id"], "schedule.deleted", "schedule", event_id, f"删除日程: {title}")
+    await record_event(db, user["id"], "schedule.deleted", "schedule", event_id,
+                       f"删除日程: {title}", details)
     return {"message": "Deleted"}
