@@ -284,6 +284,8 @@ async def scheduler_loop():
     global _last_dingtalk_calendar_sync
     while True:
         try:
+            now = datetime.now()
+            today_key = now.strftime("%Y-%m-%d")
             await _check_reminders()
 
             from core.config.settings import settings as _settings
