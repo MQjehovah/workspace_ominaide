@@ -21,11 +21,12 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <Preferences.h>
+#include "config.h"
+#include "wifi_net.h"
 #include "portal.h"
 #include "ESP_I2S.h"
 #include "ESP_SR.h"
 #include "Arduino_GFX_Library.h"
-#include "config.h"
 #include "audio_hal.h"
 #include "es7210.h"
 #include "es8311.h"
@@ -475,26 +476,114 @@ static void playWav(uint32_t rate, const uint8_t* data, size_t len) {
 // WiFi + NTP
 // ============================================================================
 bool wifiOk = false;
-uint32_t tWifiRetry = 0;
 bool ntpRequested = false, ntpSynced = false;
 uint32_t tNtpStart = 0;
+
+// 多网络自动连接：扫描 → 按信号强度依次尝试已保存网络 → 全失败退避后重扫。
+enum { WIFI_IDLE, WIFI_SCANNING, WIFI_TRYING, WIFI_BACKOFF };
+static int      wifiState = WIFI_IDLE;
+static uint32_t wifiDeadline = 0;
+static uint32_t wifiBackoffAt = 0;
+static int      wifiOrder[WIFI_MAX_NETS];       // 待尝试的 g_wifiNets 下标（强→弱）
+static int      wifiOrderCount = 0;
+static int      wifiOrderIdx = 0;
+static String   wifiScanSsid[24];               // 扫描结果（保持存活，供 c_str 使用）
+
+static void wifiBeginCandidate(int idx) {
+    strncpy(cfgSsid, g_wifiNets[idx].ssid, sizeof(cfgSsid) - 1);
+    cfgSsid[sizeof(cfgSsid) - 1] = '\0';
+    strncpy(cfgWifiPass, g_wifiNets[idx].pass, sizeof(cfgWifiPass) - 1);
+    cfgWifiPass[sizeof(cfgWifiPass) - 1] = '\0';
+    Serial.printf("[WiFi] try \"%s\"\n", cfgSsid);
+    WiFi.disconnect();
+    WiFi.begin(cfgSsid, cfgWifiPass);
+    wifiDeadline = millis() + 8000;
+    wifiState = WIFI_TRYING;
+}
+
+static void wifiBackoff(uint32_t ms) {
+    wifiState = WIFI_BACKOFF;
+    wifiBackoffAt = millis() + ms;
+    wifiOrderCount = 0;
+}
+
+// 立即重新扫描（清掉退避等待）
+static void wifiRequestConnect() {
+    if (!g_wifiNetCount) return;
+    WiFi.scanDelete();
+    WiFi.scanNetworks(true, true);          // 异步扫描，不阻塞 loop
+    wifiDeadline = millis() + 8000;
+    wifiState = WIFI_SCANNING;
+}
 
 void wifiTick() {
     if (!screenOn) return;                 // 息屏低功耗期间射频已关，别碰
     bool up = (WiFi.status() == WL_CONNECTED);
     if (up != wifiOk) {
         wifiOk = up;
-        if (up) Serial.printf("[WiFi] connected, IP=%s RSSI=%d\n",
-                              WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        if (up) Serial.printf("[WiFi] connected \"%s\", IP=%s RSSI=%d\n",
+                              cfgSsid, WiFi.localIP().toString().c_str(), WiFi.RSSI());
         else    Serial.println("[WiFi] lost");
         int rssi = up ? WiFi.RSSI() : -100;
         ui::setWifi(up, rssi >= -60 ? 3 : (rssi >= -70 ? 2 : 1));
     }
-    if (!wifiOk && strlen(cfgSsid) && millis() - tWifiRetry > 10000) {
-        tWifiRetry = millis();
-        WiFi.disconnect();
-        WiFi.begin(cfgSsid, cfgWifiPass);
-        Serial.println("[WiFi] retry...");
+    if (up) {
+        if (wifiState != WIFI_IDLE) {       // 连上了，收尾
+            wifiState = WIFI_IDLE;
+            WiFi.scanDelete();
+        }
+        return;
+    }
+    if (!g_wifiNetCount) return;
+
+    switch (wifiState) {
+    case WIFI_IDLE:
+        wifiRequestConnect();               // 掉线：立刻重扫，退避只在失败后
+        break;
+    case WIFI_SCANNING: {
+        int found = WiFi.scanComplete();
+        if (found == WIFI_SCAN_RUNNING) {
+            if ((int32_t)(millis() - wifiDeadline) < 0) break;
+            WiFi.scanDelete();
+            Serial.println("[WiFi] 扫描超时");
+            wifiBackoff(15000);
+            break;
+        }
+        if (found < 0) {                    // -1 = 扫描失败
+            WiFi.scanDelete();
+            wifiBackoff(15000);
+            break;
+        }
+        int n = found < 24 ? found : 24;
+        const char* ssids[24];
+        int rssis[24];
+        for (int i = 0; i < n; ++i) {
+            wifiScanSsid[i] = WiFi.SSID(i);
+            ssids[i] = wifiScanSsid[i].c_str();
+            rssis[i] = WiFi.RSSI(i);
+        }
+        wifiOrderCount = wifiPickBest(g_wifiNets, g_wifiNetCount, ssids, rssis, n,
+                                      wifiOrder, WIFI_MAX_NETS);
+        WiFi.scanDelete();
+        if (!wifiOrderCount) {
+            Serial.println("[WiFi] 未发现已保存的网络");
+            wifiBackoff(15000);
+            break;
+        }
+        wifiOrderIdx = 0;
+        wifiBeginCandidate(wifiOrder[0]);
+        break;
+    }
+    case WIFI_TRYING:
+        if ((int32_t)(millis() - wifiDeadline) >= 0) {
+            Serial.printf("[WiFi] \"%s\" 连接失败\n", cfgSsid);
+            if (++wifiOrderIdx < wifiOrderCount) wifiBeginCandidate(wifiOrder[wifiOrderIdx]);
+            else wifiBackoff(15000);
+        }
+        break;
+    case WIFI_BACKOFF:
+        if ((int32_t)(millis() - wifiBackoffAt) >= 0) wifiRequestConnect();
+        break;
     }
 }
 
@@ -862,12 +951,15 @@ void setScreenOn(bool on) {
         }
         digitalWrite(PIN_PA, HIGH);                     // audioInit 已置高，冗余保护
         srResume();                                     // 恢复唤醒词监听
-        if (strlen(cfgSsid) && !wifiOk) {             // 唤醒回连网络（最多 6 秒）
+        if (g_wifiNetCount && !wifiOk) {              // 唤醒回连网络（最多 8 秒，扫到哪个连哪个）
             ui::setState("连接网络 ...", 0xffd740);        // 黄
             WiFi.mode(WIFI_STA);
-            WiFi.begin(cfgSsid, cfgWifiPass);
+            wifiRequestConnect();
             uint32_t t0 = millis();
-            while (WiFi.status() != WL_CONNECTED && millis() - t0 < 6000) delay(100);
+            while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) {
+                wifiTick();                               // 推进扫描/尝试状态机
+                delay(50);
+            }
             Serial.println(WiFi.status() == WL_CONNECTED ? "[WiFi] reconnected" : "[WiFi] reconnect timeout");
             wifiTick();
             ui::setState(lastStateLabel, lastStateColor);
@@ -1164,8 +1256,7 @@ void setup() {
     setVolume = prefs.getInt("vol", MIC_VOLUME);
     setBright = prefs.getInt("bright", 60);
     chimeOn = prefs.getBool("chime", true);
-    strncpy(cfgSsid, prefs.getString("wssid", WIFI_SSID).c_str(), sizeof(cfgSsid) - 1);
-    strncpy(cfgWifiPass, prefs.getString("wpass", WIFI_PASS).c_str(), sizeof(cfgWifiPass) - 1);
+    wifiListLoad(prefs);                  // 多网络凭据 + 旧单网络配置迁移
     strncpy(cfgUrl, prefs.getString("ourl", OMNIAIDE_URL).c_str(), sizeof(cfgUrl) - 1);
     strncpy(cfgUser, prefs.getString("ouser", OMNIAIDE_USER).c_str(), sizeof(cfgUser) - 1);
     strncpy(cfgPass, prefs.getString("opass", OMNIAIDE_PASS).c_str(), sizeof(cfgPass) - 1);
@@ -1241,10 +1332,10 @@ void setup() {
                       ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getFreePsram());
     }
 
-    // WiFi
-    if (strlen(cfgSsid)) {
+    // WiFi（多网络：扫描后自动选当前能连上的那个）
+    if (g_wifiNetCount) {
         WiFi.mode(WIFI_STA);
-        WiFi.begin(cfgSsid, cfgWifiPass);
+        wifiRequestConnect();
     } else {
         Serial.println(">>> 未配置 WiFi：设置页 → 配网模式 <<<");
     }
@@ -1255,7 +1346,7 @@ void setup() {
     else              Serial.println("[IMU] QMI8658 NOT found (gestures off)");
 #endif
 
-    setState(ST_READY, strlen(cfgSsid) ? "按住 KEY3 或说 Hi ESP" : "未配置网络", 0x4caf50);
+    setState(ST_READY, g_wifiNetCount ? "按住 KEY3 或说 Hi ESP" : "未配置网络", 0x4caf50);
     ui::bootDone();                            // 撤开机画面 → 时钟/待办/对话三页
 
     // Music player task (core 0; ESP-SR is stopped while music plays).

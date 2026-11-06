@@ -35,6 +35,8 @@ docker/volumes/
 backend/test_app.db
 backend/_test.db
 backend/_final_test.db
+device/test/*.exe
+device/test/*.out
 
 desktop_plugins/
 
