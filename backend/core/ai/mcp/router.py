@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends
+import time
+
 from core.auth.dependencies import get_current_user
 from core.ai.mcp.registry import tool_registry
 from core.ai.mcp.core import MCPCallRequest
@@ -19,9 +21,39 @@ async def call_tool(
     user: dict = Depends(get_current_user),
 ):
     """MCP: Call a tool with arguments and get results."""
+    started = time.perf_counter()
     result = await tool_registry.call(user["id"], req)
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
     if hasattr(result, "model_dump"):
-        return result.model_dump()
-    # safety fallback
-    from core.ai.mcp.registry import _to_response
-    return _to_response(result).model_dump()
+        payload = result.model_dump()
+    else:
+        # safety fallback
+        from core.ai.mcp.registry import _to_response
+        payload = _to_response(result).model_dump()
+
+    # Activity middleware skips /api/mcp/call, so record the tool name here.
+    try:
+        from core.database.session import async_session
+        from core.events.bus import record_event
+        from core.events.preview import preview_arguments
+
+        is_error = bool(payload.get("isError"))
+        keys = sorted(str(k) for k in (req.arguments or {}).keys())[:20]
+        status = "失败" if is_error else "成功"
+        async with async_session() as db:
+            await record_event(
+                db, user["id"], "mcp.tool.called", "mcp", None,
+                f"{req.name} · {status} · {elapsed_ms}ms",
+                {
+                    "tool": req.name,
+                    "argument_keys": keys,
+                    "arguments_preview": preview_arguments(req.arguments),
+                    "is_error": is_error,
+                    "duration_ms": elapsed_ms,
+                },
+            )
+            await db.commit()
+    except Exception as e:
+        print(f"[mcp] activity record failed: {e}")
+
+    return payload

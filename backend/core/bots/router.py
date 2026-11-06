@@ -347,6 +347,30 @@ async def decide_approval(
         if run is not None and run.status in ("waiting_approval", "queued"):
             run.status = "queued"
             run_id = run.id
+
+        try:
+            from core.events.bus import record_event
+            from core.events.preview import preview_arguments
+
+            approved = bool(payload.approved)
+            await record_event(
+                db, user["id"], "approval.decided", "approval", approval.id,
+                f"{'批准' if approved else '拒绝'}工具调用：{approval.tool_name}",
+                {
+                    "approval_id": approval.id,
+                    "run_id": approval.run_id,
+                    "bot_id": approval.bot_id,
+                    "tool_name": approval.tool_name,
+                    "risk_level": approval.risk_level,
+                    "approved": approved,
+                    "remember": bool(payload.remember),
+                    "reason": payload.reason,
+                    "arguments_preview": preview_arguments(approval.arguments),
+                },
+            )
+        except Exception as e:
+            print(f"[approvals] activity record failed: {e}")
+
         await db.commit()
         await db.refresh(approval)
 

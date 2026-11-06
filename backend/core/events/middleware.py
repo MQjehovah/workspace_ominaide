@@ -35,7 +35,7 @@ def _derive_event_type(method: str, path: str) -> str:
 
 
 def _make_summary(method: str, path: str, event_type: str) -> str:
-    """Generate human-readable summary from HTTP method and path."""
+    """Generate a human-readable summary from the HTTP method and path."""
     # Strip /api/ prefix
     p = re.sub(r'^/(?:api/)?(?:plugins/)?', '', path)
     # Remove IDs
@@ -45,35 +45,80 @@ def _make_summary(method: str, path: str, event_type: str) -> str:
         'post': '创建', 'put': '修改', 'patch': '修改', 'delete': '删除',
     }
     verb = labels.get(method.lower(), method)
-
-    parts = p.split('/')
-    if len(parts) >= 1:
-        entity_name = parts[0]
-    else:
-        entity_name = ''
+    suffix = path.rstrip('/')
 
     if 'read' in path.lower():
         verb = '标记已读'
 
-    return f"{verb} {entity_name}: {p}" if entity_name else f"{verb}"
+    special = {
+        'bots.created': '创建 Bot',
+        'bots.updated': '修改 Bot',
+        'bots.deleted': '删除 Bot',
+        'bots.routines.created': '创建 Bot 例行任务',
+        'bots.routines.updated': '修改 Bot 例行任务',
+        'bots.routines.deleted': '删除 Bot 例行任务',
+        'bots.runs.created': '启动 Bot 运行',
+        'bots.memories.created': '添加 Bot 记忆',
+        'bots.memories.deleted': '删除 Bot 记忆',
+        'automation.from-template.created': '从模板创建自动化任务',
+        'mcp.servers.created': '添加 MCP 服务',
+        'mcp.servers.updated': '修改 MCP 服务',
+        'mcp.servers.deleted': '删除 MCP 服务',
+        'runs.cancel.created': '取消 Bot 运行',
+        'projects.created': '创建项目',
+        'projects.deleted': '删除项目',
+        'projects.scan.created': '扫描项目',
+        'projects.runs.created': '启动项目任务',
+        'device.briefing.created': '触发简报',
+        'device.tts.created': '语音播报',
+        'device.gesture.created': '手势控制',
+        'memory.candidates.created': '审核记忆候选',
+    }
+    if event_type in special:
+        if event_type == 'bots.routines.created' and suffix.endswith('/run'):
+            return '运行 Bot 例行任务'
+        if event_type == 'mcp.servers.created' and suffix.endswith('/connect'):
+            return '连接 MCP 服务'
+        if event_type == 'mcp.servers.created' and suffix.endswith('/disconnect'):
+            return '断开 MCP 服务'
+        return special[event_type]
+
+    # Fall back to the route path: enough context for the agent without
+    # repeating the event type in both the title and the type column.
+    return f"{verb} {p}" if p else verb
 
 
 SKIP_PATHS = (
-    '/health', '/auth/', '/api/chat', '/api/remote', '/ws/',
-    '/api/rss/entries/',    # rss read/star markers
-    '/api/notifications/',  # notification read markers
-    '/api/sync/',           # sync operations
-    '/api/files/',          # file operations
-    '/api/plugins/notes/',  # notes plugin records own events
-    '/api/plugins/todo/',   # todo plugin records own events
-    '/api/plugins/mail/',   # mail plugin records own events
-    '/api/schedule/',       # schedule plugin records own events
-    '/api/rss/',            # rss plugin records own events
-    '/api/music/',          # music plugin records own events
+    '/health', '/api/auth', '/api/chat', '/api/remote', '/ws',
+    '/api/rss',             # rss plugin records its own events
+    '/api/notifications',   # notification read markers are high-frequency noise
+    '/api/sync',            # sync operations
+    '/api/files',           # file plugin records its own events
+    '/api/plugins/notes',   # notes plugin records its own events
+    '/api/plugins/todo',    # todo plugin records its own events
+    '/api/plugins/mail',    # mail plugin records its own events
+    '/api/schedule',        # schedule plugin records its own events
+    '/api/music',           # music plugin records its own events
     '/api/search',          # search is a read operation
     '/api/activities',      # activity reporting is itself an event
-    '/api/device/',         # device polling/gestures are high-frequency, not user activity
+    '/api/device',          # device polling/gestures are high-frequency
+    '/api/mcp/call',        # MCP router records the tool name itself
+    '/api/approvals',       # approvals router records the decision itself
+    '/api/memory/candidates',  # memory router records approve/reject itself
 )
+
+
+def _is_skipped(path: str) -> bool:
+    return any(path == prefix or path.startswith(prefix + '/') for prefix in SKIP_PATHS)
+
+
+def _entity_ref(path: str) -> tuple[str | None, int | None]:
+    p = re.sub(r'^/(?:api/)?(?:plugins/)?', '', path)
+    parts = [part for part in p.split('/') if part]
+    entity_type = parts[0] if parts else None
+    match = re.search(r'/(\d+)(?=/|$)', path)
+    entity_id = int(match.group(1)) if match else None
+    return entity_type, entity_id
 
 
 class ActivityMiddleware(BaseHTTPMiddleware):
@@ -83,7 +128,7 @@ class ActivityMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if any(path.startswith(s) for s in SKIP_PATHS):
+        if _is_skipped(path):
             return await call_next(request)
 
         # Try to get user_id from token
@@ -101,6 +146,18 @@ class ActivityMiddleware(BaseHTTPMiddleware):
         if user_id and response.status_code < 400:
             event_type = _derive_event_type(request.method, path)
             summary = _make_summary(request.method, path, event_type)
+            entity_type, entity_id = _entity_ref(path)
+            details = {
+                "method": request.method,
+                "path": path,
+                "status": response.status_code,
+            }
+            query = {
+                str(key): str(value)[:200]
+                for key, value in list(request.query_params.items())[:10]
+            }
+            if query:
+                details["query"] = query
             try:
                 from core.database.session import async_session
                 from core.events.bus import record_event
@@ -109,8 +166,10 @@ class ActivityMiddleware(BaseHTTPMiddleware):
                         db=db,
                         user_id=user_id,
                         event_type=event_type,
-                        entity_type=path.split('/')[2] if len(path.split('/')) > 2 else None,
+                        entity_type=entity_type,
+                        entity_id=entity_id,
                         summary=summary,
+                        details=details,
                     )
                     await db.commit()
             except Exception:

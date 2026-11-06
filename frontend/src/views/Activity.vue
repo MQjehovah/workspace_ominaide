@@ -131,6 +131,20 @@ const TYPE_LABELS: Record<string, string> = {
   'playlist.created': '歌单创建', 'playlist.deleted': '歌单删除',
   // 通知 / 其他
   'notifications.read': '通知已读', 'notifications.read-all': '通知全部已读',
+  'mcp.tool.called': 'MCP 工具调用', 'mcp.call.created': 'MCP 工具调用',
+  'mcp.servers.created': 'MCP 服务', 'mcp.servers.updated': 'MCP 服务', 'mcp.servers.deleted': 'MCP 服务',
+  'approval.decided': '审批决定', 'approvals.decision.created': '审批决定',
+  'memory.candidate.approved': '记忆通过', 'memory.candidate.rejected': '记忆忽略',
+  'memory.candidates.created': '记忆审核', 'memory.extract.created': '记忆整理',
+  'bot.run.finished': 'Bot 运行', 'bot.run.failed': 'Bot 运行', 'bot.run.cancelled': 'Bot 运行',
+  'bots.created': 'Bot 管理', 'bots.updated': 'Bot 管理', 'bots.deleted': 'Bot 管理',
+  'bots.routines.created': 'Bot 例行任务', 'bots.routines.updated': 'Bot 例行任务',
+  'bots.routines.deleted': 'Bot 例行任务', 'bots.runs.created': 'Bot 运行',
+  'bots.memories.created': 'Bot 记忆', 'bots.memories.deleted': 'Bot 记忆',
+  'automation.from-template.created': '自动化任务', 'runs.cancel.created': '运行取消',
+  'device.briefing.created': '简报触发', 'device.tts.created': '语音播报',
+  'device.gesture.created': '手势控制',
+  'note.imported': '知识导入', 'note.restored': '笔记恢复', 'todo.completed': '待办完成',
   'search': '搜索', 'activities.created': '活动上报', 'briefing': '每日简报',
 }
 function typeLabel(t: string): string {
@@ -187,12 +201,43 @@ function friendlyApp(name: string): string {
 
 function detailText(d: any): string {
   if (!d) return ''
+  const clip = (v: any, n = 60) => {
+    const text = String(v ?? '').replace(/\s+/g, ' ').trim()
+    return text.length > n ? `${text.slice(0, n)}…` : text
+  }
   const parts: string[] = []
   if (d.app) parts.push(friendlyApp(d.app))
-  if (d.title) parts.push(String(d.title).slice(0, 40))
+  if (d.title) parts.push(clip(d.title, 40))
+  if (d.tool_name) parts.push(`工具 ${d.tool_name}`)
+  if (typeof d.approved === 'boolean') parts.push(d.approved ? '已批准' : '已拒绝')
+  if (d.reason) parts.push(`原因：${clip(d.reason, 40)}`)
+  if (d.remember) parts.push('记住选择')
+  if (d.arguments_preview && typeof d.arguments_preview === 'object') {
+    const entries = Object.entries(d.arguments_preview).slice(0, 4).map(([key, value]) => {
+      if (value === '***') return `${key}=***`
+      if (value !== null && typeof value === 'object') return `${key}=…`
+      return `${key}=${clip(value, 24)}`
+    })
+    if (entries.length) parts.push(`参数 ${entries.join(', ')}`)
+  } else if (Array.isArray(d.argument_keys) && d.argument_keys.length) {
+    parts.push(`参数 ${d.argument_keys.slice(0, 6).join(', ')}`)
+  }
+  if (d.input) parts.push(`输入：${clip(d.input, 50)}`)
+  if (d.output) parts.push(`输出：${clip(d.output, 60)}`)
+  if (d.error) parts.push(`错误：${clip(d.error, 50)}`)
+  if (d.status) parts.push(`状态 ${d.status}`)
+  if (d.tokens_in || d.tokens_out) parts.push(`Token ${d.tokens_in || 0}/${d.tokens_out || 0}`)
   if (d.minutes) parts.push(`${d.minutes} 分钟`)
   if (d.length) parts.push(`长度 ${d.length}`)
-  if (d.preview) parts.push(`「${String(d.preview).slice(0, 30)}…」`)
+  if (d.size) parts.push(`大小 ${Math.max(1, Math.round(Number(d.size) / 1024))} KB`)
+  if (d.preview) parts.push(`「${clip(d.preview, 30)}」`)
+  if (d.method && d.path) parts.push(`${d.method} ${d.path}`)
+  if (d.query && typeof d.query === 'object') {
+    const query = Object.entries(d.query).slice(0, 3)
+      .map(([key, value]) => `${key}=${clip(value, 24)}`)
+      .join(' ')
+    if (query) parts.push(`查询 ${query}`)
+  }
   return parts.join(' · ')
 }
 

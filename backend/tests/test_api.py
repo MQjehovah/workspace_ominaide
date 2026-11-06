@@ -33,6 +33,26 @@ async def test_activities_router_works_with_auth(client, admin_token):
     assert isinstance(r.json(), list)
 
 
+async def test_mcp_call_activity_records_tool_name(client, admin_token):
+    r = await client.post(
+        "/api/mcp/call",
+        json={"name": "get_user_info", "arguments": {}},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 200, r.text
+
+    r = await client.get(
+        "/api/activities",
+        params={"event_type": "mcp.tool.called", "limit": 5},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert rows
+    assert rows[0]["summary"].startswith("get_user_info")
+    assert rows[0]["details"]["tool"] == "get_user_info"
+
+
 async def test_files_list_requires_auth(client):
     r = await client.get("/api/files")
     assert r.status_code == 401

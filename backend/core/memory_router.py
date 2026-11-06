@@ -200,6 +200,7 @@ async def approve_candidate(candidate_id: int, user: dict = Depends(get_current_
     record = await approve(user["id"], candidate_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Candidate not found or already reviewed")
+    await _record_candidate_review(user["id"], candidate_id, True, record.id)
     return {"message": "Approved", "record_id": record.id}
 
 
@@ -210,7 +211,50 @@ async def reject_candidate(candidate_id: int, user: dict = Depends(get_current_u
     ok = await reject(user["id"], candidate_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Candidate not found or already reviewed")
+    await _record_candidate_review(user["id"], candidate_id, False)
     return {"message": "Rejected"}
+
+
+async def _record_candidate_review(
+    user_id: int, candidate_id: int, approved: bool, record_id: int | None = None,
+) -> None:
+    """Keep a rich audit trail of what the user accepted or ignored."""
+    try:
+        from sqlalchemy import select
+        from core.database.session import async_session
+        from core.events.bus import record_event
+        from core.memory_models import MemoryCandidate
+
+        async with async_session() as db:
+            cand = (await db.execute(
+                select(MemoryCandidate).where(
+                    MemoryCandidate.id == candidate_id,
+                    MemoryCandidate.user_id == user_id,
+                )
+            )).scalar_one_or_none()
+            if cand is None:
+                return
+            verb = "通过" if approved else "忽略"
+            await record_event(
+                db, user_id,
+                "memory.candidate.approved" if approved else "memory.candidate.rejected",
+                "memory", candidate_id,
+                f"{verb}记忆: {(cand.content or '')[:80]}",
+                {
+                    "candidate_id": candidate_id,
+                    "record_id": record_id,
+                    "kind": cand.kind,
+                    "confidence": cand.confidence,
+                    "source_type": cand.source_type,
+                    "source_id": cand.source_id,
+                    "bot_id": cand.bot_id,
+                    "trust": cand.trust,
+                    "content": (cand.content or "")[:1000],
+                },
+            )
+            await db.commit()
+    except Exception as e:
+        print(f"[memory] candidate activity record failed: {e}")
 
 
 @router.get("/records")

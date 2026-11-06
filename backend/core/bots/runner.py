@@ -672,15 +672,25 @@ async def _emit_run_finished(run: BotRun) -> None:
     try:
         from core.events.bus import record_event
 
+        status = run.status or "finished"
+        prefix = "Bot 运行失败" if status == "failed" else "Bot 运行完成"
         async with async_session() as db:
             await record_event(
                 db, run.user_id, "bot.run.finished", "bot_run", run.id,
-                f"Bot 运行完成: {(run.input or '')[:80]}",
+                f"{prefix}: {(run.input or '')[:80]}",
                 {
                     "run_id": run.id,
                     "bot_id": run.bot_id,
+                    "routine_id": run.routine_id,
+                    "trigger": run.trigger,
+                    "status": status,
                     "input": (run.input or "")[:1000],
                     "output": (run.output or "")[:4000],
+                    "error": (run.error or "")[:1000] or None,
+                    "tokens_in": run.tokens_in or 0,
+                    "tokens_out": run.tokens_out or 0,
+                    "started_at": run.started_at.isoformat() if run.started_at else None,
+                    "finished_at": run.finished_at.isoformat() if run.finished_at else None,
                 },
             )
             await db.commit()
