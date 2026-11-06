@@ -51,6 +51,9 @@ import UserNotifications
         result(nil)
       case "clear":
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        if #available(iOS 13.0, *) {
+          MPNowPlayingInfoCenter.default().playbackState = .stopped
+        }
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
@@ -108,5 +111,8 @@ import UserNotifications
     let playing = (args["playing"] as? Bool) ?? false
     info[MPNowPlayingInfoPropertyPlaybackRate] = playing ? 1.0 : 0.0
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    if #available(iOS 13.0, *) {
+      MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
+    }
   }
 }

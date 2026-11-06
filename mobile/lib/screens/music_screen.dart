@@ -112,9 +112,9 @@ class _MusicScreenState extends State<MusicScreen> {
         break;
       case 'seek':
         if (position != null) {
-          await _player.seek(
-            Duration(milliseconds: (position * 1000).round()),
-          );
+          final target = Duration(milliseconds: (position * 1000).round());
+          await _player.seek(target);
+          if (mounted) setState(() => _position = target);
           _updateNowPlaying();
         }
         break;
