@@ -10,14 +10,17 @@ import 'chat_stream_stub.dart'
 import 'file_save_stub.dart'
     if (dart.library.html) 'file_save_web.dart'
     if (dart.library.io) 'file_save_io.dart';
+import '../config.dart';
 
 class ApiService {
-  String _baseUrl = 'http://mqgeek.com:8000';
+  String _baseUrl = kDefaultServerUrl;
   String? _token;
 
   static final ApiService _instance = ApiService._();
   factory ApiService() => _instance;
   ApiService._();
+
+  String get baseUrl => _baseUrl;
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
@@ -31,22 +34,37 @@ class ApiService {
   Future<void> loadToken() async {
     final prefs = await SharedPreferences.getInstance();
     _token = prefs.getString('token');
-    _baseUrl = prefs.getString('serverUrl') ?? 'http://mqgeek.com:8000';
+    final stored = prefs.getString('serverUrl');
+    // Migrate the old, unreachable default (port 8000) to the new API prefix.
+    if (stored == null || stored.isEmpty || stored == 'http://mqgeek.com:8000') {
+      _baseUrl = kDefaultServerUrl;
+      await prefs.setString('serverUrl', _baseUrl);
+    } else {
+      _baseUrl = normalizeServerUrl(stored);
+    }
+  }
+
+  /// Persist a new server address. The currently stored token is not cleared;
+  /// callers should ask the user to log in again when the server changes.
+  Future<void> setServerUrl(String serverUrl) async {
+    _baseUrl = normalizeServerUrl(serverUrl);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('serverUrl', _baseUrl);
   }
 
   Future<void> saveAuth(String token, String serverUrl) async {
     _token = token;
-    _baseUrl = serverUrl;
+    _baseUrl = normalizeServerUrl(serverUrl);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', token);
-    await prefs.setString('serverUrl', serverUrl);
+    await prefs.setString('serverUrl', _baseUrl);
   }
 
   Future<void> logout() async {
     _token = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
-    await prefs.remove('serverUrl');
+    // Keep serverUrl so the next login pre-fills the server the user chose.
   }
 
   bool get isLoggedIn => _token != null;
@@ -128,6 +146,25 @@ class ApiService {
       if (res.statusCode != 200) throw Exception('Download failed: ${res.statusCode}');
       return res.bodyBytes;
     }
+  }
+
+  /// Resolve the real download URL and headers without loading the bytes.
+  /// Used by the music cache to stream large files to disk.
+  Future<({Uri uri, Map<String, String> headers})> getFileDownloadRequest(int fileId) async {
+    final dlRes = await http.get(
+      Uri.parse('$_baseUrl/api/files/$fileId/download-url'),
+      headers: _headers,
+    );
+    if (dlRes.statusCode != 200) throw Exception('Failed to get download info');
+    final dlData = decodeJson(dlRes);
+    final dlUrl = dlData['download_url'] as String?;
+    if (dlUrl != null && dlUrl.isNotEmpty) {
+      return (uri: Uri.parse(dlUrl), headers: <String, String>{});
+    }
+    return (
+      uri: Uri.parse('$_baseUrl/api/files/$fileId/download'),
+      headers: _authHeaders,
+    );
   }
 
   /// Save downloaded bytes to local file, returns the file path.

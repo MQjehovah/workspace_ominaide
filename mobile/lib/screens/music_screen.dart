@@ -1,7 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../services/api_service.dart';
+import '../services/music_cache.dart';
 import '../models/file_item.dart';
 
 class MusicScreen extends StatefulWidget {
@@ -21,6 +21,7 @@ class _MusicScreenState extends State<MusicScreen> {
   final _player = AudioPlayer();
   int? _playingIndex;
   bool _playing = false;
+  bool _buffering = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
@@ -118,16 +119,25 @@ class _MusicScreenState extends State<MusicScreen> {
     if (index < 0 || index >= _currentSongs.length) return;
     await _player.stop();
     final song = _currentSongs[index];
-    setState(() { _playingIndex = index; _playing = false; _position = Duration.zero; });
+    setState(() {
+      _playingIndex = index;
+      _playing = false;
+      _buffering = true;
+      _position = Duration.zero;
+    });
     try {
-      final bytes = await ApiService().downloadFile(song['file_id']);
-      final temp = File('${Directory.systemTemp.path}/${song['name']}');
-      await temp.writeAsBytes(bytes);
-      await _player.play(DeviceFileSource(temp.path));
+      final fileId = (song['file_id'] as num).toInt();
+      final name = (song['name'] ?? 'track.mp3').toString();
+      // First play downloads to a persistent cache; later plays are local.
+      final file = await MusicCache().cacheTrack(fileId, name);
+      await _player.play(DeviceFileSource(file.path));
+      if (!mounted) return;
       setState(() => _playing = true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('播放失败: $e')));
+    } finally {
+      if (mounted) setState(() => _buffering = false);
     }
   }
 
@@ -298,10 +308,12 @@ class _MusicScreenState extends State<MusicScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               IconButton(onPressed: _playingIndex! > 0 ? () => _playSong(_playingIndex! - 1) : null, icon: const Icon(Icons.skip_previous)),
-              IconButton(onPressed: () {
+              IconButton(onPressed: _buffering ? null : () {
                 if (_playing) { _player.pause(); setState(() => _playing = false); }
                 else { _player.resume(); setState(() => _playing = true); }
-              }, icon: Icon(_playing ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 48)),
+              }, icon: _buffering
+                  ? const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3))
+                  : Icon(_playing ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 48)),
               IconButton(onPressed: _playingIndex! < _currentSongs.length - 1 ? () => _playSong(_playingIndex! + 1) : null, icon: const Icon(Icons.skip_next)),
             ],
           ),
