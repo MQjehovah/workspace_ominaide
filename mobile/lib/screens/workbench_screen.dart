@@ -27,6 +27,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _todos = [];
   List<FileItem> _files = [];
+  int _unreadNotifications = 0;
   String _name = '';
   bool _loading = true;
 
@@ -53,6 +54,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     final results = await Future.wait<dynamic>([
       _safe(api.getDailyBrief()),
       _safe(api.getTriage()),
+      _safe(api.listNotifications(limit: 50)),
       _safe(api.listScheduleEvents(
         start: start.toIso8601String(),
         end: end.toIso8601String(),
@@ -63,13 +65,16 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     ]);
 
     if (!mounted) return;
-    final me = results[5] as Map<String, dynamic>?;
+    final me = results[6] as Map<String, dynamic>?;
+    final notifications = (results[2] as List<Map<String, dynamic>>?) ?? [];
     setState(() {
       _brief = results[0] as DailyBrief?;
       _triage = results[1] as TriageSnapshot?;
-      _events = (results[2] as List<Map<String, dynamic>>?) ?? [];
-      _todos = (results[3] as List<Map<String, dynamic>>?) ?? [];
-      _files = (results[4] as List<FileItem>?) ?? [];
+      _events = (results[3] as List<Map<String, dynamic>>?) ?? [];
+      _todos = (results[4] as List<Map<String, dynamic>>?) ?? [];
+      _files = (results[5] as List<FileItem>?) ?? [];
+      _unreadNotifications =
+          notifications.where((n) => n['read'] == false).length;
       _name = (me?['display_name'] ?? me?['username'] ?? '').toString();
       _loading = false;
     });
@@ -136,7 +141,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
-    final inboxCount = _triage?.total ?? 0;
+    final inboxCount = (_triage?.total ?? 0) + _unreadNotifications;
     final urgent = _triage?.urgentCount ?? 0;
     final sourceCounts = _triage?.countsBySource() ?? const <String, int>{};
 
@@ -184,6 +189,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                             inboxCount,
                             urgent,
                             sourceCounts,
+                            _unreadNotifications,
                           ),
                         ),
                         const SizedBox(width: 9),
@@ -455,6 +461,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     int total,
     int urgent,
     Map<String, int> sourceCounts,
+    int notificationCount,
   ) {
     return AppCard(
       onTap: () => Navigator.push(
@@ -518,6 +525,12 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                 color: palette.accent,
                 icon: Icons.chat_outlined,
               ),
+              if (notificationCount > 0)
+                SourcePill(
+                  label: '通知 $notificationCount',
+                  color: palette.success,
+                  icon: Icons.notifications_none_rounded,
+                ),
             ],
           ),
           if (urgent > 0) ...[

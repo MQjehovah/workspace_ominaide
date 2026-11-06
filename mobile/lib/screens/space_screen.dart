@@ -79,17 +79,19 @@ class _SpaceScreenState extends State<SpaceScreen> {
     final files = (results[5] as List<dynamic>?) ?? [];
     final rss = (results[6] as List<Map<String, dynamic>>?) ?? [];
     final sourceCounts = triage?.countsBySource() ?? const <String, int>{};
+    final notificationUnread =
+        notifications.where((n) => n['read'] == false).length;
 
     setState(() {
       _mail = sourceCounts['mail'] ?? 0;
       _dingtalk = sourceCounts['dingtalk'] ?? 0;
-      _notifications = notifications.where((n) => n['read'] == false).length;
+      _notifications = notificationUnread;
       _schedule = events.length;
       _todos = todos.length;
       _projects = projects.length;
       _files = files.length;
       _rss = rss.length;
-      _inboxTotal = triage?.total ?? 0;
+      _inboxTotal = (triage?.total ?? 0) + notificationUnread;
       _inboxUrgent = triage?.urgentCount ?? 0;
       _loading = false;
     });
