@@ -11,7 +11,7 @@ void main() {
     });
     expect(session.id, 's1');
     expect(session.title, '预算评审准备');
-    expect(session.updatedAt, DateTime(2026, 11, 6, 10, 24));
+    expect(session.updatedAt, DateTime.utc(2026, 11, 6, 10, 24));
   });
 
   test('falls back to a readable title', () {

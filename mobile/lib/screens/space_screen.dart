@@ -65,7 +65,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
         start: start.toIso8601String(),
         end: start.add(const Duration(days: 1)).toIso8601String(),
       )),
-      _safe(api.listTodoItems()),
+      _safe(api.listTodoItems(status: 'pending', pageSize: 200)),
       _safe(api.listProjects()),
       _safe(api.listFiles()),
       _safe(api.listRssEntries()),
@@ -97,7 +97,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
     });
   }
 
-  void _open(String key) {
+  Future<void> _open(String key) async {
     final Widget? target = switch (key) {
       'mail' => const MailScreen(),
       'dingtalk' => const InboxScreen(initialFilter: 'dingtalk'),
@@ -115,7 +115,8 @@ class _SpaceScreenState extends State<SpaceScreen> {
       _ => null,
     };
     if (target == null) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => target));
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => target));
+    if (mounted) _load();
   }
 
   @override

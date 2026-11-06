@@ -48,6 +48,11 @@ class _McpScreenState extends State<McpScreen> {
               subtitle: '${_servers.length} 个服务器',
               actions: [
                 RoundIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
+                RoundIconButton(
                   icon: Icons.refresh_rounded,
                   tooltip: '刷新',
                   onTap: _load,

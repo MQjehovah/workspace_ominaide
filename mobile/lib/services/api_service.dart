@@ -71,7 +71,7 @@ class ApiService {
     final res = await http.get(
       Uri.parse('$_baseUrl/api/files?page_size=100&folder_path=${Uri.encodeComponent(folderPath)}'),
       headers: _headers,
-    );
+    ).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final data = decodeJson(res);
     return (data['files'] as List).map((f) => FileItem.fromJson(f)).toList();
@@ -251,19 +251,27 @@ class ApiService {
   }
 
   Future<http.Response> get(String path) async {
-    return await http.get(Uri.parse('$_baseUrl/api$path'), headers: _headers);
+    return await http
+        .get(Uri.parse('$_baseUrl/api$path'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
   }
 
   Future<http.Response> post(String path, Map<String, dynamic> body) async {
-    return await http.post(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body));
+    return await http
+        .post(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
+        .timeout(const Duration(seconds: 15));
   }
 
   Future<http.Response> put(String path, Map<String, dynamic> body) async {
-    return await http.put(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body));
+    return await http
+        .put(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
+        .timeout(const Duration(seconds: 15));
   }
 
   Future<http.Response> delete(String path) async {
-    return await http.delete(Uri.parse('$_baseUrl/api$path'), headers: _headers);
+    return await http
+        .delete(Uri.parse('$_baseUrl/api$path'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
   }
 
   // -- Chat --
@@ -304,7 +312,7 @@ class ApiService {
     final q = <String, String>{'limit': '$limit'};
     if (sessionId != null) q['session_id'] = sessionId;
     final uri = Uri.parse('$_baseUrl/api/chat/history').replace(queryParameters: q);
-    final res = await http.get(uri, headers: _headers);
+    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final dynamic d = decodeJson(res);
     if (d is! List) return [];
@@ -327,7 +335,7 @@ class ApiService {
     if (start != null) q['start'] = start;
     if (end != null) q['end'] = end;
     final uri = Uri.parse('$_baseUrl/api/schedule').replace(queryParameters: q.isEmpty ? null : q);
-    final res = await http.get(uri, headers: _headers);
+    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final d = decodeJson(res);
     return (d as List? ?? []).cast<Map<String, dynamic>>();
@@ -344,8 +352,12 @@ class ApiService {
   }
 
   // -- Todo --
-  Future<List<Map<String, dynamic>>> listTodoItems() async {
-    final res = await http.get(Uri.parse('$_baseUrl/api/plugins/todo/items'), headers: _headers);
+  Future<List<Map<String, dynamic>>> listTodoItems({String? status, int pageSize = 50}) async {
+    final q = <String, String>{'page_size': '$pageSize'};
+    if (status != null) q['status'] = status;
+    final uri = Uri.parse('$_baseUrl/api/plugins/todo/items')
+        .replace(queryParameters: q);
+    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final dynamic d = decodeJson(res);
     final List list = d is List
@@ -370,7 +382,9 @@ class ApiService {
 
   // -- Notifications --
   Future<List<Map<String, dynamic>>> listNotifications({int limit = 20}) async {
-    final res = await http.get(Uri.parse('$_baseUrl/api/notifications?limit=$limit'), headers: _headers);
+    final res = await http
+        .get(Uri.parse('$_baseUrl/api/notifications?limit=$limit'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final dynamic d = decodeJson(res);
     if (d is! List) return [];

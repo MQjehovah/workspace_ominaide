@@ -16,9 +16,15 @@ class ChatSession {
     return ChatSession(
       id: id,
       title: rawTitle.isEmpty ? '新对话' : rawTitle,
-      updatedAt: DateTime.tryParse(rawTime),
+      updatedAt: _parseUtc(rawTime),
     );
   }
+}
+
+DateTime? _parseUtc(String raw) {
+  if (raw.isEmpty) return null;
+  final hasZone = RegExp(r'(Z|[+-]\d{2}:?\d{2})$').hasMatch(raw);
+  return DateTime.tryParse(hasZone ? raw : '${raw}Z');
 }
 
 String relativeTimeLabel(DateTime? value, {DateTime? now}) {

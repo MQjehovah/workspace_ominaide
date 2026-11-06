@@ -59,7 +59,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
         start: start.toIso8601String(),
         end: end.toIso8601String(),
       )),
-      _safe(api.listTodoItems()),
+      _safe(api.listTodoItems(status: 'pending', pageSize: 200)),
       _safe(api.listFiles()),
       _safe(api.getMe()),
     ]);
@@ -90,6 +90,11 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     );
   }
 
+  Future<void> _pushAndRefresh(Widget page) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    if (mounted) _load();
+  }
+
   String get _greeting {
     final hour = DateTime.now().hour;
     if (hour < 11) return '早上好';
@@ -110,7 +115,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     for (final todo in _todos) {
       final due = DateTime.tryParse('${todo['due_date'] ?? ''}');
       if (due == null) continue;
-      if (due.isBefore(end)) count++;
+      if (!due.isBefore(now) && due.isBefore(end)) count++;
     }
     return count;
   }
@@ -391,10 +396,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
               const Spacer(),
               _LinkLabel(
                 label: '查看日程',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ScheduleScreen()),
-                ),
+                onTap: () => _pushAndRefresh(const ScheduleScreen()),
               ),
             ],
           ),
@@ -426,10 +428,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
             Divider(color: palette.line),
             const SizedBox(height: 6),
             InkWell(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TodoScreen()),
-              ),
+              onTap: () => _pushAndRefresh(const TodoScreen()),
               child: Row(
                 children: [
                   TagDot(color: palette.accent),
@@ -464,10 +463,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     int notificationCount,
   ) {
     return AppCard(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const InboxScreen()),
-      ),
+      onTap: () => _pushAndRefresh(const InboxScreen()),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -562,10 +558,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     return AppCard(
       color: palette.primarySoft,
       borderColor: Colors.transparent,
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const BriefScreen()),
-      ),
+      onTap: () => _pushAndRefresh(const BriefScreen()),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -612,10 +605,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   Widget _buildFilesCard(AppPalette palette) {
     final file = _files.isEmpty ? null : _files.first;
     return AppCard(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const LibraryScreen()),
-      ),
+      onTap: () => _pushAndRefresh(const LibraryScreen()),
       child: Row(
         children: [
           Container(

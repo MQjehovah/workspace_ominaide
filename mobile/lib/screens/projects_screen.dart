@@ -48,6 +48,11 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               subtitle: '${_projects.length} 个项目',
               actions: [
                 RoundIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
+                RoundIconButton(
                   icon: Icons.refresh_rounded,
                   tooltip: '刷新',
                   onTap: _load,

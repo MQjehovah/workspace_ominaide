@@ -39,12 +39,15 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = false;
   ChatMode _mode = ChatMode.normal;
 
-  String get _sessionId => widget.sessionId ?? 'mobile';
+  late final String _sessionId =
+      widget.sessionId ?? 'mobile-${DateTime.now().microsecondsSinceEpoch}';
+
+  bool get _isNewChat => widget.sessionId == null;
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    if (!_isNewChat) _loadHistory();
     if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
       _input.text = widget.initialQuery!;
       WidgetsBinding.instance.addPostFrameCallback((_) => _send());
@@ -58,14 +61,20 @@ class _ChatScreenState extends State<ChatScreen> {
         limit: 50,
       );
       if (!mounted || rows.isEmpty) return;
+      // Never overwrite a turn that started before history arrived.
+      if (_messages.isNotEmpty || _loading) return;
+      final loaded = <_Message>[];
+      for (final row in rows) {
+        final role = (row['role'] ?? 'assistant').toString();
+        final content = (row['content'] ?? '').toString();
+        if (content.isEmpty) continue;
+        loaded.add(_Message(role == 'user' ? 'user' : 'assistant', content));
+      }
+      if (loaded.isEmpty) return;
       setState(() {
-        _messages.clear();
-        for (final row in rows) {
-          final role = (row['role'] ?? 'assistant').toString();
-          final content = (row['content'] ?? '').toString();
-          if (content.isEmpty) continue;
-          _messages.add(_Message(role == 'user' ? 'user' : 'assistant', content));
-        }
+        _messages
+          ..clear()
+          ..addAll(loaded);
       });
       _scrollToBottom();
     } catch (_) {
@@ -79,7 +88,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _input.clear();
 
     final history = _messages
-        .where((m) => m.text.isNotEmpty)
+        .where((m) => m.text.isNotEmpty && !m.error)
         .toList()
         .reversed
         .take(20)
@@ -88,9 +97,10 @@ class _ChatScreenState extends State<ChatScreen> {
         .map((m) => {'role': m.role, 'content': m.text})
         .toList();
 
+    final assistant = _Message('assistant', '');
     setState(() {
       _messages.add(_Message('user', text));
-      _messages.add(_Message('assistant', ''));
+      _messages.add(assistant);
       _loading = true;
     });
     _scrollToBottom();
@@ -106,7 +116,7 @@ class _ChatScreenState extends State<ChatScreen> {
         );
         if (!mounted) return;
         setState(() {
-          _messages.last.text = reply.isEmpty ? '（无回复）' : reply;
+          assistant.text = reply.isEmpty ? '（无回复）' : reply;
         });
         _scrollToBottom();
       } else {
@@ -116,18 +126,18 @@ class _ChatScreenState extends State<ChatScreen> {
           sessionId: _sessionId,
         )) {
           if (!mounted) return;
-          setState(() => _messages.last.text += chunk);
+          setState(() => assistant.text += chunk);
           _scrollToBottom();
         }
-        if (mounted && _messages.last.text.isEmpty) {
-          setState(() => _messages.last.text = '（无回复）');
+        if (mounted && assistant.text.isEmpty) {
+          setState(() => assistant.text = '（无回复）');
         }
       }
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _messages.last.text = e.toString().replaceFirst('Exception: ', '');
-        _messages.last.error = true;
+        assistant.text = e.toString().replaceFirst('Exception: ', '');
+        assistant.error = true;
       });
     } finally {
       if (mounted) setState(() => _loading = false);

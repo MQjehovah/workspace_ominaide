@@ -6,6 +6,7 @@ import 'host_channel_service.dart';
 /// (`channel: "notifications"`) and surfaces them to the UI via a callback.
 class NotificationService {
   StreamSubscription<Map<String, dynamic>>? _sub;
+  bool _stopped = false;
 
   static final NotificationService _instance = NotificationService._();
   factory NotificationService() => _instance;
@@ -14,9 +15,11 @@ class NotificationService {
   /// Start listening. [onNotification] is called with title/body when a new
   /// notification arrives.
   Future<void> start(Function(String title, String body) onNotification) async {
+    _stopped = false;
     await _sub?.cancel();
     final host = HostChannelService();
     await host.ensureConnected();
+    if (_stopped) return;
     _sub = host.stream.listen((msg) {
       if (msg['channel'] != 'notifications') return;
       final title = (msg['title'] as String?) ?? '新通知';
@@ -26,6 +29,7 @@ class NotificationService {
   }
 
   void stop() {
+    _stopped = true;
     _sub?.cancel();
     _sub = null;
     HostChannelService().stop();

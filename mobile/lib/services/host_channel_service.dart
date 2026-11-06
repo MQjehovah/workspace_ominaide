@@ -13,6 +13,7 @@ class HostChannelService {
   Timer? _reconnectTimer;
   int _retry = 0;
   bool _connecting = false;
+  bool _stopped = false;
 
   final StreamController<Map<String, dynamic>> _events =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -27,15 +28,20 @@ class HostChannelService {
   Stream<Map<String, dynamic>> get stream => _events.stream;
 
   Future<void> ensureConnected() async {
+    _stopped = false;
     if (connected.value || _connecting) return;
     await _connect();
   }
 
   Future<void> _connect() async {
-    if (_connecting || connected.value) return;
+    if (_stopped || _connecting || connected.value) return;
     _connecting = true;
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (_stopped) {
+        _connecting = false;
+        return;
+      }
       final token = prefs.getString('token');
       final serverUrl = prefs.getString('serverUrl') ?? 'http://10.0.2.2:8000';
       if (token == null || token.isEmpty) {
@@ -46,6 +52,11 @@ class HostChannelService {
           .replaceFirst('http://', 'ws://')
           .replaceFirst('https://', 'wss://');
       final socket = await WebSocket.connect('$wsUrl/ws/host?token=$token&role=viewer');
+      if (_stopped) {
+        await socket.close();
+        _connecting = false;
+        return;
+      }
       _socket = socket;
       _retry = 0;
       _connecting = false;
@@ -58,21 +69,21 @@ class HostChannelService {
       }, onDone: () {
         if (_socket == socket) _socket = null;
         connected.value = false;
-        _scheduleReconnect();
+        if (!_stopped) _scheduleReconnect();
       }, onError: (_) {
         if (_socket == socket) _socket = null;
         connected.value = false;
-        _scheduleReconnect();
+        if (!_stopped) _scheduleReconnect();
       });
     } catch (_) {
       _connecting = false;
       connected.value = false;
-      _scheduleReconnect();
+      if (!_stopped) _scheduleReconnect();
     }
   }
 
   void _scheduleReconnect() {
-    if (_reconnectTimer != null) return;
+    if (_stopped || _reconnectTimer != null) return;
     _retry++;
     final seconds = min(60, 3 * (1 << min(_retry, 4)));
     _reconnectTimer = Timer(Duration(seconds: seconds), () {
@@ -88,12 +99,14 @@ class HostChannelService {
   }
 
   void stop() {
+    _stopped = true;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     try {
       _socket?.close();
     } catch (_) {}
     _socket = null;
+    _connecting = false;
     connected.value = false;
   }
 }

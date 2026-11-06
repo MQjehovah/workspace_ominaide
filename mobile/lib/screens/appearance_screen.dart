@@ -34,12 +34,14 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
   Future<void> _pickPreset(Color color) async {
     await appTheme.setSeed(color);
+    if (!mounted) return;
     setState(() => _hue = HSVColor.fromColor(color).hue);
     await ApiService().pushAppearanceSetting('primary', _hex(color));
   }
 
   Future<void> _commitHue(double value) async {
     final color = HSVColor.fromAHSV(1, value, 0.78, 0.95).toColor();
+    if (!mounted) return;
     setState(() => _draggingHue = false);
     await appTheme.setSeed(color);
     await ApiService().pushAppearanceSetting('primary', _hex(color));

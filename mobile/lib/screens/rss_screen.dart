@@ -96,6 +96,11 @@ class _RssScreenState extends State<RssScreen> {
               subtitle: '${_entries.length} 条最近更新',
               actions: [
                 RoundIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
+                RoundIconButton(
                   icon: Icons.refresh_rounded,
                   tooltip: '刷新',
                   onTap: _load,

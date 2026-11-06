@@ -19,6 +19,7 @@ class NavigationShell extends StatefulWidget {
 
 class _NavigationShellState extends State<NavigationShell> {
   late int _index;
+  late List<bool> _loaded;
 
   static const _destinations = [
     NavigationDestination(
@@ -47,16 +48,27 @@ class _NavigationShellState extends State<NavigationShell> {
   void initState() {
     super.initState();
     _index = widget.initialIndex.clamp(0, _destinations.length - 1);
+    _loaded = List<bool>.filled(widget.pages.length, false);
+    if (_index < _loaded.length) _loaded[_index] = true;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _index, children: widget.pages),
+      body: IndexedStack(
+        index: _index,
+        children: [
+          for (var i = 0; i < widget.pages.length; i++)
+            _loaded[i] ? widget.pages[i] : const SizedBox.shrink(),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (value) {
-          setState(() => _index = value);
+          setState(() {
+            _index = value;
+            if (value < _loaded.length) _loaded[value] = true;
+          });
           widget.onTabChanged?.call(value);
         },
         destinations: _destinations,

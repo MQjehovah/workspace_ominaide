@@ -54,6 +54,7 @@ class _InboxScreenState extends State<InboxScreen> {
       }
     }
     for (final n in notifications) {
+      if (n['read'] == true) continue;
       final id = n['id'];
       items.add(TriageItem(
         id: 'notification:$id',
@@ -61,8 +62,8 @@ class _InboxScreenState extends State<InboxScreen> {
         title: (n['title'] ?? '通知').toString(),
         summary: (n['body'] ?? '').toString(),
         from: '通知',
-        priority: n['read'] == false ? 'needs_reply' : 'normal',
-        needsReply: n['read'] == false,
+        priority: 'needs_reply',
+        needsReply: true,
         time: DateTime.tryParse('${n['created_at'] ?? ''}'),
       ));
     }
@@ -161,6 +162,11 @@ class _InboxScreenState extends State<InboxScreen> {
               title: '收件箱',
               subtitle: '${_visible.length} 条待处理',
               actions: [
+                RoundIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
                 RoundIconButton(
                   icon: Icons.done_all_rounded,
                   tooltip: '全部已读',
@@ -355,9 +361,9 @@ class _InboxRow extends StatelessWidget {
                     [
                       if (item.from.isNotEmpty) item.from,
                       if (item.time != null)
-                        '${item.time!.month}/${item.time!.day} '
-                            '${item.time!.hour.toString().padLeft(2, '0')}:'
-                            '${item.time!.minute.toString().padLeft(2, '0')}',
+                        '${item.time!.toLocal().month}/${item.time!.toLocal().day} '
+                            '${item.time!.toLocal().hour.toString().padLeft(2, '0')}:'
+                            '${item.time!.toLocal().minute.toString().padLeft(2, '0')}',
                     ].join(' · '),
                     style: TextStyle(fontSize: 9, color: palette.muted),
                   ),

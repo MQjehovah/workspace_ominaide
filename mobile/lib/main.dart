@@ -57,12 +57,8 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _checkAuth() async {
     await ApiService().loadToken();
     if (ApiService().isLoggedIn && !appTheme.hasLocalSettings) {
-      try {
-        final remote = await ApiService().getAppearanceSettings();
-        if (remote.isNotEmpty) await appTheme.applyRemote(remote);
-      } catch (_) {
-        // Offline: local defaults are still usable.
-      }
+      // Never block startup on an optional cross-device settings fetch.
+      _pullRemoteAppearance();
     }
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -73,6 +69,15 @@ class _SplashScreenState extends State<SplashScreen> {
             : const LoginScreen(),
       ),
     );
+  }
+
+  Future<void> _pullRemoteAppearance() async {
+    try {
+      final remote = await ApiService().getAppearanceSettings();
+      if (remote.isNotEmpty) await appTheme.applyRemote(remote);
+    } catch (_) {
+      // Offline: local defaults are still usable.
+    }
   }
 
   @override

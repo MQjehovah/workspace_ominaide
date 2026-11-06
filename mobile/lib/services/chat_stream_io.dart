@@ -24,6 +24,10 @@ Stream<String> streamChatSse(
     if (payload == '[DONE]') break;
     try {
       final obj = jsonDecode(payload);
+      if (obj['type'] == 'error') {
+        final message = (obj['content'] ?? '生成失败').toString();
+        throw Exception(message);
+      }
       if (obj['type'] == 'token') {
         final content = obj['content'] as String?;
         if (content != null && content.isNotEmpty) yield content;

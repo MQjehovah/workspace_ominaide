@@ -43,14 +43,23 @@ class _MemoryScreenState extends State<MemoryScreen> {
   }
 
   Future<void> _act(Future<bool> action, String success) async {
-    final ok = await action;
-    if (!mounted) return;
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(success)));
-      await _load();
-    } else {
+    try {
+      final ok = await action;
+      if (!mounted) return;
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(success)),
+        );
+        await _load();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('操作失败，请稍后重试')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('操作失败，请稍后重试')),
+        const SnackBar(content: Text('网络异常，请稍后重试')),
       );
     }
   }
@@ -78,6 +87,11 @@ class _MemoryScreenState extends State<MemoryScreen> {
               title: '记忆与关于我',
               subtitle: '${_candidates.length} 条待审核 · ${_records.length} 条长期记忆',
               actions: [
+                RoundIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
                 RoundIconButton(
                   icon: Icons.refresh_rounded,
                   tooltip: '刷新',

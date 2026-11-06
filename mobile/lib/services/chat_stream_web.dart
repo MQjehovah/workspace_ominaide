@@ -39,6 +39,10 @@ Stream<String> streamChatSse(
         if (payload == '[DONE]') return;
         try {
           final obj = jsonDecode(payload);
+          if (obj['type'] == 'error') {
+            final message = (obj['content'] ?? '生成失败').toString();
+            throw Exception(message);
+          }
           if (obj['type'] == 'token') {
             final content = obj['content'] as String?;
             if (content != null && content.isNotEmpty) yield content;
@@ -51,6 +55,10 @@ Stream<String> streamChatSse(
       if (t.startsWith('data: ') && !t.contains('[DONE]')) {
         try {
           final obj = jsonDecode(t.substring(6).trim());
+          if (obj['type'] == 'error') {
+            final message = (obj['content'] ?? '生成失败').toString();
+            throw Exception(message);
+          }
           if (obj['type'] == 'token') {
             final content = obj['content'] as String?;
             if (content != null && content.isNotEmpty) yield content;

@@ -165,6 +165,11 @@ class _MailScreenState extends State<MailScreen> {
           subtitle: _loading ? '加载中' : '${_messages.length} 封邮件',
           actions: [
             RoundIconButton(
+              icon: Icons.arrow_back_rounded,
+              onTap: () => Navigator.maybePop(context),
+            ),
+            const SizedBox(width: 6),
+            RoundIconButton(
               icon: Icons.refresh_rounded,
               tooltip: '刷新',
               onTap: _loadList,
