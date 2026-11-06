@@ -178,6 +178,9 @@
         <div class="preview-actions">
           <el-button type="primary" :icon="Download" @click="downloadFile(previewFileItem)">下载</el-button>
         </div>
+        <div class="file-comments">
+          <ObjectComments type="file" :object-id="previewFileItem.id" :title="previewFileItem.original_name" />
+        </div>
       </div>
     </el-dialog>
   </div>
@@ -190,6 +193,7 @@ import { useFileStore, type FileItem } from '@/stores/core/file'
 import { apiUrl } from '@/api/base'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
+import ObjectComments from '@/components/ObjectComments.vue'
 import {
   Delete, Document, Download, Edit, Folder, FolderAdd, Grid, Headset, List, Loading,
   MoreFilled, Picture, Rank, Reading, RefreshLeft, Search, Star, StarFilled, Upload, VideoCamera,
@@ -444,4 +448,5 @@ onMounted(loadFiles)
 .pager { display:flex; justify-content:center; margin-top:16px; }
 .preview-center { text-align:center; min-height:40px; }
 .preview-actions { text-align:center; margin-top:12px; }
+.file-comments { margin-top: 18px; padding-top: 14px; border-top: 1px solid #eef1f7; }
 </style>

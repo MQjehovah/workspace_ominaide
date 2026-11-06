@@ -18,7 +18,15 @@ async def list_schedule_events(user_id: int, args: dict) -> dict:
         q = select(Event).where(Event.user_id == user_id, Event.start_time >= start, Event.start_time <= end).order_by(Event.start_time).limit(20)
         r = await db.execute(q)
         evts = r.scalars().all()
-        return {"events": [{"id": e.id, "title": e.title, "start_time": str(e.start_time), "end_time": str(e.end_time) if e.end_time else None} for e in evts]}
+        return {"events": [{
+            "id": e.id,
+            "title": e.title,
+            "start_time": str(e.start_time),
+            "end_time": str(e.end_time) if e.end_time else None,
+            "source": e.source,
+            "location": e.location,
+            "status": e.status,
+        } for e in evts]}
 
 
 async def create_schedule_event(user_id: int, args: dict) -> dict:
@@ -50,11 +58,14 @@ async def create_schedule_event(user_id: int, args: dict) -> dict:
         end_time=end_dt or (start_dt + timedelta(hours=1)),
         notes=notes,
         remind_before=remind_before,
+        source="agent",
+        location=args.get("location"),
     )
     async with async_session() as db:
         ev = await create_event(db, user_id, req)
         await db.commit()
-        return {"id": ev.id, "title": ev.title, "start_time": str(ev.start_time), "remind_before": ev.remind_before}
+        return {"id": ev.id, "title": ev.title, "start_time": str(ev.start_time),
+                "remind_before": ev.remind_before, "source": ev.source}
 
 
 async def list_recent_emails(user_id: int, args: dict) -> dict:

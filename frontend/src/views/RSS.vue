@@ -51,6 +51,9 @@
             <span>{{ formatTime(selectedEntry.published) }}</span>
           </div>
           <div class="reader-body" v-html="selectedEntry.content || selectedEntry.summary || ''"></div>
+          <div class="reader-comments">
+            <ObjectComments type="rss_entry" :object-id="selectedEntry.id" :title="selectedEntry.title" />
+          </div>
         </div>
       </div>
     </div>
@@ -82,6 +85,7 @@ import { ref, computed, onMounted } from 'vue'
 import client from '@/api/client'
 import { ElMessage } from 'element-plus'
 import { parseBackendDate } from '@/utils/date'
+import ObjectComments from '@/components/ObjectComments.vue'
 
 const feeds = ref<any[]>([])
 const activeFeed = ref<number | null>(null)
@@ -200,6 +204,7 @@ onMounted(() => { loadFeeds(); loadEntries() })
 .entry-row-title { font-size:14px; font-weight:500; color:#1a1a2e; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .entry-row-meta { font-size:12px; color:#909399; margin-top:2px; }
 .reader { padding:20px 32px; max-width:800px; }
+.reader-comments { margin-top: 22px; padding-top: 16px; border-top: 1px solid #eef1f7; }
 .reader-header { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
 .back-btn { border:none;background:transparent;cursor:pointer;font-size:14px;color:#409EFF;padding:0; }
 .reader-title { font-size:22px; font-weight:700; color:#1a1a2e; margin:0 0 8px; }

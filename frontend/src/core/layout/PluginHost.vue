@@ -30,7 +30,10 @@
                 <span :style="{ textDecoration: todo.status === 'done' ? 'line-through' : 'none' }">
                   {{ todo.title }}
                 </span>
-                <el-button text size="small" :icon="Delete" @click="deleteTodo(todo.id)" />
+                <div style="display:flex; gap:2px">
+                  <el-button text size="small" :icon="ChatDotRound" @click.stop="openComments(todo)" />
+                  <el-button text size="small" :icon="Delete" @click.stop="deleteTodo(todo.id)" />
+                </div>
               </div>
               <div v-if="todo.priority > 0" style="margin-top:4px">
                 <el-tag :type="priorityType(todo.priority)" size="small">
@@ -53,14 +56,22 @@
       <h2>{{ pluginName }}</h2>
       <p style="color:#909399">插件页面加载中...</p>
     </div>
+
+    <ObjectCommentsDrawer
+      v-model="commentsOpen"
+      type="todo"
+      :object-id="commentTodo?.id || 0"
+      :title="commentTodo?.title || '待办评论'"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Plus, Delete } from '@element-plus/icons-vue'
+import { Plus, Delete, ChatDotRound } from '@element-plus/icons-vue'
 import NotesPage from '@/views/notes/NotesPage.vue'
+import ObjectCommentsDrawer from '@/components/ObjectCommentsDrawer.vue'
 import client from '@/api/client'
 
 const route = useRoute()
@@ -85,6 +96,13 @@ const columns = [
 const todos = ref<TodoItem[]>([])
 const newTitle = ref('')
 const dragTodo = ref<TodoItem | null>(null)
+const commentsOpen = ref(false)
+const commentTodo = ref<TodoItem | null>(null)
+
+function openComments(todo: TodoItem) {
+  commentTodo.value = todo
+  commentsOpen.value = true
+}
 
 async function fetchTodos() {
   try {

@@ -13,6 +13,7 @@ CHECK_INTERVAL = 60  # seconds between checks
 _last_mail_sync = 0.0
 _last_rss_refresh = 0.0
 _last_dingtalk_sync_date: str | None = None
+_last_dingtalk_calendar_sync = 0.0
 
 
 async def _check_reminders():
@@ -261,9 +262,24 @@ async def _sync_dingtalk() -> None:
         print(f"[scheduler] dingtalk sync error: {e}")
 
 
+async def _sync_dingtalk_calendar() -> None:
+    """Mirror DingTalk calendar events without invoking the LLM."""
+    try:
+        from core.config.settings import settings as _settings
+        from plugins.schedule.backend.dingtalk_sync import sync_dingtalk_calendar
+
+        await sync_dingtalk_calendar(
+            days_before=_settings.dingtalk_calendar_days_before,
+            days_after=_settings.dingtalk_calendar_days_after,
+        )
+    except Exception as e:
+        print(f"[scheduler] dingtalk calendar sync error: {e}")
+
+
 async def scheduler_loop():
     """Check every 60s. Only reminders and fetching live here — no LLM calls."""
     global _last_mail_sync, _last_rss_refresh, _last_dingtalk_sync_date
+    global _last_dingtalk_calendar_sync
     while True:
         try:
             await _check_reminders()
@@ -287,6 +303,14 @@ async def scheduler_loop():
                 if now >= scheduled:
                     _last_dingtalk_sync_date = today_key
                     await _sync_dingtalk()
+
+            interval = max(1, int(_settings.dingtalk_calendar_sync_minutes or 15)) * 60
+            if (
+                _settings.dingtalk_calendar_sync_enabled
+                and _clock() - _last_dingtalk_calendar_sync >= interval
+            ):
+                _last_dingtalk_calendar_sync = _clock()
+                await _sync_dingtalk_calendar()
         except Exception as e:
             print(f"[scheduler] error: {e}")
 

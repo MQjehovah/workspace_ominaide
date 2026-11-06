@@ -31,6 +31,8 @@ def _event_details(ev, **extra) -> dict:
 async def list_events(
     start: str | None = Query(None),
     end: str | None = Query(None),
+    source: str | None = Query(None),
+    q: str | None = Query(None),
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -39,7 +41,7 @@ async def list_events(
         e = parse_datetime(end) if end else None
     except ValueError:
         raise HTTPException(status_code=422, detail="start/end must be ISO datetimes")
-    return await service.list_events(db, user["id"], s, e)
+    return await service.list_events(db, user["id"], s, e, source=source, query=q)
 
 
 @router.post("", response_model=EventResponse, status_code=201)

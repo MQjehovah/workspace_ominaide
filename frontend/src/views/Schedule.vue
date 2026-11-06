@@ -2,7 +2,15 @@
   <div class="page-wrapper">
     <div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
       <h2>日程</h2>
-      <el-button type="primary" @click="openAdd">添加日程</el-button>
+      <div class="header-actions">
+        <el-select v-model="sourceFilter" size="small" style="width:120px" @change="fetchEvents">
+          <el-option label="全部来源" value="" />
+          <el-option label="钉钉" value="dingtalk" />
+          <el-option label="手动" value="manual" />
+          <el-option label="助手" value="agent" />
+        </el-select>
+        <el-button type="primary" @click="openAdd">添加日程</el-button>
+      </div>
     </div>
     <div class="page-card">
       <div class="page-card-body">
@@ -19,22 +27,45 @@
       </div>
     </div>
 
-    <el-drawer v-model="drawerVisible" :title="selectedDate" size="360px">
+    <el-drawer v-model="drawerVisible" :title="selectedDate" size="460px">
       <div v-if="dayEvents.length === 0" style="text-align:center;color:#909399;padding:40px">暂无日程</div>
       <div v-for="e in dayEvents" :key="e.id" class="event-card" :style="{ borderLeftColor: e.color || '#409EFF' }">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div style="font-weight:600;font-size:14px;color:#1a1a2e">{{ e.title }}</div>
-            <div style="font-size:12px;color:#909399;margin-top:4px">{{ formatTime(e.start_time) }}<template v-if="e.end_time"> — {{ formatTime(e.end_time) }}</template></div>
-            <div v-if="e.notes" style="font-size:12px;color:#666;margin-top:6px">{{ e.notes }}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="min-width:0">
+            <div class="event-title">
+              {{ e.title }}
+              <el-tag size="small" :type="sourceTagType(e.source)" effect="plain">{{ sourceLabel(e.source) }}</el-tag>
+              <el-tag v-if="e.status === 'cancelled'" size="small" type="info" effect="plain">已取消</el-tag>
+            </div>
+            <div class="event-time">{{ formatTime(e.start_time) }}<template v-if="e.end_time"> — {{ formatTime(e.end_time) }}</template></div>
+            <div v-if="e.location" class="event-meta">地点：{{ e.location }}</div>
+            <div v-if="e.source === 'dingtalk'" class="event-meta">
+              <span v-if="e.external_meta?.organizer">组织者：{{ e.external_meta.organizer }}</span>
+              <span v-if="e.external_meta?.rooms?.length"> · 会议室：{{ e.external_meta.rooms.map((r: any) => r.name).filter(Boolean).join('、') }}</span>
+              <span v-if="e.external_meta?.meeting_room_code"> · 会议号 {{ e.external_meta.meeting_room_code }}</span>
+              <a v-if="e.external_meta?.meeting_url" :href="e.external_meta.meeting_url" target="_blank" rel="noopener" class="meeting-link">加入会议</a>
+            </div>
+            <div v-if="e.notes" class="event-meta">备注：{{ e.notes }}</div>
           </div>
-          <div style="display:flex;gap:4px;flex-shrink:0">
+          <div class="event-actions">
+            <el-button link size="small" @click="askAssistant(e)">让助手处理</el-button>
             <el-button link size="small" @click="openEdit(e)">编辑</el-button>
             <el-popconfirm title="确定删除？" @confirm="deleteEvent(e.id)">
               <template #reference><el-button link type="danger" size="small">删除</el-button></template>
             </el-popconfirm>
           </div>
         </div>
+        <div class="event-comment-toggle">
+          <el-button link size="small" @click="toggleComments(e.id)">
+            {{ expandedComments.has(e.id) ? '收起评论与材料' : '评论与材料' }}
+          </el-button>
+        </div>
+        <ObjectComments
+          v-if="expandedComments.has(e.id)"
+          type="schedule_event"
+          :object-id="e.id"
+          :title="e.title"
+        />
       </div>
     </el-drawer>
 
@@ -51,6 +82,9 @@
         </el-form-item>
         <el-form-item label="颜色">
           <el-color-picker v-model="form.color" />
+        </el-form-item>
+        <el-form-item label="地点">
+          <el-input v-model="form.location" placeholder="可选" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.notes" type="textarea" :rows="3" />
@@ -74,8 +108,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import client from '@/api/client'
 import { parseLocalDate } from '@/utils/date'
+import ObjectComments from '@/components/ObjectComments.vue'
 
 interface ScheduleEvent {
   id: number
@@ -85,8 +121,16 @@ interface ScheduleEvent {
   notes?: string
   color?: string
   remind_before?: number
+  source?: string
+  external_id?: string
+  external_meta?: any
+  location?: string
+  status?: string
+  last_synced_at?: string
 }
 
+const route = useRoute()
+const router = useRouter()
 const currentDate = ref(new Date())
 const events = ref<ScheduleEvent[]>([])
 const drawerVisible = ref(false)
@@ -95,6 +139,8 @@ const selectedDate = ref('')
 const editing = ref<ScheduleEvent | null>(null)
 const saving = ref(false)
 const formRef = ref<any>(null)
+const sourceFilter = ref('')
+const expandedComments = ref(new Set<number>())
 
 const form = ref<{
   title: string
@@ -102,6 +148,7 @@ const form = ref<{
   end_time: number | null
   color: string
   notes: string
+  location: string
   remind_before: number
 }>({
   title: '',
@@ -109,6 +156,7 @@ const form = ref<{
   end_time: null,
   color: '#409EFF',
   notes: '',
+  location: '',
   remind_before: 0,
 })
 
@@ -128,7 +176,13 @@ function getMonthRange(date: Date) {
 async function fetchEvents() {
   try {
     const { start, end } = getMonthRange(currentDate.value)
-    const res = await client.get('/schedule', { params: { start, end } })
+    const res = await client.get('/schedule', {
+      params: {
+        start,
+        end,
+        ...(sourceFilter.value ? { source: sourceFilter.value } : {}),
+      },
+    })
     events.value = res.data || []
   } catch {
     events.value = []
@@ -157,9 +211,48 @@ function selectDate(date: string) {
   drawerVisible.value = true
 }
 
+function sourceLabel(source?: string) {
+  return ({ dingtalk: '钉钉', agent: '助手', manual: '手动' } as Record<string, string>)[source || 'manual'] || '手动'
+}
+
+function sourceTagType(source?: string) {
+  if (source === 'dingtalk') return 'primary'
+  if (source === 'agent') return 'success'
+  return 'info'
+}
+
+function toggleComments(id: number) {
+  if (expandedComments.value.has(id)) expandedComments.value.delete(id)
+  else expandedComments.value.add(id)
+}
+
+function askAssistant(event: ScheduleEvent) {
+  router.push({ path: '/chat', query: { ref: `schedule_event:${event.id}` } })
+}
+
+async function openFromRoute() {
+  const id = Number(route.query.event)
+  if (!Number.isFinite(id) || id <= 0) return
+  try {
+    const { data } = await client.get(`/objects/schedule_event/${id}`)
+    const day = String(data.time || '').slice(0, 10)
+    if (day) {
+      currentDate.value = new Date(`${day}T12:00:00`)
+      selectedDate.value = day
+      await fetchEvents()
+    }
+    const event = events.value.find((item) => item.id === id)
+    if (event) selectedDate.value = event.start_time.slice(0, 10)
+    expandedComments.value.add(id)
+    drawerVisible.value = true
+  } catch {
+    // Ignore an invalid or deleted event reference.
+  }
+}
+
 function openAdd() {
   editing.value = null
-  form.value = { title: '', start_time: null, end_time: null, color: '#409EFF', notes: '', remind_before: 0 }
+  form.value = { title: '', start_time: null, end_time: null, color: '#409EFF', notes: '', location: '', remind_before: 0 }
   dialogVisible.value = true
 }
 
@@ -171,6 +264,7 @@ function openEdit(e: ScheduleEvent) {
     end_time: e.end_time ? new Date(e.end_time).getTime() : null,
     color: e.color || '#409EFF',
     notes: e.notes || '',
+    location: e.location || '',
     remind_before: e.remind_before ?? 0,
   }
   dialogVisible.value = true
@@ -186,6 +280,7 @@ async function saveEvent() {
       start_time: new Date(form.value.start_time!).toISOString(),
       color: form.value.color,
       notes: form.value.notes,
+      location: form.value.location || undefined,
       remind_before: form.value.remind_before,
     }
     if (form.value.end_time) {
@@ -213,12 +308,22 @@ async function deleteEvent(id: number) {
   }
 }
 
-onMounted(() => fetchEvents())
+onMounted(async () => {
+  await fetchEvents()
+  await openFromRoute()
+})
 </script>
 
 <style scoped>
 .cal-cell { cursor: pointer; }
 .cal-dots { display: flex; gap: 3px; justify-content: center; margin-top: 2px; }
 .cal-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
-.event-card { border-left: 3px solid; padding: 12px; margin-bottom: 8px; border-radius: 6px; background: #fafafa; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.event-card { border-left: 3px solid; padding: 12px; margin-bottom: 10px; border-radius: 6px; background: #fafafa; }
+.event-title { font-weight: 600; font-size: 14px; color: #1a1a2e; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.event-time { font-size: 12px; color: #909399; margin-top: 4px; }
+.event-meta { font-size: 12px; color: #666; margin-top: 5px; line-height: 1.6; }
+.meeting-link { margin-left: 6px; color: #4f46e5; text-decoration: none; }
+.event-actions { display: flex; gap: 2px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; max-width: 150px; }
+.event-comment-toggle { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e7eaf1; }
 </style>

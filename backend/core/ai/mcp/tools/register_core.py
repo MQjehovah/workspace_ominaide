@@ -14,6 +14,8 @@ from core.ai.mcp.tools.management import TOOLS as MANAGEMENT_TOOLS
 from core.ai.mcp.tools.system import TOOLS as SYSTEM_TOOLS
 from core.ai.mcp.tools.notifications import TOOLS as NOTIFICATION_TOOLS
 from core.ai.mcp.tools.chat_history import TOOLS as CHAT_HISTORY_TOOLS
+from core.ai.mcp.tools.objects import TOOLS as OBJECT_TOOLS
+from core.ai.mcp.tools.schedule import TOOLS as SCHEDULE_TOOLS
 
 
 def register_core_tools():
@@ -36,6 +38,10 @@ def register_core_tools():
     for tool, handler in NOTIFICATION_TOOLS:
         tool_registry.register(tool, handler)
     for tool, handler in CHAT_HISTORY_TOOLS:
+        tool_registry.register(tool, handler)
+    for tool, handler in OBJECT_TOOLS:
+        tool_registry.register(tool, handler)
+    for tool, handler in SCHEDULE_TOOLS:
         tool_registry.register(tool, handler)
     tool_registry.register(
         MCPTool(

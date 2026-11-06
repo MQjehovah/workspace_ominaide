@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     dingtalk_sync_minute: int = 45
     dingtalk_sync_hours: int = 24
     dingtalk_sync_max_messages: int = 200
+    # DingTalk calendar mirror (no LLM). Keeps external source metadata.
+    dingtalk_calendar_sync_enabled: bool = True
+    dingtalk_calendar_sync_minutes: int = 15
+    dingtalk_calendar_days_before: int = 7
+    dingtalk_calendar_days_after: int = 90
     intelligence_layer_enabled: bool = True
     coding_workspace_root: str = "/workspace"
     coding_max_turns: int = 40

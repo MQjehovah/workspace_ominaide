@@ -7,12 +7,19 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class ObjectRef(BaseModel):
+    type: str
+    id: int
+
+
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] | None = None
     images: list[str] | None = None
     session_id: str | None = None
     bot_id: int | None = None
+    context_refs: list[ObjectRef] | None = None
+    context_comment_id: int | None = None
 
 
 class ChatResponse(BaseModel):

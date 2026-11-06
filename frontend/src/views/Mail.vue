@@ -101,6 +101,9 @@
         </div>
         <div class="detail-label">正文</div>
         <pre class="detail-body">{{ detail.content || detail.preview || '(无正文)' }}</pre>
+        <div class="detail-comments">
+          <ObjectComments type="mail_message" :object-id="detail.id" :title="detail.subject" />
+        </div>
       </div>
     </el-drawer>
 
@@ -129,6 +132,7 @@ import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { parseBackendDate } from '@/utils/date'
+import ObjectComments from '@/components/ObjectComments.vue'
 
 const accounts = ref<any[]>([])
 const messages = ref<any[]>([])
@@ -291,6 +295,7 @@ onMounted(async () => {
 .detail-label { font-size: 12px; font-weight: 600; color: #1a1a2e; margin: 14px 0 6px; }
 .detail-summary { background: #f5f7fa; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #606266; line-height: 1.8; }
 .detail-body { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.8; color: #303133; background: #fafbfc; border-radius: 8px; padding: 12px; }
+.detail-comments { margin-top: 18px; padding-top: 14px; border-top: 1px solid #eef1f7; }
 
 @media (max-width: 860px) {
   .mail-layout { grid-template-columns: 1fr; gap: 10px; min-height: 0; }

@@ -26,6 +26,18 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("schedule_events")}
             if "reminded" not in cols:
                 result.append("schedule_events")
+            if "source" not in cols:
+                result.append("schedule_source")
+            if "external_id" not in cols:
+                result.append("schedule_external_id")
+            if "external_meta" not in cols:
+                result.append("schedule_external_meta")
+            if "location" not in cols:
+                result.append("schedule_location")
+            if "status" not in cols:
+                result.append("schedule_status")
+            if "last_synced_at" not in cols:
+                result.append("schedule_last_synced")
         if "chat_messages" in table_names:
             cols = {c["name"] for c in inspector.get_columns("chat_messages")}
             if "session_id" not in cols:
@@ -76,6 +88,22 @@ async def ensure_schema_migrations():
                 await conn.execute(text(f"ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT {bool_default}"))
             elif table == "schedule_events":
                 await conn.execute(text(f"ALTER TABLE schedule_events ADD COLUMN reminded BOOLEAN DEFAULT {bool_default}"))
+            elif table == "schedule_source":
+                await conn.execute(text("ALTER TABLE schedule_events ADD COLUMN source VARCHAR(20) DEFAULT 'manual'"))
+                await conn.execute(text(
+                    "UPDATE schedule_events SET source = 'dingtalk' "
+                    "WHERE source = 'manual' AND notes LIKE '钉钉同步%'"
+                ))
+            elif table == "schedule_external_id":
+                await conn.execute(text("ALTER TABLE schedule_events ADD COLUMN external_id VARCHAR(200) NULL"))
+            elif table == "schedule_external_meta":
+                await conn.execute(text("ALTER TABLE schedule_events ADD COLUMN external_meta JSON NULL"))
+            elif table == "schedule_location":
+                await conn.execute(text("ALTER TABLE schedule_events ADD COLUMN location VARCHAR(500) NULL"))
+            elif table == "schedule_status":
+                await conn.execute(text("ALTER TABLE schedule_events ADD COLUMN status VARCHAR(20) DEFAULT 'confirmed'"))
+            elif table == "schedule_last_synced":
+                await conn.execute(text("ALTER TABLE schedule_events ADD COLUMN last_synced_at TIMESTAMP NULL"))
             elif table == "chat_messages":
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN session_id VARCHAR(64) DEFAULT 'default'"))
             elif table == "chat_messages_bot":

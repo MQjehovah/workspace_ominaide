@@ -48,6 +48,17 @@
           </div>
         </div>
 
+        <div class="context-bar">
+          <el-button size="small" :icon="Plus" @click="pickerVisible = true">引用对象</el-button>
+          <div v-if="contextRefs.length" class="context-chips">
+            <span v-for="ref in contextRefs" :key="`${ref.type}:${ref.id}`" class="context-chip">
+              <span class="chip-type">{{ ref.source_label || typeLabel(ref.type) }}</span>
+              <span class="chip-title">{{ ref.title }}</span>
+              <button type="button" class="chip-remove" @click="removeContextRef(ref)">×</button>
+            </span>
+          </div>
+          <span v-else class="context-hint">可以引用日程、邮件、资讯、笔记、待办、文件或项目</span>
+        </div>
         <div class="composer">
           <el-input
             v-model="input"
@@ -61,16 +72,22 @@
         </div>
       </section>
     </div>
+
+    <ObjectPicker v-model="pickerVisible" @select="addContextRef" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { apiUrl } from '@/api/base'
 import { formatBackendDate } from '@/utils/date'
+import ObjectPicker from '@/components/ObjectPicker.vue'
 
+const route = useRoute()
 const sessions = ref<any[]>([])
 const bots = ref<any[]>([])
 const messages = ref<any[]>([])
@@ -79,6 +96,76 @@ const botId = ref<number | null>(null)
 const input = ref('')
 const loading = ref(false)
 const bodyRef = ref<HTMLElement | null>(null)
+const pickerVisible = ref(false)
+const contextRefs = ref<any[]>([])
+const contextCommentId = ref<number | null>(null)
+
+const typeLabels: Record<string, string> = {
+  schedule_event: '日程',
+  mail_message: '邮件',
+  rss_entry: '资讯',
+  note: '笔记',
+  todo: '待办',
+  file: '文件',
+  project: '项目',
+}
+
+function typeLabel(type: string) {
+  return typeLabels[type] || type
+}
+
+function addContextRef(item: any) {
+  if (!item?.type || !item?.id) return
+  if (contextRefs.value.some((ref) => ref.type === item.type && ref.id === item.id)) return
+  contextRefs.value.push({
+    type: item.type,
+    id: item.id,
+    title: item.title || `${typeLabel(item.type)} #${item.id}`,
+    subtitle: item.subtitle || '',
+    source_label: item.source_label || typeLabel(item.type),
+    url: item.url || '',
+  })
+}
+
+function removeContextRef(ref: any) {
+  contextRefs.value = contextRefs.value.filter(
+    (item) => !(item.type === ref.type && item.id === ref.id),
+  )
+}
+
+async function addContextRefById(type: string, id: number) {
+  try {
+    const { data } = await client.get(`/objects/${type}/${id}`)
+    addContextRef(data)
+  } catch {
+    addContextRef({ type, id })
+  }
+}
+
+async function applyRouteContext() {
+  const rawRefs: string[] = []
+  const single = route.query.ref
+  if (typeof single === 'string') rawRefs.push(single)
+  const many = route.query.refs
+  if (typeof many === 'string') rawRefs.push(...many.split(','))
+  for (const raw of rawRefs) {
+    const [type, idText] = raw.split(':')
+    const id = Number(idText)
+    if (type && Number.isFinite(id)) await addContextRefById(type, id)
+  }
+  const direct: Array<[string, any]> = [
+    ['schedule_event', route.query.event],
+    ['mail_message', route.query.message],
+    ['rss_entry', route.query.entry],
+    ['note', route.query.note],
+  ]
+  for (const [type, value] of direct) {
+    const id = Number(value)
+    if (Number.isFinite(id) && id > 0) await addContextRefById(type, id)
+  }
+  const commentId = Number(route.query.comment)
+  if (Number.isFinite(commentId) && commentId > 0) contextCommentId.value = commentId
+}
 
 function newSessionId() {
   return `web-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -162,6 +249,10 @@ async function send() {
         message: text,
         session_id: sessionId.value,
         bot_id: botId.value || undefined,
+        context_refs: contextRefs.value.length
+          ? contextRefs.value.map((ref) => ({ type: ref.type, id: ref.id }))
+          : undefined,
+        context_comment_id: contextCommentId.value || undefined,
       }),
     })
     if (!resp.ok) {
@@ -226,6 +317,7 @@ function formatTime(value: any) {
 }
 
 onMounted(async () => {
+  await applyRouteContext()
   await Promise.all([loadSessions(), loadBots()])
   await loadHistory()
 })
@@ -257,6 +349,21 @@ onMounted(async () => {
 .bubble-row.user .bubble { background: #409eff; color: #fff; }
 .bubble-text { white-space: pre-wrap; word-break: break-word; }
 .typing { color: #909399; font-size: 13px; }
-.composer { display: flex; gap: 10px; align-items: flex-end; padding-top: 12px; border-top: 1px solid #f0f2f5; }
+.composer { display: flex; gap: 10px; align-items: flex-end; padding-top: 10px; border-top: 1px solid #f0f2f5; }
 .composer .el-input { flex: 1; }
+.context-bar { display: flex; align-items: center; gap: 8px; padding-top: 10px; flex-wrap: wrap; }
+.context-hint { font-size: 11.5px; color: #a0a4ad; }
+.context-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.context-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 320px;
+  padding: 3px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca;
+  font-size: 11.5px;
+}
+.chip-type { font-weight: 600; flex-shrink: 0; }
+.chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-remove {
+  border: none; background: transparent; color: #818cf8; cursor: pointer;
+  font-size: 14px; line-height: 1; padding: 0 1px;
+}
+.chip-remove:hover { color: #dc2626; }
 </style>

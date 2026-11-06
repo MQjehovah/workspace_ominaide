@@ -9,6 +9,8 @@ class EventCreate(BaseModel):
     notes: str | None = None
     color: str = "#409EFF"
     remind_before: int = 0
+    source: str = "manual"
+    location: str | None = None
 
 
 class EventUpdate(BaseModel):
@@ -18,6 +20,7 @@ class EventUpdate(BaseModel):
     notes: str | None = None
     color: str | None = None
     remind_before: int | None = None
+    location: str | None = None
 
 
 class EventResponse(BaseModel):
@@ -28,6 +31,12 @@ class EventResponse(BaseModel):
     notes: str | None = None
     color: str = "#409EFF"
     remind_before: int = 0
+    source: str = "manual"
+    external_id: str | None = None
+    external_meta: dict | None = None
+    location: str | None = None
+    status: str = "confirmed"
+    last_synced_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}

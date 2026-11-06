@@ -144,6 +144,16 @@ async def build_messages(
     ctx = await build_bot_context(user_id, bot, req.message)
     if ctx:
         messages.append({"role": "system", "content": ctx})
+    if req.context_refs:
+        from core.objects.registry import build_context_block
+
+        block = await build_context_block(
+            user_id,
+            [ref.model_dump() for ref in req.context_refs],
+            req.context_comment_id,
+        )
+        if block:
+            messages.append({"role": "system", "content": block})
     messages.extend(await resolve_history(req, user_id, limit=history_limit, bot=bot))
     messages.append({"role": "user", "content": _user_content(req)})
     return messages

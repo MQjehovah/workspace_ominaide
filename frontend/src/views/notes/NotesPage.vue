@@ -98,6 +98,7 @@
             </div>
           </div>
           <div class="note-actions">
+            <el-button text :icon="ChatDotRound" @click="commentsOpen = true">评论</el-button>
             <el-button text :icon="Clock" @click="openHistory">历史</el-button>
             <el-button text :icon="Download" @click="exportMarkdown">导出</el-button>
             <el-button type="primary" @click="saveNote">保存</el-button>
@@ -215,6 +216,13 @@
         <pre class="version-pre">{{ versionPreview.content }}</pre>
       </div>
     </el-dialog>
+
+    <ObjectCommentsDrawer
+      v-model="commentsOpen"
+      type="note"
+      :object-id="currentId || 0"
+      :title="noteTitle || '笔记评论'"
+    />
   </div>
 </template>
 
@@ -226,6 +234,7 @@ import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 import TipTapEditor from './TipTapEditor.vue'
 import TreeNode from './TreeNode.vue'
+import ObjectCommentsDrawer from '@/components/ObjectCommentsDrawer.vue'
 
 function fmtDate(value?: string | null) {
   return value ? formatBackendDate(value) : ''
@@ -235,6 +244,7 @@ const tree = ref<any[]>([])
 const currentId = ref<number | null>(null)
 const noteTitle = ref('')
 const noteContent = ref('')
+const commentsOpen = ref(false)
 const loading = ref(true)
 const noteLoading = ref(false)
 const noteCache = new Map<number, { title: string; content: string }>()

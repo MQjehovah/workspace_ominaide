@@ -49,6 +49,7 @@
             </p>
           </div>
           <div class="head-actions">
+            <el-button :icon="ChatDotRound" @click="commentsOpen = true">评论</el-button>
             <el-button type="primary" :icon="VideoPlay" @click="openRun">发起 Coding Run</el-button>
             <el-popconfirm title="删除这个项目？会同时删除项目目录，不可恢复；历史 Run 保留。" @confirm="deleteProject">
               <template #reference><el-button type="danger" plain>删除</el-button></template>
@@ -192,6 +193,13 @@
       </div>
     </el-drawer>
 
+    <ObjectCommentsDrawer
+      v-model="commentsOpen"
+      type="project"
+      :object-id="selected?.id || 0"
+      :title="selected?.name || '项目评论'"
+    />
+
     <el-dialog v-model="runOpen" title="发起 Coding Run" width="560px">
       <el-form :model="runForm" label-width="80px">
         <el-form-item label="任务">
@@ -212,14 +220,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { FolderOpened, Plus, Refresh, VideoPlay } from '@element-plus/icons-vue'
+import { FolderOpened, Plus, Refresh, VideoPlay, ChatDotRound } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
+import ObjectCommentsDrawer from '@/components/ObjectCommentsDrawer.vue'
 
 const projects = ref<any[]>([])
 const runs = ref<any[]>([])
 const selectedId = ref<number | null>(null)
 const selected = computed(() => projects.value.find(p => p.id === selectedId.value) || null)
+const commentsOpen = ref(false)
 
 const createOpen = ref(false)
 const saving = ref(false)

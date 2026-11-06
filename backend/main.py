@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
     import core.ai.insight_models  # noqa
     import core.mcp_hub.models  # noqa
     import core.memory_models  # noqa
+    import core.objects.models  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -186,6 +187,9 @@ app.include_router(cos_router)
 
 from core.events.router import router as activities_router
 app.include_router(activities_router)
+
+from core.objects.router import router as objects_router
+app.include_router(objects_router)
 
 
 @app.websocket("/ws/sync/{folder_id}")

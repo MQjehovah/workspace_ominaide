@@ -9,13 +9,18 @@ from plugins.schedule.backend.schemas import EventCreate, EventUpdate
 
 
 async def list_events(
-    db: AsyncSession, user_id: int, start: datetime | None = None, end: datetime | None = None
+    db: AsyncSession, user_id: int, start: datetime | None = None, end: datetime | None = None,
+    source: str | None = None, query: str | None = None,
 ) -> list[Event]:
     q = select(Event).where(Event.user_id == user_id)
     if start:
         q = q.where(Event.start_time >= start)
     if end:
         q = q.where(Event.start_time <= end)
+    if source:
+        q = q.where(Event.source == source)
+    if query:
+        q = q.where(Event.title.ilike(f"%{query}%"))
     q = q.order_by(Event.start_time)
     r = await db.execute(q)
     return list(r.scalars().all())
@@ -25,6 +30,8 @@ async def create_event(db: AsyncSession, user_id: int, req: EventCreate) -> Even
     data = req.model_dump()
     data["start_time"] = naive_local(data.get("start_time"))
     data["end_time"] = naive_local(data.get("end_time"))
+    if data.get("source") not in {"manual", "agent", "dingtalk"}:
+        data["source"] = "manual"
     ev = Event(user_id=user_id, **data)
     db.add(ev)
     await db.flush()
