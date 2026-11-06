@@ -2,6 +2,7 @@ import Flutter
 import MediaPlayer
 import UIKit
 import UserNotifications
+import Vision
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -28,7 +29,55 @@ import UserNotifications
 
     GeneratedPluginRegistrant.register(with: self)
     setupMediaChannel()
+    setupOcrChannel()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  private func setupOcrChannel() {
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "omniaide/ocr",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "recognize",
+            let args = call.arguments as? [String: Any],
+            let path = args["path"] as? String else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      DispatchQueue.global(qos: .userInitiated).async {
+        do {
+          let handler = VNImageRequestHandler(
+            url: URL(fileURLWithPath: path),
+            options: [:]
+          )
+          let request = VNRecognizeTextRequest()
+          request.recognitionLevel = .accurate
+          request.usesLanguageCorrection = true
+          request.recognitionLanguages = ["zh-Hans", "en-US"]
+          try handler.perform([request])
+          let lines = (request.results ?? []).compactMap {
+            $0.topCandidates(1).first?.string
+          }
+          DispatchQueue.main.async {
+            result(lines.joined(separator: "\n"))
+          }
+        } catch {
+          DispatchQueue.main.async {
+            result(
+              FlutterError(
+                code: "ocr_failed",
+                message: error.localizedDescription,
+                details: nil
+              )
+            )
+          }
+        }
+      }
+    }
   }
 
   private func setupMediaChannel() {

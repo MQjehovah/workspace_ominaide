@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 
 import '../models/chat_session.dart';
 import '../services/api_service.dart';
+import '../services/bot_selection_service.dart';
 import '../services/speech_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'bots_screen.dart';
 import 'voice_chat_screen.dart';
 import '../widgets/chat_bubble.dart';
 
@@ -65,6 +67,8 @@ class _ChatScreenState extends State<ChatScreen> {
   late String _sessionId =
       widget.sessionId ?? 'mobile-${DateTime.now().microsecondsSinceEpoch}';
   String? _title;
+  int? _botId;
+  String? _botName;
 
   @override
   void initState() {
@@ -157,7 +161,118 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Future<void> _loadBot() async {
+    await BotSelectionService().load();
+    _botId = BotSelectionService().botId;
+    _botName = BotSelectionService().botName;
+    if (_botId != null) {
+      if (mounted) setState(() {});
+      return;
+    }
+    try {
+      final bots = await ApiService().listBots();
+      if (bots.isEmpty) return;
+      final bot = bots.firstWhere(
+        (b) => b['is_default'] == true,
+        orElse: () => bots.first,
+      );
+      final id = (bot['id'] as num?)?.toInt();
+      if (id == null) return;
+      final name = (bot['name'] ?? 'AI 助理').toString();
+      await BotSelectionService().select(id, name);
+      _botId = id;
+      _botName = name;
+    } catch (_) {}
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _showBotPicker() async {
+    List<Map<String, dynamic>> bots;
+    try {
+      bots = await ApiService().listBots();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('加载角色失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final palette = AppPalette.of(context);
+    final picked = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Row(
+              children: [
+                Text(
+                  '切换 AI 角色',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: palette.ink,
+                  ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () async {
+                    final before = _botId;
+                    Navigator.pop(ctx);
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BotsScreen()),
+                    );
+                    await _loadBot();
+                    if (!mounted) return;
+                    if (_botId != before) _newChat();
+                    setState(() {});
+                  },
+                  child: const Text('管理'),
+                ),
+              ],
+            ),
+            for (final bot in bots)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  radius: 17,
+                  backgroundColor: palette.primarySoft,
+                  child: Icon(Icons.smart_toy_outlined, size: 18, color: palette.primary),
+                ),
+                title: Text((bot['name'] ?? 'AI 助理').toString()),
+                subtitle: (bot['role'] ?? '').toString().isEmpty
+                    ? null
+                    : Text((bot['role'] ?? '').toString()),
+                trailing: (bot['id'] as num?)?.toInt() == _botId
+                    ? Icon(Icons.check_circle, size: 18, color: palette.primary)
+                    : null,
+                onTap: () => Navigator.pop(ctx, bot),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final id = (picked['id'] as num?)?.toInt();
+    if (id == null) return;
+    final name = (picked['name'] ?? 'AI 助理').toString();
+    await BotSelectionService().select(id, name);
+    if (!mounted) return;
+    setState(() {
+      _botId = id;
+      _botName = name;
+    });
+    _newChat();
+    if (mounted) setState(() {});
+  }
+
   Future<void> _bootstrap() async {
+    await _loadBot();
     if (widget.sessionId != null) {
       await _loadHistory();
       return;
@@ -165,7 +280,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!widget.autoLoadLatest || widget.initialQuery != null) return;
     _bootstrapping = true;
     try {
-      final sessions = await ApiService().listChatSessions();
+      final sessions = await ApiService().listChatSessions(botId: _botId);
       if (!mounted) return;
       if (sessions.isNotEmpty) {
         _sessionId = sessions.first.id;
@@ -311,11 +426,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final done = Completer<void>();
     _streamDone = done;
     final api = ApiService();
+    if (_botId == null) await _loadBot();
     _streamSub = api
         .chatStream(
           text,
           history: history,
           sessionId: _sessionId,
+          botId: _botId,
         )
         .listen(
           (chunk) {
@@ -716,7 +833,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final palette = AppPalette.of(sheetContext);
         return SafeArea(
           child: FutureBuilder<List<ChatSession>>(
-            future: ApiService().listChatSessions(),
+            future: ApiService().listChatSessions(botId: _botId),
             builder: (context, snapshot) {
               final items = snapshot.data ?? [];
               return ListView(
@@ -1034,7 +1151,13 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           ),
                           Text(
-                            _loading ? '正在生成…' : '点击切换会话',
+                            _loading
+                                ? '正在生成…'
+                                : (_botName == null
+                                    ? '点击切换会话'
+                                    : '$_botName · 点击切换会话'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 10.5, color: palette.muted),
                           ),
                         ],
@@ -1049,6 +1172,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
+          ),
+          const SizedBox(width: 6),
+          RoundIconButton(
+            icon: Icons.smart_toy_outlined,
+            tooltip: '切换 AI 角色',
+            onTap: _showBotPicker,
           ),
           const SizedBox(width: 6),
           RoundIconButton(

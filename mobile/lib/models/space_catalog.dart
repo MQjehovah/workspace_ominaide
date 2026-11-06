@@ -94,17 +94,17 @@ List<SpaceGroupSpec> buildSpaceCatalog({
           color: green,
         ),
         _item('sources', '资讯', Icons.dynamic_feed_rounded, purple, sourceCount),
-      ],
-    ),
-    SpaceGroupSpec(
-      title: '更多',
-      items: [
         const SpaceItemSpec(
           key: 'music',
           label: '音乐',
           icon: Icons.music_note_outlined,
           color: orange,
         ),
+      ],
+    ),
+    SpaceGroupSpec(
+      title: '更多',
+      items: [
         const SpaceItemSpec(
           key: 'device',
           label: '设备',

@@ -75,6 +75,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>连接你的 OmniAide 私有服务器</string>
+	<key>NSCameraUsageDescription</key>
+	<string>用于拍照扫描文档并保存为笔记</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于从相册选择图片进行文字识别</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>用于解锁 OmniAide，保护你的私人数据</string>
 	<key>NSMicrophoneUsageDescription</key>

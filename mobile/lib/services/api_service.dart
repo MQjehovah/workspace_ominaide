@@ -637,7 +637,7 @@ class ApiService {
   }
 
   /// Stream chat via SSE (incremental on all platforms).
-  Stream<String> chatStream(String message, {List<Map<String, String>>? history, String? sessionId}) {
+  Stream<String> chatStream(String message, {List<Map<String, String>>? history, String? sessionId, int? botId}) {
     final path = '/api/chat/stream';
     final uri = Uri.parse('$_baseUrl$path');
     final headers = <String, String>{..._headers};
@@ -645,6 +645,7 @@ class ApiService {
       'message': message,
       'history': history ?? [],
       if (sessionId != null) 'session_id': sessionId,
+      if (botId != null) 'bot_id': botId,
     });
     return streamChatSse(uri, headers, body);
   }
@@ -877,8 +878,12 @@ class ApiService {
   }
 
   // -- Chat sessions --
-  Future<List<ChatSession>> listChatSessions() async {
-    final res = await get('/chat/sessions');
+  Future<List<ChatSession>> listChatSessions({int? botId}) async {
+    final q = <String, String>{};
+    if (botId != null) q['bot_id'] = '$botId';
+    final uri = Uri.parse('$_baseUrl/api/chat/sessions')
+        .replace(queryParameters: q.isEmpty ? null : q);
+    final res = await _http.get(uri, headers: _headers);
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     if (data is! List) return [];
@@ -1188,6 +1193,30 @@ class ApiService {
     final res = await get('/bots');
     if (res.statusCode != 200) throw Exception(_extractError(res));
     return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> createBot(Map<String, dynamic> data) async {
+    final res = await post('/bots', data);
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> updateBot(
+    int botId,
+    Map<String, dynamic> data,
+  ) async {
+    final res = await patch('/bots/$botId', data);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<void> deleteBot(int botId) async {
+    final res = await delete('/bots/$botId');
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw Exception(_extractError(res));
+    }
   }
 
   Future<List<Map<String, dynamic>>> listBotRoutines(int botId) async {

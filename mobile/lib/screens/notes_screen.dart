@@ -7,6 +7,8 @@ import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'note_versions_screen.dart';
 import 'notes_ask_screen.dart';
+import 'photo_scan_screen.dart';
+import 'voice_note_screen.dart';
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({super.key});
@@ -181,6 +183,38 @@ class _NotesScreenState extends State<NotesScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 _importUrl();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.mic_none_rounded, color: palette.primary),
+              title: const Text('语音笔记'),
+              subtitle: const Text('录音后自动转写并生成笔记'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => VoiceNoteScreen(
+                      onOpenNote: _openNoteById,
+                    ),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.document_scanner_outlined, color: palette.primary),
+              title: const Text('拍照扫描'),
+              subtitle: const Text('识别纸质文档/白板文字并保存为笔记'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PhotoScanScreen(
+                      onOpenNote: _openNoteById,
+                    ),
+                  ),
+                );
               },
             ),
             const SizedBox(height: 8),
