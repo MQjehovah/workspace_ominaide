@@ -374,7 +374,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
                         ),
                         Switch(
                           value: appTheme.tintBackground,
-                          activeThumbColor: palette.primary,
+                          thumbColor: WidgetStatePropertyAll(palette.primary),
                           onChanged: _setTint,
                         ),
                       ],

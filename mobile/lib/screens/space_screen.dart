@@ -133,7 +133,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
                         contentPadding: EdgeInsets.zero,
                         dense: true,
                         value: !_hidden.contains(item.key),
-                        activeThumbColor: palette.primary,
+                        thumbColor: WidgetStatePropertyAll(palette.primary),
                         title: Text(
                           item.label,
                           style: TextStyle(fontSize: 13, color: palette.ink),
