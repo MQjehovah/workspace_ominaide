@@ -40,3 +40,6 @@ desktop_plugins/
 
 # Device firmware OTA artifacts (rebuilt via build_device.sh publish)
 backend/data/device_firmware/
+
+# Visual brainstorming scratch
+.superpowers/
