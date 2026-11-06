@@ -26,6 +26,27 @@ def _loads(value):
         return None
 
 
+_EXTERNAL_ENTITY_SOURCES = {"rss", "rss_entry", "article"}
+
+
+def _is_external_entity(meta: dict) -> bool:
+    """True when every source of an entity is an external article feed.
+
+    RSS articles are reading material, not the user's own business objects, so
+    historical entities extracted from them must not appear in the graph.
+    """
+    sources = [
+        source for source in (meta.get("sources") or [])
+        if isinstance(source, dict)
+    ]
+    if not sources:
+        return False
+    return all(
+        (source.get("type") or "") in _EXTERNAL_ENTITY_SOURCES
+        for source in sources
+    )
+
+
 @router.get("/profile")
 async def memory_profile(user: dict = Depends(get_current_user)):
     from sqlalchemy import select
@@ -89,6 +110,8 @@ async def list_entities(
             except Exception:
                 meta = {}
         meta = meta or {}
+        if _is_external_entity(meta):
+            continue
         etype = meta.get("type") or "term"
         if entity_type and etype != entity_type:
             continue
@@ -133,6 +156,8 @@ async def entity_graph(
     for row in rows:
         meta = _loads(row["metadata"]) or {}
         etype = meta.get("type") or "term"
+        if _is_external_entity(meta):
+            continue
         # Bot memories are mirrored into the same collection but are not
         # entities; they have no sources and would only add isolated dots.
         if etype == "memory":

@@ -25,6 +25,22 @@ def _loads(value):
         return None
 
 
+_EXTERNAL_ENTITY_SOURCES = {"rss", "rss_entry", "article"}
+
+
+def _is_external_entity(meta: dict) -> bool:
+    sources = [
+        source for source in (meta.get("sources") or [])
+        if isinstance(source, dict)
+    ]
+    if not sources:
+        return False
+    return all(
+        (source.get("type") or "") in _EXTERNAL_ENTITY_SOURCES
+        for source in sources
+    )
+
+
 async def add_memory(
     user_id: int,
     bot_id: int,
@@ -316,6 +332,8 @@ async def build_bot_context(
                 for h in hits:
                     meta = h.get("metadata") or {}
                     if meta.get("type") == "memory":
+                        continue
+                    if _is_external_entity(meta):
                         continue
                     title = h.get("title") or ""
                     if not title:

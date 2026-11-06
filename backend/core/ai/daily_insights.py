@@ -56,6 +56,8 @@ async def collect_day_data(user_id: int, day: date) -> dict:
                 UserActivity.created_at >= start,
                 UserActivity.created_at < end,
                 ~UserActivity.event_type.like("device.%"),
+                ~UserActivity.event_type.like("article.%"),
+                ~UserActivity.event_type.like("rss.%"),
             ).order_by(UserActivity.created_at).limit(500)
         )).scalars().all())
 

@@ -5,13 +5,15 @@ from core.config.settings import settings
 
 
 def _is_internal(event) -> bool:
-    """Events handled explicitly (bot runs, mail) skip generic worker LLM calls."""
-    return (event.event_type or "").startswith(("bot.run.", "mail.received", "dingtalk."))
+    """Events handled explicitly (bot runs, mail, RSS) skip generic worker LLM calls."""
+    return (event.event_type or "").startswith(
+        ("bot.run.", "mail.received", "dingtalk.", "article.", "rss.")
+    )
 
 
 # Internal CRUD namespaces produce API routes and code identifiers, not user
 # knowledge, so they are never sent to the entity extractor.
-_INTERNAL_ENTITY_SOURCES = {"bots", "mcp", "automation", "plugins"}
+_INTERNAL_ENTITY_SOURCES = {"bots", "mcp", "automation", "plugins", "rss", "article"}
 
 
 def _skip_entities(event) -> bool:
