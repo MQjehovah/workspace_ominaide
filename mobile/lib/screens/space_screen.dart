@@ -16,7 +16,7 @@ import 'music_screen.dart';
 import 'notes_screen.dart';
 import 'notifications_screen.dart';
 import 'projects_screen.dart';
-import 'rss_screen.dart';
+import 'sources_screen.dart';
 import 'schedule_screen.dart';
 import 'search_screen.dart';
 import 'todo_screen.dart';
@@ -37,7 +37,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
   int _todos = 0;
   int _projects = 0;
   int _files = 0;
-  int _rss = 0;
+  int _sources = 0;
   int _inboxTotal = 0;
   int _inboxUrgent = 0;
   bool _loading = true;
@@ -181,7 +181,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       _safe(api.listTodoItems(status: 'pending', pageSize: 200)),
       _safe(api.listProjects()),
       _safe(api.listFiles()),
-      _safe(api.listRssEntries()),
+      _safe(api.listSourceItems()),
     ]);
     if (!mounted) return;
     final triage = results[0] as TriageSnapshot?;
@@ -190,7 +190,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
     final todos = (results[3] as List<Map<String, dynamic>>?) ?? [];
     final projects = (results[4] as List<Map<String, dynamic>>?) ?? [];
     final files = (results[5] as List<dynamic>?) ?? [];
-    final rss = (results[6] as List<Map<String, dynamic>>?) ?? [];
+    final sources = (results[6] as List<Map<String, dynamic>>?) ?? [];
     final sourceCounts = triage?.countsBySource() ?? const <String, int>{};
     final notificationUnread =
         notifications.where((n) => n['read'] == false).length;
@@ -204,7 +204,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       _todos = todos.length;
       _projects = projects.length;
       _files = files.length;
-      _rss = rss.length;
+      _sources = sources.length;
       _inboxTotal = (triage?.total ?? 0) + notificationUnread;
       _inboxUrgent = triage?.urgentCount ?? 0;
       _loading = false;
@@ -222,7 +222,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       'cos' => const BriefScreen(),
       'files' => const FilesScreen(),
       'notes' => const NotesScreen(),
-      'rss' => const RssScreen(),
+      'sources' => const SourcesScreen(),
       'music' => const MusicScreen(),
       'device' => const DeviceScreen(),
       'lab' => const VibecodingScreen(),
@@ -244,7 +244,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       todoCount: _todos,
       projectCount: _projects,
       fileCount: _files,
-      rssCount: _rss,
+      sourceCount: _sources,
     );
     final groups = [
       for (final group in allGroups)

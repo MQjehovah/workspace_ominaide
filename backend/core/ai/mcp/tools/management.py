@@ -632,64 +632,82 @@ async def routine_run(user_id: int, args: dict) -> MCPCallResponse:
 
 
 # ---------------------------------------------------------------------------
-# RSS
+# Information sources
 # ---------------------------------------------------------------------------
 
-async def rss_list_feeds(user_id: int, args: dict) -> MCPCallResponse:
-    from plugins.rss.backend import service
+async def sources_list(user_id: int, args: dict) -> MCPCallResponse:
+    from plugins.sources.backend import service
 
     async with async_session() as db:
-        feeds = await service.list_feeds(db, user_id)
-    if not feeds:
-        return _ok("还没有 RSS 订阅。")
-    lines = ["RSS 订阅："]
-    for f in feeds:
-        lines.append(f"- #{f.id} {f.title or f.url} · {f.url}")
+        sources = await service.list_sources(db, user_id)
+    if not sources:
+        return _ok("还没有资讯源。")
+    lines = ["资讯源："]
+    for source in sources:
+        lines.append(
+            f"- #{source.id} {source.title or source.url} · "
+            f"{source.provider} · {source.url}"
+        )
     return _ok("\n".join(lines))
 
 
-async def rss_add_feed(user_id: int, args: dict) -> MCPCallResponse:
-    from plugins.rss.backend import service
+async def sources_add(user_id: int, args: dict) -> MCPCallResponse:
+    from plugins.sources.backend import service
+    from plugins.sources.backend.providers import ProviderError
 
-    url = (args.get("url") or "").strip()
-    if not url.startswith(("http://", "https://")):
-        return _err("url 必须是 http/https")
-    async with async_session() as db:
-        feed = await service.create_feed(db, user_id, url)
-        count = await service.fetch_feed_content(db, feed)
-        await db.commit()
-        await db.refresh(feed)
-    return _ok(f"已添加订阅 #{feed.id}：{feed.title or feed.url}，新增 {count} 条")
+    provider = (args.get("provider") or "rss").strip()
+    url = (args.get("url") or "").strip() or None
+    config = args.get("config") if isinstance(args.get("config"), dict) else None
+    try:
+        async with async_session() as db:
+            source = await service.create_source(
+                db, user_id, provider, url=url, config=config
+            )
+            await db.commit()
+            await db.refresh(source)
+            count = await service.fetch_source_content(db, source)
+            await db.commit()
+            await db.refresh(source)
+    except ProviderError as e:
+        return _err(str(e))
+    except Exception as e:
+        return _err(f"资讯源已添加，但抓取失败: {e}")
+    return _ok(
+        f"已添加资讯源 #{source.id}：{source.title or source.url}，新增 {count} 条"
+    )
 
 
-async def rss_delete_feed(user_id: int, args: dict) -> MCPCallResponse:
-    from plugins.rss.backend import service
+async def sources_delete(user_id: int, args: dict) -> MCPCallResponse:
+    from plugins.sources.backend import service
 
     try:
-        feed_id = _int(args, "feed_id")
+        source_id = _int(args, "source_id")
     except ValueError as e:
         return _err(str(e))
     async with async_session() as db:
-        ok = await service.delete_feed(db, user_id, feed_id)
+        ok = await service.delete_source(db, user_id, source_id)
         await db.commit()
     if not ok:
-        return _err(f"订阅 #{feed_id} 不存在")
-    return _ok(f"已删除订阅 #{feed_id}")
+        return _err(f"资讯源 #{source_id} 不存在")
+    return _ok(f"已删除资讯源 #{source_id}")
 
 
-async def rss_refresh_feed(user_id: int, args: dict) -> MCPCallResponse:
-    from plugins.rss.backend import service
+async def sources_refresh(user_id: int, args: dict) -> MCPCallResponse:
+    from plugins.sources.backend import service
 
     async with async_session() as db:
-        feeds = await service.list_feeds(db, user_id)
-        if args.get("feed_id"):
-            feed_id = int(args["feed_id"])
-            feeds = [f for f in feeds if f.id == feed_id]
+        sources = await service.list_sources(db, user_id)
+        if args.get("source_id"):
+            source_id = int(args["source_id"])
+            sources = [s for s in sources if s.id == source_id]
         total = 0
-        for feed in feeds:
-            total += await service.fetch_feed_content(db, feed)
+        for source in sources:
+            try:
+                total += await service.fetch_source_content(db, source)
+            except Exception:
+                await db.rollback()
         await db.commit()
-    return _ok(f"已刷新 {len(feeds)} 个订阅，新增 {total} 条")
+    return _ok(f"已刷新 {len(sources)} 个资讯源，新增 {total} 条")
 
 
 # ---------------------------------------------------------------------------
@@ -915,23 +933,27 @@ TOOLS = [
         routine_run,
     ),
     (
-        MCPTool(name="rss_list_feeds", description="列出 RSS 订阅。",
+        MCPTool(name="sources_list", description="列出资讯源（RSS、GitHub Trending 等）。",
                 inputSchema={"type": "object", "properties": {}}),
-        rss_list_feeds,
+        sources_list,
     ),
     (
-        MCPTool(name="rss_add_feed", description="添加 RSS/Atom 订阅并立即抓取。",
-                inputSchema={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}),
-        rss_add_feed,
+        MCPTool(name="sources_add", description="添加资讯源并立即抓取。provider 支持 rss / github_trending。",
+                inputSchema={"type": "object", "properties": {
+                    "provider": {"type": "string", "enum": ["rss", "github_trending"]},
+                    "url": {"type": "string", "description": "RSS 地址；github_trending 不需要"},
+                    "config": {"type": "object", "description": "github_trending: {since, language}"},
+                }}),
+        sources_add,
     ),
     (
-        MCPTool(name="rss_delete_feed", description="删除一个 RSS 订阅。",
-                inputSchema={"type": "object", "properties": {"feed_id": {"type": "integer"}}, "required": ["feed_id"]}),
-        rss_delete_feed,
+        MCPTool(name="sources_delete", description="删除一个资讯源。",
+                inputSchema={"type": "object", "properties": {"source_id": {"type": "integer"}}, "required": ["source_id"]}),
+        sources_delete,
     ),
     (
-        MCPTool(name="rss_refresh_feed", description="刷新 RSS 订阅；不传 feed_id 时刷新全部。",
-                inputSchema={"type": "object", "properties": {"feed_id": {"type": "integer"}}}),
-        rss_refresh_feed,
+        MCPTool(name="sources_refresh", description="刷新资讯源；不传 source_id 时刷新全部。",
+                inputSchema={"type": "object", "properties": {"source_id": {"type": "integer"}}}),
+        sources_refresh,
     ),
 ]

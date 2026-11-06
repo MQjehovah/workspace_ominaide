@@ -48,7 +48,7 @@ List<SpaceGroupSpec> buildSpaceCatalog({
   int todoCount = 0,
   int projectCount = 0,
   int fileCount = 0,
-  int rssCount = 0,
+  int sourceCount = 0,
 }) {
   const blue = Color(0xFF2E7CF6);
   const orange = Color(0xFFF97316);
@@ -91,7 +91,7 @@ List<SpaceGroupSpec> buildSpaceCatalog({
           icon: Icons.article_outlined,
           color: green,
         ),
-        _item('rss', '资讯', Icons.rss_feed_rounded, purple, rssCount),
+        _item('sources', '资讯', Icons.dynamic_feed_rounded, purple, sourceCount),
       ],
     ),
     SpaceGroupSpec(

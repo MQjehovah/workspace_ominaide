@@ -160,7 +160,7 @@ TOOLS = [
                     "types": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "可选：schedule_event/mail_message/rss_entry/note/todo/file/project",
+                        "description": "可选：schedule_event/mail_message/source_item/note/todo/file/project",
                     },
                     "limit": {"type": "integer", "description": "最多返回数量，默认 20"},
                 },

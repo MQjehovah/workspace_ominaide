@@ -193,7 +193,7 @@ class _InboxScreenState extends State<InboxScreen> {
                     ],
                   ),
                 ],
-                if (item.source == 'rss' && item.summary.isNotEmpty)
+                if (item.source == 'sources' && item.summary.isNotEmpty)
                   Text(
                     '可在「资讯」里查看全文。',
                     style: TextStyle(fontSize: 11, color: palette.muted),
@@ -407,7 +407,7 @@ class _InboxRow extends StatelessWidget {
         return (Icons.chat_outlined, const Color(0xFFF97316));
       case 'notification':
         return (Icons.notifications_none_rounded, const Color(0xFF0FA97A));
-      case 'rss':
+      case 'sources':
         return (Icons.rss_feed_rounded, const Color(0xFF7C5CF6));
       case 'todo':
         return (Icons.check_circle_outline_rounded, const Color(0xFFF97316));

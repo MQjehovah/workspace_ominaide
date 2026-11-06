@@ -23,7 +23,7 @@ export default {
     context.registerCommand('getPanelData', async () => {
       let items: any[] = []
       try {
-        const r = await context.api.get('/rss/entries?unread=true&page_size=6')
+        const r = await context.api.get('/sources/items?unread=true&page_size=6')
         items = r?.items || []
       } catch {}
       return {
@@ -36,7 +36,7 @@ export default {
       }
     })
     context.registerCommand('getPageData', async () => ({}))
-    context.registerCommand('open', async () => { context.openPage('rss') })
+    context.registerCommand('open', async () => { context.openPage('sources') })
 
     // Pull new articles from every subscribed feed, so the backend records
     // `article.new` events for the periodic LLM scan to summarize.
@@ -57,12 +57,12 @@ export default {
 async function refreshFeeds(context: any): Promise<{ newCount: number }> {
   let feeds: any[] = []
   try {
-    feeds = (await context.api.get('/rss/feeds')) || []
+    feeds = (await context.api.get('/sources')) || []
   } catch { return { newCount: 0 } }
   let newCount = 0
   for (const feed of feeds) {
     try {
-      const r = await context.api.post(`/rss/feeds/${feed.id}/fetch`)
+      const r = await context.api.post(`/sources/${feed.id}/fetch`)
       newCount += r?.new_entries || 0
     } catch { /* ignore */ }
   }

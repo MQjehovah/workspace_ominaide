@@ -132,10 +132,10 @@ async def test_collect_day_data_is_scoped_to_user_and_day(client):
 
     await _add_activity(user_a, day, event_type="app.used", details={"app": "VS Code", "minutes": 30})
     await _add_activity(user_a, day, hour=14, event_type="file.uploaded", summary="上传预算.xlsx")
-    await _add_activity(user_a, day, event_type="article.new", summary="AI 行业周报",
+    await _add_activity(user_a, day, event_type="sources.item.new", summary="AI 行业周报",
                         details={"title": "AI 行业周报", "url": "https://example.com/a"})
-    await _add_activity(user_a, day, event_type="rss.refreshed", summary="订阅刷新",
-                        details={"feed": "科技资讯", "new_entries": 3})
+    await _add_activity(user_a, day, event_type="sources.refreshed", summary="资讯源刷新",
+                        details={"source": "科技资讯", "new_items": 3})
     await _add_activity(user_a, other_day, event_type="app.used", details={"app": "Chrome", "minutes": 60})
     await _add_activity(user_b, day, event_type="app.used", details={"app": "Slack", "minutes": 20})
 

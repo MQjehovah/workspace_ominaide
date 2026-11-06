@@ -1,7 +1,7 @@
-"""Background loop for non-AI work: reminders + mail/RSS fetching.
+"""Background loop for non-AI work: reminders + mail/资讯 fetching.
 
 Scheduled LLM jobs (event scan, profile refresh, morning brief, daily review,
-RSS digest) intentionally live in the Bot routine system instead, so every token
+资讯 digest) intentionally live in the Bot routine system instead, so every token
 spend is visible and can be paused from Bot Console.
 """
 import asyncio
@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 CHECK_INTERVAL = 60  # seconds between checks
 
 _last_mail_sync = 0.0
-_last_rss_refresh = 0.0
+_last_sources_refresh = 0.0
 _last_dingtalk_sync_date: str | None = None
 _last_dingtalk_calendar_sync = 0.0
 
@@ -110,39 +110,41 @@ async def _sync_mail() -> None:
         print(f"[scheduler] mail sync error: {e}")
 
 
-async def _refresh_rss() -> None:
-    """Backend-first RSS: refresh feeds on a timer, independent of clients."""
+async def _refresh_sources() -> None:
+    """Backend-first information sources: refresh on a timer, independent of clients."""
     try:
         from sqlalchemy import or_, select
         from core.config.settings import settings as _settings
         from core.database.session import async_session
-        from plugins.rss.backend.models import Feed
-        from plugins.rss.backend.service import fetch_feed_content
+        from plugins.sources.backend.models import ContentSource
+        from plugins.sources.backend.service import fetch_source_content
 
-        cutoff = datetime.utcnow() - timedelta(seconds=_settings.rss_refresh_interval_seconds)
+        cutoff = datetime.utcnow() - timedelta(seconds=_settings.sources_refresh_interval_seconds)
         async with async_session() as db:
             r = await db.execute(
-                select(Feed.id).where(
-                    or_(Feed.last_fetch == None, Feed.last_fetch < cutoff)
+                select(ContentSource.id).where(
+                    or_(ContentSource.last_fetch == None, ContentSource.last_fetch < cutoff)  # noqa: E711
                 )
             )
-            feed_ids = [row[0] for row in r.all()]
+            source_ids = [row[0] for row in r.all()]
 
-        for feed_id in feed_ids:
+        for source_id in source_ids:
             async with async_session() as db:
-                feed = (await db.execute(select(Feed).where(Feed.id == feed_id))).scalar_one_or_none()
-                if feed is None:
+                source = (await db.execute(
+                    select(ContentSource).where(ContentSource.id == source_id)
+                )).scalar_one_or_none()
+                if source is None:
                     continue
                 try:
-                    new = await fetch_feed_content(db, feed)
+                    new = await fetch_source_content(db, source)
                     await db.commit()
                     if new:
-                        print(f"[scheduler] rss {feed.url}: {new} new")
+                        print(f"[scheduler] sources {source.url}: {new} new")
                 except Exception as e:
                     await db.rollback()
-                    print(f"[scheduler] rss refresh error {feed_id}: {e}")
+                    print(f"[scheduler] sources refresh error {source_id}: {e}")
     except Exception as e:
-        print(f"[scheduler] rss refresh loop error: {e}")
+        print(f"[scheduler] sources refresh loop error: {e}")
 
 
 def _unwrap(payload, key: str):
@@ -278,7 +280,7 @@ async def _sync_dingtalk_calendar() -> None:
 
 async def scheduler_loop():
     """Check every 60s. Only reminders and fetching live here — no LLM calls."""
-    global _last_mail_sync, _last_rss_refresh, _last_dingtalk_sync_date
+    global _last_mail_sync, _last_sources_refresh, _last_dingtalk_sync_date
     global _last_dingtalk_calendar_sync
     while True:
         try:
@@ -290,9 +292,9 @@ async def scheduler_loop():
                 _last_mail_sync = _clock()
                 await _sync_mail()
 
-            if _settings.rss_refresh_enabled and _clock() - _last_rss_refresh >= _settings.rss_refresh_interval_seconds:
-                _last_rss_refresh = _clock()
-                await _refresh_rss()
+            if _settings.sources_refresh_enabled and _clock() - _last_sources_refresh >= _settings.sources_refresh_interval_seconds:
+                _last_sources_refresh = _clock()
+                await _refresh_sources()
 
             if _settings.dingtalk_sync_enabled and _last_dingtalk_sync_date != today_key:
                 scheduled = now.replace(

@@ -84,7 +84,7 @@ TOOL_RISK = {
     "file_delete": RISK_DANGEROUS,
     "project_delete": RISK_DANGEROUS,
     "routine_delete": RISK_DANGEROUS,
-    "rss_delete_feed": RISK_DANGEROUS,
+    "sources_delete": RISK_DANGEROUS,
     "memory_delete": RISK_DANGEROUS,
 }
 

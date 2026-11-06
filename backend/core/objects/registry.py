@@ -12,7 +12,7 @@ from core.database.session import async_session
 OBJECT_TYPES = {
     "schedule_event": "日程",
     "mail_message": "邮件",
-    "rss_entry": "资讯",
+    "source_item": "资讯",
     "note": "笔记",
     "todo": "待办",
     "file": "文件",
@@ -92,31 +92,35 @@ async def _resolve_mail(user_id: int, object_id: int) -> dict | None:
     }
 
 
-async def _resolve_rss(user_id: int, object_id: int) -> dict | None:
-    from plugins.rss.backend.models import Entry, Feed
+async def _resolve_source_item(user_id: int, object_id: int) -> dict | None:
+    from plugins.sources.backend.models import ContentItem, ContentSource
 
     async with async_session() as db:
         row = (await db.execute(
-            select(Entry).join(Feed, Feed.id == Entry.feed_id).where(
-                Entry.id == object_id, Feed.user_id == user_id
-            )
+            select(ContentItem)
+            .join(ContentSource, ContentSource.id == ContentItem.source_id)
+            .where(ContentItem.id == object_id, ContentSource.user_id == user_id)
         )).scalar_one_or_none()
-        feed = None
+        source = None
         if row is not None:
-            feed = (await db.execute(select(Feed).where(Feed.id == row.feed_id))).scalar_one_or_none()
+            source = (await db.execute(
+                select(ContentSource).where(ContentSource.id == row.source_id)
+            )).scalar_one_or_none()
     if row is None:
         return None
     when = _fmt(row.published or row.created_at)
     return {
-        "type": "rss_entry",
+        "type": "source_item",
         "id": row.id,
         "title": row.title,
-        "subtitle": " · ".join(part for part in ((feed.title if feed else None), when) if part),
+        "subtitle": " · ".join(
+            part for part in ((source.title if source else None), when) if part
+        ),
         "time": when,
-        "source": "rss",
+        "source": "sources",
         "source_label": "资讯",
         "preview": _clip(row.summary or row.content or "", 300),
-        "url": f"/rss?entry={row.id}",
+        "url": f"/sources?item={row.id}",
         "status": "unread" if not row.read else "read",
         "metadata": {"link": row.link, "author": row.author},
     }
@@ -230,7 +234,7 @@ async def _resolve_project(user_id: int, object_id: int) -> dict | None:
 _RESOLVERS = {
     "schedule_event": _resolve_schedule,
     "mail_message": _resolve_mail,
-    "rss_entry": _resolve_rss,
+    "source_item": _resolve_source_item,
     "note": _resolve_note,
     "todo": _resolve_todo,
     "file": _resolve_file,
@@ -283,15 +287,21 @@ async def _search_mail(user_id: int, query: str, limit: int) -> list[int]:
         return list((await db.execute(q)).scalars().all())
 
 
-async def _search_rss(user_id: int, query: str, limit: int) -> list[int]:
-    from plugins.rss.backend.models import Entry, Feed
+async def _search_source_items(user_id: int, query: str, limit: int) -> list[int]:
+    from plugins.sources.backend.models import ContentItem, ContentSource
 
     async with async_session() as db:
-        q = select(Entry.id).join(Feed, Feed.id == Entry.feed_id).where(Feed.user_id == user_id)
+        q = select(ContentItem.id).join(
+            ContentSource, ContentSource.id == ContentItem.source_id
+        ).where(ContentSource.user_id == user_id)
         if query:
             like = f"%{query}%"
-            q = q.where(or_(Entry.title.ilike(like), Entry.summary.ilike(like), Entry.content.ilike(like)))
-        q = q.order_by(desc(Entry.published), desc(Entry.id)).limit(limit)
+            q = q.where(or_(
+                ContentItem.title.ilike(like),
+                ContentItem.summary.ilike(like),
+                ContentItem.content.ilike(like),
+            ))
+        q = q.order_by(desc(ContentItem.published), desc(ContentItem.id)).limit(limit)
         return list((await db.execute(q)).scalars().all())
 
 
@@ -350,7 +360,7 @@ async def _search_project(user_id: int, query: str, limit: int) -> list[int]:
 _SEARCHERS = {
     "schedule_event": _search_schedule,
     "mail_message": _search_mail,
-    "rss_entry": _search_rss,
+    "source_item": _search_source_items,
     "note": _search_note,
     "todo": _search_todo,
     "file": _search_file,

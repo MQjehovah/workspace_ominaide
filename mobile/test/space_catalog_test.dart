@@ -47,7 +47,7 @@ void main() {
         'cos',
         'files',
         'notes',
-        'rss',
+        'sources',
         'music',
         'device',
         'lab',

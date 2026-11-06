@@ -1,8 +1,8 @@
 {
-  "id": "rss",
-  "name": "omniaide-rss",
-  "displayName": "RSS 订阅",
-  "description": "RSS 订阅阅读",
+  "id": "sources",
+  "name": "omniaide-sources",
+  "displayName": "资讯",
+  "description": "资讯阅读",
   "version": "1.0.0",
   "icon": "Rss",
   "keywords": [

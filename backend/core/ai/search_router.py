@@ -68,20 +68,26 @@ async def _keyword_search(user_id: int, q: str, types: list[str] | None, limit: 
                 score=0.5, source_id=n.id, link=f"/notes?id={n.id}",
             ) for n in rows)
 
-        if not wanted or "rss_entry" in wanted:
-            from plugins.rss.backend.models import Entry, Feed
+        if not wanted or "source_item" in wanted:
+            from plugins.sources.backend.models import ContentItem, ContentSource
 
             rows = list((await db.execute(
-                select(Entry).join(Feed, Entry.feed_id == Feed.id).where(
-                    Feed.user_id == user_id,
-                    or_(Entry.title.ilike(like), Entry.summary.ilike(like), Entry.content.ilike(like)),
+                select(ContentItem).join(
+                    ContentSource, ContentItem.source_id == ContentSource.id
+                ).where(
+                    ContentSource.user_id == user_id,
+                    or_(
+                        ContentItem.title.ilike(like),
+                        ContentItem.summary.ilike(like),
+                        ContentItem.content.ilike(like),
+                    ),
                 ).limit(limit)
             )).scalars().all())
             out.extend(SearchResult(
-                type="rss_entry", title=e.title or "",
-                snippet=(e.summary or "")[:200],
-                score=0.45, source_id=e.id, link="/rss",
-            ) for e in rows)
+                type="source_item", title=item.title or "",
+                snippet=(item.summary or "")[:200],
+                score=0.45, source_id=item.id, link="/sources",
+            ) for item in rows)
 
         if not wanted or "event" in wanted:
             from plugins.schedule.backend.models import Event

@@ -187,7 +187,7 @@ async def schedule_items(
     return out
 
 
-async def rss_items(
+async def source_items(
     user_id: int,
     *,
     since: datetime | None = None,
@@ -195,28 +195,28 @@ async def rss_items(
     limit: int = 20,
     query: str | None = None,
 ) -> list[dict]:
-    from plugins.rss.backend.models import Entry, Feed
+    from plugins.sources.backend.models import ContentItem, ContentSource
 
     async with async_session() as db:
         q = (
-            select(Entry)
-            .join(Feed, Entry.feed_id == Feed.id)
-            .where(Feed.user_id == user_id)
+            select(ContentItem)
+            .join(ContentSource, ContentItem.source_id == ContentSource.id)
+            .where(ContentSource.user_id == user_id)
         )
         if since is not None:
-            q = q.where(or_(Entry.published >= since, Entry.created_at >= since))
+            q = q.where(or_(ContentItem.published >= since, ContentItem.created_at >= since))
         if until is not None:
-            q = q.where(or_(Entry.published < until, Entry.created_at < until))
+            q = q.where(or_(ContentItem.published < until, ContentItem.created_at < until))
         if query:
             like = f"%{query}%"
-            q = q.where(or_(Entry.title.ilike(like), Entry.summary.ilike(like)))
-        q = q.order_by(func.coalesce(Entry.published, Entry.created_at).desc()).limit(limit)
+            q = q.where(or_(ContentItem.title.ilike(like), ContentItem.summary.ilike(like)))
+        q = q.order_by(func.coalesce(ContentItem.published, ContentItem.created_at).desc()).limit(limit)
         rows = list((await db.execute(q)).scalars().all())
 
     return [
         {
-            "id": f"rss:{row.id}",
-            "source": "rss",
+            "id": f"sources:{row.id}",
+            "source": "sources",
             "source_id": row.id,
             "title": row.title,
             "summary": _snippet(row.summary or row.content),
@@ -224,7 +224,7 @@ async def rss_items(
             "time": _iso(row.published or row.created_at),
             "priority": "normal",
             "needs_reply": False,
-            "link": "/rss",
+            "link": "/sources",
             "meta": {"read": bool(row.read), "url": row.link},
         }
         for row in rows

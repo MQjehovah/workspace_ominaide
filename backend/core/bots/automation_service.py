@@ -17,7 +17,7 @@ from core.database.session import async_session
 _EVENT_HINTS = [
     (("上传", "文件"), "file.uploaded"),
     (("邮件",), "mail.received"),
-    (("文章", "RSS", "订阅", "资讯"), "article.new"),
+    (("文章", "RSS", "订阅", "资讯"), "sources.item.new"),
     (("完成", "待办"), "todo.completed"),
     (("创建", "日程"), "schedule.created"),
 ]
@@ -137,7 +137,7 @@ async def parse_rule(text: str) -> dict:
                 {"role": "system", "content": (
                     "你是自动化规则解析器。把用户的一句话转换成一条 Bot 例程。"
                     f"当前时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}。"
-                    "可用事件类型：file.uploaded, mail.received, article.new, todo.completed, "
+                    "可用事件类型：file.uploaded, mail.received, sources.item.new, todo.completed, "
                     "schedule.created, note.created, file.trashed。"
                     "cron 使用标准 5 段式（分 时 日 月 周）。只返回 JSON: "
                     '{"name":"简短名称","trigger_type":"cron|event|manual",'

@@ -65,7 +65,7 @@ const typeOptions = [
   { label: '全部', value: '' },
   { label: '日程', value: 'schedule_event' },
   { label: '邮件', value: 'mail_message' },
-  { label: '资讯', value: 'rss_entry' },
+  { label: '资讯', value: 'source_item' },
   { label: '笔记', value: 'note' },
   { label: '待办', value: 'todo' },
   { label: '文件', value: 'file' },

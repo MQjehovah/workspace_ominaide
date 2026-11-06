@@ -47,11 +47,11 @@ const items = ref<any[]>([])
 const searchRef = ref<any>(null)
 let timer: any = null
 
-const TYPE_ORDER = ['schedule_event', 'mail_message', 'rss_entry', 'note', 'todo', 'file', 'project']
+const TYPE_ORDER = ['schedule_event', 'mail_message', 'source_item', 'note', 'todo', 'file', 'project']
 const TYPE_LABELS: Record<string, string> = {
   schedule_event: '日程',
   mail_message: '邮件',
-  rss_entry: '资讯',
+  source_item: '资讯',
   note: '笔记',
   todo: '待办',
   file: '文件',

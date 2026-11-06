@@ -14,6 +14,24 @@ async def ensure_schema_migrations():
     bool_default = "false" if dialect == "postgresql" else "0"
     bool_true = "true" if dialect == "postgresql" else "1"
 
+    # Rename the old RSS tables/plugin before inspecting columns. Existing
+    # installations keep their subscriptions and articles.
+    async with engine.begin() as conn:
+        table_names = set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
+        if "rss_feeds" in table_names and "content_sources" not in table_names:
+            await conn.execute(text("ALTER TABLE rss_feeds RENAME TO content_sources"))
+            table_names.discard("rss_feeds")
+            table_names.add("content_sources")
+        if "rss_entries" in table_names and "content_items" not in table_names:
+            await conn.execute(text("ALTER TABLE rss_entries RENAME TO content_items"))
+            table_names.discard("rss_entries")
+            table_names.add("content_items")
+        if "plugin_registry" in table_names:
+            await conn.execute(text(
+                "UPDATE plugin_registry SET name = 'sources', title = '资讯' "
+                "WHERE name = 'rss'"
+            ))
+
     def _needed_columns(sync_conn) -> list[str]:
         inspector = inspect(sync_conn)
         result = []
@@ -73,6 +91,12 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("notifications")}
             if "actions" not in cols:
                 result.append("notification_actions")
+        if "content_sources" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("content_sources")}
+            if "provider" not in cols:
+                result.append("content_sources_provider")
+            if "config" not in cols:
+                result.append("content_sources_config")
         # LONGTEXT widening is only meaningful on MySQL; PostgreSQL TEXT is unbounded.
         if dialect == "mysql" and "plugin_notes" in table_names:
             cols = {c["name"]: c["type"] for c in inspector.get_columns("plugin_notes")}
@@ -129,5 +153,13 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE notifications ADD COLUMN actions JSON NULL"))
                 await conn.execute(text("ALTER TABLE notifications ADD COLUMN dedupe_key VARCHAR(200) NULL"))
                 await conn.execute(text("ALTER TABLE notifications ADD COLUMN scheduled_at TIMESTAMP NULL"))
+            elif table == "content_sources_provider":
+                await conn.execute(text(
+                    "ALTER TABLE content_sources ADD COLUMN provider VARCHAR(50) DEFAULT 'rss'"
+                ))
+            elif table == "content_sources_config":
+                await conn.execute(text(
+                    "ALTER TABLE content_sources ADD COLUMN config JSON NULL"
+                ))
             elif table == "plugin_notes":
                 await conn.execute(text("ALTER TABLE plugin_notes MODIFY content LONGTEXT NULL"))

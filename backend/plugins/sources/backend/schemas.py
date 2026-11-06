@@ -2,12 +2,17 @@ from pydantic import BaseModel
 from datetime import datetime
 
 
-class FeedCreate(BaseModel):
-    url: str
+class SourceCreate(BaseModel):
+    provider: str = "rss"
+    url: str | None = None
+    config: dict | None = None
 
 
-class FeedResponse(BaseModel):
+class SourceResponse(BaseModel):
     id: int
+    user_id: int
+    provider: str
+    config: dict | None = None
     url: str
     title: str | None = None
     icon: str | None = None
@@ -16,9 +21,9 @@ class FeedResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class EntryResponse(BaseModel):
+class ItemResponse(BaseModel):
     id: int
-    feed_id: int
+    source_id: int
     guid: str
     title: str
     link: str | None = None
@@ -29,12 +34,11 @@ class EntryResponse(BaseModel):
     read: bool = False
     starred: bool = False
     created_at: datetime
-    feed_title: str | None = None
+    source_title: str | None = None
     model_config = {"from_attributes": True}
 
 
-class SearchParams(BaseModel):
-    q: str
-    feed_id: int | None = None
-    page: int = 1
-    page_size: int = 20
+class ProviderResponse(BaseModel):
+    key: str
+    label: str
+    config_schema: dict

@@ -197,7 +197,7 @@ async def test_coding_tools_registered(client, admin_token):
     assert "note_delete" in names
     assert "file_delete" in names
     assert "routine_create" in names
-    assert "rss_add_feed" in names
+    assert "sources_add" in names
     assert "send_email" in names
     assert "read_file_content" in names
     assert "project_delete" in names

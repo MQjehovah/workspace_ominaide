@@ -14,7 +14,7 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _loading = false;
   String _query = '';
   List<FileItem> _files = [];
-  List<Map<String, dynamic>> _articles = [];
+  List<Map<String, dynamic>> _items = [];
   List<Map<String, dynamic>> _semantic = [];
 
   Future<void> _search() async {
@@ -24,7 +24,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _loading = true;
       _query = q;
       _files = [];
-      _articles = [];
+      _items = [];
       _semantic = [];
     });
     try {
@@ -32,7 +32,7 @@ class _SearchScreenState extends State<SearchScreen> {
       if (!mounted) return;
       setState(() {
         _files = (result['files'] as List? ?? []).cast<FileItem>();
-        _articles = (result['articles'] as List? ?? []).cast<Map<String, dynamic>>();
+        _items = (result['items'] as List? ?? []).cast<Map<String, dynamic>>();
         _semantic = (result['semantic'] as List? ?? []).cast<Map<String, dynamic>>();
       });
     } catch (_) {
@@ -68,7 +68,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildResults() {
-    final total = _files.length + _articles.length + _semantic.length;
+    final total = _files.length + _items.length + _semantic.length;
     if (total == 0) {
       return const Center(child: Text('无匹配结果', style: TextStyle(color: Colors.grey)));
     }
@@ -82,9 +82,9 @@ class _SearchScreenState extends State<SearchScreen> {
             subtitle: Text(f.mimeType ?? '文件'),
           )),
         ],
-        if (_articles.isNotEmpty) ...[
+        if (_items.isNotEmpty) ...[
           _sectionTitle('资讯', Icons.article_outlined),
-          ..._articles.map((a) => ListTile(
+          ..._items.map((a) => ListTile(
             leading: const Icon(Icons.newspaper),
             title: Text((a['title'] as String?) ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
           )),

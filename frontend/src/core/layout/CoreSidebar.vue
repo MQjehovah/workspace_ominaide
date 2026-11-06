@@ -42,7 +42,7 @@
         <el-icon><Calendar /></el-icon>
         <span>日程</span>
       </el-menu-item>
-      <el-menu-item index="/rss">
+      <el-menu-item index="/sources">
         <el-icon><Promotion /></el-icon>
         <span>资讯</span>
       </el-menu-item>

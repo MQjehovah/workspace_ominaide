@@ -1,4 +1,4 @@
-"""Register MCP tools for schedule, notifications, RSS plugins."""
+"""Register MCP tools for schedule, notifications, 资讯 plugins."""
 from core.ai.mcp.registry import tool_registry
 from core.ai.mcp.core import MCPTool
 from sqlalchemy import select
@@ -92,14 +92,26 @@ async def list_recent_emails(user_id: int, args: dict) -> dict:
         } for m in messages]}
 
 
-async def search_articles(user_id: int, args: dict) -> dict:
+async def search_source_items(user_id: int, args: dict) -> dict:
     q = args.get("q", "")
     if not q: return {"items": []}
     async with async_session() as db:
-        from plugins.rss.backend.models import Entry, Feed
+        from plugins.sources.backend.models import ContentItem, ContentSource
         from sqlalchemy import or_
-        cond = [Feed.user_id == user_id, or_(Entry.title.ilike(f"%{q}%"), Entry.summary.ilike(f"%{q}%"))]
-        base = select(Entry).join(Feed).where(*cond).order_by(Entry.published.desc()).limit(10)
+        cond = [
+            ContentSource.user_id == user_id,
+            or_(
+                ContentItem.title.ilike(f"%{q}%"),
+                ContentItem.summary.ilike(f"%{q}%"),
+            ),
+        ]
+        base = (
+            select(ContentItem)
+            .join(ContentSource, ContentItem.source_id == ContentSource.id)
+            .where(*cond)
+            .order_by(ContentItem.published.desc())
+            .limit(10)
+        )
         r = await db.execute(base)
         items = r.scalars().all()
         return {"items": [{"title": i.title, "summary": i.summary[:200] if i.summary else "", "published": str(i.published) if i.published else ""} for i in items]}
@@ -226,10 +238,10 @@ def register_ai_tools():
     tool_registry.register(MCPTool(name="list_schedule_events", description="List upcoming schedule/calendar events within a date range. Returns event titles and times.", inputSchema={"type":"object","properties":{"start":{"type":"string","description":"Start date ISO format"},"end":{"type":"string","description":"End date ISO format"}}}), list_schedule_events)
     tool_registry.register(MCPTool(name="list_recent_emails", description="List recent emails received by the user. Returns subject, sender and preview. Use important=true to filter for important mail.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results"},"important":{"type":"boolean","description":"Only important emails"}}}), list_recent_emails)
     tool_registry.register(MCPTool(name="create_schedule_event", description="Create a schedule/calendar event. Use this to turn natural-language requests like '明天下午3点开会' into calendar events.", inputSchema={"type":"object","properties":{"title":{"type":"string","description":"Event title"},"start_time":{"type":"string","description":"Start time ISO format, e.g. 2026-08-02T15:00:00"},"end_time":{"type":"string","description":"Optional end time ISO format"},"notes":{"type":"string","description":"Optional notes"},"remind_before":{"type":"integer","description":"Minutes before to remind, default 10"}},"required":["title","start_time"]}), create_schedule_event)
-    tool_registry.register(MCPTool(name="search_articles", description="Search RSS feed articles by keyword. Returns matching article titles and summaries.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Search keyword"}},"required":["q"]}), search_articles)
+    tool_registry.register(MCPTool(name="search_source_items", description="Search information-source items by keyword. Returns matching titles and summaries.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Search keyword"}},"required":["q"]}), search_source_items)
     tool_registry.register(MCPTool(name="list_notifications", description="List recent notifications. Use unread=true to see only unread.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results"},"unread":{"type":"boolean","description":"Only unread"}}}), list_notifications)
     tool_registry.register(MCPTool(name="get_unread_count", description="Get the number of unread notifications.", inputSchema={"type":"object","properties":{}}), get_unread_count)
     tool_registry.register(MCPTool(name="get_user_info", description="Get info about the currently logged-in user.", inputSchema={"type":"object","properties":{}}), get_user_info)
-    tool_registry.register(MCPTool(name="unified_search", description="Search across all your data (files, notes, articles, events) with a natural language query. Use this as the primary search tool.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Natural language search query"},"types":{"type":"array","items":{"type":"string"},"description":"Optional: filter by type (file, note, rss_entry, event)"}},"required":["q"]}), unified_search_tool)
+    tool_registry.register(MCPTool(name="unified_search", description="Search across all your data (files, notes, source items, events) with a natural language query. Use this as the primary search tool.", inputSchema={"type":"object","properties":{"q":{"type":"string","description":"Natural language search query"},"types":{"type":"array","items":{"type":"string"},"description":"Optional: filter by type (file, note, source_item, event)"}},"required":["q"]}), unified_search_tool)
     tool_registry.register(MCPTool(name="list_activities", description="List recent user activity/event stream records (app usage, file ops, notifications, etc). Returns event type, summary and time.", inputSchema={"type":"object","properties":{"limit":{"type":"integer","description":"Max results, default 20"},"event_type":{"type":"string","description":"Optional: filter by event type (e.g. app.used, file.created)"},"days":{"type":"integer","description":"Optional: look back days, default 7"}}}), list_activities)
     tool_registry.register(MCPTool(name="activity_stats", description="Get aggregated activity statistics: top apps by usage minutes, event type distribution, total event count.", inputSchema={"type":"object","properties":{"days":{"type":"integer","description":"Look back days, default 7"}}}), activity_stats)

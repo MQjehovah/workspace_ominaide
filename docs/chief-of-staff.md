@@ -17,7 +17,7 @@ Web 入口：侧栏「幕僚长」→ `/cos`。
 | 来源 | 表 / 工具 | 说明 |
 |---|---|---|
 | 邮件 | `mail_messages` | 后端 IMAP 同步结果，重要度与 AI 摘要优先 |
-| 资讯 | `rss_entries` + `rss_feeds` | 按用户过滤，取最近文章 |
+| 资讯 | `content_items` + `content_sources` | 按用户过滤，取最近内容 |
 | 日程 | `schedule_events` | 当天/未来窗口 |
 | 待办 | `plugin_todo_items` | 未完成、到期与逾期 |
 | 钉钉 | MCP `dingtalk__list_unread` / `search_messages` | 未配置时返回 `not_configured`，不影响其他来源 |
@@ -45,7 +45,7 @@ Web 入口：侧栏「幕僚长」→ `/cos`。
 
 - 后端返回的时间带本地时区偏移，前端不再把本地时间当 UTC。
 - `GET /api/cos/daily-brief?day=YYYY-MM-DD` 会按该日窗口读取日程、待办、邮件和资讯；只有当天才读取实时钉钉未读。
-- 数据源里 `schedule_events` / 待办截止 / 邮件日期是本地墙上时间，RSS 发布时间按 UTC 入库，统一在 collector 边界转换。
+- 数据源里 `schedule_events` / 待办截止 / 邮件日期是本地墙上时间，资讯发布时间按 UTC 入库，统一在 collector 边界转换。
 
 ## 安全边界
 

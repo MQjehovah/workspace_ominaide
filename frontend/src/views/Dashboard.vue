@@ -224,7 +224,7 @@ const quickLinks = [
   { label: '笔记', path: '/notes', icon: Document },
   { label: '日程', path: '/schedule', icon: Calendar },
   { label: '文件', path: '/files', icon: Folder },
-  { label: '资讯', path: '/rss', icon: Promotion },
+  { label: '资讯', path: '/sources', icon: Promotion },
   { label: '活动', path: '/activities', icon: TrendCharts },
 ]
 

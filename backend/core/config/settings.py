@@ -64,9 +64,11 @@ class Settings(BaseSettings):
     mail_sync_enabled: bool = True
     mail_sync_interval_seconds: int = 300
     mail_max_per_sync: int = 20
-    # Backend-first RSS: refresh feeds even when no desktop client is online.
-    rss_refresh_enabled: bool = True
-    rss_refresh_interval_seconds: int = 1800
+    # Backend-first information sources: refresh even when no client is online.
+    sources_refresh_enabled: bool = True
+    sources_refresh_interval_seconds: int = 1800
+    # RSSHub base URL used by providers such as GitHub Trending.
+    rsshub_base_url: str = ""
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
     # Daily memory agent auto-approves candidates at or above this confidence.

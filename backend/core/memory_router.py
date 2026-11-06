@@ -26,13 +26,13 @@ def _loads(value):
         return None
 
 
-_EXTERNAL_ENTITY_SOURCES = {"rss", "rss_entry", "article"}
+_EXTERNAL_ENTITY_SOURCES = {"sources", "source_item", "rss", "rss_entry", "article"}
 
 
 def _is_external_entity(meta: dict) -> bool:
     """True when every source of an entity is an external article feed.
 
-    RSS articles are reading material, not the user's own business objects, so
+    资讯 articles are reading material, not the user's own business objects, so
     historical entities extracted from them must not appear in the graph.
     """
     sources = [
@@ -381,3 +381,4 @@ async def delete_entity(doc_key: str, user: dict = Depends(get_current_user)):
     if not result.rowcount:
         raise HTTPException(status_code=404, detail="Entity not found")
     return {"message": "Entity forgotten"}
+

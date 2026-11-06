@@ -22,10 +22,10 @@ async def _new_user(client):
 
 
 async def _seed_sources(user_id: int, tag: str) -> dict:
-    """Create one mail, todo, event and RSS entry for a user."""
+    """Create one mail, todo, event and information item for a user."""
     from core.database.session import async_session
     from plugins.mail.backend.models import MailAccount, MailMessage
-    from plugins.rss.backend.models import Entry, Feed
+    from plugins.sources.backend.models import ContentItem, ContentSource
     from plugins.schedule.backend.models import Event
     from plugins.todo.backend.models import PluginTodoItem
 
@@ -54,17 +54,27 @@ async def _seed_sources(user_id: int, tag: str) -> dict:
             start_time=now, end_time=now + timedelta(hours=1),
             notes="讨论预算与排期",
         )
-        feed = Feed(user_id=user_id, url=f"https://example.com/{tag}", title="科技资讯")
-        db.add_all([mail, todo, event, feed])
+        source = ContentSource(
+            user_id=user_id,
+            provider="rss",
+            url=f"https://example.com/{tag}",
+            title="科技资讯",
+        )
+        db.add_all([mail, todo, event, source])
         await db.flush()
-        entry = Entry(
-            feed_id=feed.id, guid=f"{tag}-1", title=f"{tag} 行业动态",
+        item = ContentItem(
+            source_id=source.id, guid=f"{tag}-1", title=f"{tag} 行业动态",
             summary="AI 产品更新", link=f"https://example.com/{tag}/1",
             published=now, read=False,
         )
-        db.add(entry)
+        db.add(item)
         await db.commit()
-        return {"mail_id": mail.id, "todo_id": todo.id, "event_id": event.id, "entry_id": entry.id}
+        return {
+            "mail_id": mail.id,
+            "todo_id": todo.id,
+            "event_id": event.id,
+            "item_id": item.id,
+        }
 
 
 async def test_cos_requires_auth(client):
@@ -86,7 +96,7 @@ async def test_triage_aggregates_user_sources_only(client):
     assert "bravo" not in text
 
     sources = {item["source"] for group in body["groups"].values() for item in group}
-    assert {"mail", "todo", "schedule", "rss"} <= sources
+    assert {"mail", "todo", "schedule", "sources"} <= sources
     assert body["counts"]["total"] >= 4
 
 

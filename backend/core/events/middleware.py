@@ -90,7 +90,7 @@ def _make_summary(method: str, path: str, event_type: str) -> str:
 
 SKIP_PATHS = (
     '/health', '/api/auth', '/api/chat', '/api/remote', '/ws',
-    '/api/rss',             # rss plugin records its own events
+    '/api/sources',           # sources plugin records its own events
     '/api/notifications',   # notification read markers are high-frequency noise
     '/api/sync',            # sync operations
     '/api/files',           # file plugin records its own events

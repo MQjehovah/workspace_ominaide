@@ -103,7 +103,7 @@ const contextCommentId = ref<number | null>(null)
 const typeLabels: Record<string, string> = {
   schedule_event: '日程',
   mail_message: '邮件',
-  rss_entry: '资讯',
+  source_item: '资讯',
   note: '笔记',
   todo: '待办',
   file: '文件',
@@ -156,7 +156,7 @@ async function applyRouteContext() {
   const direct: Array<[string, any]> = [
     ['schedule_event', route.query.event],
     ['mail_message', route.query.message],
-    ['rss_entry', route.query.entry],
+    ['source_item', route.query.entry],
     ['note', route.query.note],
   ]
   for (const [type, value] of direct) {

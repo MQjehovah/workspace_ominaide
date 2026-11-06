@@ -123,10 +123,10 @@ const router = createRouter({
           component: () => import('@/views/Schedule.vue')
         },
         {
-          path: 'rss',
-          name: 'RSS',
+          path: 'sources',
+          name: 'Sources',
           meta: { title: '资讯' },
-          component: () => import('@/views/RSS.vue')
+          component: () => import('@/views/Sources.vue')
         },
         {
           path: 'mail',

@@ -122,9 +122,11 @@ const TYPE_LABELS: Record<string, string> = {
   'todo.created': '待办创建', 'todo.updated': '待办修改', 'todo.deleted': '待办删除',
   // 日程
   'schedule.created': '日程创建', 'schedule.updated': '日程修改', 'schedule.deleted': '日程删除',
-  // RSS
-  'rss.subscribed': 'RSS订阅', 'rss.unsubscribed': 'RSS取消订阅', 'rss.refreshed': 'RSS刷新',
-  'article.new': 'RSS新资讯获取',
+  // 资讯源
+  'sources.subscribed': '添加资讯源', 'sources.unsubscribed': '删除资讯源', 'sources.refreshed': '资讯源刷新',
+  'sources.item.new': '资讯源新内容',
+  'rss.subscribed': '添加资讯源', 'rss.unsubscribed': '删除资讯源', 'rss.refreshed': '资讯源刷新',
+  'article.new': '资讯源新内容',
   // 邮件
   'mail.received': '邮件收取',
   // 音乐
@@ -258,7 +260,7 @@ function detailText(d: any): string {
 
 function tagType(t: string): string {
   if (t.includes('file') || t.includes('app')) return 'primary'
-  if (t.includes('mail') || t.includes('article') || t.includes('rss')) return 'success'
+  if (t.includes('mail') || t.includes('article') || t.includes('rss') || t.includes('sources')) return 'success'
   if (t.includes('todo') || t.includes('schedule') || t.includes('briefing')) return 'warning'
   if (t.includes('clipboard')) return 'info'
   return 'danger'

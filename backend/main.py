@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
     import core.ai.insight_models  # noqa
     import core.mcp_hub.models  # noqa
     import core.memory_models  # noqa
+    import plugins.sources.backend.models  # noqa
     import core.objects.models  # noqa
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -131,8 +132,8 @@ app.include_router(plugin_router)
 from core.plugin.marketplace import router as marketplace_router
 app.include_router(marketplace_router)
 
-# Manifest-backed plugins (files / sync / todo / notes / mail / device) are
-# mounted once by core.plugin.registry.discover_plugins during startup.
+# Manifest-backed plugins (files / sync / todo / notes / mail / sources / device)
+# are mounted once by core.plugin.registry.discover_plugins during startup.
 # Only modules without a manifest are included manually here.
 
 from plugins.music.backend.router import router as music_router
@@ -155,8 +156,9 @@ app.include_router(projects_router)
 from plugins.notifications.backend.router import router as notifications_router
 app.include_router(notifications_router)
 
-from plugins.rss.backend.router import router as rss_router
-app.include_router(rss_router)
+# Manifest-backed plugins (files / sync / todo / notes / mail / sources / device)
+# are mounted once by core.plugin.registry.discover_plugins during startup.
+# Only modules without a manifest are included manually here.
 
 from core.ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)

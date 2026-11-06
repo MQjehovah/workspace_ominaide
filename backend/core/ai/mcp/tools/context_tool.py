@@ -22,7 +22,7 @@ async def get_system_context(user_id: int, args: dict) -> MCPCallResponse:
         },
         "capabilities": [
             "search_files", "list_files", "get_file", "get_file_download_url",
-            "list_schedule_events", "search_articles", "list_notifications",
+            "list_schedule_events", "search_source_items", "list_notifications",
             "unified_search", "get_system_context",
         ],
     }

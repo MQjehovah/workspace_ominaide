@@ -1,0 +1,13 @@
+{
+  "id": "sources",
+  "name": "sources",
+  "version": "1.0.0",
+  "displayName": "资讯",
+  "title": "资讯",
+  "description": "统一资讯源：RSS/Atom 与 GitHub Trending（RSSHub），支持后续扩展更多来源。",
+  "icon": "Promotion",
+  "permissions": [],
+  "routes": {
+    "main": "/sources"
+  }
+}

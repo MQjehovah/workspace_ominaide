@@ -245,11 +245,11 @@ const statCards = computed(() => [
 ])
 
 function sourceLabel(source: string) {
-  return ({ mail: '邮件', rss: '资讯', dingtalk: '钉钉', todo: '待办', schedule: '日程', memory: '记忆' } as Record<string, string>)[source] || source
+  return ({ mail: '邮件', sources: '资讯', dingtalk: '钉钉', todo: '待办', schedule: '日程', memory: '记忆' } as Record<string, string>)[source] || source
 }
 
 function sourceTag(source: string) {
-  return ({ mail: 'primary', rss: 'info', dingtalk: 'warning', todo: 'success', schedule: 'danger' } as Record<string, string>)[source] || 'info'
+  return ({ mail: 'primary', sources: 'info', dingtalk: 'warning', todo: 'success', schedule: 'danger' } as Record<string, string>)[source] || 'info'
 }
 
 function fmtTime(value: any) {

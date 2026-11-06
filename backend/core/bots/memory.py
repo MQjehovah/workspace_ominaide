@@ -25,7 +25,7 @@ def _loads(value):
         return None
 
 
-_EXTERNAL_ENTITY_SOURCES = {"rss", "rss_entry", "article"}
+_EXTERNAL_ENTITY_SOURCES = {"sources", "source_item", "rss", "rss_entry", "article"}
 
 
 def _is_external_entity(meta: dict) -> bool:
@@ -229,7 +229,7 @@ async def _profile_block(user_id: int) -> str | None:
             contacts = _loads(p.contacts)
             if contacts:
                 info.append(
-                    "联系人: "
+                    "联系�? "
                     + "; ".join(
                         f'{c.get("name", "")}({c.get("relation", "")})'
                         for c in contacts
@@ -261,9 +261,9 @@ async def _profile_block(user_id: int) -> str | None:
                 if dev.get("permissions"):
                     parts.append("代码权限: " + ", ".join(dev["permissions"]))
                 if dev.get("workspace_roots"):
-                    parts.append("工作区: " + ", ".join(dev["workspace_roots"]))
+                    parts.append("工作�? " + ", ".join(dev["workspace_roots"]))
                 if parts:
-                    info.append("开发者档案: " + "; ".join(parts))
+                    info.append("开发者档�? " + "; ".join(parts))
 
             return "【用户信息】\n" + "\n".join(info) if info else None
     except Exception:
@@ -370,3 +370,4 @@ async def _legacy_memories(user_id: int, query: str, limit: int = 5) -> list[dic
         return out[:limit]
     except Exception:
         return []
+

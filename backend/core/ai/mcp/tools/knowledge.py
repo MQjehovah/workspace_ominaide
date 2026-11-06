@@ -2,7 +2,7 @@
 persistent "remember this" facts stored in the entities collection.
 
 - search_knowledge: lets the agent actively retrieve the user's indexed
-  content (notes, files, mail, schedule, RSS) instead of guessing.
+  content (notes, files, mail, schedule, 资讯) instead of guessing.
 - save_memory: lets the agent persist facts the user asks it to remember
   ("记住我家服务器是…"); build_context auto-injects matching memories.
 """
@@ -176,7 +176,7 @@ TOOLS = [
         MCPTool(
             name="search_knowledge",
             description=(
-                "检索用户的个人知识库（笔记、文件、邮件、日程、RSS 均已自动索引）。"
+                "检索用户的个人知识库（笔记、文件、邮件、日程、资讯 均已自动索引）。"
                 "回答涉及用户背景的问题（网络布局、服务器、项目细节、历史决定等）时，"
                 "先调用本工具检索，不要凭空猜测。"
             ),

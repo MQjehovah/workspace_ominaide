@@ -87,7 +87,7 @@ ROUTINE_TEMPLATES: list[dict] = [
         ),
     },
     {
-        "key": "rss_digest",
+        "key": "sources_digest",
         "name": "资讯摘要",
         "description": "每天阅读未读订阅，挑出值得关注的几条并说明原因。",
         "trigger_type": "cron",

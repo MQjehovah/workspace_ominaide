@@ -4,14 +4,14 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 
-class RssScreen extends StatefulWidget {
-  const RssScreen({super.key});
+class SourcesScreen extends StatefulWidget {
+  const SourcesScreen({super.key});
 
   @override
-  State<RssScreen> createState() => _RssScreenState();
+  State<SourcesScreen> createState() => _SourcesScreenState();
 }
 
-class _RssScreenState extends State<RssScreen> {
+class _SourcesScreenState extends State<SourcesScreen> {
   List<Map<String, dynamic>> _entries = [];
   bool _loading = true;
   bool _error = false;
@@ -29,7 +29,7 @@ class _RssScreenState extends State<RssScreen> {
     });
     List<Map<String, dynamic>> entries = [];
     try {
-      entries = await ApiService().listRssEntries();
+      entries = await ApiService().listSourceItems();
     } catch (_) {
       if (mounted) setState(() => _error = true);
     }
@@ -97,7 +97,7 @@ class _RssScreenState extends State<RssScreen> {
         child: Column(
           children: [
             PageHeader(
-              kicker: 'RSS',
+              kicker: 'Sources',
               title: '资讯',
               subtitle: '${_entries.length} 条最近更新',
               actions: [
@@ -134,8 +134,8 @@ class _RssScreenState extends State<RssScreen> {
                                 SizedBox(height: 50),
                                 EmptyState(
                                   icon: Icons.rss_feed_rounded,
-                                  title: '还没有资讯',
-                                  subtitle: '在 Web 端添加 RSS 订阅后，文章会同步到这里。',
+                                  title: '还没有内容',
+                                  subtitle: '在 Web 端添加资讯源后，内容会同步到这里。',
                                 ),
                               ],
                             )
@@ -178,7 +178,7 @@ class _RssScreenState extends State<RssScreen> {
                                         ),
                                         const SizedBox(height: 5),
                                         Text(
-                                          (entry['feed_title'] ?? '资讯').toString(),
+                                          (entry['source_title'] ?? '资讯').toString(),
                                           style: TextStyle(
                                             fontSize: 9.5,
                                             fontWeight: FontWeight.w700,

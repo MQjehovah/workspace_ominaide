@@ -1,6 +1,6 @@
 """Generic business-object comments and notes.
 
-One table backs comments/materials for schedules, mail, RSS, notes, todos,
+One table backs comments/materials for schedules, mail, 资讯, notes, todos,
 files and projects. Replies are threaded with ``parent_id``/``root_id``.
 """
 

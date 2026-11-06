@@ -78,10 +78,10 @@ async def _all_triage_items(user_id: int, days: int) -> tuple[list[dict], dict]:
     mail = await collectors.mail_items(user_id, since=since, limit=30)
     todos = await collectors.todo_items(user_id, limit=30)
     events = await collectors.schedule_items(user_id, start=now - timedelta(hours=2), end=end, limit=20)
-    rss = await collectors.rss_items(user_id, since=since, limit=20)
+    source_feed = await collectors.source_items(user_id, since=since, limit=20)
     dingtalk, dingtalk_status = await collectors.dingtalk_items(user_id, limit=15)
 
-    items = [*mail, *todos, *events, *rss, *dingtalk]
+    items = [*mail, *todos, *events, *source_feed, *dingtalk]
     return items, {"dingtalk": dingtalk_status}
 
 
@@ -112,7 +112,7 @@ async def daily_brief(user_id: int, day: date | None = None) -> dict:
         mail = await collectors.mail_items(
             user_id, since=now - timedelta(days=2), limit=8, unread_only=True,
         )
-        news = await collectors.rss_items(user_id, since=now - timedelta(hours=36), limit=5)
+        news = await collectors.source_items(user_id, since=now - timedelta(hours=36), limit=5)
         dingtalk, dingtalk_status = await collectors.dingtalk_items(user_id, limit=8)
     else:
         todos = await collectors.todo_items(
@@ -121,7 +121,7 @@ async def daily_brief(user_id: int, day: date | None = None) -> dict:
         mail = await collectors.mail_items(
             user_id, since=start, until=end, limit=8,
         )
-        news = await collectors.rss_items(
+        news = await collectors.source_items(
             user_id, since=start, until=end, limit=5,
         )
         dingtalk, dingtalk_status = [], "skipped"
@@ -285,14 +285,14 @@ async def meeting_prep(
                 "time": item.get("time"),
                 "link": "/dashboard",
             })
-        news = await collectors.rss_items(user_id, limit=5, query=keyword)
+        news = await collectors.source_items(user_id, limit=5, query=keyword)
         for item in news:
             context.append({
-                "source": "rss",
+                "source": "sources",
                 "title": item["title"],
                 "snippet": item.get("summary") or "",
                 "time": item.get("time"),
-                "link": "/rss",
+                "link": "/sources",
             })
 
         dingtalk, dingtalk_status = await collectors.dingtalk_items(user_id, query=keyword, limit=8)

@@ -583,7 +583,7 @@ class ApiService {
   Future<Map<String, dynamic>> searchAll(String query) async {
     final result = <String, dynamic>{
       'files': <FileItem>[],
-      'articles': <Map<String, dynamic>>[],
+      'items': <Map<String, dynamic>>[],
       'semantic': <Map<String, dynamic>>[],
     };
     try {
@@ -600,13 +600,13 @@ class ApiService {
       }
     } catch (_) {}
     try {
-      final rssRes = await http.get(
-        Uri.parse('$_baseUrl/api/rss/search?q=${Uri.encodeComponent(query)}&page_size=10'),
+      final sourcesRes = await http.get(
+        Uri.parse('$_baseUrl/api/sources/search?q=${Uri.encodeComponent(query)}&page_size=10'),
         headers: _headers,
       );
-      if (rssRes.statusCode == 200) {
-        final data = decodeJson(rssRes);
-        result['articles'] = (data['items'] as List? ?? []).cast<Map<String, dynamic>>();
+      if (sourcesRes.statusCode == 200) {
+        final data = decodeJson(sourcesRes);
+        result['items'] = (data['items'] as List? ?? []).cast<Map<String, dynamic>>();
       }
     } catch (_) {}
     try {
@@ -829,8 +829,8 @@ class ApiService {
     return data.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
   }
 
-  Future<List<Map<String, dynamic>>> listRssEntries({int limit = 30}) async {
-    final res = await get('/rss/entries?page_size=$limit');
+  Future<List<Map<String, dynamic>>> listSourceItems({int limit = 30}) async {
+    final res = await get('/sources/items?page_size=$limit');
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     final list = data is Map ? (data['items'] as List? ?? const []) : const [];

@@ -328,7 +328,7 @@
           <el-input v-model="routineForm.event_type" placeholder="例如 schedule.created" />
         </el-form-item>
         <el-form-item v-if="routineForm.trigger_type === 'event'" label="事件过滤">
-          <el-input v-model="routineForm.event_filter" placeholder='可选 JSON，例如 {"source":"rss"}' />
+          <el-input v-model="routineForm.event_filter" placeholder='可选 JSON，例如 {"provider":"rss"}' />
         </el-form-item>
         <el-form-item label="Prompt">
           <el-input v-model="routineForm.prompt" type="textarea" :rows="5" placeholder="触发时交给 Bot 的任务" />

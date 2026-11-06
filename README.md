@@ -2,7 +2,7 @@
 
 > Your Omni-present Aide.
 
-一个完全私有化部署的个人 AI 助手平台。融合全栈存储、事务管理与 AI 智能体，能感知你的情境，预判你的意图，并主动为你打点数字生活。你的文件、音乐、笔记、日程、RSS，以及每一天的行为足迹，都在这座由你完全掌控的私有服务器上，由一个懂你的 AI 管家打理。
+一个完全私有化部署的个人 AI 助手平台。融合全栈存储、事务管理与 AI 智能体，能感知你的情境，预判你的意图，并主动为你打点数字生活。你的文件、音乐、笔记、日程、资讯，以及每一天的行为足迹，都在这座由你完全掌控的私有服务器上，由一个懂你的 AI 管家打理。
 
 ## 核心能力
 
@@ -14,13 +14,13 @@
 
 📅 **日程管理** — 日历视图，创建/编辑/提醒，自然语言创建
 
-📡 **RSS 订阅** — 订阅源管理，文章列表 + 阅读视图，全文搜索
+📡 **资讯源** — RSS/Atom、GitHub Trending（RSSHub），来源管理、内容列表 + 阅读视图、全文搜索
 
 👁️ **桌面远程控制** — WebRTC 屏幕共享 + 鼠标键盘注入 + 多屏切换
 
 🤖 **AI 助理** — 桌面端全局热键 `Ctrl+Shift+A` 呼出浮动对话窗，语音输入，自然语言操作（打开页面、搜索、创建日程）；Web 端内置右下角浮动 AI 助理，均可通过 MCP function calling 调用所有后端 API（含自然语言创建日程）。设备端支持 ESP-SR 唤醒词 “Hi ESP”、流式语音与播报打断
 
-🔍 **统一语义搜索** — 顶部全局搜索框，一条接口检索文件/笔记/RSS/日程，语义 + 关键词双通道，支持 Qdrant 向量检索
+🔍 **统一语义搜索** — 顶部全局搜索框，一条接口检索文件/笔记/资讯/日程，语义 + 关键词双通道，支持 Qdrant 向量检索
 
 💬 **AI 对话历史** — 聊天记录持久化到 MySQL，Web / 桌面 / 移动端共享上下文
 
@@ -45,7 +45,7 @@
 ┌──────────────────▼──────────────────────────┐
 │              数据层                          │
 │  统一索引 → Qdrant → 统一语义搜索           │
-│  文件/笔记/RSS/日程/活动，一个接口查全部    │
+│  文件/笔记/资讯/日程/活动，一个接口查全部    │
 └─────────────────────────────────────────────┘
 ```
 
@@ -99,7 +99,7 @@
 
 桌面端插件系统支持热加载，当前内置插件：
 
-`player` `remote` `schedule` `rss` `assistant` `screenshot` `todo` `files` `notes` `calculator` `clipboard-history` `everything` `vibecoding-proxy` `activity` `translator` `sysmonitor` `pomodoro` `quicklinks`
+`player` `remote` `schedule` `sources` `assistant` `screenshot` `todo` `files` `notes` `calculator` `clipboard-history` `everything` `vibecoding-proxy` `activity` `translator` `sysmonitor` `pomodoro` `quicklinks`
 
 > `quicklinks`（快捷指令）以手机式图标网格展示，点击即可一键打开软件 / 网页 / 文件夹，或运行脚本与命令；面板支持 `itemsLayout: 'grid'` 布局。
 
@@ -142,7 +142,7 @@ npm run dev
 │   │   ├── files/     # 文件管理
 │   │   ├── music/     # 歌单
 │   │   ├── notes/     # 笔记
-│   │   ├── rss/       # RSS 订阅
+│   │   ├── sources/    # 资讯源（RSS / GitHub Trending）
 │   │   ├── schedule/  # 日程
 │   │   ├── sync/      # 同步
 │   │   └── ...
@@ -153,7 +153,7 @@ npm run dev
 │   │   ├── remote/     # 远程控制
 │   │   ├── player/     # 音乐播放器
 │   │   ├── schedule/   # 日程
-│   │   ├── rss/        # 资讯
+│   │   ├── sources/     # 资讯
 │   │   └── ...
 │   └── src/           # Electron 主进程 + 渲染进程
 ├── frontend/          # Web 管理后台（Vue 3）

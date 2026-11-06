@@ -23,7 +23,7 @@ const addingFeed = ref(false)
 async function loadFeeds() {
   loadingFeeds.value = true
   try {
-    const r = await api?.get('/rss/feeds')
+    const r = await api?.get('/sources')
     feeds.value = r || []
   } catch {} finally { loadingFeeds.value = false }
 }
@@ -38,7 +38,7 @@ async function loadEntries() {
     if (filter.value === 'starred') params.set('starred', 'true')
     params.set('page', String(page.value))
     params.set('page_size', String(pageSize.value))
-    const r = await api?.get(`/rss/entries?${params.toString()}`)
+    const r = await api?.get(`/sources/items?${params.toString()}`)
     entries.value = r?.items || []
     total.value = r?.total || 0
   } catch {} finally { loadingEntries.value = false }
@@ -49,7 +49,7 @@ async function searchEntries() {
   loadingEntries.value = true
   selectedEntry.value = null
   try {
-    const r = await api?.get(`/rss/search?q=${encodeURIComponent(searchQuery.value)}`)
+    const r = await api?.get(`/sources/search?q=${encodeURIComponent(searchQuery.value)}`)
     entries.value = r?.items || []
     total.value = r?.total || 0
   } catch {} finally { loadingEntries.value = false }
@@ -75,14 +75,14 @@ function selectEntry(e: any) {
 
 async function markRead(e: any) {
   try {
-    await api?.put(`/rss/entries/${e.id}/read`)
+    await api?.put(`/sources/items/${e.id}/read`)
     e.read = true
   } catch {}
 }
 
 async function toggleStar(e: any) {
   try {
-    await api?.put(`/rss/entries/${e.id}/star`)
+    await api?.put(`/sources/items/${e.id}/star`)
     e.starred = !e.starred
   } catch {}
 }
@@ -91,7 +91,7 @@ async function addFeed() {
   if (!addUrl.value.trim()) return
   addingFeed.value = true
   try {
-    await api?.post('/rss/feeds', { url: addUrl.value.trim() })
+    await api?.post('/sources', { url: addUrl.value.trim() })
     showAddDialog.value = false
     addUrl.value = ''
     await loadFeeds()
@@ -108,7 +108,7 @@ function confirmDelete(feed: any) {
 async function deleteFeed() {
   if (!deletingFeed.value) return
   try {
-    await api?.delete(`/rss/feeds/${deletingFeed.value.id}`)
+    await api?.delete(`/sources/${deletingFeed.value.id}`)
     showDeleteConfirm.value = false
     deletingFeed.value = null
     if (selectedFeedId.value === deletingFeed.value?.id) selectedFeedId.value = null
@@ -119,7 +119,7 @@ async function deleteFeed() {
 
 async function fetchFeed(feed: any) {
   try {
-    await api?.post(`/rss/feeds/${feed.id}/fetch`)
+    await api?.post(`/sources/${feed.id}/fetch`)
     await loadEntries()
   } catch {}
 }
@@ -254,7 +254,7 @@ watch(searchQuery, (val) => {
     <div v-if="showAddDialog" class="modal-overlay" @click.self="showAddDialog = false">
       <div class="modal">
         <h3>添加订阅</h3>
-        <input v-model="addUrl" class="input" placeholder="输入 RSS 订阅地址…" @keyup.enter="addFeed" />
+        <input v-model="addUrl" class="input" placeholder="输入 资讯地址…" @keyup.enter="addFeed" />
         <div class="modal-actions">
           <button class="btn ghost" @click="showAddDialog = false">取消</button>
           <button class="btn btn-primary" @click="addFeed" :disabled="addingFeed">{{ addingFeed ? '添加中…' : '添加' }}</button>

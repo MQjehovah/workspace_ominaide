@@ -5,7 +5,7 @@ const entries = ref<any[]>([]); const loading = ref(true); let timer: any = null
 const api = (window as any).mqbox?.api
 async function load() {
   try {
-    const r = await api?.get('/rss/entries?unread=true&page_size=5')
+    const r = await api?.get('/sources/items?unread=true&page_size=5')
     entries.value = r?.items || []
   } catch {} finally { loading.value = false }
 }

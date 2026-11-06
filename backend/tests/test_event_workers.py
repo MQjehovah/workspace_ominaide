@@ -1,4 +1,4 @@
-"""Generic workers must not learn from external RSS articles."""
+"""Generic workers must not learn from external information sources."""
 
 
 class _Event:
@@ -7,11 +7,11 @@ class _Event:
         self.entity_type = entity_type
 
 
-def test_rss_and_article_events_are_internal():
+def test_source_events_are_internal():
     from core.events.workers import _is_internal, _skip_entities
 
-    for event_type in ("article.new", "rss.refreshed"):
-        event = _Event(event_type, entity_type="rss_entry")
+    for event_type in ("sources.item.new", "sources.refreshed"):
+        event = _Event(event_type, entity_type="sources")
         assert _is_internal(event) is True
         assert _skip_entities(event) is True
 
