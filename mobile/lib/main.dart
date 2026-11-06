@@ -5,9 +5,23 @@ import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
 import 'widgets/app_lock_gate.dart';
 
+final _navigatorKey = GlobalKey<NavigatorState>();
+final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await appTheme.load();
+  ApiService().onUnauthorized = () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _messengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('登录已过期，请重新登录')),
+      );
+      _navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    });
+  };
   runApp(const OmniAideApp());
 }
 
@@ -22,6 +36,8 @@ class OmniAideApp extends StatelessWidget {
         return MaterialApp(
           title: 'OmniAide',
           debugShowCheckedModeBanner: false,
+          navigatorKey: _navigatorKey,
+          scaffoldMessengerKey: _messengerKey,
           theme: appTheme.light,
           darkTheme: appTheme.dark,
           themeMode: appTheme.mode,

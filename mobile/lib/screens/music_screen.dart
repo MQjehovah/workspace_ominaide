@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../services/api_service.dart';
 import '../services/music_cache.dart';
+import '../services/now_playing_service.dart';
 import '../models/file_item.dart';
 
 class MusicScreen extends StatefulWidget {
@@ -31,22 +32,93 @@ class _MusicScreenState extends State<MusicScreen> {
   void initState() {
     super.initState();
     _load();
+    NowPlayingService().init();
+    NowPlayingService().onCommand = _onRemoteCommand;
     _player.onPositionChanged.listen((p) => setState(() => _position = p));
-    _player.onDurationChanged.listen((d) => setState(() => _duration = d));
+    _player.onDurationChanged.listen((d) {
+      setState(() => _duration = d);
+      _updateNowPlaying();
+    });
     _player.onPlayerComplete.listen((_) {
       if (!mounted) return;
       if (_playingIndex != null && _playingIndex! < _currentSongs.length - 1) {
         _playSong(_playingIndex! + 1);
       } else {
         setState(() { _playing = false; _position = Duration.zero; });
+        _updateNowPlaying();
       }
     });
   }
 
   @override
   void dispose() {
+    NowPlayingService().onCommand = null;
+    NowPlayingService().clear();
     _player.dispose();
     super.dispose();
+  }
+
+  void _updateNowPlaying() {
+    final index = _playingIndex;
+    if (index == null || index >= _currentSongs.length) return;
+    final song = _currentSongs[index];
+    NowPlayingService().update(
+      title: (song['name'] ?? '音乐').toString(),
+      duration: _duration,
+      position: _position,
+      playing: _playing,
+    );
+  }
+
+  Future<void> _onRemoteCommand(String command, double? position) async {
+    switch (command) {
+      case 'play':
+        if (!_playing) {
+          await _player.resume();
+          if (!mounted) return;
+          setState(() => _playing = true);
+          _updateNowPlaying();
+        }
+        break;
+      case 'pause':
+        if (_playing) {
+          await _player.pause();
+          if (!mounted) return;
+          setState(() => _playing = false);
+          _updateNowPlaying();
+        }
+        break;
+      case 'toggle':
+        if (_playing) {
+          await _player.pause();
+          if (!mounted) return;
+          setState(() => _playing = false);
+        } else {
+          await _player.resume();
+          if (!mounted) return;
+          setState(() => _playing = true);
+        }
+        _updateNowPlaying();
+        break;
+      case 'next':
+        if (_playingIndex != null && _playingIndex! < _currentSongs.length - 1) {
+          await _playSong(_playingIndex! + 1);
+        }
+        break;
+      case 'previous':
+        if (_playingIndex != null && _playingIndex! > 0) {
+          await _playSong(_playingIndex! - 1);
+        }
+        break;
+      case 'seek':
+        if (position != null) {
+          await _player.seek(
+            Duration(milliseconds: (position * 1000).round()),
+          );
+          _updateNowPlaying();
+        }
+        break;
+    }
   }
 
   Future<void> _load() async {
@@ -126,6 +198,7 @@ class _MusicScreenState extends State<MusicScreen> {
       _playing = false;
       _buffering = true;
       _position = Duration.zero;
+      _duration = Duration.zero;
     });
     try {
       final fileId = (song['file_id'] as num).toInt();
@@ -135,6 +208,7 @@ class _MusicScreenState extends State<MusicScreen> {
       await _player.play(DeviceFileSource(file.path));
       if (!mounted) return;
       setState(() => _playing = true);
+      _updateNowPlaying();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('播放失败: $e')));
@@ -402,6 +476,7 @@ class _MusicScreenState extends State<MusicScreen> {
           Slider(
             value: _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0,
             onChanged: (v) => _player.seek(Duration(milliseconds: (v * _duration.inMilliseconds).round())),
+            onChangeEnd: (_) => _updateNowPlaying(),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -420,6 +495,7 @@ class _MusicScreenState extends State<MusicScreen> {
               IconButton(onPressed: _buffering ? null : () {
                 if (_playing) { _player.pause(); setState(() => _playing = false); }
                 else { _player.resume(); setState(() => _playing = true); }
+                _updateNowPlaying();
               }, icon: _buffering
                   ? const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3))
                   : Icon(_playing ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 48)),

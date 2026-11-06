@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/file_item.dart';
 import '../services/api_service.dart';
+import '../services/file_transfer_service.dart';
 
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
@@ -92,29 +93,58 @@ class _FilesScreenState extends State<FilesScreen> {
     final file = result.files.first;
     if (file.path == null) return;
     try {
-      final uploadData = await ApiService().getUploadUrl(file.name, _currentPath);
-      final uploadUrl = uploadData['upload_url'] as String?;
-      final fileId = uploadData['file_id'] as int?;
-
-      if (uploadUrl != null && uploadUrl.isNotEmpty) {
-        final localFile = File(file.path!);
-        final httpClient = HttpClient();
-        final request = await httpClient.putUrl(Uri.parse(uploadUrl));
-        request.headers.contentType = ContentType('application', 'octet-stream');
-        request.contentLength = await localFile.length();
-        await localFile.openRead().pipe(request);
-        final response = await request.close();
-        if (response.statusCode == 200 && fileId != null) {
-          await ApiService().confirmUpload(fileId);
-        }
-      } else {
-        await ApiService().uploadFileDirect(file.path!, file.name, _currentPath);
-      }
-      _loadFiles();
+      await _withProgress('正在上传', (onProgress) async {
+        await FileTransferService().upload(
+          file.path!,
+          file.name,
+          _currentPath,
+          onProgress: onProgress,
+        );
+      });
+      await _loadFiles();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败: $e')));
     }
+  }
+
+  Future<void> _withProgress(
+    String title,
+    Future<void> Function(void Function(int sent, int total)) task,
+  ) async {
+    final progress = ValueNotifier<double?>(null);
+    final dialog = showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: ValueListenableBuilder<double?>(
+          valueListenable: progress,
+          builder: (_, value, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: value),
+              const SizedBox(height: 10),
+              Text(
+                value == null
+                    ? '准备中…'
+                    : '${(value * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      await task((sent, total) {
+        if (total > 0) progress.value = sent / total;
+      });
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+    await dialog;
+    WidgetsBinding.instance.addPostFrameCallback((_) => progress.dispose());
   }
 
   String _ext(FileItem f) => f.originalName.split('.').last.toLowerCase();
@@ -180,12 +210,16 @@ class _FilesScreenState extends State<FilesScreen> {
 
   Future<void> _shareFile(FileItem f) async {
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在准备文件...')),
-      );
-      final path = await ApiService().saveFileLocally(f.id, f.originalName);
-      if (!mounted) return;
-      await Share.shareXFiles([XFile(path)], text: f.originalName);
+      File? downloaded;
+      await _withProgress('正在下载', (onProgress) async {
+        downloaded = await FileTransferService().download(
+          f.id,
+          f.originalName,
+          onProgress: onProgress,
+        );
+      });
+      if (!mounted || downloaded == null) return;
+      await Share.shareXFiles([XFile(downloaded!.path)], text: f.originalName);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('下载失败: $e')));
