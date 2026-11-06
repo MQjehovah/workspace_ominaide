@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/local_reminder_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/navigation_shell.dart';
 import 'chat_screen.dart';
@@ -26,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     NotificationService().start(_showNotification);
+    LocalReminderService().syncAll();
   }
 
   @override

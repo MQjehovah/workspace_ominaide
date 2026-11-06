@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -15,6 +16,10 @@ import UIKit
       window.rootViewController =
         UIStoryboard(name: "Main", bundle: nil).instantiateInitialViewController()
       self.window = window
+    }
+
+    if #available(iOS 10.0, *) {
+      UNUserNotificationCenter.current().delegate = self as? UNUserNotificationCenterDelegate
     }
 
     GeneratedPluginRegistrant.register(with: self)

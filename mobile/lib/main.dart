@@ -3,6 +3,7 @@ import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
+import 'widgets/app_lock_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,7 +31,9 @@ class OmniAideApp extends StatelessWidget {
               data: data.copyWith(
                 textScaler: TextScaler.linear(appTheme.fontScale),
               ),
-              child: child ?? const SizedBox.shrink(),
+              child: AppLockGate(
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
           home: const SplashScreen(),

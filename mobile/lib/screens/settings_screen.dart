@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../services/app_lock_service.dart';
 import '../services/music_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
@@ -17,12 +18,32 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   String _serverUrl = '';
   int _cacheBytes = 0;
+  bool _appLock = false;
 
   @override
   void initState() {
     super.initState();
     _serverUrl = ApiService().baseUrl;
     _loadCacheSize();
+    _loadAppLock();
+  }
+
+  Future<void> _loadAppLock() async {
+    final enabled = await AppLockService().isEnabled();
+    if (mounted) setState(() => _appLock = enabled);
+  }
+
+  Future<void> _toggleAppLock(bool value) async {
+    final ok = await AppLockService().authenticate();
+    if (!ok) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('需要先通过 Face ID 或设备密码验证')),
+      );
+      return;
+    }
+    await AppLockService().setEnabled(value);
+    if (mounted) setState(() => _appLock = value);
   }
 
   Future<void> _loadCacheSize() async {
@@ -126,6 +147,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _row(palette, '音乐缓存', _fmtBytes(_cacheBytes),
                             onTap: _clearCache,
                             trailingIcon: Icons.delete_outline),
+                        Divider(height: 18, color: palette.line),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: _appLock,
+                          onChanged: _toggleAppLock,
+                          title: Text(
+                            '应用锁',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: palette.ink,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '打开或切回前台时使用 Face ID / 设备密码',
+                            style: TextStyle(fontSize: 10.5, color: palette.muted),
+                          ),
+                        ),
                         Divider(height: 18, color: palette.line),
                         _row(palette, '版本', '1.0.0'),
                         Divider(height: 18, color: palette.line),

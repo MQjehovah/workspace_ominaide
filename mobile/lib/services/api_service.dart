@@ -85,6 +85,7 @@ class ApiService {
   ApiService._();
 
   String get baseUrl => _baseUrl;
+  String? get token => _token;
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
@@ -1020,6 +1021,66 @@ class ApiService {
         .whereType<Map>()
         .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
         .toList();
+  }
+
+  // -- File actions --
+  Future<FileItem> renameFile(int fileId, String newName) async {
+    final res = await put('/files/$fileId/rename', {'new_name': newName});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return FileItem.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<FileItem> moveFile(int fileId, String newFolderPath) async {
+    final res = await put('/files/$fileId/move', {'new_folder_path': newFolderPath});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return FileItem.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<FileItem> toggleFavoriteFile(int fileId) async {
+    final res = await post('/files/$fileId/favorite', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return FileItem.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<FileItem> updateFileTags(int fileId, List<String> tags) async {
+    final res = await put('/files/$fileId/tags', {'tags': tags});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return FileItem.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<void> deleteFile(int fileId) async {
+    final res = await delete('/files/$fileId');
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw Exception(_extractError(res));
+    }
+  }
+
+  String fileStreamUrl(int fileId) =>
+      '$_baseUrl/api/files/$fileId/stream?token=${Uri.encodeComponent(_token ?? '')}';
+
+  // -- Project runs --
+  Future<List<Map<String, dynamic>>> listProjectRuns(
+    int projectId, {
+    int limit = 50,
+  }) async {
+    final res = await get('/projects/$projectId/runs?limit=$limit');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> startProjectRun(
+    int projectId,
+    String instruction, {
+    String? branch,
+  }) async {
+    final res = await post('/projects/$projectId/runs', {
+      'instruction': instruction,
+      if (branch != null && branch.isNotEmpty) 'branch': branch,
+    });
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
   }
 
   // -- Automation routines --

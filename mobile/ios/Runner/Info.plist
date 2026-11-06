@@ -75,6 +75,8 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>连接你的 OmniAide 私有服务器</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>用于解锁 OmniAide，保护你的私人数据</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于语音输入消息</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

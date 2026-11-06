@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/speech_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'voice_chat_screen.dart';
 import '../widgets/chat_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -189,6 +190,13 @@ class _ChatScreenState extends State<ChatScreen> {
       _oldestId = null;
     });
     _input.clear();
+  }
+
+  void _openVoiceChat() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const VoiceChatScreen()),
+    );
   }
 
   Future<void> _switchSession(ChatSession session) async {
@@ -1041,6 +1049,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
+          ),
+          const SizedBox(width: 6),
+          RoundIconButton(
+            icon: Icons.graphic_eq_rounded,
+            tooltip: '语音对话',
+            onTap: _openVoiceChat,
           ),
           const SizedBox(width: 6),
           RoundIconButton(

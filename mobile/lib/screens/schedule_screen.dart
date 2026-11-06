@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/local_reminder_service.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -24,6 +25,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       final events = await ApiService().listScheduleEvents();
       if (!mounted) return;
       setState(() { _events = events; _loading = false; });
+      LocalReminderService().syncSchedule(events);
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
@@ -32,31 +34,65 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Future<void> _add() async {
     final titleCtl = TextEditingController();
-    final dateCtl = TextEditingController(text: _nowIso());
+    var selected = DateTime.now().add(const Duration(hours: 1));
     final ok = await showDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('新建日程'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: titleCtl, decoration: const InputDecoration(labelText: '标题')),
-            const SizedBox(height: 8),
-            TextField(controller: dateCtl, decoration: const InputDecoration(labelText: '开始时间 (ISO)')),
+      builder: (c) => StatefulBuilder(
+        builder: (c, setDialogState) => AlertDialog(
+          title: const Text('新建日程'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: titleCtl,
+                decoration: const InputDecoration(labelText: '标题'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final date = await showDatePicker(
+                    context: c,
+                    initialDate: selected,
+                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                    lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+                  );
+                  if (date == null || !c.mounted) return;
+                  final time = await showTimePicker(
+                    context: c,
+                    initialTime: TimeOfDay.fromDateTime(selected),
+                  );
+                  if (time == null) return;
+                  setDialogState(() {
+                    selected = DateTime(
+                      date.year,
+                      date.month,
+                      date.day,
+                      time.hour,
+                      time.minute,
+                    );
+                  });
+                },
+                icon: const Icon(Icons.event_outlined, size: 16),
+                label: Text('时间：${_fmtDateTime(selected)}'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
+            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('创建')),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('创建')),
-        ],
       ),
     );
-    if (!mounted || ok != true) return;
+    final title = titleCtl.text.trim();
+    titleCtl.dispose();
+    if (!mounted || ok != true || title.isEmpty) return;
     try {
       await ApiService().createScheduleEvent({
-        'title': titleCtl.text,
-        'start_time': dateCtl.text,
-        'end_time': null,
+        'title': title,
+        'start_time': selected.toUtc().toIso8601String(),
+        'end_time': selected.add(const Duration(hours: 1)).toUtc().toIso8601String(),
       });
       if (!mounted) return;
       _load();
@@ -66,9 +102,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
-  String _nowIso() {
-    final now = DateTime.now().toUtc();
-    return now.toIso8601String();
+  String _fmtDateTime(DateTime d) {
+    final h = d.hour.toString().padLeft(2, '0');
+    final m = d.minute.toString().padLeft(2, '0');
+    return '${d.month}月${d.day}日 $h:$m';
   }
 
   @override
