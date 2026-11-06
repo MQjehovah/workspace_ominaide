@@ -56,7 +56,14 @@
           <div class="msg-bubble typing"><span></span><span></span><span></span></div>
         </div>
       </div>
+      <div v-if="contextRefs.length" class="assistant-context">
+        <span v-for="ref in contextRefs" :key="`${ref.type}:${ref.id}`" class="assistant-context-chip">
+          {{ ref.source_label || ref.type }} · {{ ref.title }}
+          <button type="button" @click="removeContextRef(ref)">×</button>
+        </span>
+      </div>
       <div class="assistant-input-row">
+        <el-button class="ref-btn" text :icon="Link" title="引用对象" @click="pickerVisible = true" />
         <el-input
           v-model="input"
           type="textarea"
@@ -69,6 +76,7 @@
         <el-button type="primary" class="send-btn" :loading="loading" :icon="Promotion" @click="send" />
       </div>
     </div>
+    <ObjectPicker v-model="pickerVisible" @select="addContextRef" />
     <button v-show="!open" class="assistant-fab" @click="open = true">
       <el-icon><ChatDotRound /></el-icon>
       <span v-if="approvals.length" class="approval-badge">{{ approvals.length }}</span>
@@ -78,13 +86,16 @@
 
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { Delete, Close, Promotion, ChatDotRound } from '@element-plus/icons-vue'
+import { Delete, Close, Promotion, ChatDotRound, Link } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { apiUrl } from '@/api/base'
+import ObjectPicker from '@/components/ObjectPicker.vue'
 
 const open = ref(false)
 const loading = ref(false)
 const input = ref('')
+const pickerVisible = ref(false)
+const contextRefs = ref<any[]>([])
 const messages = ref<{ role: string; content: string }[]>([])
 const bodyRef = ref<HTMLDivElement | null>(null)
 const bots = ref<{ id: number; name: string; avatar?: string; is_default?: boolean }[]>([])
@@ -92,6 +103,24 @@ const currentBotId = ref<number | null>(null)
 const BOT_KEY = 'assistant_bot_id'
 const approvals = ref<{ id: number; tool_name: string; reason?: string }[]>([])
 let approvalTimer: ReturnType<typeof setInterval> | null = null
+
+
+function addContextRef(item: any) {
+  if (!item?.type || !item?.id) return
+  if (contextRefs.value.some((ref) => ref.type === item.type && ref.id === item.id)) return
+  contextRefs.value.push({
+    type: item.type,
+    id: item.id,
+    title: item.title || `${item.type} #${item.id}`,
+    source_label: item.source_label || item.type,
+  })
+}
+
+function removeContextRef(ref: any) {
+  contextRefs.value = contextRefs.value.filter(
+    (item) => !(item.type === ref.type && item.id === ref.id),
+  )
+}
 
 async function loadApprovals() {
   try {
@@ -181,7 +210,13 @@ async function send() {
     const resp = await fetch(apiUrl('/chat/runs'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ message: text, bot_id: currentBotId.value || undefined }),
+      body: JSON.stringify({
+        message: text,
+        bot_id: currentBotId.value || undefined,
+        context_refs: contextRefs.value.length
+          ? contextRefs.value.map((ref) => ({ type: ref.type, id: ref.id }))
+          : undefined,
+      }),
     })
     if (!resp.ok) {
       const err = await resp.json().catch(() => null)
@@ -351,6 +386,18 @@ function scrollBottom() {
   display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px 12px;
   border-top: 1px solid #eef0f5; background: #fff; flex-shrink: 0;
 }
+.assistant-context { display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px 0; background: #fff; }
+.assistant-context-chip {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  max-width: 260px; padding: 3px 8px; border-radius: 999px;
+  background: #eef2ff; color: #4338ca; font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.assistant-context-chip button {
+  border: none; background: transparent; color: #818cf8; cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 0;
+}
+.ref-btn { flex-shrink: 0; color: #6366f1; }
 .assistant-input-row :deep(.el-textarea__inner) {
   border-radius: 12px; border-color: #e3e6ee; box-shadow: none;
   padding: 9px 12px; font-size: 14px; line-height: 1.5;
