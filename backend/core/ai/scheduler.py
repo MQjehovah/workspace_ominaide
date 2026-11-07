@@ -94,8 +94,8 @@ async def _check_reminders():
                 try:
                     from plugins.notifications.backend.router import notify_user
                     await notify_user(user_id, {"type": "new_notification", "title": title, "link": link})
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("notification push failed for user %s: %s", user_id, exc)
     except Exception as e:
         log.warning(f"[scheduler] reminder error: {e}")
 

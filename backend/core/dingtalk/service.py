@@ -186,8 +186,8 @@ def cancel_login(user_id: int) -> None:
     if session is not None and session.proc.returncode is None:
         try:
             session.proc.terminate()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("terminate login process for user %s failed: %s", user_id, exc)
 
 
 async def _read_login_output(session: LoginSession) -> None:

@@ -12,10 +12,12 @@ from sqlalchemy import delete, select
 
 from core.database.session import async_session
 from core.jobs.models import BackgroundJob
+from core.logging import get_logger
 
 Handler = Callable[[BackgroundJob], Awaitable[None]]
 _handlers: dict[str, Handler] = {}
 _worker_task: asyncio.Task | None = None
+log = get_logger(__name__)
 
 
 def register_handler(kind: str, handler: Handler) -> None:
@@ -152,8 +154,8 @@ async def _cleanup() -> None:
                 )
             )
             await db.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("job cleanup failed: %s", exc)
 
 
 async def worker_loop() -> None:

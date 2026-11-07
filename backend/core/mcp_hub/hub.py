@@ -166,8 +166,8 @@ class McpHub:
             except Exception as e:
                 try:
                     await conn.close()
-                except Exception:
-                    pass
+                except Exception as close_exc:
+                    log.debug("close failed mcp server %s: %s", server_id, close_exc)
                 await self._unregister_proxies(server_id)
                 await self._set_status(server_id, "error", str(e)[:1000])
                 raise

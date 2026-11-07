@@ -91,8 +91,8 @@ async def _stop_runtime(user_id: int) -> None:
         from core.dingtalk.service import cancel_login
 
         cancel_login(user_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("cancel dingtalk login for user %s failed: %s", user_id, exc)
 
 
 async def _collect_file_keys(user_id: int) -> set[tuple[str, str]]:
