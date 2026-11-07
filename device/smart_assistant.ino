@@ -347,6 +347,21 @@ struct PlaybackPrioGuard {
     }
 };
 
+// Voice upload/download runs in loopTask; LVGL runs at priority 4 on the same
+// core, so TLS can starve and drop to a few KB/s. Raise the loop task for the
+// whole ask flow (including upload, ASR wait and stream download).
+struct NetPrioGuard {
+    UBaseType_t old;
+    NetPrioGuard() {
+        TaskHandle_t h = xTaskGetCurrentTaskHandle();
+        old = uxTaskPriorityGet(h);
+        vTaskPrioritySet(h, 5);
+    }
+    ~NetPrioGuard() {
+        vTaskPrioritySet(xTaskGetCurrentTaskHandle(), old);
+    }
+};
+
 static bool playPcm16k(const uint8_t* data, size_t len, uint32_t rate) {
     PlaybackPrioGuard prio;
     if (!g_audioOk) return true;
@@ -968,6 +983,7 @@ void setScreenOn(bool on) {
         if (g_wifiNetCount && !wifiOk) {              // 唤醒回连网络（最多 8 秒，扫到哪个连哪个）
             ui::setState("连接网络 ...", 0xffd740);        // 黄
             WiFi.mode(WIFI_STA);
+            WiFi.setSleep(false);           // 语音上传/下载期间关闭 modem sleep
             wifiRequestConnect();
             uint32_t t0 = millis();
             while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) {
@@ -1064,6 +1080,7 @@ static bool voiceStreamCb(const char* type, const char* text,
 }
 
 void askFlow() {
+    NetPrioGuard netPrio;
     static char transcript[512], reply[1024];
 
     setState(ST_VOICE, "语音生成中 ...", 0xffd740);
@@ -1353,6 +1370,7 @@ void setup() {
     // WiFi（多网络：扫描后自动选当前能连上的那个）
     if (g_wifiNetCount) {
         WiFi.mode(WIFI_STA);
+        WiFi.setSleep(false);
         wifiRequestConnect();
     } else {
         Serial.println(">>> 未配置 WiFi：设置页 → 配网模式 <<<");
