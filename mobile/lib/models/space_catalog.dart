@@ -44,6 +44,7 @@ List<SpaceGroupSpec> buildSpaceCatalog({
   int mailCount = 0,
   int dingtalkCount = 0,
   int notificationCount = 0,
+  int inboxCount = 0,
   int scheduleCount = 0,
   int todoCount = 0,
   int projectCount = 0,
@@ -54,13 +55,13 @@ List<SpaceGroupSpec> buildSpaceCatalog({
   const orange = Color(0xFFF97316);
   const green = Color(0xFF0FA97A);
   const purple = Color(0xFF7C5CF6);
-  const pink = Color(0xFFE0507F);
   const grey = Color(0xFF6F7D92);
 
   return [
     SpaceGroupSpec(
       title: '沟通',
       items: [
+        _item('inbox', '收件箱', Icons.inbox_outlined, grey, inboxCount),
         _item('mail', '邮件', Icons.mail_outline_rounded, blue, mailCount),
         _item('dingtalk', '钉钉', Icons.chat_outlined, orange, dingtalkCount),
         _item('notifications', '通知', Icons.notifications_none_rounded, green,
@@ -75,12 +76,6 @@ List<SpaceGroupSpec> buildSpaceCatalog({
         _item('projects', '项目', Icons.grid_view_outlined, purple, projectCount),
         _item('insights', '回顾', Icons.insights_outlined, green, 0),
         _item('automation', '自动化', Icons.auto_mode_rounded, grey, 0),
-        const SpaceItemSpec(
-          key: 'cos',
-          label: '幕僚长',
-          icon: Icons.auto_awesome_outlined,
-          color: pink,
-        ),
       ],
     ),
     SpaceGroupSpec(

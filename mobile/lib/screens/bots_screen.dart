@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import '../services/bot_selection_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'bot_skills_screen.dart';
 
 /// Manage AI roles/bots and choose the one used for chat.
 class BotsScreen extends StatefulWidget {
@@ -331,12 +332,29 @@ class _BotsScreenState extends State<BotsScreen> {
                                             ),
                                             onSelected: (v) {
                                               if (v == 'edit') _edit(bot);
+                                              if (v == 'skills') {
+                                                final id = (bot['id'] as num?)?.toInt();
+                                                if (id == null) return;
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) => BotSkillsScreen(
+                                                      botId: id,
+                                                      botName: (bot['name'] ?? 'AI 助理').toString(),
+                                                    ),
+                                                  ),
+                                                );
+                                              }
                                               if (v == 'delete') _delete(bot);
                                             },
                                             itemBuilder: (_) => const [
                                               PopupMenuItem(
                                                 value: 'edit',
                                                 child: Text('编辑'),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'skills',
+                                                child: Text('技能'),
                                               ),
                                               PopupMenuItem(
                                                 value: 'delete',

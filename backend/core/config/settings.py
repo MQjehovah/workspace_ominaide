@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     rsshub_base_url: str = ""
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
+    # Agent Skills: built-in skills live under backend/skills/builtin; user/bot
+    # skills are discovered under skills_dir (relative to the backend cwd).
+    skills_dir: str = "data/skills"
     # Daily memory agent auto-approves candidates at or above this confidence.
     memory_auto_approve_threshold: int = 85
     # Lightweight DingTalk message sync (no LLM) feeding the daily memory agent.

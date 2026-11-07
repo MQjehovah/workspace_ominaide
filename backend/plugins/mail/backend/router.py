@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database.session import get_db
@@ -18,6 +19,12 @@ from . import sync as mail_sync
 from .models import MailAccount, MailEvent, MailMessage
 
 router = APIRouter(prefix="/api/plugins/mail", tags=["mail"])
+
+
+class AiDraftRequest(BaseModel):
+    tone: str = "professional"
+    instructions: str | None = None
+    bot_id: int | None = None
 
 
 @router.get("/accounts", response_model=list[MailAccountResponse])
@@ -154,6 +161,36 @@ async def get_message(
     if msg is None:
         raise HTTPException(status_code=404, detail="Message not found")
     return msg
+
+
+@router.post("/messages/{message_id}/ai-draft")
+async def ai_draft(
+    message_id: int,
+    req: AiDraftRequest,
+    user: dict = Depends(get_current_user),
+):
+    from core.bots.registry import get_active_bot, get_or_create_default_bot
+    from core.cos.service import draft_reply
+
+    try:
+        bot = (
+            await get_active_bot(user["id"], req.bot_id)
+            if req.bot_id
+            else await get_or_create_default_bot(user["id"])
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    draft = await draft_reply(
+        user["id"],
+        source="mail",
+        message_id=message_id,
+        tone=req.tone,
+        instructions=req.instructions,
+        bot=bot,
+    )
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Message not found or empty")
+    return draft
 
 
 @router.put("/messages/{message_id}/read")

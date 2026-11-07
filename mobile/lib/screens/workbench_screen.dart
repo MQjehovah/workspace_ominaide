@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/cos_models.dart';
 import '../models/file_item.dart';
 import '../services/api_service.dart';
+import '../services/bot_selection_service.dart';
 import '../services/cos_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
@@ -30,6 +31,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   List<FileItem> _files = [];
   int _unreadNotifications = 0;
   String _name = '';
+  String _botName = '';
   bool _loading = true;
   bool _error = false;
 
@@ -48,6 +50,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   }
 
   Future<void> _load({bool force = false}) async {
+    await BotSelectionService().load();
     final api = ApiService();
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
@@ -83,6 +86,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       _unreadNotifications =
           notifications.where((n) => n['read'] == false).length;
       _name = (me?['display_name'] ?? me?['username'] ?? '').toString();
+      _botName = BotSelectionService().botName ?? '';
       _loading = false;
     });
   }
@@ -576,7 +580,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
           Row(
             children: [
               Text(
-                '幕僚长',
+                _botName.isEmpty ? '今日简报' : '今日简报 · $_botName',
                 style: TextStyle(
                   fontSize: 10,
                   letterSpacing: 1.1,

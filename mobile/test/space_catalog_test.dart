@@ -38,13 +38,15 @@ void main() {
     expect(
       keys,
       containsAll([
+        'inbox',
         'mail',
         'dingtalk',
         'notifications',
         'schedule',
         'todo',
         'projects',
-        'cos',
+        'insights',
+        'automation',
         'files',
         'notes',
         'sources',

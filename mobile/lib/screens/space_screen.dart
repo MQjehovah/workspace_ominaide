@@ -7,10 +7,9 @@ import '../services/api_service.dart';
 import '../services/cos_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
-import 'brief_screen.dart';
+import 'automation_screen.dart';
 import 'device_screen.dart';
 import 'files_screen.dart';
-import 'automation_screen.dart';
 import 'insights_screen.dart';
 import 'inbox_screen.dart';
 import 'mail_screen.dart';
@@ -215,6 +214,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
 
   Future<void> _open(String key) async {
     final Widget? target = switch (key) {
+      'inbox' => const InboxScreen(),
       'mail' => const MailScreen(),
       'dingtalk' => const InboxScreen(initialFilter: 'dingtalk'),
       'notifications' => const NotificationsScreen(),
@@ -223,7 +223,6 @@ class _SpaceScreenState extends State<SpaceScreen> {
       'projects' => const ProjectsScreen(),
       'insights' => const InsightsScreen(),
       'automation' => const AutomationScreen(),
-      'cos' => const BriefScreen(),
       'files' => const FilesScreen(),
       'notes' => const NotesScreen(),
       'sources' => const SourcesScreen(),
@@ -244,6 +243,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       mailCount: _mail,
       dingtalkCount: _dingtalk,
       notificationCount: _notifications,
+      inboxCount: _inboxTotal,
       scheduleCount: _schedule,
       todoCount: _todos,
       projectCount: _projects,

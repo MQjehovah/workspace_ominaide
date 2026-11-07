@@ -904,29 +904,89 @@ class ApiService {
     return res.statusCode == 200;
   }
 
-  // -- Chief of Staff --
-  Future<DailyBrief?> getDailyBrief() async {
-    final res = await get('/cos/daily-brief');
-    if (res.statusCode != 200) return null;
-    final dynamic data = decodeJson(res);
-    if (data is! Map) return null;
-    return DailyBrief.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+  // -- Agent Skills --
+  Future<List<Map<String, dynamic>>> listBotSkills(int botId) async {
+    final res = await get('/bots/$botId/skills');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(_asMap(decodeJson(res))['skills']);
   }
 
-  Future<WeeklyReview?> getWeeklyReview({int weeks = 1}) async {
-    final res = await get('/cos/weekly-review?weeks=$weeks');
-    if (res.statusCode != 200) return null;
-    final dynamic data = decodeJson(res);
-    if (data is! Map) return null;
-    return WeeklyReview.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+  Future<void> setBotSkill(int botId, String key, bool enabled) async {
+    final res = await put('/bots/$botId/skills/$key', {'enabled': enabled});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<Map<String, dynamic>> runSkill(
+    String key, {
+    int? botId,
+    Map<String, dynamic> input = const {},
+  }) async {
+    final res = await post('/skills/$key/run', {
+      if (botId != null) 'bot_id': botId,
+      'input': input,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  // -- Briefing surfaces (powered by Agent Skills) --
+  Future<DailyBrief?> getDailyBrief({int? botId}) async {
+    try {
+      final res = await post('/skills/daily-brief/run', {
+        if (botId != null) 'bot_id': botId,
+        'input': <String, dynamic>{},
+      });
+      if (res.statusCode == 200) {
+        final data = _asMap(decodeJson(res));
+        return DailyBrief.fromJson(_asMap(data['output']));
+      }
+      // Transitional fallback while the backend is being upgraded. Remove once
+      // every deployment runs the Agent Skills API.
+      if (res.statusCode == 404) {
+        final legacy = await get('/cos/daily-brief');
+        if (legacy.statusCode == 200) {
+          return DailyBrief.fromJson(_asMap(decodeJson(legacy)));
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<WeeklyReview?> getWeeklyReview({int weeks = 1, int? botId}) async {
+    try {
+      final res = await post('/skills/weekly-review/run', {
+        if (botId != null) 'bot_id': botId,
+        'input': {'weeks': weeks},
+      });
+      if (res.statusCode == 200) {
+        final data = _asMap(decodeJson(res));
+        return WeeklyReview.fromJson(_asMap(data['output']));
+      }
+      if (res.statusCode == 404) {
+        final legacy = await get('/cos/weekly-review?weeks=$weeks');
+        if (legacy.statusCode == 200) {
+          return WeeklyReview.fromJson(_asMap(decodeJson(legacy)));
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<TriageSnapshot?> getTriage({int days = 3}) async {
-    final res = await get('/cos/triage?days=$days');
-    if (res.statusCode != 200) return null;
-    final dynamic data = decodeJson(res);
-    if (data is! Map) return null;
-    return TriageSnapshot.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+    try {
+      var res = await get('/inbox/groups?days=$days');
+      if (res.statusCode == 404) {
+        res = await get('/cos/triage?days=$days');
+      }
+      if (res.statusCode != 200) return null;
+      final data = decodeJson(res);
+      if (data is! Map) return null;
+      return TriageSnapshot.fromJson(
+        data.map((k, v) => MapEntry(k.toString(), v)),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Map<String, dynamic>?> getDraftReply({
@@ -935,17 +995,32 @@ class ApiService {
     String? message,
     String? subject,
     String tone = 'professional',
+    int? botId,
   }) async {
-    final res = await post('/cos/draft-reply', {
-      'source': source,
-      if (messageId != null) 'message_id': messageId,
-      if (message != null) 'message': message,
-      if (subject != null) 'subject': subject,
-      'tone': tone,
-    });
-    if (res.statusCode != 200) return null;
-    final dynamic data = decodeJson(res);
-    return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+    if (messageId == null) return null;
+    try {
+      var res = await post(
+        '/plugins/mail/messages/$messageId/ai-draft',
+        {
+          'tone': tone,
+          if (botId != null) 'bot_id': botId,
+        },
+      );
+      if (res.statusCode == 404) {
+        res = await post('/cos/draft-reply', {
+          'source': source,
+          'message_id': messageId,
+          'tone': tone,
+        });
+      }
+      if (res.statusCode != 200) return null;
+      final dynamic data = decodeJson(res);
+      return data is Map
+          ? data.map((k, v) => MapEntry(k.toString(), v))
+          : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   // -- Mail --

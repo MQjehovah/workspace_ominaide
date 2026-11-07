@@ -4,7 +4,6 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'appearance_screen.dart';
-import 'brief_screen.dart';
 import 'bots_screen.dart';
 import 'device_screen.dart';
 import 'login_screen.dart';
@@ -299,13 +298,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ? '$_pendingMemories 待审核'
                               : null,
                           onTap: () => _push(const MemoryScreen()),
-                        ),
-                        _MenuRow(
-                          icon: Icons.auto_graph_outlined,
-                          color: palette.accent,
-                          title: '幕僚长偏好',
-                          value: '简报 08:30',
-                          onTap: () => _push(const BriefScreen()),
                         ),
                       ],
                     ),

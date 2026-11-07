@@ -72,6 +72,7 @@ services:
         condition: service_started
     volumes:
       - backend_uploads:/app/uploads
+      - backend_skills:/app/data/skills
       - dws_data:/data/dws
     restart: unless-stopped
 
@@ -81,4 +82,5 @@ volumes:
   qdrant_data:
   redis_data:
   backend_uploads:
+  backend_skills:
   dws_data:

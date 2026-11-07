@@ -39,12 +39,6 @@ const router = createRouter({
           component: () => import('@/views/Insights.vue')
         },
         {
-          path: 'cos',
-          name: 'ChiefOfStaff',
-          meta: { title: '幕僚长' },
-          component: () => import('@/views/ChiefOfStaff.vue')
-        },
-        {
           path: 'about',
           name: 'About',
           meta: { title: '关于我' },

@@ -30,10 +30,6 @@
         <el-icon><Sunrise /></el-icon>
         <span>每日回顾</span>
       </el-menu-item>
-      <el-menu-item index="/cos">
-        <el-icon><Briefcase /></el-icon>
-        <span>幕僚长</span>
-      </el-menu-item>
       <el-menu-item index="/about">
         <el-icon><UserFilled /></el-icon>
         <span>关于我</span>
@@ -113,7 +109,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   Folder, Document, User, UserFilled, Monitor, Setting, SwitchButton,
   DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound,
-  Sunrise, Message, ChatLineRound, Connection, Briefcase,
+  Sunrise, Message, ChatLineRound, Connection,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 

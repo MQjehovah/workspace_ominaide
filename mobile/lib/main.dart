@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
+import 'services/bot_selection_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
@@ -75,6 +76,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _checkAuth() async {
     await ApiService().loadToken();
+    await BotSelectionService().load();
     if (ApiService().isLoggedIn && !appTheme.hasLocalSettings) {
       // Never block startup on an optional cross-device settings fetch.
       _pullRemoteAppearance();

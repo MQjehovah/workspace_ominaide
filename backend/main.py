@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     import core.coding.models  # noqa
     import plugins.projects.backend.models  # noqa
     import core.bots.models  # noqa
+    import core.skills.models  # noqa
     import core.ai.insight_models  # noqa
     import core.mcp_hub.models  # noqa
     import core.memory_models  # noqa
@@ -184,8 +185,12 @@ app.include_router(insights_router)
 from core.memory_router import router as memory_router
 app.include_router(memory_router)
 
-from core.cos.router import router as cos_router
-app.include_router(cos_router)
+from core.inbox.router import router as inbox_router
+app.include_router(inbox_router)
+
+from core.skills.router import router as skills_router, bots_router as bot_skills_router
+app.include_router(skills_router)
+app.include_router(bot_skills_router)
 
 from core.events.router import router as activities_router
 app.include_router(activities_router)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/api_service.dart';
+import '../services/bot_selection_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 
@@ -79,6 +80,7 @@ class _MailScreenState extends State<MailScreen> {
       draft = await ApiService().getDraftReply(
         source: 'mail',
         messageId: detail['id'] is int ? detail['id'] as int : null,
+        botId: BotSelectionService().botId,
       );
     } catch (_) {}
     if (!mounted) return;
