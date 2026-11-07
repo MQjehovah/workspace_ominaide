@@ -14,6 +14,10 @@ bash scripts/build_device.sh smart_assistant upload COM5      # 编译并烧录
   （arduino-cli 只搜索全局库目录）。
 - 真实 WiFi / 后端账号不写进 `config.h`：复制 `device/config.local.h.example`
   为 `device/config.local.h`（已 gitignore），或用设备「设置 → 配网」写入 NVS。
+- **WiFi 支持多个网络**（如家里 + 公司）：凭据存 NVS `wlist`（JSON，最多 6 个），
+  开机/掉线时异步扫描，按信号强度依次尝试当前可见的已存网络，全失败退避 15s 重扫；
+  配网页可增删网络（同名 SSID 视为更新密码）。逻辑在 `device/wifi_net.h`，
+  纯逻辑部分可用 host g++ 测：`cd device/test && g++ -std=c++17 -I.. test_wifi_net.cpp -o t.exe && ./t.exe`。
 - 唤醒词使用 ESP-SR（WakeNet `Hi ESP`）。构建必须使用 `PartitionScheme=esp_sr_16`，
   并由 `device/partitions.csv` 提供 4MB app 分区 + 0xC10000 的 3.9MB 模型分区；
   构建脚本会关闭 MultiNet（只保留 WakeNet），避免 mn7 FST 崩溃。
