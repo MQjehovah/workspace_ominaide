@@ -24,6 +24,19 @@ async def _new_user(client) -> tuple[str, int]:
     return r.json()["access_token"], user_id
 
 
+async def _make_admin(user_id: int) -> None:
+    """Only admins may register stdio MCP servers (arbitrary command execution)."""
+    from sqlalchemy import select
+
+    from core.auth.domain.models import User
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        row = (await db.execute(select(User).where(User.id == user_id))).scalar_one()
+        row.is_admin = True
+        await db.commit()
+
+
 async def _add_fake(client, token: str, slug: str) -> dict:
     r = await client.post(
         "/api/mcp/servers",
@@ -44,7 +57,8 @@ async def _add_fake(client, token: str, slug: str) -> dict:
 
 
 async def test_mcp_hub_discovers_namespaces_and_calls(client):
-    token, _ = await _new_user(client)
+    token, user_id = await _new_user(client)
+    await _make_admin(user_id)
     server = await _add_fake(client, token, "fake")
 
     r = await client.get("/api/mcp/servers", headers=auth(token))
@@ -77,7 +91,8 @@ async def test_mcp_hub_discovers_namespaces_and_calls(client):
 
 
 async def test_disabling_server_removes_tools(client):
-    token, _ = await _new_user(client)
+    token, user_id = await _new_user(client)
+    await _make_admin(user_id)
     server = await _add_fake(client, token, "fake2")
 
     r = await client.patch(
@@ -98,7 +113,8 @@ async def test_disabling_server_removes_tools(client):
 
 
 async def test_mcp_servers_are_user_scoped(client):
-    token_a, _ = await _new_user(client)
+    token_a, user_a = await _new_user(client)
+    await _make_admin(user_a)
     token_b, _ = await _new_user(client)
     await _add_fake(client, token_a, "fake3")
 
