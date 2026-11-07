@@ -113,41 +113,62 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   Future<void> _load({bool force = false}) async {
     await BotSelectionService().load();
     final api = ApiService();
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
-
     final results = await Future.wait<dynamic>([
       _safe(cosRepository.getDailyBrief(force: force)),
-      _safe(cosRepository.getTriage(force: force)),
+      _safe(api.getWorkbenchSummary()),
       _safe(api.listNotifications(limit: 50)),
-      _safe(api.listScheduleEvents(
-        start: start.toIso8601String(),
-        end: end.toIso8601String(),
-      )),
-      _safe(api.listTodoItems(status: 'pending', pageSize: 200)),
-      _safe(api.listFiles()),
-      _safe(api.listProjects()),
-      _safe(api.listNotes()),
       _safe(api.getMe()),
     ]);
 
     if (!mounted) return;
-    final me = results[8] as Map<String, dynamic>?;
+    var summary = (results[1] as Map<String, dynamic>?) ?? <String, dynamic>{};
+    if (summary.isEmpty) {
+      final cached = await LocalCacheService().readJson('workbench.summary');
+      if (cached != null) summary = cached;
+    } else {
+      await LocalCacheService().writeJson('workbench.summary', summary);
+    }
+    final me = results[3] as Map<String, dynamic>?;
     final notifications = (results[2] as List<Map<String, dynamic>>?) ?? [];
+    final triageData = summary['triage'];
+    final recent = (summary['recent'] as Map?) ?? const {};
+    final recentFiles = (recent['files'] as List?) ?? const [];
+    final recentNotes = (recent['notes'] as List?) ?? const [];
+    final recentProjects = (recent['projects'] as List?) ?? const [];
+    final suggestionList = (summary['suggestions'] as List?) ?? const [];
     setState(() {
-      _error = results[0] == null &&
-          results[1] == null &&
-          results[3] == null &&
-          results[4] == null &&
-          results[5] == null;
+      _error = results[0] == null && summary.isEmpty;
       _brief = results[0] as DailyBrief?;
-      _triage = results[1] as TriageSnapshot?;
-      _events = (results[3] as List<Map<String, dynamic>>?) ?? [];
-      _todos = (results[4] as List<Map<String, dynamic>>?) ?? [];
-      _files = (results[5] as List<FileItem>?) ?? [];
-      _projects = (results[6] as List<Map<String, dynamic>>?) ?? [];
-      _notes = (results[7] as List<Map<String, dynamic>>?) ?? [];
+      _triage = triageData is Map
+          ? TriageSnapshot.fromJson(
+              triageData.map((k, v) => MapEntry(k.toString(), v)),
+            )
+          : null;
+      _events = ((summary['events'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+          .toList();
+      _todos = ((summary['todos'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+          .toList();
+      _files = recentFiles
+          .whereType<Map>()
+          .map((e) => FileItem.fromJson(
+                e.map((k, v) => MapEntry(k.toString(), v)),
+              ))
+          .toList();
+      _notes = recentNotes
+          .whereType<Map>()
+          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+          .toList();
+      _projects = recentProjects
+          .whereType<Map>()
+          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+          .toList();
+      if (suggestionList.isNotEmpty) {
+        _suggestions = suggestionList.map((e) => e.toString()).toList();
+      }
       _unreadNotifications =
           notifications.where((n) => n['read'] == false).length;
       _name = (me?['display_name'] ?? me?['username'] ?? '').toString();

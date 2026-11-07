@@ -232,6 +232,33 @@ async def get_download_url(
     return {"download_url": url, "filename": file_record.original_name, "file_id": file_id}
 
 
+@router.post("/{file_id}/share")
+async def share_file_link(
+    file_id: int,
+    expires_hours: int = Query(168, ge=1, le=24 * 30),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import timedelta
+    from core.minio.client import minio_client, public_minio_url
+
+    file_record = await file_service.get_file(db, user["id"], file_id)
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+    if minio_client is None:
+        raise HTTPException(status_code=503, detail="MinIO unavailable")
+    url = minio_client.presigned_get_object(
+        file_record.bucket,
+        file_record.object_key,
+        expires=timedelta(hours=expires_hours),
+    )
+    return {
+        "url": public_minio_url(url),
+        "filename": file_record.original_name,
+        "expires_hours": expires_hours,
+    }
+
+
 @router.get("/{file_id}/download")
 async def download_file(
     file_id: int,

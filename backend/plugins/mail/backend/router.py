@@ -13,6 +13,7 @@ from .schemas import (
     MailEventResponse,
     MailMessageDetail,
     MailMessageResponse,
+    MailSendRequest,
 )
 from . import service as mail_service
 from . import sync as mail_sync
@@ -131,13 +132,15 @@ async def list_messages(
     unread: bool = False,
     important: bool = False,
     starred: bool = False,
+    folder: str = Query("inbox"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await mail_sync.list_messages(
-        db, user["id"], account_id, unread, important, starred, page, page_size
+        db, user["id"], account_id, unread, important, starred, page, page_size,
+        folder=folder,
     )
     return {
         "items": [MailMessageResponse.model_validate(m) for m in items],
@@ -145,6 +148,29 @@ async def list_messages(
         "page": page,
         "page_size": page_size,
     }
+
+
+@router.post("/messages/send")
+async def send_message(
+    req: MailSendRequest,
+    user: dict = Depends(get_current_user),
+):
+    from plugins.mail.backend.send import MailSendError, send_mail
+
+    try:
+        return await send_mail(
+            user_id=user["id"],
+            account_id=req.account_id,
+            to=req.to,
+            cc=req.cc,
+            bcc=req.bcc,
+            subject=req.subject,
+            body=req.body,
+            reply_to_id=req.reply_to_id,
+            attachment_file_ids=req.attachment_file_ids,
+        )
+    except MailSendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.get("/messages/{message_id}", response_model=MailMessageDetail)

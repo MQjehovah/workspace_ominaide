@@ -301,6 +301,62 @@ async def test_workbench_suggestions_from_user_context(client, monkeypatch):
     assert body["expires_at"]
 
 
+async def test_workbench_summary_aggregates_sections(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "summary")
+
+    from core.workbench import suggestions as workbench
+
+    workbench._CACHE.clear()
+    monkeypatch.setattr(workbench.settings, "llm_api_key", "")
+
+    r = await client.get("/api/workbench/summary", headers=auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["events"]
+    assert body["todos"]
+    assert isinstance(body["recent"]["files"], list)
+    assert isinstance(body["recent"]["notes"], list)
+    assert len(body["suggestions"]) == 3
+    assert body["inbox"]["pending"] >= 1
+
+
+async def test_send_mail_saves_to_sent(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "sender")
+
+    from plugins.mail.backend import send as mail_send
+
+    monkeypatch.setattr(
+        mail_send,
+        "_smtp_send",
+        lambda *args, **kwargs: "<test-message@example.com>",
+    )
+
+    r = await client.post(
+        "/api/plugins/mail/messages/send",
+        json={
+            "to": ["boss@example.com"],
+            "subject": "预算确认",
+            "body": "预算方案已确认。",
+        },
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["message_id"] == "<test-message@example.com>"
+
+    r = await client.get(
+        "/api/plugins/mail/messages?folder=sent",
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 1
+    assert items[0]["subject"] == "预算确认"
+    assert items[0]["folder"] == "sent"
+    assert items[0]["direction"] == "outbound"
+
+
 async def test_draft_reply_from_mail(client):
     token, user_id = await _new_user(client)
     ids = await _seed_sources(user_id, "reply")

@@ -69,6 +69,14 @@ class MailMessage(Base):
     ai_actions = Column(JSON, nullable=True)
     read = Column(Boolean, default=False)
     starred = Column(Boolean, default=False)
+    folder = Column(String(20), default="inbox", index=True)
+    direction = Column(String(20), default="inbound")
+    in_reply_to = Column(String(500), nullable=True)
+    thread_id = Column(String(500), nullable=True)
+    cc_addresses = Column(Text, nullable=True)
+    bcc_addresses = Column(Text, nullable=True)
+    attachments = Column(JSON, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     def __repr__(self) -> str:

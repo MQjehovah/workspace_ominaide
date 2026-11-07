@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'automation_screen.dart';
 import 'device_screen.dart';
+import 'dingtalk_actions_screen.dart';
 import 'files_screen.dart';
 import 'insights_screen.dart';
 import 'inbox_screen.dart';
@@ -245,7 +246,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
     final Widget? target = switch (key) {
       'inbox' => const InboxScreen(),
       'mail' => const MailScreen(),
-      'dingtalk' => const InboxScreen(initialFilter: 'dingtalk'),
+      'dingtalk' => const DingTalkActionsScreen(),
       'notifications' => const NotificationsScreen(),
       'schedule' => const ScheduleScreen(),
       'minutes' => const MeetingMinutesScreen(),

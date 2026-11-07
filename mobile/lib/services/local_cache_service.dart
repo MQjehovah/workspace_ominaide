@@ -36,6 +36,20 @@ class LocalCacheService {
     }
   }
 
+  Future<Map<String, dynamic>?> readJson(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('$_prefix$key');
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map
+          ? decoded.map((k, v) => MapEntry(k.toString(), v))
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<DateTime?> updatedAt(String key) async {
     final prefs = await SharedPreferences.getInstance();
     final ts = prefs.getInt('$_prefix$key.ts');

@@ -4,6 +4,7 @@ import '../services/event_time.dart';
 import '../services/local_cache_service.dart';
 import '../services/local_reminder_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/loading_state.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -13,13 +14,54 @@ class ScheduleScreen extends StatefulWidget {
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
   List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _weekEvents = [];
   bool _loading = true;
+  bool _weekLoading = false;
+  bool _weekView = false;
   String _error = '';
+  late DateTime _weekStart = _monday(DateTime.now());
+
+  static DateTime _monday(DateTime date) {
+    final day = DateTime(date.year, date.month, date.day);
+    return day.subtract(Duration(days: day.weekday - 1));
+  }
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _loadWeek() async {
+    setState(() => _weekLoading = true);
+    try {
+      final events = await ApiService().listScheduleEvents(
+        start: _weekStart.toIso8601String(),
+        end: _weekStart.add(const Duration(days: 7)).toIso8601String(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _weekEvents = events;
+        _weekLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _weekLoading = false);
+    }
+  }
+
+  void _toggleWeek() {
+    setState(() => _weekView = !_weekView);
+    if (_weekView) _loadWeek();
+  }
+
+  void _shiftWeek(int days) {
+    setState(() => _weekStart = _weekStart.add(Duration(days: days)));
+    _loadWeek();
+  }
+
+  void _goToday() {
+    setState(() => _weekStart = _monday(DateTime.now()));
+    _loadWeek();
   }
 
   Future<void> _load() async {
@@ -87,8 +129,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('创建')),
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('取消')),
+            TextButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('创建')),
           ],
         ),
       ),
@@ -100,17 +146,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       await ApiService().createScheduleEvent({
         'title': title,
         'start_time': selected.toUtc().toIso8601String(),
-        'end_time': selected.add(const Duration(hours: 1)).toUtc().toIso8601String(),
+        'end_time':
+            selected.add(const Duration(hours: 1)).toUtc().toIso8601String(),
       });
       if (!mounted) return;
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('创建失败: $e')));
     }
   }
 
-  Future<DateTime?> _pickDateTime(BuildContext context, DateTime initial) async {
+  Future<DateTime?> _pickDateTime(
+      BuildContext context, DateTime initial) async {
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -129,7 +178,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Future<void> _edit(Map<String, dynamic> event) async {
     final id = (event['id'] as num?)?.toInt();
     if (id == null) return;
-    final titleCtl = TextEditingController(text: (event['title'] ?? '').toString());
+    final titleCtl =
+        TextEditingController(text: (event['title'] ?? '').toString());
     var selected = DateTime.tryParse((event['start_time'] ?? '').toString()) ??
         DateTime.now().add(const Duration(hours: 1));
     if (selected.isUtc) selected = selected.toLocal();
@@ -159,8 +209,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('保存')),
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('取消')),
+            TextButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('保存')),
           ],
         ),
       ),
@@ -172,15 +226,18 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       await ApiService().updateScheduleEvent(id, {
         'title': title,
         'start_time': selected.toUtc().toIso8601String(),
-        'end_time': selected.add(const Duration(hours: 1)).toUtc().toIso8601String(),
+        'end_time':
+            selected.add(const Duration(hours: 1)).toUtc().toIso8601String(),
       });
       if (!mounted) return;
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('保存失败: $e')));
     }
   }
+
   String _fmtDateTime(DateTime d) {
     final h = d.hour.toString().padLeft(2, '0');
     final m = d.minute.toString().padLeft(2, '0');
@@ -191,42 +248,301 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     final now = DateTime.now();
-    final active = _events
-        .where((event) => !eventHasEnded(event, now))
-        .toList()
+    final active = _events.where((event) => !eventHasEnded(event, now)).toList()
       ..sort(_compareByStart);
-    final ended = _events
-        .where((event) => eventHasEnded(event, now))
-        .toList()
+    final ended = _events.where((event) => eventHasEnded(event, now)).toList()
       ..sort(_compareByEndDesc);
     return Scaffold(
-      appBar: AppBar(title: const Text('日程'), actions: [IconButton(onPressed: _add, icon: const Icon(Icons.add))]),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error.isNotEmpty
-              ? Center(child: Text(_error, style: const TextStyle(color: Colors.red)))
-              : _events.isEmpty
-                  ? const Center(child: Text('暂无日程'))
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        children: [
-                          if (active.isNotEmpty) ...[
-                            _sectionTitle('待开始 / 进行中', active.length, palette),
-                            for (final event in active)
-                              _eventCard(event, ended: false, palette: palette),
-                          ],
-                          if (ended.isNotEmpty) ...[
-                            if (active.isNotEmpty) const SizedBox(height: 8),
-                            _sectionTitle('已结束', ended.length, palette),
-                            for (final event in ended)
-                              _eventCard(event, ended: true, palette: palette),
-                          ],
-                        ],
+      appBar: AppBar(
+        title: const Text('日程'),
+        actions: [
+          IconButton(
+            icon: Icon(
+                _weekView ? Icons.view_list_rounded : Icons.view_week_rounded),
+            tooltip: _weekView ? '列表视图' : '周视图',
+            onPressed: _toggleWeek,
+          ),
+          IconButton(onPressed: _add, icon: const Icon(Icons.add)),
+        ],
+      ),
+      body: _weekView
+          ? _buildWeekView(palette)
+          : _loading
+              ? const SkeletonList(count: 5)
+              : _error.isNotEmpty
+                  ? Center(
+                      child: Text(_error,
+                          style: const TextStyle(color: Colors.red)))
+                  : _events.isEmpty
+                      ? const Center(child: Text('暂无日程'))
+                      : RefreshIndicator(
+                          onRefresh: _load,
+                          child: ListView(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            children: [
+                              if (active.isNotEmpty) ...[
+                                _sectionTitle(
+                                  '待开始 / 进行中',
+                                  active.length,
+                                  palette,
+                                ),
+                                for (final event in active)
+                                  _eventCard(event,
+                                      ended: false, palette: palette),
+                              ],
+                              if (ended.isNotEmpty) ...[
+                                if (active.isNotEmpty)
+                                  const SizedBox(height: 8),
+                                _sectionTitle('已结束', ended.length, palette),
+                                for (final event in ended)
+                                  _eventCard(event,
+                                      ended: true, palette: palette),
+                              ],
+                            ],
+                          ),
+                        ),
+    );
+  }
+
+  Widget _buildWeekView(AppPalette palette) {
+    const hourHeight = 56.0;
+    final now = DateTime.now();
+    final days = [
+      for (var i = 0; i < 7; i++) _weekStart.add(Duration(days: i)),
+    ];
+    const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+    final title =
+        '${_weekStart.month}月${_weekStart.day}日 - ${_weekStart.add(const Duration(days: 6)).month}月${_weekStart.add(const Duration(days: 6)).day}日';
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left_rounded),
+                onPressed: () => _shiftWeek(-7),
+              ),
+              Expanded(
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: palette.ink,
+                  ),
+                ),
+              ),
+              TextButton(onPressed: _goToday, child: const Text('今天')),
+              IconButton(
+                icon: const Icon(Icons.chevron_right_rounded),
+                onPressed: () => _shiftWeek(7),
+              ),
+            ],
+          ),
+        ),
+        Row(
+          children: [
+            const SizedBox(width: 38),
+            for (var i = 0; i < 7; i++)
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      weekdays[i],
+                      style: TextStyle(fontSize: 9, color: palette.muted),
+                    ),
+                    const SizedBox(height: 2),
+                    Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _isSameDay(days[i], now)
+                            ? palette.primary
+                            : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '${days[i].day}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: _isSameDay(days[i], now)
+                              ? Colors.white
+                              : palette.ink,
+                        ),
                       ),
                     ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        if (_weekLoading)
+          LinearProgressIndicator(
+            color: palette.primary,
+            backgroundColor: palette.primarySoft,
+          ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: SizedBox(
+              height: 24 * hourHeight,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 38,
+                    child: Column(
+                      children: [
+                        for (var hour = 0; hour < 24; hour++)
+                          SizedBox(
+                            height: hourHeight,
+                            child: Align(
+                              alignment: Alignment.topRight,
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Text(
+                                  '${hour.toString().padLeft(2, '0')}:00',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    color: palette.muted,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  for (var i = 0; i < 7; i++)
+                    Expanded(
+                      child: _buildWeekDay(
+                        days[i],
+                        palette,
+                        hourHeight,
+                        now,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
+  }
+
+  Widget _buildWeekDay(
+    DateTime day,
+    AppPalette palette,
+    double hourHeight,
+    DateTime now,
+  ) {
+    final dayStart = DateTime(day.year, day.month, day.day);
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    final events = _weekEvents.where((event) {
+      final start = eventStart(event);
+      final end = eventEnd(event);
+      if (start == null || end == null) return false;
+      return end.isAfter(dayStart) && start.isBefore(dayEnd);
+    }).toList();
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(color: palette.line.withValues(alpha: 0.7)),
+          bottom: BorderSide(color: palette.line.withValues(alpha: 0.7)),
+        ),
+      ),
+      child: Stack(
+        children: [
+          for (var hour = 0; hour < 24; hour++)
+            Positioned(
+              top: hour * hourHeight,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: hourHeight,
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: palette.line.withValues(alpha: 0.55),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          for (final event in events)
+            _weekEvent(event, dayStart, dayEnd, palette, hourHeight),
+          if (_isSameDay(day, now))
+            Positioned(
+              top: (now.hour + now.minute / 60) * hourHeight,
+              left: 0,
+              right: 0,
+              child: Container(height: 1.5, color: palette.accent),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _weekEvent(
+    Map<String, dynamic> event,
+    DateTime dayStart,
+    DateTime dayEnd,
+    AppPalette palette,
+    double hourHeight,
+  ) {
+    final start = eventStart(event);
+    final end = eventEnd(event);
+    if (start == null || end == null) return const SizedBox.shrink();
+    final visibleStart = start.isBefore(dayStart) ? dayStart : start;
+    final visibleEnd = end.isAfter(dayEnd) ? dayEnd : end;
+    final top = (visibleStart.hour + visibleStart.minute / 60) * hourHeight;
+    final height =
+        ((visibleEnd.difference(visibleStart).inMinutes / 60) * hourHeight)
+            .clamp(20.0, 24 * hourHeight);
+    return Positioned(
+      top: top,
+      left: 1,
+      right: 1,
+      height: height,
+      child: GestureDetector(
+        onTap: () => _edit(event),
+        child: Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: palette.primary.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: palette.primary.withValues(alpha: 0.35),
+            ),
+          ),
+          child: Text(
+            (event['title'] ?? '').toString(),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 8,
+              height: 1.15,
+              fontWeight: FontWeight.w600,
+              color: palette.primary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   Widget _sectionTitle(String title, int count, AppPalette palette) {
@@ -268,9 +584,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               : Theme.of(context).colorScheme.primaryContainer,
           child: Icon(
             ended ? Icons.event_available_outlined : Icons.event,
-            color: ended
-                ? palette.muted
-                : Theme.of(context).colorScheme.primary,
+            color:
+                ended ? palette.muted : Theme.of(context).colorScheme.primary,
           ),
         ),
         title: Text(

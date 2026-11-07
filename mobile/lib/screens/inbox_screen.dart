@@ -4,6 +4,7 @@ import '../models/cos_models.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/loading_state.dart';
 import 'mail_screen.dart';
 import 'schedule_screen.dart';
 import 'todo_screen.dart';
@@ -362,8 +363,7 @@ class _InboxScreenState extends State<InboxScreen> {
             const SizedBox(height: 8),
             Expanded(
               child: _loading
-                  ? Center(
-                      child: CircularProgressIndicator(color: palette.primary))
+                  ? const SkeletonList(count: 6)
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -10,6 +12,7 @@ import '../models/file_item.dart';
 import '../services/api_service.dart';
 import '../services/file_transfer_service.dart';
 import '../services/seen_state_service.dart';
+import '../widgets/loading_state.dart';
 
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
@@ -22,6 +25,9 @@ class _FilesScreenState extends State<FilesScreen> {
   List<FileItem> _files = [];
   bool _loading = true;
   final _history = <String>['/'];
+  final _searchController = TextEditingController();
+  Timer? _searchTimer;
+  String _search = '';
 
   @override
   void initState() {
@@ -34,16 +40,30 @@ class _FilesScreenState extends State<FilesScreen> {
   void dispose() {
     // Also clear after leaving so uploads made during the visit count as seen.
     SeenStateService().markFilesSeen();
+    _searchTimer?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _loadFiles() async {
     setState(() => _loading = true);
-    final files = await ApiService().listFiles(folderPath: _currentPath);
+    final files = await ApiService().listFiles(
+      folderPath: _currentPath,
+      search: _search.isEmpty ? null : _search,
+    );
     if (!mounted) return;
     setState(() {
       _files = files;
       _loading = false;
+    });
+  }
+
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      setState(() => _search = value.trim());
+      _loadFiles();
     });
   }
 
@@ -80,8 +100,11 @@ class _FilesScreenState extends State<FilesScreen> {
             autofocus: true,
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-            TextButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('创建')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, c.text),
+                child: const Text('创建')),
           ],
         );
       },
@@ -92,7 +115,8 @@ class _FilesScreenState extends State<FilesScreen> {
       _loadFiles();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('创建失败: $e')));
     }
   }
 
@@ -113,7 +137,8 @@ class _FilesScreenState extends State<FilesScreen> {
       await _loadFiles();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('上传失败: $e')));
     }
   }
 
@@ -162,8 +187,17 @@ class _FilesScreenState extends State<FilesScreen> {
       ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp'].contains(_ext(f));
 
   bool _isStreamable(FileItem f) => [
-        'mp4', 'mov', 'm4v', 'webm', 'mkv',
-        'mp3', 'm4a', 'wav', 'aac', 'flac', 'ogg',
+        'mp4',
+        'mov',
+        'm4v',
+        'webm',
+        'mkv',
+        'mp3',
+        'm4a',
+        'wav',
+        'aac',
+        'flac',
+        'ogg',
         'pdf',
       ].contains(_ext(f));
 
@@ -180,7 +214,8 @@ class _FilesScreenState extends State<FilesScreen> {
               child: Column(
                 children: [
                   AppBar(
-                    title: Text(f.originalName, style: const TextStyle(fontSize: 14)),
+                    title: Text(f.originalName,
+                        style: const TextStyle(fontSize: 14)),
                     automaticallyImplyLeading: false,
                   ),
                   Expanded(
@@ -198,7 +233,8 @@ class _FilesScreenState extends State<FilesScreen> {
         );
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('预览失败: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('预览失败: $e')));
       }
       return;
     }
@@ -231,7 +267,46 @@ class _FilesScreenState extends State<FilesScreen> {
       await Share.shareXFiles([XFile(downloaded!.path)], text: f.originalName);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('下载失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('下载失败: $e')));
+    }
+  }
+
+  Future<void> _shareLink(FileItem f) async {
+    try {
+      final data = await ApiService().shareFileLink(f.id);
+      final url = (data['url'] ?? '').toString();
+      if (url.isEmpty) throw Exception('没有生成分享链接');
+      await Clipboard.setData(ClipboardData(text: url));
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('分享链接已复制'),
+          content: SelectableText(
+            url,
+            style: const TextStyle(fontSize: 11),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('关闭'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Share.share(url, subject: f.originalName);
+              },
+              child: const Text('系统分享'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('生成分享链接失败: $e')),
+      );
     }
   }
 
@@ -241,7 +316,8 @@ class _FilesScreenState extends State<FilesScreen> {
       await _loadFiles();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('操作失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('操作失败: $e')));
     }
   }
 
@@ -253,7 +329,8 @@ class _FilesScreenState extends State<FilesScreen> {
         title: const Text('重命名'),
         content: TextField(controller: ctl, autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
             child: const Text('保存'),
@@ -268,7 +345,8 @@ class _FilesScreenState extends State<FilesScreen> {
       await _loadFiles();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('重命名失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('重命名失败: $e')));
     }
   }
 
@@ -284,7 +362,8 @@ class _FilesScreenState extends State<FilesScreen> {
           decoration: const InputDecoration(hintText: '/ 或 /文件夹/'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
             child: const Text('移动'),
@@ -302,7 +381,8 @@ class _FilesScreenState extends State<FilesScreen> {
       await _loadFiles();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('移动失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('移动失败: $e')));
     }
   }
 
@@ -318,7 +398,8 @@ class _FilesScreenState extends State<FilesScreen> {
           decoration: const InputDecoration(hintText: '用逗号分隔，例如：工作, 重要'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctl.text),
             child: const Text('保存'),
@@ -338,7 +419,8 @@ class _FilesScreenState extends State<FilesScreen> {
       await _loadFiles();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('保存失败: $e')));
     }
   }
 
@@ -349,7 +431,9 @@ class _FilesScreenState extends State<FilesScreen> {
         title: const Text('删除文件'),
         content: Text('确定删除「${f.originalName}」？文件会进入回收站。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('删除'),
@@ -363,7 +447,8 @@ class _FilesScreenState extends State<FilesScreen> {
       await _loadFiles();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('删除失败: $e')));
     }
   }
 
@@ -372,6 +457,7 @@ class _FilesScreenState extends State<FilesScreen> {
       if (!f.isFolder) ...[
         const PopupMenuItem(value: 'preview', child: Text('预览/打开')),
         const PopupMenuItem(value: 'share', child: Text('分享 / 存储到文件')),
+        const PopupMenuItem(value: 'share_link', child: Text('复制分享链接')),
         const PopupMenuItem(value: 'favorite', child: Text('收藏 / 取消收藏')),
       ],
       const PopupMenuItem(value: 'rename', child: Text('重命名')),
@@ -388,6 +474,9 @@ class _FilesScreenState extends State<FilesScreen> {
         break;
       case 'share':
         await _shareFile(f);
+        break;
+      case 'share_link':
+        await _shareLink(f);
         break;
       case 'favorite':
         await _toggleFavorite(f);
@@ -428,11 +517,34 @@ class _FilesScreenState extends State<FilesScreen> {
       ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: '搜索文件',
+                prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _search = '');
+                          _loadFiles();
+                        },
+                      ),
+              ),
+            ),
+          ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                GestureDetector(onTap: _goRoot, child: const Icon(Icons.home, size: 18)),
+                GestureDetector(
+                    onTap: _goRoot, child: const Icon(Icons.home, size: 18)),
                 if (_history.isNotEmpty)
                   GestureDetector(
                     onTap: _goBack,
@@ -446,7 +558,8 @@ class _FilesScreenState extends State<FilesScreen> {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: crumbs.asMap().entries.map((e) {
-                        final path = '/' + crumbs.sublist(0, e.key + 1).join('/');
+                        final path =
+                            '/' + crumbs.sublist(0, e.key + 1).join('/');
                         return GestureDetector(
                           onTap: () {
                             _history.add(_currentPath);
@@ -473,10 +586,11 @@ class _FilesScreenState extends State<FilesScreen> {
           const Divider(height: 1),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonList(count: 6)
                 : _files.isEmpty
                     ? const Center(
-                        child: Text('空文件夹', style: TextStyle(color: Colors.grey)),
+                        child:
+                            Text('空文件夹', style: TextStyle(color: Colors.grey)),
                       )
                     : RefreshIndicator(
                         onRefresh: _loadFiles,
@@ -512,7 +626,8 @@ class _FilesScreenState extends State<FilesScreen> {
                                   ),
                                   if (f.isFavorite) ...[
                                     const SizedBox(width: 4),
-                                    const Icon(Icons.star, size: 14, color: Colors.amber),
+                                    const Icon(Icons.star,
+                                        size: 14, color: Colors.amber),
                                   ],
                                 ],
                               ),
@@ -524,9 +639,12 @@ class _FilesScreenState extends State<FilesScreen> {
                                         '${hasTags ? '  ·  ${f.tags.join(' / ')}' : ''}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.grey.shade500),
                               ),
-                              onTap: f.isFolder ? () => _openFolder(f) : () => _preview(f),
+                              onTap: f.isFolder
+                                  ? () => _openFolder(f)
+                                  : () => _preview(f),
                               trailing: PopupMenuButton<String>(
                                 icon: const Icon(Icons.more_vert, size: 18),
                                 onSelected: (v) => _handleMenu(v, f),

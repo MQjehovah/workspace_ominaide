@@ -231,17 +231,36 @@ class ApiService {
   }
 
   // -- Files --
-  Future<List<FileItem>> listFiles({String folderPath = '/'}) async {
+  Future<List<FileItem>> listFiles({
+    String folderPath = '/',
+    String? search,
+  }) async {
+    final params = <String, String>{'page_size': '100'};
+    if (search == null || search.isEmpty) {
+      params['folder_path'] = folderPath;
+    } else {
+      params['search'] = search;
+    }
+    final uri =
+        Uri.parse('$_baseUrl/api/files').replace(queryParameters: params);
     final res = await _http
-        .get(
-          Uri.parse(
-              '$_baseUrl/api/files?page_size=100&folder_path=${Uri.encodeComponent(folderPath)}'),
-          headers: _headers,
-        )
+        .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final data = decodeJson(res);
     return (data['files'] as List).map((f) => FileItem.fromJson(f)).toList();
+  }
+
+  Future<Map<String, dynamic>> shareFileLink(
+    int fileId, {
+    int expiresHours = 168,
+  }) async {
+    final res = await post(
+      '/files/$fileId/share?expires_hours=$expiresHours',
+      const {},
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
   }
 
   // -- Vibecoding --
@@ -1144,8 +1163,14 @@ class ApiService {
   }
 
   // -- Mail --
-  Future<List<Map<String, dynamic>>> listMailMessages({int limit = 50}) async {
-    final res = await get('/plugins/mail/messages?page_size=$limit');
+  Future<List<Map<String, dynamic>>> listMailMessages({
+    int limit = 50,
+    String folder = 'inbox',
+    bool unread = false,
+  }) async {
+    final res = await get(
+      '/plugins/mail/messages?page_size=$limit&folder=$folder&unread=$unread',
+    );
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     final List list = data is Map
@@ -1155,6 +1180,43 @@ class ApiService {
         .whereType<Map>()
         .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
         .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listMailAccounts() async {
+    final res = await get('/plugins/mail/accounts');
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    if (data is! List) return [];
+    return data
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> sendMail({
+    int? accountId,
+    required List<String> to,
+    List<String> cc = const [],
+    List<String> bcc = const [],
+    required String subject,
+    required String body,
+    int? replyToId,
+    List<int> attachmentFileIds = const [],
+  }) async {
+    final res = await post('/plugins/mail/messages/send', {
+      if (accountId != null) 'account_id': accountId,
+      'to': to,
+      'cc': cc,
+      'bcc': bcc,
+      'subject': subject,
+      'body': body,
+      if (replyToId != null) 'reply_to_id': replyToId,
+      'attachment_file_ids': attachmentFileIds,
+    });
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
   }
 
   Future<int> markAllMailRead() async {
@@ -1271,6 +1333,27 @@ class ApiService {
 
     walk(data);
     return out;
+  }
+
+  Future<Map<String, dynamic>> getWorkbenchSummary() async {
+    final res = await get('/workbench/summary');
+    if (res.statusCode != 200) return {};
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> getDingTalkActions({
+    bool refresh = false,
+  }) async {
+    final res = await get(
+      '/workbench/dingtalk-actions${refresh ? '?refresh=true' : ''}',
+    );
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
   }
 
   Future<List<String>> getWorkbenchSuggestions({bool refresh = false}) async {

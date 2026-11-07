@@ -194,6 +194,9 @@ app.include_router(inbox_router)
 from core.meetings.router import router as meetings_router
 app.include_router(meetings_router)
 
+from core.workbench.router import router as workbench_router
+app.include_router(workbench_router)
+
 from core.skills.router import router as skills_router, bots_router as bot_skills_router
 app.include_router(skills_router)
 app.include_router(bot_skills_router)
