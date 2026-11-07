@@ -123,6 +123,7 @@ bool srOk = false;
 volatile bool wakeFlag = false;             // ESP-SR 检测到唤醒词
 volatile bool voiceAbort = false;           // 播报中被按键/唤醒词打断
 bool voiceDeltaShown = false;               // 本轮是否已显示“语音生成中”
+static bool voicePlaying = false;           // 本轮是否已开始出声（之后不再回退状态文案）
 
 // ---- 设备音乐 ----
 volatile bool musicActive = false;
@@ -351,6 +352,12 @@ static bool playPcm16k(const uint8_t* data, size_t len, uint32_t rate) {
     if (!g_audioOk) return true;
     if (bargeRequested()) return false;
     if (!rate) rate = 16000;
+    // 采样率变化时重置重采样相位，避免跨段播放出现音调/速度跳变。
+    static uint32_t s_rate = 0;
+    if (rate != s_rate) {
+        playPcmReset();
+        s_rate = rate;
+    }
     const int16_t* in = (const int16_t*)data;
     size_t n = len / 2;
     static int16_t st[1024];
@@ -1025,7 +1032,7 @@ static bool onVoiceEvent(const char* type, const char* text,
 static bool voiceStreamCb(const char* type, const char* text,
                           const uint8_t* pcm, size_t len, uint32_t rate, void* ud) {
     if (!strcmp(type, "transcript")) {
-        if (text && text[0]) {
+        if (text && text[0] && !voicePlaying) {
             setState(ST_VOICE, text, 0xffd740);
             ui::busy(text);
         }
@@ -1035,13 +1042,14 @@ static bool voiceStreamCb(const char* type, const char* text,
         return true;  // 文本已由 OmniAide 累加到 reply
     }
     if (!strcmp(type, "status")) {
-        if (text && text[0]) {
+        if (text && text[0] && !voicePlaying) {
             setState(ST_VOICE, text, 0xffd740);
             ui::busy(text);
         }
         return true;
     }
     if (!strcmp(type, "audio") && pcm && len) {
+        voicePlaying = true;
         setState(ST_PLAY, "播报中 ...", 0x00e5ff);
         ui::busy("播报中 ...");
         // false = 被唤醒词/KEY3 打断，OmniAide 会立即中止 HTTP 流。
@@ -1056,6 +1064,9 @@ void askFlow() {
     setState(ST_VOICE, "语音生成中 ...", 0xffd740);
     ui::busy("语音生成中 ...");
     voiceAbort = false;
+    voicePlaying = false;
+    voiceDeltaShown = false;
+    playPcmReset();          // 新一轮对话重置重采样相位
     srPause();
 
     // Primary path: one ASR call + streaming reply + sentence-level playback.

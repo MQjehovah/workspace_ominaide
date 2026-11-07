@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import time
 from datetime import datetime
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Response
@@ -25,7 +26,8 @@ from plugins.chat.backend.schemas import (
     AsrResponse, TtsRequest, SessionItem, SessionRename,
 )
 from plugins.chat.backend.voice_stream import (
-    iter_agent_events, take_sentences, tts_pcm,
+    edge_failed, edge_ready, edge_succeeded,
+    iter_agent_events, trim_silence, tts_edge_pcm, tts_pcm,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -492,6 +494,45 @@ VOICE_STYLE = (
 )
 
 
+def _weather_text(code: int) -> str:
+    if code == 0:
+        return "晴"
+    if code <= 2:
+        return "多云"
+    if code == 3:
+        return "阴"
+    if code in (45, 48):
+        return "雾"
+    if code <= 57:
+        return "毛毛雨"
+    if code <= 67:
+        return "雨"
+    if code <= 77:
+        return "雪"
+    if code <= 82:
+        return "阵雨"
+    if code <= 86:
+        return "阵雪"
+    return "雷雨"
+
+
+async def _voice_context() -> str:
+    """Small always-on context so common questions skip slow tool calls."""
+    from plugins.device.backend.router import _current_weather
+
+    now = datetime.now()
+    weekday = "一二三四五六日"[now.weekday()]
+    text = f"当前时间：{now:%Y-%m-%d} 星期{weekday} {now:%H:%M}。"
+    try:
+        weather = await _current_weather()
+    except Exception:
+        weather = None
+    if weather:
+        text += f"当前天气：{weather['temp']}℃，{_weather_text(weather['code'])}。"
+    text += "时间和天气已在上下文中，回答这类问题不要调用工具。"
+    return text
+
+
 @router.post("/voice")
 async def voice(
     file: UploadFile = File(...),
@@ -534,7 +575,8 @@ async def voice(
     bot = await _resolve_bot(user["id"], bot_id)
     req = ChatRequest(message=transcript, session_id=session_id or DEFAULT_SESSION, bot_id=bot.id)
     try:
-        messages = await build_messages(req, user["id"], bot=bot, extra_system=VOICE_STYLE, history_limit=6)
+        voice_system = VOICE_STYLE + await _voice_context()
+        messages = await build_messages(req, user["id"], bot=bot, extra_system=voice_system, history_limit=6)
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(session_id or DEFAULT_SESSION)
         try:
@@ -585,6 +627,30 @@ async def voice(
     )
 
 
+async def _synthesize_voice_reply(text: str, tts_client, voice: str | None,
+                                  edge_voice: str | None):
+    """Prefer fast edge-tts; fall back to the OpenAI-compatible gateway."""
+    if settings.tts_provider == "edge" and edge_ready():
+        try:
+            pcm, rate = await asyncio.wait_for(tts_edge_pcm(text, edge_voice), timeout=6)
+            if pcm:
+                edge_succeeded()
+                return pcm, rate, "edge"
+        except Exception as e:
+            print(f"[voice_stream] edge tts failed: {e}", flush=True)
+            edge_failed(120)
+    for attempt in range(3):
+        try:
+            pcm, rate = await tts_pcm(text, tts_client, voice)
+            if pcm:
+                return pcm, rate, "gateway"
+        except Exception as e:
+            print(f"[voice_stream] gateway tts error attempt={attempt + 1}: {e}", flush=True)
+        if attempt < 2:
+            await asyncio.sleep(0.4 * (attempt + 1))
+    return b"", 24000, "none"
+
+
 @router.post("/voice/stream")
 async def voice_stream(
     file: UploadFile = File(...),
@@ -602,6 +668,7 @@ async def voice_stream(
       {"t":"audio","rate":24000,"pcm":"<base64 mono s16le>"}
       {"t":"done","reply":...}
     """
+    t_start = time.monotonic()
     asr_key = settings.asr_api_key or settings.llm_api_key
     tts_key = settings.tts_api_key or settings.llm_api_key
     if not asr_key:
@@ -631,13 +698,17 @@ async def voice_stream(
     sid = session_id or DEFAULT_SESSION
     bot = await _resolve_bot(user["id"], bot_id)
     req = ChatRequest(message=transcript, session_id=sid, bot_id=bot.id)
-    messages = await build_messages(req, user["id"], bot=bot, extra_system=VOICE_STYLE, history_limit=6)
+    voice_system = VOICE_STYLE + await _voice_context()
+    messages = await build_messages(req, user["id"], bot=bot, extra_system=voice_system, history_limit=6)
     await save_message(user["id"], "user", transcript, sid, bot=bot)
 
     out_q: asyncio.Queue = asyncio.Queue(maxsize=64)
-    reply_parts: list[str] = []
 
     async def supervisor():
+        t_first_token = None
+        reply_parts: list[str] = []
+        tts_client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
+        edge_voice = voice if voice and voice != settings.tts_voice else None
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(sid)
         try:
@@ -656,6 +727,8 @@ async def voice_stream(
                     text = ev.get("content") or ""
                     if not text:
                         continue
+                    if t_first_token is None:
+                        t_first_token = time.monotonic()
                     reply_parts.append(text)
                     await out_q.put({"t": "delta", "text": text})
                 elif typ in ("tool_call", "tool_result"):
@@ -667,34 +740,30 @@ async def voice_stream(
             reset_current_bot_id(token)
 
         reply = "".join(reply_parts).strip() or "已执行。"
+        t_tts = time.monotonic()
+        pcm, rate, provider = await _synthesize_voice_reply(
+            reply, tts_client, voice, edge_voice)
+        t_audio = time.monotonic()
+        if pcm:
+            pcm = trim_silence(pcm, rate)
+        if pcm:
+            for i in range(0, len(pcm), 6000):
+                await out_q.put({
+                    "t": "audio",
+                    "rate": rate,
+                    "pcm": base64.b64encode(pcm[i:i + 6000]).decode(),
+                })
+        else:
+            await out_q.put({"t": "status", "text": "语音合成失败"})
 
-        # One TTS call for the whole reply. Sentence-level parallel TTS can
-        # skip a sentence when a provider request fails; a single call keeps
-        # prosody and guarantees the device gets the complete audio.
-        if reply:
-            client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
-            pcm = None
-            rate = 24000
-            for attempt in range(3):
-                try:
-                    pcm, rate = await tts_pcm(reply, client, voice)
-                    if pcm:
-                        break
-                except Exception:
-                    if attempt < 2:
-                        await out_q.put({"t": "status", "text": "语音合成重试..."})
-                        await asyncio.sleep(0.4 * (attempt + 1))
-            if pcm:
-                for i in range(0, len(pcm), 6000):
-                    await out_q.put({
-                        "t": "audio",
-                        "rate": rate,
-                        "pcm": base64.b64encode(pcm[i:i + 6000]).decode(),
-                    })
-            else:
-                await out_q.put({"t": "status", "text": "语音合成失败"})
-
-        print(f"[voice_stream] reply={reply!r} pcm={len(pcm) if pcm else 0}", flush=True)
+        elapsed = time.monotonic() - t_start
+        print(
+            f"[voice_stream] provider={provider} reply={reply!r} "
+            f"first_token={t_first_token - t_start if t_first_token else -1:.2f}s "
+            f"tts={t_audio - t_tts:.2f}s "
+            f"first_audio={t_audio - t_start:.2f}s total={elapsed:.2f}s",
+            flush=True,
+        )
         await save_message(user["id"], "assistant", reply, sid, bot=bot)
         await out_q.put({"t": "done", "reply": reply})
 
