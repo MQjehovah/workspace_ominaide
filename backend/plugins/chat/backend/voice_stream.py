@@ -13,6 +13,11 @@ from __future__ import annotations
 import json
 from typing import AsyncIterator
 
+try:
+    import audioop  # Python 3.12; removed in 3.13
+except ImportError:  # pragma: no cover
+    audioop = None
+
 import httpx
 from openai import AsyncOpenAI
 
@@ -107,6 +112,7 @@ async def tts_gateway_stream(
                 rate = 24000
 
             buf = bytearray()
+            conv_state = None
             async for chunk in response.aiter_bytes():
                 if not chunk:
                     continue
@@ -121,8 +127,19 @@ async def tts_gateway_stream(
                     payload = bytes(buf[5:5 + length])
                     del buf[:5 + length]
                     if tag == 0x41:
-                        if payload:
-                            yield payload, rate
+                        if not payload:
+                            continue
+                        out, out_rate = payload, rate
+                        if rate != 16000 and audioop is not None:
+                            try:
+                                out, conv_state = audioop.ratecv(
+                                    payload, 2, 1, rate, 16000, conv_state
+                                )
+                                out_rate = 16000
+                            except Exception:
+                                out, out_rate = payload, rate
+                        if out:
+                            yield out, out_rate
                     elif tag == 0x45:
                         return
                     elif tag == 0x58:

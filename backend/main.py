@@ -90,12 +90,17 @@ async def lifespan(app: FastAPI):
     await recover_runs()
     await recover_pending_jobs()
     routine_task = asyncio.create_task(routine_loop())
+    from core.ai.clients import warm_voice_clients
+    warm_task = asyncio.create_task(warm_voice_clients())
     yield
     await mcp_hub.shutdown()
+    warm_task.cancel()
     routine_task.cancel()
     scheduler_task.cancel()
     worker_task.cancel()
     jobs_task.cancel()
+    try: await warm_task
+    except asyncio.CancelledError: pass
     try: await routine_task
     except asyncio.CancelledError: pass
     try: await scheduler_task

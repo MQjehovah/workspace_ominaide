@@ -1,7 +1,7 @@
 """Agent with streaming support."""
 import json
-from openai import AsyncOpenAI
 from core.config.settings import settings
+from core.ai.clients import get_openai_client
 from core.ai.mcp.registry import tool_registry
 
 
@@ -51,7 +51,7 @@ async def run_agent(
     temperature: float = 0.7,
 ) -> str:
     """Non-streaming agent loop (kept for backward compat)."""
-    client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+    client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
     all_tools = tool_registry.get_tools(user_id=user_id)
     if tools_filter is not None:
         all_tools = [t for t in all_tools if t.name in tools_filter]
@@ -95,7 +95,7 @@ async def run_agent_stream(
     temperature: float = 0.7,
 ):
     """Streaming agent: yields SSE-formatted strings."""
-    client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+    client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
     all_tools = tool_registry.get_tools(user_id=user_id)
     if tools_filter is not None:
         all_tools = [t for t in all_tools if t.name in tools_filter]

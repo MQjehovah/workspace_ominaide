@@ -15,6 +15,7 @@ from core.config.settings import settings
 from core.database.session import get_db, async_session
 from core.auth.dependencies import get_current_user
 from core.ai.agent import run_agent, run_agent_stream
+from core.ai.clients import get_openai_client
 from core.bots import runner
 from core.bots.context import (
     reset_current_bot_id,
@@ -310,9 +311,8 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
     session_id = req.session_id or DEFAULT_SESSION
     bot = await _resolve_bot(user["id"], req.bot_id) if req.bot_id else None
     try:
-        from openai import AsyncOpenAI
         messages = await build_messages(req, user["id"], bot=bot, persona=False)
-        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+        client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
         resp = await client.chat.completions.create(
             model=(bot.model if bot is not None and bot.model else settings.llm_model),
             messages=messages,
@@ -442,11 +442,10 @@ async def asr(file: UploadFile = File(...), user: dict = Depends(get_current_use
     if not api_key:
         raise HTTPException(status_code=400, detail="ASR API key not configured")
     try:
-        from openai import AsyncOpenAI
         data = await file.read()
         if not data:
             raise HTTPException(status_code=400, detail="Empty audio file")
-        client = AsyncOpenAI(api_key=api_key, base_url=settings.asr_base_url)
+        client = get_openai_client(settings.asr_base_url, api_key)
         tr = await client.audio.transcriptions.create(
             model=settings.asr_model,
             file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
@@ -470,8 +469,7 @@ async def tts(req: TtsRequest, user: dict = Depends(get_current_user)):
     fmt = req.format or settings.tts_format
     media = "audio/wav" if fmt.lower() == "wav" else "audio/mpeg"
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key, base_url=settings.tts_base_url)
+        client = get_openai_client(settings.tts_base_url, api_key)
         speech_kwargs = {
             "model": req.model or settings.tts_model,
             "input": text,
@@ -564,9 +562,8 @@ async def voice(
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio file")
 
-    from openai import AsyncOpenAI
     try:
-        asr_client = AsyncOpenAI(api_key=asr_key, base_url=settings.asr_base_url)
+        asr_client = get_openai_client(settings.asr_base_url, asr_key)
         tr = await asr_client.audio.transcriptions.create(
             model=settings.asr_model,
             file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
@@ -605,7 +602,7 @@ async def voice(
     await save_message(user["id"], "assistant", reply, session_id or DEFAULT_SESSION, bot=bot)
 
     try:
-        tts_client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
+        tts_client = get_openai_client(settings.tts_base_url, tts_key)
         speech_kwargs = {
             "model": settings.tts_model,
             "input": reply or transcript,
@@ -677,9 +674,8 @@ async def voice_stream(
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio file")
 
-    from openai import AsyncOpenAI
     try:
-        asr_client = AsyncOpenAI(api_key=asr_key, base_url=settings.asr_base_url)
+        asr_client = get_openai_client(settings.asr_base_url, asr_key)
         tr = await asr_client.audio.transcriptions.create(
             model=settings.asr_model,
             file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
@@ -702,7 +698,7 @@ async def voice_stream(
     async def supervisor():
         t_first_token = None
         reply_parts: list[str] = []
-        tts_client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
+        tts_client = get_openai_client(settings.tts_base_url, tts_key)
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(sid)
         try:
@@ -837,8 +833,7 @@ async def translate(req: TranslateRequest, user: dict = Depends(get_current_user
     lang_map = {"zh": "中文", "en": "English", "ja": "日语", "ko": "韩语", "fr": "法语", "de": "德语", "es": "西班牙语", "ru": "俄语"}
     target_lang = lang_map.get(req.target, req.target)
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+        client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
         resp = await client.chat.completions.create(
             model=settings.llm_model,
             messages=[
