@@ -145,8 +145,8 @@ async def retry_minutes(
     ).scalar_one_or_none()
     if job is None:
         raise HTTPException(404, detail="任务不存在")
-    if job.status not in {"failed", "done"}:
-        raise HTTPException(409, detail="任务仍在处理中")
+    if job.status != "failed":
+        raise HTTPException(409, detail="只有失败的任务可以重试")
     job.status = "queued"
     job.error = None
     job.transcript = None

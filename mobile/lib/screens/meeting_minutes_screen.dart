@@ -36,6 +36,13 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
   String _statusText = '';
   String _error = '';
   Map<String, dynamic>? _job;
+  List<Map<String, dynamic>> _history = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
 
   @override
   void dispose() {
@@ -44,6 +51,53 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
     _recorder.dispose();
     _titleController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final items = await ApiService().listMeetingMinutes(limit: 10);
+      if (!mounted) return;
+      setState(() => _history = items);
+    } catch (_) {
+      // History is best-effort; recording stays available offline.
+    }
+  }
+
+  Future<void> _openHistory(Map<String, dynamic> item) async {
+    final id = (item['id'] as num?)?.toInt();
+    if (id == null) return;
+    setState(() {
+      _busy = true;
+      _statusText = '正在加载纪要…';
+      _error = '';
+    });
+    try {
+      final job = await ApiService().getMeetingMinutes(id);
+      if (!mounted) return;
+      setState(() {
+        _job = job;
+        _busy = false;
+        _statusText = '';
+        _elapsed = Duration.zero;
+      });
+      final status = (job['status'] ?? '').toString();
+      if (status != 'done' && status != 'failed') _startPolling(id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _statusText = '';
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  String _historyTime(dynamic raw) {
+    final dt = DateTime.tryParse('${raw ?? ''}')?.toLocal();
+    if (dt == null) return '';
+    return '${dt.month}/${dt.day} '
+        '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
   }
 
   String _stamp() {
@@ -196,6 +250,7 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
         final status = (job['status'] ?? '').toString();
         if (status == 'done' || status == 'failed') {
           _poll?.cancel();
+          _loadHistory();
         }
       } catch (_) {
         // Polling is best-effort; keep the last state.
@@ -250,6 +305,7 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
         _elapsed = Duration.zero;
         _titleController.clear();
       });
+      _loadHistory();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('会议纪要已删除')),
       );
@@ -301,11 +357,15 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
                   if (_job == null && !_busy) _buildRecorder(palette),
+                  if (_job == null && !_busy) ...[
+                    const SizedBox(height: 12),
+                    _buildHistory(palette),
+                  ],
                   if (_busy) _buildBusy(palette),
                   if (_job != null && !_busy) _buildJob(palette, status),
                   if (_error.isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    InlineErrorBanner(onRetry: _retry),
+                    if (_job != null) InlineErrorBanner(onRetry: _retry),
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
@@ -412,6 +472,87 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildHistory(AppPalette palette) {
+    if (_history.isEmpty) return const SizedBox.shrink();
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '最近纪要',
+            style: TextStyle(
+              fontSize: 10,
+              letterSpacing: 1,
+              fontWeight: FontWeight.w700,
+              color: palette.muted,
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (var i = 0; i < _history.length; i++) ...[
+            if (i > 0)
+              Divider(height: 12, color: palette.line.withValues(alpha: 0.8)),
+            InkWell(
+              onTap: () => _openHistory(_history[i]),
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: palette.primarySoft,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Icon(
+                        Icons.graphic_eq_rounded,
+                        size: 16,
+                        color: palette.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (_history[i]['title'] ?? '会议纪要').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: palette.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${_statusLabel((_history[i]['status'] ?? '').toString())}'
+                            ' · ${_historyTime(_history[i]['created_at'])}',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              color: palette.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: palette.muted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
