@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timedelta
 from typing import Awaitable, Callable
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from core.database.session import async_session
 from core.jobs.models import BackgroundJob
@@ -128,8 +129,32 @@ async def _run_job(job: BackgroundJob) -> None:
         await _finish(job.id, status="done", result={"ok": True})
 
 
+async def _cleanup() -> None:
+    cutoff = datetime.now() - timedelta(days=14)
+    try:
+        from core.observability.models import RequestTrace
+
+        async with async_session() as db:
+            await db.execute(
+                delete(RequestTrace).where(RequestTrace.created_at < cutoff)
+            )
+            await db.execute(
+                delete(BackgroundJob).where(
+                    BackgroundJob.status.in_(["done", "cancelled", "dead"]),
+                    BackgroundJob.created_at < cutoff,
+                )
+            )
+            await db.commit()
+    except Exception:
+        pass
+
+
 async def worker_loop() -> None:
+    last_cleanup = 0.0
     while True:
+        if time.monotonic() - last_cleanup > 3600:
+            last_cleanup = time.monotonic()
+            await _cleanup()
         try:
             job = await _claim_one()
             if job is None:
