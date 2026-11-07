@@ -26,21 +26,24 @@ class Settings(BaseSettings):
     embedding_base_url: str = "https://api.openai.com/v1"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
-    # Speech services (ASR / TTS). Defaults wrap Zhipu bigmodel, which is what the
-    # SmartAssistant firmware calls directly today. Keys fall back to llm_api_key.
+    # Speech services (ASR / TTS). Defaults target the xzrobot OpenAI-compatible
+    # gateway. Keys fall back to llm_api_key.
     asr_api_key: str = ""
-    asr_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    asr_model: str = "glm-asr"
+    asr_base_url: str = "https://ai.xzrobot.com/v1"
+    asr_model: str = "voice-asr"
+    asr_verbose_json: bool = False
     # Long meeting recordings are sent to ASR as one stream from MinIO; these
     # controls are intentionally independent of the 25MB voice-note limit.
     asr_timeout_seconds: int = 3600
-    asr_diarize: bool = True
+    asr_diarize: bool = False
     meeting_asr_concurrency: int = 1
     tts_api_key: str = ""
-    tts_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    tts_model: str = "glm-tts"
-    tts_voice: str = "tongtong"
+    tts_base_url: str = "https://ai.xzrobot.com/v1"
+    tts_model: str = "voice-tts"
+    tts_voice: str = "default"
     tts_format: str = "wav"
+    # Some gateways (e.g. xzrobot) reject response_format entirely.
+    tts_send_format: bool = False
     # Personal-assistant agent persona + conversation memory
     assistant_system_prompt: str = (
         "你是 OmniAide，一个私有化部署的个人 AI 助手，只服务于当前用户。"

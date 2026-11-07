@@ -468,12 +468,14 @@ async def tts(req: TtsRequest, user: dict = Depends(get_current_user)):
     try:
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=api_key, base_url=settings.tts_base_url)
-        speech = await client.audio.speech.create(
-            model=req.model or settings.tts_model,
-            input=text,
-            voice=req.voice or settings.tts_voice,
-            response_format=fmt,
-        )
+        speech_kwargs = {
+            "model": req.model or settings.tts_model,
+            "input": text,
+            "voice": req.voice or settings.tts_voice,
+        }
+        if settings.tts_send_format:
+            speech_kwargs["response_format"] = fmt
+        speech = await client.audio.speech.create(**speech_kwargs)
         audio = getattr(speech, "content", None)
         if audio is None:
             audio = await speech.aread() if hasattr(speech, "aread") else speech.read()
@@ -557,12 +559,14 @@ async def voice(
 
     try:
         tts_client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
-        speech = await tts_client.audio.speech.create(
-            model=settings.tts_model,
-            input=reply or transcript,
-            voice=voice or settings.tts_voice,
-            response_format=settings.tts_format,
-        )
+        speech_kwargs = {
+            "model": settings.tts_model,
+            "input": reply or transcript,
+            "voice": voice or settings.tts_voice,
+        }
+        if settings.tts_send_format:
+            speech_kwargs["response_format"] = settings.tts_format
+        speech = await tts_client.audio.speech.create(**speech_kwargs)
         audio = getattr(speech, "content", None)
         if audio is None:
             audio = await speech.aread() if hasattr(speech, "aread") else speech.read()

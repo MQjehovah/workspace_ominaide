@@ -52,19 +52,21 @@ async def tts_pcm(
     """Synthesize one sentence, preferring raw PCM (24kHz mono 16-bit)."""
     model = settings.tts_model
     voice = voice or settings.tts_voice
-    try:
-        speech = await client.audio.speech.create(
-            model=model, input=text, voice=voice, response_format="pcm",
-        )
-        data = await read_audio(speech)
-        if data:
-            return data, 24000
-    except Exception:
-        pass
+    if settings.tts_send_format:
+        try:
+            speech = await client.audio.speech.create(
+                model=model, input=text, voice=voice, response_format="pcm",
+            )
+            data = await read_audio(speech)
+            if data:
+                return data, 24000
+        except Exception:
+            pass
 
-    speech = await client.audio.speech.create(
-        model=model, input=text, voice=voice, response_format="wav",
-    )
+    kwargs = {"model": model, "input": text, "voice": voice}
+    if settings.tts_send_format:
+        kwargs["response_format"] = "wav"
+    speech = await client.audio.speech.create(**kwargs)
     data = await read_audio(speech)
     rate, off, length = parse_wav(data)
     return data[off:off + length], rate

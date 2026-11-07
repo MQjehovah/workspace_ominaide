@@ -139,15 +139,14 @@ def _post(file_record, diarize: bool) -> dict:
         finally:
             stream.close()
 
-    data = {
-        "model": settings.asr_model,
-        "response_format": "verbose_json",
-    }
+    data = {"model": settings.asr_model}
+    if settings.asr_verbose_json:
+        data["response_format"] = "verbose_json"
     if diarize:
         data["diarize"] = "true"
 
     res = attempt(data)
-    if res.status_code >= 400 and (diarize or "response_format" in data):
+    if res.status_code >= 400 and len(data) > 1:
         # Some OpenAI-compatible servers reject verbose_json/diarize.
         res = attempt({"model": settings.asr_model})
     if res.status_code >= 400:
