@@ -70,13 +70,15 @@ GET    /api/mcp/templates
 Dockerfile 已安装 Node + `dingtalk-workspace-cli@1.0.62`，并设置：
 
 ```
-DWS_CONFIG_DIR=/data/dws
+DWS_CONFIG_DIR=/data/omniaide/dws
 ```
 
-`/data/dws` 挂载为 `dws_data` volume。首次登录：
+生产环境用一个挂载点 `/data/omniaide`（主机 `/data/docker/omniaide`）保存全部持久化数据，DWS 配置在其子目录 `dws/` 下。首次登录：
 
 ```bash
 docker compose exec backend dws auth login --device --recommend
+# 或生产（docker run）
+docker exec -it omniaide-backend dws auth login --device --recommend
 ```
 
 手机钉钉确认即可。登录态持久化，token 自动刷新；失效时在「MCP 管理」看到连接错误。

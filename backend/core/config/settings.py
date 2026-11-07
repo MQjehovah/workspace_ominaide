@@ -71,9 +71,12 @@ class Settings(BaseSettings):
     rsshub_base_url: str = ""
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
+    # Runtime data. Production mounts one host directory at /data/omniaide and
+    # points every persistent path below at a subdirectory of it.
     # Agent Skills: built-in skills live under backend/skills/builtin; user/bot
     # skills are discovered under skills_dir (relative to the backend cwd).
     skills_dir: str = "data/skills"
+    desktop_plugins_dir: str = "desktop_plugins"
     # Daily memory agent auto-approves candidates at or above this confidence.
     memory_auto_approve_threshold: int = 85
     # Lightweight DingTalk message sync (no LLM) feeding the daily memory agent.
