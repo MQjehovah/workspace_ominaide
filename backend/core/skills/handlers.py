@@ -55,23 +55,74 @@ async def _meeting_prepare(ctx: SkillContext) -> dict:
     )
 
 
+async def _daily_review(ctx: SkillContext) -> dict:
+    from core.ai.daily_insights import generate_daily_insight
+
+    day = date.today()
+    raw_day = ctx.input.get("day")
+    if raw_day:
+        try:
+            day = date.fromisoformat(str(raw_day))
+        except ValueError:
+            raise ValueError("day 必须是 YYYY-MM-DD")
+    row = await generate_daily_insight(
+        ctx.user_id,
+        day,
+        force=bool(ctx.input.get("force", True)),
+        notify=bool(ctx.input.get("notify", True)),
+    )
+    if row is None:
+        return {
+            "day": day.isoformat(),
+            "summary": "",
+            "highlights": [],
+            "patterns": [],
+            "suggestions": [],
+            "stats": {},
+        }
+    return {
+        "day": row.day.isoformat(),
+        "summary": row.summary,
+        "highlights": row.highlights or [],
+        "patterns": row.patterns or [],
+        "suggestions": row.suggestions or [],
+        "stats": row.stats or {},
+        "generated_at": row.generated_at.isoformat() if row.generated_at else None,
+    }
+
+
 async def _weekly_review(ctx: SkillContext) -> dict:
-    from core.cos.service import weekly_review
+    from core.ai.weekly_reviews import generate_weekly_review
 
     try:
         weeks = max(1, min(int(ctx.input.get("weeks") or 1), 4))
     except (TypeError, ValueError):
         weeks = 1
-    return await weekly_review(
+    row = await generate_weekly_review(
         ctx.user_id,
         weeks=weeks,
         bot=ctx.bot,
-        extra_system=ctx.skill.body,
+        force=bool(ctx.input.get("force", True)),
+        notify=bool(ctx.input.get("notify", True)),
     )
+    return {
+        "period": {
+            "start": row.week_start.isoformat(),
+            "end": row.week_end.isoformat(),
+        },
+        "summary": row.summary,
+        "wins": row.wins or [],
+        "in_progress": row.in_progress or [],
+        "risks": row.risks or [],
+        "next_week": row.next_week or [],
+        "stats": row.stats or {},
+        "generated_at": row.generated_at.isoformat() if row.generated_at else None,
+    }
 
 
 HANDLERS: dict[str, Callable[[SkillContext], Awaitable[dict]]] = {
     "daily-brief": _daily_brief,
+    "daily-review": _daily_review,
     "meeting-prepare": _meeting_prepare,
     "weekly-review": _weekly_review,
 }

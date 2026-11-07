@@ -188,6 +188,15 @@ async def create_from_template(user_id: int, bot_id: int, template_key: str, ove
     if template is None:
         raise ValueError("模板不存在")
     data = {**template, **(overrides or {})}
+    spec = data.get("spec")
+    if isinstance(spec, dict):
+        spec = dict(spec)
+        spec["name"] = data.get("name") or spec.get("name") or template["name"]
+        spec["enabled"] = bool(data.get("enabled", True))
+        cron = data.get("cron_expr")
+        trigger = spec.get("trigger") or {}
+        if cron and trigger.get("type") == "schedule":
+            spec["trigger"] = {**trigger, "cron": cron}
     return await routine_service.create_routine(
         user_id,
         bot_id,
@@ -198,6 +207,7 @@ async def create_from_template(user_id: int, bot_id: int, template_key: str, ove
         event_filter=data.get("event_filter"),
         prompt=data.get("prompt"),
         enabled=bool(data.get("enabled", True)),
+        spec=spec if isinstance(spec, dict) else None,
     )
 
 

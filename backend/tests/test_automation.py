@@ -129,3 +129,33 @@ async def test_event_condition_skips_and_is_idempotent(client):
     event.id = 90002
     ok = await execute_automation(routine.id, "event", event=event)
     assert ok["status"] == "succeeded"
+
+
+async def test_skill_action_executes_skill(client):
+    token, uid = await _new_user(client)
+
+    from core.automation.executor import execute_automation
+    from core.bots.registry import get_or_create_default_bot
+    from core.bots.routines import create_routine
+
+    bot = await get_or_create_default_bot(uid)
+    routine = await create_routine(
+        uid, bot.id, "skill action",
+        spec={
+            "name": "skill action",
+            "trigger": {"type": "manual"},
+            "match": "all",
+            "conditions": [],
+            "actions": [
+                {
+                    "type": "skill",
+                    "params": {"skill_key": "daily-brief", "input": {}},
+                }
+            ],
+        },
+    )
+    result = await execute_automation(routine.id, "manual", manual={})
+    assert result["status"] == "succeeded", result
+    action = result["actions"][0]
+    assert action["status"] == "ok", action
+    assert action["result"]["skill_key"] == "daily-brief"

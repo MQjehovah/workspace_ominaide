@@ -28,6 +28,12 @@ class RunInsightRequest(BaseModel):
     force: bool = True
 
 
+class RunWeeklyRequest(BaseModel):
+    weeks: int = 1
+    force: bool = True
+    notify: bool = False
+
+
 @router.get("/daily", response_model=list[DailyInsightResponse])
 async def list_daily_insights(
     days: int = Query(7, ge=1, le=90),
@@ -96,3 +102,63 @@ async def backfill_daily_insights(
         if row is not None:
             out.append(row)
     return out
+
+
+def _weekly_out(row) -> dict:
+    return {
+        "id": row.id,
+        "week_start": row.week_start.isoformat(),
+        "week_end": row.week_end.isoformat(),
+        "period": {
+            "start": row.week_start.isoformat(),
+            "end": row.week_end.isoformat(),
+        },
+        "summary": row.summary,
+        "wins": row.wins or [],
+        "in_progress": row.in_progress or [],
+        "risks": row.risks or [],
+        "next_week": row.next_week or [],
+        "stats": row.stats or {},
+        "generated_at": row.generated_at.isoformat() if row.generated_at else None,
+    }
+
+
+@router.get("/weekly")
+async def list_weekly_reviews(
+    limit: int = Query(8, ge=1, le=52),
+    user: dict = Depends(get_current_user),
+):
+    from core.ai.weekly_reviews import get_recent_weekly_reviews
+
+    rows = await get_recent_weekly_reviews(user["id"], limit)
+    return [_weekly_out(row) for row in rows]
+
+
+@router.get("/weekly/latest")
+async def latest_weekly_review(user: dict = Depends(get_current_user)):
+    from core.ai.weekly_reviews import get_latest_weekly_review
+
+    row = await get_latest_weekly_review(user["id"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="No weekly review yet")
+    return _weekly_out(row)
+
+
+@router.post("/weekly/run")
+async def run_weekly_review(
+    req: RunWeeklyRequest | None = None,
+    user: dict = Depends(get_current_user),
+):
+    from core.ai.weekly_reviews import generate_weekly_review
+    from core.bots import registry
+
+    req = req or RunWeeklyRequest()
+    bot = await registry.get_active_bot(user["id"])
+    row = await generate_weekly_review(
+        user["id"],
+        weeks=max(1, min(req.weeks, 4)),
+        bot=bot,
+        force=req.force,
+        notify=req.notify,
+    )
+    return _weekly_out(row)

@@ -201,6 +201,32 @@ async def _run_note(user_id: int, params: dict) -> dict:
         return {"note_id": row.id, "title": row.title}
 
 
+async def _run_skill(routine: BotRoutine, params: dict) -> dict:
+    from core.skills import runtime
+
+    skill_key = str(params.get("skill_key") or "").strip()
+    if not skill_key:
+        raise ValueError("skill action requires params.skill_key")
+    input_data = params.get("input")
+    if not isinstance(input_data, dict):
+        input_data = {}
+    result = await runtime.run_skill(
+        routine.user_id,
+        routine.bot_id,
+        skill_key,
+        input_data,
+    )
+    output = result.get("output") if isinstance(result, dict) else None
+    summary = ""
+    if isinstance(output, dict):
+        summary = str(output.get("summary") or "")
+    return {
+        "skill_key": skill_key,
+        "skill_run_id": result.get("run_id") if isinstance(result, dict) else None,
+        "summary": summary[:500],
+    }
+
+
 async def _run_agent(routine: BotRoutine, params: dict) -> dict:
     from core.bots import runner
 
@@ -234,7 +260,7 @@ async def _execute_action(routine: BotRoutine, action: dict) -> dict:
     if action_type == "agent":
         return await _run_agent(routine, params)
     if action_type == "skill":
-        raise ValueError("skill action is not enabled in this version")
+        return await _run_skill(routine, params)
     raise ValueError(f"unsupported action: {action_type}")
 
 

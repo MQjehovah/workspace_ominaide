@@ -69,11 +69,20 @@ ROUTINE_TEMPLATES: list[dict] = [
         "description": "每天结束前复盘当天的活动与会话，提炼完成事项和明日建议。",
         "trigger_type": "cron",
         "cron_expr": "0 22 * * *",
-        "prompt": (
-            "复盘今天的活动与会话：总结完成了什么、推进了哪些事项、有哪些未完成，"
-            "给出 1-3 条明天可执行的建议。用 3-5 句中文，不要编造。"
-            "完成后调用 send_notification，把回顾发给我。"
-        ),
+        "spec": {
+            "version": 1,
+            "name": "每日回顾",
+            "enabled": True,
+            "trigger": {"type": "schedule", "cron": "0 22 * * *"},
+            "match": "all",
+            "conditions": [],
+            "actions": [
+                {
+                    "type": "skill",
+                    "params": {"skill_key": "daily-review", "input": {}},
+                }
+            ],
+        },
     },
     {
         "key": "weekly_review",
@@ -81,10 +90,20 @@ ROUTINE_TEMPLATES: list[dict] = [
         "description": "每周五汇总本周成果、未完成事项和下周重点。",
         "trigger_type": "cron",
         "cron_expr": "0 18 * * 5",
-        "prompt": (
-            "生成本周复盘：列出本周完成的关键事项、仍未完成的事项、下周最重要的三件事。"
-            "用中文，简洁分点，不要编造。完成后调用 send_notification 发给我。"
-        ),
+        "spec": {
+            "version": 1,
+            "name": "每周复盘",
+            "enabled": True,
+            "trigger": {"type": "schedule", "cron": "0 18 * * 5"},
+            "match": "all",
+            "conditions": [],
+            "actions": [
+                {
+                    "type": "skill",
+                    "params": {"skill_key": "weekly-review", "input": {}},
+                }
+            ],
+        },
     },
     {
         "key": "sources_digest",

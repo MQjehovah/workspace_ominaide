@@ -1206,7 +1206,7 @@ class ApiService {
     try {
       final res = await post('/skills/weekly-review/run', {
         if (botId != null) 'bot_id': botId,
-        'input': {'weeks': weeks},
+        'input': {'weeks': weeks, 'notify': false},
       });
       if (res.statusCode == 200) {
         final data = _asMap(decodeJson(res));
@@ -1217,6 +1217,32 @@ class ApiService {
         if (legacy.statusCode == 200) {
           return WeeklyReview.fromJson(_asMap(decodeJson(legacy)));
         }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Latest weekly review stored by the scheduled bot routine.
+  Future<WeeklyReview?> getLatestWeeklyReview() async {
+    try {
+      final res = await get('/insights/weekly/latest');
+      if (res.statusCode == 200) {
+        return WeeklyReview.fromJson(_asMap(decodeJson(res)));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Generate and store this week's review (explicit user action).
+  Future<WeeklyReview?> runWeeklyReview({int weeks = 1}) async {
+    try {
+      final res = await post('/insights/weekly/run', {
+        'weeks': weeks,
+        'force': true,
+        'notify': false,
+      });
+      if (res.statusCode == 200) {
+        return WeeklyReview.fromJson(_asMap(decodeJson(res)));
       }
     } catch (_) {}
     return null;

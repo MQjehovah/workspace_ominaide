@@ -111,7 +111,9 @@ def compile_spec(data: dict, *, legacy: dict | None = None) -> dict:
             if not prompt:
                 errors.append("agent action requires params.prompt")
         if action.type == "skill":
-            warnings.append("skill action is reserved for a later version")
+            skill_key = str(action.params.get("skill_key") or "").strip()
+            if not skill_key:
+                errors.append("skill action requires params.skill_key")
         if not isinstance(action.params, dict):
             errors.append(f"action {action.type} params must be an object")
 

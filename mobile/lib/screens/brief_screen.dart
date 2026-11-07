@@ -19,6 +19,7 @@ class _BriefScreenState extends State<BriefScreen> {
   bool _loading = true;
   bool _dailyLoaded = false;
   bool _weeklyLoaded = false;
+  bool _generatingWeekly = false;
   int _tab = 0;
 
   @override
@@ -47,9 +48,7 @@ class _BriefScreenState extends State<BriefScreen> {
     setState(() => _loading = true);
     WeeklyReview? weekly;
     try {
-      weekly = await ApiService().getWeeklyReview(
-        botId: BotSelectionService().botId,
-      );
+      weekly = await ApiService().getLatestWeeklyReview();
     } catch (_) {}
     if (!mounted) return;
     setState(() {
@@ -61,6 +60,24 @@ class _BriefScreenState extends State<BriefScreen> {
 
   Future<void> _refreshCurrent() {
     return _tab == 0 ? _loadDaily() : _loadWeekly();
+  }
+
+  Future<void> _generateWeekly() async {
+    setState(() => _generatingWeekly = true);
+    final weekly = await ApiService().runWeeklyReview();
+    if (!mounted) return;
+    setState(() {
+      _generatingWeekly = false;
+      if (weekly != null) {
+        _weekly = weekly;
+        _weeklyLoaded = true;
+      }
+    });
+    if (weekly == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本周数据不足，暂时无法生成周报')),
+      );
+    }
   }
 
   void _selectTab(int value) {
@@ -309,12 +326,26 @@ class _BriefScreenState extends State<BriefScreen> {
     if (weekly == null) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
-          SizedBox(height: 50),
-          EmptyState(
+        children: [
+          const SizedBox(height: 40),
+          const EmptyState(
             icon: Icons.insights_outlined,
-            title: '还没有周报',
-            subtitle: '本周有足够数据后，再刷新试试。',
+            title: '还没有本周回顾',
+            subtitle: '每周五 18:00 由 Bot 定时生成，也可以现在手动生成。',
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: FilledButton.icon(
+              onPressed: _generatingWeekly ? null : _generateWeekly,
+              icon: _generatingWeekly
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome, size: 16),
+              label: Text(_generatingWeekly ? '正在生成…' : '生成本周回顾'),
+            ),
           ),
         ],
       );

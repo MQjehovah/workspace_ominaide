@@ -304,6 +304,52 @@ async def test_daily_brief_is_served_from_hourly_cache(client, monkeypatch):
     assert calls == 2
 
 
+async def test_weekly_review_is_persisted(client):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "weeklystore")
+
+    r = await client.post(
+        "/api/insights/weekly/run",
+        json={"force": True, "notify": False},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["summary"]
+    assert data["period"]["start"] and data["period"]["end"]
+
+    r = await client.get("/api/insights/weekly/latest", headers=auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == data["id"]
+
+    # Without force the stored row is reused instead of calling the LLM again.
+    r = await client.post(
+        "/api/insights/weekly/run",
+        json={"force": False, "notify": False},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == data["id"]
+
+
+async def test_daily_review_skill_persists(client):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "dailyreview")
+
+    r = await client.post(
+        "/api/skills/daily-review/run",
+        json={"input": {"force": True, "notify": False}},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    output = r.json()["output"]
+    assert output["summary"]
+
+    r = await client.get("/api/insights/latest", headers=auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["summary"] == output["summary"]
+
+
 async def test_workbench_suggestions_from_user_context(client, monkeypatch):
     token, user_id = await _new_user(client)
     await _seed_sources(user_id, "suggest")
