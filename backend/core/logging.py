@@ -75,12 +75,18 @@ def configure_logging() -> None:
     root.addHandler(handler)
     root.setLevel(level)
 
-    # Let Uvicorn logs use the same formatter and redaction.
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    # Let Uvicorn error logs use the same formatter and redaction. Access logs
+    # are emitted by TraceMiddleware without query strings; disabling Uvicorn's
+    # access logger also protects WebSocket URLs that carry tokens.
+    for name in ("uvicorn", "uvicorn.error"):
         logger = logging.getLogger(name)
         logger.handlers.clear()
         logger.propagate = True
         logger.setLevel(level)
+    access = logging.getLogger("uvicorn.access")
+    access.handlers.clear()
+    access.propagate = False
+    access.disabled = True
     _configured = True
 
 
