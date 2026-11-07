@@ -15,20 +15,15 @@ class BriefScreen extends StatefulWidget {
 
 class _BriefScreenState extends State<BriefScreen> {
   DailyBrief? _brief;
-  WeeklyReview? _weekly;
   bool _loading = true;
-  bool _dailyLoaded = false;
-  bool _weeklyLoaded = false;
-  bool _generatingWeekly = false;
-  int _tab = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadDaily();
+    _load();
   }
 
-  Future<void> _loadDaily() async {
+  Future<void> _load() async {
     setState(() => _loading = true);
     DailyBrief? brief;
     try {
@@ -39,55 +34,8 @@ class _BriefScreenState extends State<BriefScreen> {
     if (!mounted) return;
     setState(() {
       _brief = brief;
-      _dailyLoaded = true;
       _loading = false;
     });
-  }
-
-  Future<void> _loadWeekly() async {
-    setState(() => _loading = true);
-    WeeklyReview? weekly;
-    try {
-      weekly = await ApiService().getLatestWeeklyReview();
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() {
-      _weekly = weekly;
-      _weeklyLoaded = true;
-      _loading = false;
-    });
-  }
-
-  Future<void> _refreshCurrent() {
-    return _tab == 0 ? _loadDaily() : _loadWeekly();
-  }
-
-  Future<void> _generateWeekly() async {
-    setState(() => _generatingWeekly = true);
-    final weekly = await ApiService().runWeeklyReview();
-    if (!mounted) return;
-    setState(() {
-      _generatingWeekly = false;
-      if (weekly != null) {
-        _weekly = weekly;
-        _weeklyLoaded = true;
-      }
-    });
-    if (weekly == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本周数据不足，暂时无法生成周报')),
-      );
-    }
-  }
-
-  void _selectTab(int value) {
-    if (_tab == value) return;
-    setState(() => _tab = value);
-    if (value == 0 && !_dailyLoaded) {
-      _loadDaily();
-    } else if (value == 1 && !_weeklyLoaded) {
-      _loadWeekly();
-    }
   }
 
   @override
@@ -101,7 +49,7 @@ class _BriefScreenState extends State<BriefScreen> {
             PageHeader(
               kicker: 'Briefing',
               title: '简报',
-              subtitle: _tab == 0 ? '今日简报' : '本周回顾',
+              subtitle: '今日简报',
               actions: [
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
@@ -111,67 +59,30 @@ class _BriefScreenState extends State<BriefScreen> {
                 RoundIconButton(
                   icon: Icons.refresh_rounded,
                   tooltip: '刷新',
-                  onTap: _refreshCurrent,
+                  onTap: _load,
                 ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  _tabChip(palette, 0, '今日简报'),
-                  const SizedBox(width: 6),
-                  _tabChip(palette, 1, '本周回顾'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Expanded(
               child: _loading
                   ? Center(
                       child: CircularProgressIndicator(color: palette.primary))
                   : RefreshIndicator(
-                      onRefresh: _refreshCurrent,
+                      onRefresh: _load,
                       color: palette.primary,
-                      child: (_tab == 0 ? _brief == null : _weekly == null)
+                      child: _brief == null
                           ? ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: [
                                 const SizedBox(height: 40),
-                                ErrorState(onRetry: _refreshCurrent),
+                                ErrorState(onRetry: _load),
                               ],
                             )
-                          : _tab == 0
-                              ? _buildDaily(palette)
-                              : _buildWeekly(palette),
+                          : _buildDaily(palette),
                     ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _tabChip(AppPalette palette, int value, String label) {
-    final selected = _tab == value;
-    return InkWell(
-      onTap: () => _selectTab(value),
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? palette.primary : palette.card,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: selected ? palette.primary : palette.line),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w700,
-            color: selected ? Colors.white : palette.muted,
-          ),
         ),
       ),
     );
@@ -321,153 +232,4 @@ class _BriefScreenState extends State<BriefScreen> {
     );
   }
 
-  Widget _buildWeekly(AppPalette palette) {
-    final weekly = _weekly;
-    if (weekly == null) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          const SizedBox(height: 40),
-          const EmptyState(
-            icon: Icons.insights_outlined,
-            title: '还没有本周回顾',
-            subtitle: '每周五 18:00 由 Bot 定时生成，也可以现在手动生成。',
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: FilledButton.icon(
-              onPressed: _generatingWeekly ? null : _generateWeekly,
-              icon: _generatingWeekly
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.auto_awesome, size: 16),
-              label: Text(_generatingWeekly ? '正在生成…' : '生成本周回顾'),
-            ),
-          ),
-        ],
-      );
-    }
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-      children: [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${weekly.periodStart} ~ ${weekly.periodEnd}',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  color: palette.primary,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                weekly.summary,
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.7,
-                  color: palette.ink,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  _stat(palette, '${weekly.stats['todos_done'] ?? 0}', '完成待办'),
-                  _stat(
-                      palette, '${weekly.stats['todos_pending'] ?? 0}', '进行中'),
-                  _stat(
-                      palette, '${weekly.stats['insight_days'] ?? 0}', '回顾天数'),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        _weeklySection(palette, '本周成果', weekly.wins, palette.success),
-        _weeklySection(palette, '进行中', weekly.inProgress, palette.primary),
-        _weeklySection(palette, '风险', weekly.risks, palette.accent),
-        _weeklySection(palette, '下周重点', weekly.nextWeek, palette.primary),
-      ],
-    );
-  }
-
-  Widget _stat(AppPalette palette, String value, String label) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: palette.ink,
-            ),
-          ),
-          Text(
-            label,
-            style: TextStyle(fontSize: 9.5, color: palette.muted),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _weeklySection(
-    AppPalette palette,
-    String title,
-    List<String> items,
-    Color color,
-  ) {
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: AppCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 5),
-            for (final item in items)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 5),
-                      child: TagDot(color: color, size: 4),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        item,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          height: 1.55,
-                          color: palette.ink,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 }

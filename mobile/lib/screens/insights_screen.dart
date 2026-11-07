@@ -14,17 +14,20 @@ class InsightsScreen extends StatefulWidget {
 
 class _InsightsScreenState extends State<InsightsScreen> {
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _weeklies = [];
   bool _loading = true;
   bool _running = false;
+  bool _weeklyLoaded = false;
+  int _tab = 0;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadDaily();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadDaily() async {
     setState(() {
       _loading = true;
       _error = null;
@@ -45,11 +48,48 @@ class _InsightsScreenState extends State<InsightsScreen> {
     }
   }
 
+  Future<void> _loadWeekly() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final items = await ApiService().weeklyReviews(limit: 8);
+      if (!mounted) return;
+      setState(() {
+        _weeklies = items;
+        _weeklyLoaded = true;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _refresh() {
+    return _tab == 0 ? _loadDaily() : _loadWeekly();
+  }
+
+  void _selectTab(int value) {
+    if (_tab == value) return;
+    setState(() {
+      _tab = value;
+      _error = null;
+    });
+    if (value == 1 && !_weeklyLoaded) {
+      _loadWeekly();
+    }
+  }
+
   Future<void> _generate() async {
     setState(() => _running = true);
     try {
       await ApiService().runDailyInsight();
-      await _load();
+      await _loadDaily();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('今日回顾已生成')),
@@ -68,7 +108,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
     setState(() => _running = true);
     try {
       await ApiService().backfillInsights(days: 7);
-      await _load();
+      await _loadDaily();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已补齐最近 7 天的回顾')),
@@ -77,6 +117,26 @@ class _InsightsScreenState extends State<InsightsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('补齐失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  Future<void> _generateWeekly() async {
+    setState(() => _running = true);
+    try {
+      final weekly = await ApiService().runWeeklyReview();
+      if (weekly == null) throw Exception('本周数据不足');
+      await _loadWeekly();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本周回顾已生成')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('生成失败: ${e.toString().replaceFirst('Exception: ', '')}')),
       );
     } finally {
       if (mounted) setState(() => _running = false);
@@ -156,6 +216,43 @@ class _InsightsScreenState extends State<InsightsScreen> {
     return '$prefix${parsed.month} 月 ${parsed.day} 日 周${weekdays[parsed.weekday - 1]}';
   }
 
+  String _weekLabel(Map<String, dynamic> week) {
+    final period = week['period'];
+    if (period is Map) {
+      final start = (period['start'] ?? '').toString();
+      final end = (period['end'] ?? '').toString();
+      if (start.isNotEmpty && end.isNotEmpty) return '$start ~ $end';
+    }
+    final start = (week['week_start'] ?? '').toString();
+    final end = (week['week_end'] ?? '').toString();
+    return '$start ~ $end';
+  }
+
+  Widget _tabChip(AppPalette palette, int value, String label) {
+    final selected = _tab == value;
+    return InkWell(
+      onTap: () => _selectTab(value),
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? palette.primary : palette.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: selected ? palette.primary : palette.line),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : palette.muted,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -166,27 +263,47 @@ class _InsightsScreenState extends State<InsightsScreen> {
           children: [
             PageHeader(
               kicker: 'Insights',
-              title: '每日回顾',
-              subtitle: '近 7 天的总结、规律与建议',
+              title: '回顾',
+              subtitle: _tab == 0 ? '近 7 天的每日回顾' : '已保存的每周回顾',
               actions: [
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
                   onTap: () => Navigator.maybePop(context),
                 ),
-                const SizedBox(width: 6),
-                RoundIconButton(
-                  icon: Icons.calendar_month_outlined,
-                  tooltip: '补最近 7 天',
-                  onTap: _running ? null : _backfill,
-                ),
-                const SizedBox(width: 6),
-                RoundIconButton(
-                  icon: _running ? Icons.hourglass_top_rounded : Icons.auto_awesome,
-                  tooltip: '生成今天的回顾',
-                  onTap: _running ? null : _generate,
-                ),
+                if (_tab == 0) ...[
+                  const SizedBox(width: 6),
+                  RoundIconButton(
+                    icon: Icons.calendar_month_outlined,
+                    tooltip: '补最近 7 天',
+                    onTap: _running ? null : _backfill,
+                  ),
+                  const SizedBox(width: 6),
+                  RoundIconButton(
+                    icon: _running ? Icons.hourglass_top_rounded : Icons.auto_awesome,
+                    tooltip: '生成今天的回顾',
+                    onTap: _running ? null : _generate,
+                  ),
+                ] else ...[
+                  const SizedBox(width: 6),
+                  RoundIconButton(
+                    icon: _running ? Icons.hourglass_top_rounded : Icons.auto_awesome,
+                    tooltip: '生成本周回顾',
+                    onTap: _running ? null : _generateWeekly,
+                  ),
+                ],
               ],
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  _tabChip(palette, 0, '每日回顾'),
+                  const SizedBox(width: 6),
+                  _tabChip(palette, 1, '每周回顾'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             Expanded(
               child: _loading
                   ? Center(child: CircularProgressIndicator(color: palette.primary))
@@ -195,47 +312,215 @@ class _InsightsScreenState extends State<InsightsScreen> {
                           physics: const AlwaysScrollableScrollPhysics(),
                           children: [
                             const SizedBox(height: 40),
-                            ErrorState(onRetry: _load),
+                            ErrorState(onRetry: _refresh),
                           ],
                         )
-                      : _items.isEmpty
-                          ? ListView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              children: [
-                                const SizedBox(height: 50),
-                                EmptyState(
-                                  icon: Icons.insights_outlined,
-                                  title: '还没有每日回顾',
-                                  subtitle: '晚上 22:00 会自动生成，也可以现在生成今天的。',
-                                  action: FilledButton.icon(
-                                    onPressed: _running ? null : _generate,
-                                    icon: const Icon(Icons.auto_awesome, size: 17),
-                                    label: const Text('生成今天的回顾'),
-                                  ),
-                                ),
-                              ],
-                            )
-                          : RefreshIndicator(
-                              onRefresh: _load,
-                              color: palette.primary,
-                              child: ListView(
-                                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                                children: [
-                                  for (final item in _items) ...[
-                                    _InsightCard(
-                                      insight: item,
-                                      dayLabel: _dayLabel((item['day'] ?? '').toString()),
-                                      onTodo: _toTodo,
-                                      onSchedule: _toSchedule,
-                                    ),
-                                    const SizedBox(height: 12),
-                                  ],
-                                ],
-                              ),
-                            ),
+                      : _tab == 0
+                          ? _buildDaily(palette)
+                          : _buildWeekly(palette),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDaily(AppPalette palette) {
+    if (_items.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 50),
+          EmptyState(
+            icon: Icons.insights_outlined,
+            title: '还没有每日回顾',
+            subtitle: '晚上 22:00 会自动生成，也可以现在生成今天的。',
+            action: FilledButton.icon(
+              onPressed: _running ? null : _generate,
+              icon: const Icon(Icons.auto_awesome, size: 17),
+              label: const Text('生成今天的回顾'),
+            ),
+          ),
+        ],
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadDaily,
+      color: palette.primary,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        children: [
+          for (final item in _items) ...[
+            _InsightCard(
+              insight: item,
+              dayLabel: _dayLabel((item['day'] ?? '').toString()),
+              onTodo: _toTodo,
+              onSchedule: _toSchedule,
+            ),
+            const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeekly(AppPalette palette) {
+    if (_weeklies.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 50),
+          EmptyState(
+            icon: Icons.calendar_view_week_outlined,
+            title: '还没有每周回顾',
+            subtitle: '每周五 18:00 自动生成，也可以现在生成。',
+            action: FilledButton.icon(
+              onPressed: _running ? null : _generateWeekly,
+              icon: const Icon(Icons.auto_awesome, size: 17),
+              label: const Text('生成本周回顾'),
+            ),
+          ),
+        ],
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadWeekly,
+      color: palette.primary,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        children: [
+          for (final week in _weeklies) ...[
+            _WeeklyCard(
+              week: week,
+              periodLabel: _weekLabel(week),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyCard extends StatelessWidget {
+  const _WeeklyCard({required this.week, required this.periodLabel});
+
+  final Map<String, dynamic> week;
+  final String periodLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    final summary = (week['summary'] ?? '').toString();
+    final wins = _list(week['wins']);
+    final inProgress = _list(week['in_progress']);
+    final risks = _list(week['risks']);
+    final nextWeek = _list(week['next_week']);
+    final stats = week['stats'] is Map ? week['stats'] as Map : const {};
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.calendar_view_week_outlined,
+                  size: 16, color: palette.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  periodLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: palette.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (summary.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              summary,
+              style: TextStyle(fontSize: 13.5, height: 1.7, color: palette.ink),
+            ),
+          ],
+          if (wins.isNotEmpty) _section(palette, '本周成果', wins, palette.success),
+          if (inProgress.isNotEmpty) _section(palette, '进行中', inProgress, palette.primary),
+          if (risks.isNotEmpty) _section(palette, '风险', risks, palette.accent),
+          if (nextWeek.isNotEmpty) _section(palette, '下周重点', nextWeek, palette.primary),
+          if (stats.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _chip(palette, '完成待办', stats['todos_done']),
+                _chip(palette, '进行中', stats['todos_pending']),
+                _chip(palette, '回顾天数', stats['insight_days']),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<String> _list(dynamic value) {
+    if (value is! List) return const [];
+    return value.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+  }
+
+  Widget _section(AppPalette palette, String title, List<String> lines, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.4,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final line in lines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('· ', style: TextStyle(color: palette.muted)),
+                  Expanded(
+                    child: Text(
+                      line,
+                      style: TextStyle(
+                          fontSize: 12, height: 1.55, color: palette.ink),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(AppPalette palette, String label, dynamic value) {
+    final count = value is num ? value : int.tryParse('$value') ?? 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: palette.primarySoft,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '$label ${count.toInt()}',
+        style: TextStyle(fontSize: 10.5, color: palette.primary),
       ),
     );
   }

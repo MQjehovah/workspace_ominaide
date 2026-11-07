@@ -1202,37 +1202,6 @@ class ApiService {
     return null;
   }
 
-  Future<WeeklyReview?> getWeeklyReview({int weeks = 1, int? botId}) async {
-    try {
-      final res = await post('/skills/weekly-review/run', {
-        if (botId != null) 'bot_id': botId,
-        'input': {'weeks': weeks, 'notify': false},
-      });
-      if (res.statusCode == 200) {
-        final data = _asMap(decodeJson(res));
-        return WeeklyReview.fromJson(_asMap(data['output']));
-      }
-      if (res.statusCode == 404) {
-        final legacy = await get('/cos/weekly-review?weeks=$weeks');
-        if (legacy.statusCode == 200) {
-          return WeeklyReview.fromJson(_asMap(decodeJson(legacy)));
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  /// Latest weekly review stored by the scheduled bot routine.
-  Future<WeeklyReview?> getLatestWeeklyReview() async {
-    try {
-      final res = await get('/insights/weekly/latest');
-      if (res.statusCode == 200) {
-        return WeeklyReview.fromJson(_asMap(decodeJson(res)));
-      }
-    } catch (_) {}
-    return null;
-  }
-
   /// Generate and store this week's review (explicit user action).
   Future<WeeklyReview?> runWeeklyReview({int weeks = 1}) async {
     try {
@@ -1832,6 +1801,13 @@ class ApiService {
   // -- Daily insights --
   Future<List<Map<String, dynamic>>> dailyInsights({int days = 7}) async {
     final res = await get('/insights/daily?days=$days');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  /// Stored weekly reviews (one row per week).
+  Future<List<Map<String, dynamic>>> weeklyReviews({int limit = 8}) async {
+    final res = await get('/insights/weekly?limit=$limit');
     if (res.statusCode != 200) throw Exception(_extractError(res));
     return _asMapList(decodeJson(res));
   }

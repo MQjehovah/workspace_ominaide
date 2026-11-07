@@ -374,23 +374,12 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                     const SizedBox(height: 9),
                     _buildTodayCard(palette),
                     const SizedBox(height: 9),
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _buildInboxCard(
-                              palette,
-                              inboxCount,
-                              urgent,
-                              sourceCounts,
-                              _unreadNotifications,
-                            ),
-                          ),
-                          const SizedBox(width: 9),
-                          Expanded(child: _buildBriefCard(palette)),
-                        ],
-                      ),
+                    _buildInboxCard(
+                      palette,
+                      inboxCount,
+                      urgent,
+                      sourceCounts,
+                      _unreadNotifications,
                     ),
                     const SizedBox(height: 9),
                     _buildRecentCard(palette),
@@ -402,6 +391,12 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
         ),
       ),
     );
+  }
+
+  String get _briefSummary {
+    final summary = (_brief?.summary ?? '').trim();
+    if (summary.isNotEmpty) return summary;
+    return _briefLoading ? '正在生成今日简报…' : '今天没有需要特别处理的事项。';
   }
 
   Widget _buildHeroChat(AppPalette palette) {
@@ -451,7 +446,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    'AI 助手 · 每小时更新',
+                    '${_botName.isEmpty ? 'AI 助手' : _botName} · 每小时更新',
                     style: TextStyle(
                       fontSize: 9,
                       letterSpacing: 1,
@@ -471,7 +466,33 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
+              Text(
+                _briefSummary,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.6,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  onTap: () => _pushAndRefresh(const BriefScreen()),
+                  child: Text(
+                    '查看今日简报 →',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
               TextField(
                 controller: _chatController,
                 textInputAction: TextInputAction.send,
@@ -741,57 +762,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
               ],
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBriefCard(AppPalette palette) {
-    final summary = _brief?.summary ?? '';
-    return AppCard(
-      color: palette.primarySoft,
-      borderColor: Colors.transparent,
-      onTap: () => _pushAndRefresh(const BriefScreen()),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                _botName.isEmpty ? '今日简报' : '今日简报 · $_botName',
-                style: TextStyle(
-                  fontSize: 10,
-                  letterSpacing: 1.1,
-                  fontWeight: FontWeight.w700,
-                  color: palette.primary,
-                ),
-              ),
-              const Spacer(),
-              Icon(Icons.auto_awesome, size: 14, color: palette.primary),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            summary.isEmpty
-                ? (_briefLoading ? '正在生成今日简报…' : '还没有生成今日简报。')
-                : summary,
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11.5,
-              height: 1.6,
-              color: palette.ink.withValues(alpha: 0.82),
-            ),
-          ),
-          const Spacer(),
-          Text(
-            '查看今日简报 →',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              color: palette.primary,
-            ),
-          ),
         ],
       ),
     );
