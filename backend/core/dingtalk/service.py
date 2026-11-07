@@ -114,16 +114,6 @@ async def connect_dingtalk_server(user_id: int) -> None:
         print(f"[dingtalk] connect server for user {user_id} failed: {e}")
 
 
-def _parse_status(raw: str) -> dict:
-    try:
-        payload = json.loads(raw)
-        if isinstance(payload, dict):
-            return payload
-    except Exception:
-        pass
-    return {"raw": raw[:2000]}
-
-
 def _authenticated(payload: dict) -> bool:
     for key in ("authenticated", "loggedIn", "logged_in", "isAuthenticated"):
         if key in payload:
@@ -219,13 +209,12 @@ async def start_login(user_id: int) -> LoginSession:
     async with _lock:
         existing = _sessions.get(user_id)
         if existing is not None:
+            # Reuse a live device-flow request, but always allow an explicit
+            # rebind after the previous flow completed.
             if existing.status == "pending" and existing.proc.returncode is None:
                 return existing
-            if existing.status == "authorized":
+            if time.time() - existing.started_at < SESSION_TTL and existing.status == "pending":
                 return existing
-            if time.time() - existing.started_at < SESSION_TTL:
-                if existing.status == "pending":
-                    return existing
 
         ensure_user_workspace(user_id)
         await ensure_dingtalk_server(user_id)
