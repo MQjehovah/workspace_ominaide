@@ -43,9 +43,27 @@ def _shell_env() -> dict:
     return env
 
 
+async def _is_admin(user_id: int) -> bool:
+    try:
+        from sqlalchemy import select
+
+        from core.auth.domain.models import User
+        from core.database.session import async_session
+
+        async with async_session() as db:
+            row = (await db.execute(
+                select(User.is_admin).where(User.id == user_id)
+            )).scalar_one_or_none()
+        return bool(row)
+    except Exception:
+        return False
+
+
 async def run_shell(user_id: int, args: dict) -> MCPCallResponse:
     if not settings.shell_enabled:
         return _err("shell 工具已被禁用")
+    if settings.shell_admin_only and not await _is_admin(user_id):
+        return _err("shell 工具仅限管理员使用")
     command = (args.get("command") or "").strip()
     if not command:
         return _err("command 必填")

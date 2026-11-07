@@ -153,6 +153,10 @@ class Settings(BaseSettings):
     # General shell tool for the bot (approval required). Runs in the backend
     # container as the backend user, with a scrubbed environment.
     shell_enabled: bool = True
+    # The shell tool runs as root inside the container. In a multi-user
+    # deployment only operators may use it, otherwise any user could read other
+    # users' data and server secrets.
+    shell_admin_only: bool = True
     shell_default_cwd: str = "/app"
     shell_timeout_seconds: int = 600
     shell_max_output_chars: int = 30_000

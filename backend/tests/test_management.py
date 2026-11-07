@@ -109,6 +109,7 @@ async def test_run_shell_tool(tmp_path, monkeypatch):
     from core.config.settings import settings
     from core.ai.mcp.tools.system import run_shell
 
+    monkeypatch.setattr(settings, "shell_admin_only", False)
     monkeypatch.setattr(settings, "shell_default_cwd", str(tmp_path))
     monkeypatch.setattr(settings, "coding_workspace_root", str(tmp_path))
     result = await run_shell(1, {"command": "echo shell-ok", "cwd": str(tmp_path)})
