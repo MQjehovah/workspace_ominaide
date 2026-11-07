@@ -25,6 +25,11 @@ class SkillDefinition:
     owner_id: int | None = None
     allowed_tools: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    version: str = "1.0.0"
+    permissions: list[str] = field(default_factory=list)
+    inputs: dict = field(default_factory=dict)
+    outputs: dict = field(default_factory=dict)
+    timeout_seconds: int = 120
 
     def summary(self) -> dict:
         return {
@@ -34,6 +39,11 @@ class SkillDefinition:
             "scope": self.scope,
             "allowed_tools": self.allowed_tools,
             "metadata": self.metadata,
+            "version": self.version,
+            "permissions": self.permissions,
+            "inputs": self.inputs,
+            "outputs": self.outputs,
+            "timeout_seconds": self.timeout_seconds,
         }
 
 
@@ -73,6 +83,9 @@ def _load_skill(directory: Path, scope: str, owner_id: int | None = None) -> Ski
         allowed = [allowed]
     allowed_tools = [str(x).strip() for x in allowed if str(x).strip()]
     metadata = meta.get("metadata") if isinstance(meta.get("metadata"), dict) else {}
+    permissions = meta.get("permissions") or []
+    if isinstance(permissions, str):
+        permissions = [permissions]
     return SkillDefinition(
         key=key,
         name=name,
@@ -83,6 +96,11 @@ def _load_skill(directory: Path, scope: str, owner_id: int | None = None) -> Ski
         owner_id=owner_id,
         allowed_tools=allowed_tools,
         metadata=metadata,
+        version=str(meta.get("version") or "1.0.0"),
+        permissions=[str(x).strip() for x in permissions if str(x).strip()],
+        inputs=meta.get("inputs") if isinstance(meta.get("inputs"), dict) else {},
+        outputs=meta.get("outputs") if isinstance(meta.get("outputs"), dict) else {},
+        timeout_seconds=int(meta.get("timeout") or meta.get("timeout_seconds") or 120),
     )
 
 

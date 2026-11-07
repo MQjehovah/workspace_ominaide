@@ -27,6 +27,7 @@ class FileListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    next_cursor: str | None = None
 
 
 class CreateFolderRequest(BaseModel):
@@ -73,3 +74,4 @@ class FileQueryParams(BaseModel):
     favorite: bool | None = None
     folder_path: str | None = None
     is_folder: bool | None = None
+    cursor: int | None = None

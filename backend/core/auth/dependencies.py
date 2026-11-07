@@ -28,6 +28,9 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is disabled")
+    from core.observability.context import set_user_id
+
+    set_user_id(int(user_id))
     return {"id": int(user_id), "username": user.username, "is_admin": bool(user.is_admin)}
 
 

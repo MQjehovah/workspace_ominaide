@@ -237,8 +237,11 @@ class McpHub:
                 raise McpError("MCP 服务器不存在")
             audit_name = f"{server.slug}__{tool_name}"
             conn = await self._ensure_conn(server_id, user_id)
+            from core.observability.recorder import trace_span
+
             try:
-                result = await conn.call_tool(tool_name, arguments or {})
+                async with trace_span("mcp", f"{server.slug}.{tool_name}"):
+                    result = await conn.call_tool(tool_name, arguments or {})
             except McpError as e:
                 # A long-lived stdio connection can go stale (transport closed,
                 # child restarted). Reconnect once and retry instead of failing.
@@ -246,7 +249,8 @@ class McpHub:
                     raise
                 print(f"[mcp] {server.slug} 超时，重连后重试 {tool_name}")
                 conn = await self._ensure_conn(server_id, user_id, force=True)
-                result = await conn.call_tool(tool_name, arguments or {})
+                async with trace_span("mcp", f"{server.slug}.{tool_name}"):
+                    result = await conn.call_tool(tool_name, arguments or {})
             if result.get("isError"):
                 status = "error"
                 error = _content_text(result)[:1000]

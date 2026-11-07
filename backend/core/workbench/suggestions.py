@@ -226,6 +226,13 @@ async def workbench_suggestions(user_id: int, *, refresh: bool = False) -> dict:
     cached = _CACHE.get(user_id)
     if cached and not refresh and now_mono - cached[0] < _TTL_SECONDS:
         return cached[1]
+    if not refresh:
+        from core.cache import get_json
+
+        redis_cached = await get_json(f"workbench:suggestions:{user_id}")
+        if isinstance(redis_cached, dict):
+            _CACHE[user_id] = (time.monotonic(), redis_cached)
+            return redis_cached
 
     context = await _context(user_id)
     suggestions = _fallback(context)
@@ -264,4 +271,11 @@ async def workbench_suggestions(user_id: int, *, refresh: bool = False) -> dict:
         ),
     }
     _CACHE[user_id] = (time.monotonic(), payload)
+    from core.cache import set_json
+
+    await set_json(
+        f"workbench:suggestions:{user_id}",
+        payload,
+        int(_TTL_SECONDS),
+    )
     return payload

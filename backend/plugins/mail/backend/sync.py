@@ -182,6 +182,7 @@ async def list_messages(
     page: int = 1,
     page_size: int = 20,
     folder: str = "inbox",
+    cursor: int | None = None,
 ):
     from sqlalchemy import func, select
     from plugins.mail.backend.models import MailMessage
@@ -198,6 +199,10 @@ async def list_messages(
     if starred:
         q = q.where(MailMessage.starred == True)
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
+    if cursor is not None:
+        q = q.where(MailMessage.id < cursor).order_by(MailMessage.id.desc())
+        rows = list((await db.execute(q.limit(page_size))).scalars().all())
+        return rows, total
     r = await db.execute(
         q.order_by(MailMessage.date.desc(), MailMessage.id.desc())
         .offset(max(0, (page - 1) * page_size))

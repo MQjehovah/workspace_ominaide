@@ -35,6 +35,9 @@ async def lifespan(app: FastAPI):
     import core.bots.models  # noqa
     import core.meetings.models  # noqa
     import core.skills.models  # noqa
+    import core.observability.models  # noqa
+    import core.jobs.models  # noqa
+    import core.graph.models  # noqa
     import core.ai.insight_models  # noqa
     import core.mcp_hub.models  # noqa
     import core.memory_models  # noqa
@@ -55,6 +58,8 @@ async def lifespan(app: FastAPI):
 
     register_workers()
     worker_task = asyncio.create_task(worker_loop())
+    from core.jobs.service import start_worker as start_jobs_worker
+    jobs_task = start_jobs_worker()
     scheduler_task = asyncio.create_task(scheduler_loop())
     await ensure_buckets()
     await discover_plugins(app)
@@ -76,11 +81,14 @@ async def lifespan(app: FastAPI):
     routine_task.cancel()
     scheduler_task.cancel()
     worker_task.cancel()
+    jobs_task.cancel()
     try: await routine_task
     except asyncio.CancelledError: pass
     try: await scheduler_task
     except asyncio.CancelledError: pass
     try: await worker_task
+    except asyncio.CancelledError: pass
+    try: await jobs_task
     except asyncio.CancelledError: pass
     from core.database.redis import close_redis
     await close_redis()
@@ -123,6 +131,9 @@ async def cors_middleware(request, call_next):
 
 
 app.add_middleware(ActivityMiddleware)
+
+from core.observability.middleware import TraceMiddleware
+app.add_middleware(TraceMiddleware)
 
 from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)
@@ -190,6 +201,25 @@ app.include_router(memory_router)
 
 from core.inbox.router import router as inbox_router
 app.include_router(inbox_router)
+
+from core.observability.router import router as metrics_router
+app.include_router(metrics_router)
+
+from core.jobs.router import router as jobs_router
+app.include_router(jobs_router)
+
+from core.graph.router import router as graph_router, context_router
+app.include_router(graph_router)
+app.include_router(context_router)
+
+from core.agent.router import router as agent_router
+app.include_router(agent_router)
+
+from core.connectors.router import router as connectors_router
+app.include_router(connectors_router)
+
+from core.automation.router import router as automation_dsl_router
+app.include_router(automation_dsl_router)
 
 from core.meetings.router import router as meetings_router
 app.include_router(meetings_router)

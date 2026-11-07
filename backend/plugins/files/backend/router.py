@@ -10,6 +10,7 @@ from core.auth.jwt import decode_access_token
 from core.config.settings import settings
 from core.events.recorder import record_event
 from core.minio.client import public_minio_url
+from core.pagination import decode_int_cursor, encode_cursor
 from plugins.files.backend.schemas import (
     UploadUrlRequest, UploadUrlResponse, ConfirmUploadRequest,
     UpdateTagsRequest, FileQueryParams, FileResponse, FileListResponse,
@@ -185,6 +186,7 @@ async def list_files(
     folder_path: str | None = None,
     is_folder: bool | None = None,
     search: str | None = None,
+    cursor: str | None = None,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -193,7 +195,7 @@ async def list_files(
         bucket=bucket,
         mime_type=mime_type, favorite=favorite,
         folder_path=folder_path, is_folder=is_folder,
-        search=search,
+        search=search, cursor=decode_int_cursor(cursor),
     )
     files, total = await file_service.get_files(db, user["id"], params)
     return FileListResponse(
@@ -201,6 +203,7 @@ async def list_files(
         total=total,
         page=page,
         page_size=page_size,
+        next_cursor=encode_cursor(files[-1].id) if len(files) >= page_size else None,
     )
 
 

@@ -163,8 +163,11 @@ async def transcribe_minio_object(file_record, *, diarize: bool | None = None) -
     """Transcribe a MinIO file object without copying it through a temp file."""
     if diarize is None:
         diarize = settings.asr_diarize
+    from core.observability.recorder import trace_span
+
     try:
-        return await asyncio.to_thread(_post, file_record, diarize)
+        async with trace_span("asr", file_record.original_name or "meeting"):
+            return await asyncio.to_thread(_post, file_record, diarize)
     except AsrError:
         raise
     except Exception as exc:

@@ -1,0 +1,7 @@
+[
+  {
+    "id": "retrieval-basic",
+    "query": "会议",
+    "expect_types": ["note", "meeting", "event"]
+  }
+]

@@ -133,20 +133,25 @@ async def list_messages(
     important: bool = False,
     starred: bool = False,
     folder: str = Query("inbox"),
+    cursor: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from core.pagination import decode_int_cursor, encode_cursor
+
+    cursor_id = decode_int_cursor(cursor)
     items, total = await mail_sync.list_messages(
         db, user["id"], account_id, unread, important, starred, page, page_size,
-        folder=folder,
+        folder=folder, cursor=cursor_id,
     )
     return {
         "items": [MailMessageResponse.model_validate(m) for m in items],
         "total": total,
         "page": page,
         "page_size": page_size,
+        "next_cursor": encode_cursor(items[-1].id) if len(items) >= page_size else None,
     }
 
 

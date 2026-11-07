@@ -83,6 +83,13 @@ async def dingtalk_actions(user_id: int, *, refresh: bool = False) -> dict:
     cached = _CACHE.get(user_id)
     if cached and not refresh and time.monotonic() - cached[0] < _TTL:
         return cached[1]
+    if not refresh:
+        from core.cache import get_json
+
+        redis_cached = await get_json(f"workbench:dingtalk-actions:{user_id}")
+        if isinstance(redis_cached, dict):
+            _CACHE[user_id] = (time.monotonic(), redis_cached)
+            return redis_cached
 
     now = datetime.now()
     dingtalk, status = await collectors.dingtalk_items(user_id, limit=10)
@@ -145,4 +152,11 @@ async def dingtalk_actions(user_id: int, *, refresh: bool = False) -> dict:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
     _CACHE[user_id] = (time.monotonic(), payload)
+    from core.cache import set_json
+
+    await set_json(
+        f"workbench:dingtalk-actions:{user_id}",
+        payload,
+        int(_TTL),
+    )
     return payload
