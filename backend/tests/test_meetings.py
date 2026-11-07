@@ -90,3 +90,71 @@ async def test_create_list_and_delete_meeting_minutes(client, monkeypatch):
 
 async def test_meeting_minutes_requires_auth(client):
     assert (await client.get("/api/meetings/minutes")).status_code == 401
+
+
+async def test_meeting_job_produces_note(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    file_id = await _seed_audio(user_id)
+
+    from core.database.session import async_session
+    from core.meetings.models import MeetingMinutesJob
+    from core.meetings import service as meetings_service
+
+    async with async_session() as db:
+        job = MeetingMinutesJob(
+            user_id=user_id,
+            file_id=file_id,
+            title="预算周会",
+            status="queued",
+        )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.id
+
+    async def fake_transcribe(file_record, *, diarize=None):
+        return {
+            "text": "讨论预算。决定周五前完成评审。",
+            "segments": [
+                {"start": 0, "end": 3, "speaker": "1", "text": "讨论预算"},
+                {"start": 3, "end": 7, "speaker": "2", "text": "周五前完成评审"},
+            ],
+        }
+
+    async def fake_minutes(transcript, bot):
+        return {
+            "summary": "讨论预算并确定周五前完成评审。",
+            "discussion": ["预算方案"],
+            "decisions": ["周五前完成评审"],
+            "action_items": [{"title": "完成评审", "owner": "张三", "due": "周五"}],
+            "risks": [],
+        }
+
+    monkeypatch.setattr(meetings_service, "transcribe_minio_object", fake_transcribe)
+    monkeypatch.setattr(meetings_service, "_summarise_long", fake_minutes)
+
+    await meetings_service._run_job(job_id)
+
+    async with async_session() as db:
+        job = await db.get(MeetingMinutesJob, job_id)
+        assert job.status == "done", job.error
+        assert job.note_id
+        assert job.transcript
+        note_id = job.note_id
+
+    r = await client.get(
+        f"/api/meetings/minutes/{job_id}",
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "done"
+    assert body["minutes"]["action_items"][0]["title"] == "完成评审"
+
+    from plugins.notes.backend.models import PluginNote
+
+    async with async_session() as db:
+        note = await db.get(PluginNote, note_id)
+        assert note is not None
+        assert "预算周会" in note.content
+

@@ -210,12 +210,12 @@ async def _run_job(job_id: int) -> None:
             job.status = "transcribing"
             job.started_at = job.started_at or datetime.now()
             job.error = None
-            await db.flush()
-            await db.commit()
             file_id = job.file_id
             user_id = job.user_id
             title = job.title
             created_at = job.created_at or datetime.now()
+            await db.flush()
+            await db.commit()
 
         from plugins.files.backend.models import File
 
