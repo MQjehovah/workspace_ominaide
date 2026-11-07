@@ -519,18 +519,21 @@ def _weather_text(code: int) -> str:
 
 
 async def _voice_context() -> str:
-    """Small always-on context so common questions skip slow tool calls."""
-    from plugins.device.backend.router import _current_weather
+    """Small always-on context so common questions skip slow tool calls.
+
+    Weather is read from the device brief's cache only.  Calling the weather
+    API here used to add up to 6 seconds to every voice request whenever the
+    upstream weather endpoint was failing.
+    """
+    from plugins.device.backend.router import _weather_cache
 
     now = datetime.now()
     weekday = "一二三四五六日"[now.weekday()]
     text = f"当前时间：{now:%Y-%m-%d} 星期{weekday} {now:%H:%M}。"
-    try:
-        weather = await _current_weather()
-    except Exception:
-        weather = None
-    if weather:
-        text += f"当前天气：{weather['temp']}℃，{_weather_text(weather['code'])}。"
+    data = _weather_cache.get("data")
+    ts = _weather_cache.get("t") or 0
+    if data and time.time() - ts < 3600:
+        text += f"当前天气：{data['temp']}℃，{_weather_text(data['code'])}。"
     text += "时间和天气已在上下文中，回答这类问题不要调用工具。"
     return text
 
