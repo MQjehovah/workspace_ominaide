@@ -1,26 +1,21 @@
-"""Sentence-pipelined voice streaming helpers.
+"""Voice helpers for the device endpoint.
 
-The device uploads one recorded utterance (ASR is still one-shot), then this
-module converts the agent's token stream into a low-latency audio stream:
+The device uploads one recorded utterance, the server runs ASR + the agent,
+then synthesizes the reply and emits NDJSON frames:
 
-  agent tokens -> sentence queue -> TTS (PCM) -> audio frames
+  transcript -> delta/status -> PCM chunks -> done
 
-Text deltas, status updates and base64 PCM frames are emitted as NDJSON so the
-firmware can parse them line-by-line while playing audio.
+The TTS gateway is synchronous (it returns the complete WAV at the end), so
+the device buffers the reply and plays it as one continuous clip.
 """
 from __future__ import annotations
 
 import json
-import time
 from typing import AsyncIterator
 
 from openai import AsyncOpenAI
 
 from core.config.settings import settings
-
-_SENT_END = set("。！？!?；;\n")
-_SOFT_END = set("，,、：:")
-_MAX_SENT = 90
 
 
 async def read_audio(resp) -> bytes:
@@ -72,90 +67,6 @@ async def tts_pcm(
     data = await read_audio(speech)
     rate, off, length = parse_wav(data)
     return data[off:off + length], rate
-
-
-# Circuit breaker: Microsoft's edge endpoint starts timing out after a few
-# bursts from the same IP, so skip it for a while after a failure instead of
-# making every request wait for a 20s socket timeout.
-_edge_blocked_until = 0.0
-
-
-def edge_ready() -> bool:
-    return time.monotonic() >= _edge_blocked_until
-
-
-def edge_failed(cooldown: float = 120.0) -> None:
-    global _edge_blocked_until
-    _edge_blocked_until = time.monotonic() + cooldown
-
-
-def edge_succeeded() -> None:
-    global _edge_blocked_until
-    _edge_blocked_until = 0.0
-
-
-async def tts_edge_pcm(text: str, voice: str | None = None) -> tuple[bytes, int]:
-    """Synthesize with edge-tts and decode the MP3 to 24kHz mono s16le PCM.
-
-    edge-tts streams over a WebSocket and is much faster than the
-    OpenAI-compatible gateway (which only returns the full WAV at the end),
-    so the device can start speaking after the first sentence.
-    """
-    import asyncio
-
-    import edge_tts
-    import miniaudio
-
-    v = voice or settings.tts_edge_voice or "zh-CN-XiaoxiaoNeural"
-    comm = edge_tts.Communicate(text, v)
-    data = bytearray()
-    async for chunk in comm.stream():
-        if chunk.get("type") == "audio":
-            data += chunk.get("data", b"")
-    if not data:
-        raise RuntimeError("edge-tts returned no audio")
-    decoded = await asyncio.to_thread(
-        miniaudio.decode,
-        bytes(data),
-        output_format=miniaudio.SampleFormat.SIGNED16,
-        nchannels=1,
-        sample_rate=24000,
-    )
-    return decoded.samples.tobytes(), 24000
-
-
-def take_sentences(buf: str, *, flush: bool = False,
-                   min_len: int = 10) -> tuple[list[str], str]:
-    """Split a growing token buffer into speakable chunks.
-
-    Hard sentence endings always split. Commas/colons only split once the
-    pending clause is long enough, so short phrases keep natural prosody
-    while long comma-only replies can still start playing early.
-    """
-    out: list[str] = []
-    start = 0
-    for i, ch in enumerate(buf):
-        if ch in _SENT_END:
-            piece = buf[start:i + 1].strip()
-            if piece:
-                out.append(piece)
-            start = i + 1
-        elif ch in _SOFT_END and (i + 1 - start) >= min_len:
-            piece = buf[start:i + 1].strip()
-            if piece:
-                out.append(piece)
-            start = i + 1
-    rest = buf[start:]
-    while len(rest) > _MAX_SENT:
-        cut = max((rest.rfind(c) for c in _SOFT_END), default=-1)
-        if cut < min_len:
-            cut = _MAX_SENT - 1
-        out.append(rest[:cut + 1].strip())
-        rest = rest[cut + 1:]
-    if flush and rest.strip():
-        out.append(rest.strip())
-        rest = ""
-    return out, rest
 
 
 def trim_silence(pcm: bytes, rate: int, threshold: int = 350, pad_ms: int = 50) -> bytes:

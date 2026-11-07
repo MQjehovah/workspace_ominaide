@@ -29,8 +29,7 @@ from plugins.chat.backend.schemas import (
     AsrResponse, TtsRequest, SessionItem, SessionRename,
 )
 from plugins.chat.backend.voice_stream import (
-    edge_failed, edge_ready, edge_succeeded,
-    iter_agent_events, trim_silence, tts_edge_pcm, tts_pcm,
+    iter_agent_events, trim_silence, tts_pcm,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -630,28 +629,18 @@ async def voice(
     )
 
 
-async def _synthesize_voice_reply(text: str, tts_client, voice: str | None,
-                                  edge_voice: str | None):
-    """Prefer fast edge-tts; fall back to the OpenAI-compatible gateway."""
-    if settings.tts_provider == "edge" and edge_ready():
-        try:
-            pcm, rate = await asyncio.wait_for(tts_edge_pcm(text, edge_voice), timeout=6)
-            if pcm:
-                edge_succeeded()
-                return pcm, rate, "edge"
-        except Exception as e:
-            log.warning("[voice_stream] edge tts failed: %s", e)
-            edge_failed(120)
+async def _synthesize_voice_reply(text: str, tts_client, voice: str | None):
+    """Synthesize the full reply with the OpenAI-compatible TTS gateway."""
     for attempt in range(3):
         try:
             pcm, rate = await tts_pcm(text, tts_client, voice)
             if pcm:
-                return pcm, rate, "gateway"
+                return pcm, rate
         except Exception as e:
-            log.warning("[voice_stream] gateway tts error attempt=%s: %s", attempt + 1, e)
+            log.warning("[voice_stream] tts error attempt=%s: %s", attempt + 1, e)
         if attempt < 2:
             await asyncio.sleep(0.4 * (attempt + 1))
-    return b"", 24000, "none"
+    return b"", 24000
 
 
 @router.post("/voice/stream")
@@ -711,7 +700,6 @@ async def voice_stream(
         t_first_token = None
         reply_parts: list[str] = []
         tts_client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
-        edge_voice = voice if voice and voice != settings.tts_voice else None
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(sid)
         try:
@@ -744,8 +732,7 @@ async def voice_stream(
 
         reply = "".join(reply_parts).strip() or "已执行。"
         t_tts = time.monotonic()
-        pcm, rate, provider = await _synthesize_voice_reply(
-            reply, tts_client, voice, edge_voice)
+        pcm, rate = await _synthesize_voice_reply(reply, tts_client, voice)
         t_audio = time.monotonic()
         if pcm:
             pcm = trim_silence(pcm, rate)
@@ -761,9 +748,8 @@ async def voice_stream(
 
         elapsed = time.monotonic() - t_start
         log.info(
-            "[voice_stream] provider=%s first_token=%.2fs tts=%.2fs "
+            "[voice_stream] first_token=%.2fs tts=%.2fs "
             "first_audio=%.2fs total=%.2fs",
-            provider,
             t_first_token - t_start if t_first_token else -1,
             t_audio - t_tts,
             t_audio - t_start,
