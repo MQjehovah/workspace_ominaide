@@ -51,7 +51,10 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   String _name = '';
   String _botName = '';
   bool _loading = true;
+  bool _briefLoading = true;
   bool _error = false;
+  int _loadToken = 0;
+  DateTime? _lastLoadAt;
   late final ValueNotifier<int> _refresh = RefreshBus.signal('workbench');
 
   @override
@@ -64,11 +67,17 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       const Duration(hours: 1),
       (_) => _loadSuggestions(force: true),
     );
-    _load();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    // Show last good data immediately, then refresh from the network.
+    await _loadLocalCache();
+    if (mounted) await _load();
   }
 
   void _onRefreshSignal() {
-    if (mounted) _load(force: true);
+    if (mounted) _load();
   }
 
   @override
@@ -111,71 +120,116 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     }
   }
 
-  Future<void> _load({bool force = false}) async {
-    await BotSelectionService().load();
-    final api = ApiService();
-    final results = await Future.wait<dynamic>([
-      _safe(cosRepository.getDailyBrief(force: force)),
-      _safe(api.getWorkbenchSummary()),
-      _safe(api.listNotifications(limit: 50)),
-      _safe(api.getMe()),
+  Future<void> _loadLocalCache() async {
+    final results = await Future.wait<Map<String, dynamic>?>([
+      LocalCacheService().readJson('workbench.summary'),
+      LocalCacheService().readJson('workbench.brief'),
     ]);
-
     if (!mounted) return;
-    var summary = (results[1] as Map<String, dynamic>?) ?? <String, dynamic>{};
-    if (summary.isEmpty) {
-      final cached = await LocalCacheService().readJson('workbench.summary');
-      if (cached != null) summary = cached;
-    } else {
-      await LocalCacheService().writeJson('workbench.summary', summary);
-    }
-    final me = results[3] as Map<String, dynamic>?;
-    final notifications = (results[2] as List<Map<String, dynamic>>?) ?? [];
+    final summary = results[0];
+    final brief = results[1];
+    setState(() {
+      if (summary != null) _applySummary(summary);
+      if (brief != null) _brief = DailyBrief.fromJson(brief);
+    });
+  }
+
+  void _applySummary(Map<String, dynamic> summary) {
     final triageData = summary['triage'];
     final recent = (summary['recent'] as Map?) ?? const {};
     final recentFiles = (recent['files'] as List?) ?? const [];
     final recentNotes = (recent['notes'] as List?) ?? const [];
     final recentProjects = (recent['projects'] as List?) ?? const [];
     final suggestionList = (summary['suggestions'] as List?) ?? const [];
+    _triage = triageData is Map
+        ? TriageSnapshot.fromJson(
+            triageData.map((k, v) => MapEntry(k.toString(), v)),
+          )
+        : null;
+    _events = ((summary['events'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+    _todos = ((summary['todos'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+    _files = recentFiles
+        .whereType<Map>()
+        .map((e) => FileItem.fromJson(
+              e.map((k, v) => MapEntry(k.toString(), v)),
+            ))
+        .toList();
+    _notes = recentNotes
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+    _projects = recentProjects
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+    if (suggestionList.isNotEmpty) {
+      _suggestions = suggestionList.map((e) => e.toString()).toList();
+    }
+  }
+
+  Future<void> _load({bool force = false}) async {
+    if (!force &&
+        _lastLoadAt != null &&
+        DateTime.now().difference(_lastLoadAt!) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastLoadAt = DateTime.now();
+    final token = ++_loadToken;
+    await BotSelectionService().load();
+    final api = ApiService();
+
+    // Fast, cheap calls first: these unblock the whole workbench.
+    final results = await Future.wait<dynamic>([
+      _safe(api.getWorkbenchSummary()),
+      _safe(api.listNotifications(limit: 50)),
+      _safe(api.getMe()),
+    ]);
+    if (!mounted || token != _loadToken) return;
+
+    var summary = (results[0] as Map<String, dynamic>?) ?? <String, dynamic>{};
+    if (summary.isEmpty) {
+      final cached = await LocalCacheService().readJson('workbench.summary');
+      if (cached != null && token == _loadToken) summary = cached;
+    } else {
+      await LocalCacheService().writeJson('workbench.summary', summary);
+    }
+    if (!mounted || token != _loadToken) return;
+
+    final me = results[2] as Map<String, dynamic>?;
+    final notifications = (results[1] as List<Map<String, dynamic>>?) ?? [];
     setState(() {
       _error = results[0] == null && summary.isEmpty;
-      _brief = results[0] as DailyBrief?;
-      _triage = triageData is Map
-          ? TriageSnapshot.fromJson(
-              triageData.map((k, v) => MapEntry(k.toString(), v)),
-            )
-          : null;
-      _events = ((summary['events'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
-          .toList();
-      _todos = ((summary['todos'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
-          .toList();
-      _files = recentFiles
-          .whereType<Map>()
-          .map((e) => FileItem.fromJson(
-                e.map((k, v) => MapEntry(k.toString(), v)),
-              ))
-          .toList();
-      _notes = recentNotes
-          .whereType<Map>()
-          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
-          .toList();
-      _projects = recentProjects
-          .whereType<Map>()
-          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
-          .toList();
-      if (suggestionList.isNotEmpty) {
-        _suggestions = suggestionList.map((e) => e.toString()).toList();
-      }
+      _applySummary(summary);
       _unreadNotifications =
           notifications.where((n) => n['read'] == false).length;
       _name = (me?['display_name'] ?? me?['username'] ?? '').toString();
       _botName = BotSelectionService().botName ?? '';
       _loading = false;
+      _briefLoading = true;
     });
+
+    // The daily brief runs an LLM, so never block the first paint on it.
+    final brief = await _safe(cosRepository.getDailyBrief(force: force));
+    if (!mounted || token != _loadToken) return;
+    setState(() {
+      _briefLoading = false;
+      if (brief != null) _brief = brief;
+    });
+    if (brief != null) {
+      unawaited(LocalCacheService().writeJson('workbench.brief', {
+        'day': brief.day,
+        'summary': brief.summary,
+        'focus': brief.focus,
+        'stats': brief.stats,
+        'sources': {'dingtalk': brief.dingtalkStatus},
+      }));
+    }
   }
 
   void _ask(String text) {
@@ -190,7 +244,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
 
   Future<void> _pushAndRefresh(Widget page) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-    if (mounted) _load(force: true);
+    if (mounted) _load();
   }
 
   String get _greeting {
@@ -286,6 +340,18 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                   _Avatar(name: _name),
                 ],
               ),
+              if (_loading)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      minHeight: 3,
+                      color: palette.primary,
+                      backgroundColor: palette.primarySoft,
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
@@ -318,13 +384,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                     ),
                     const SizedBox(height: 9),
                     _buildRecentCard(palette),
-                    if (_loading) ...[
-                      const SizedBox(height: 14),
-                      LinearProgressIndicator(
-                        color: palette.primary,
-                        backgroundColor: palette.primarySoft,
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -703,7 +762,9 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            summary.isEmpty ? '还没有生成今日简报。' : summary,
+            summary.isEmpty
+                ? (_briefLoading ? '正在生成今日简报…' : '还没有生成今日简报。')
+                : summary,
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

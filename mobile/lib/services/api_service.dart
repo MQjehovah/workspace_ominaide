@@ -1180,11 +1180,11 @@ class ApiService {
   }
 
   // -- Briefing surfaces (powered by Agent Skills) --
-  Future<DailyBrief?> getDailyBrief({int? botId}) async {
+  Future<DailyBrief?> getDailyBrief({int? botId, bool refresh = false}) async {
     try {
       final res = await post('/skills/daily-brief/run', {
         if (botId != null) 'bot_id': botId,
-        'input': <String, dynamic>{},
+        'input': <String, dynamic>{if (refresh) 'refresh': true},
       });
       if (res.statusCode == 200) {
         final data = _asMap(decodeJson(res));
