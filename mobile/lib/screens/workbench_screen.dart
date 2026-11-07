@@ -451,7 +451,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                       onTap: () => _ask(prompt),
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
-                        alignment: Alignment.center,
                         constraints: const BoxConstraints(maxWidth: 250),
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         decoration: BoxDecoration(
@@ -461,14 +460,18 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                             color: Colors.white.withValues(alpha: 0.18),
                           ),
                         ),
-                        child: Text(
-                          prompt,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.9),
+                        child: Center(
+                          widthFactor: 1,
+                          heightFactor: 1,
+                          child: Text(
+                            prompt,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.9),
+                            ),
                           ),
                         ),
                       ),

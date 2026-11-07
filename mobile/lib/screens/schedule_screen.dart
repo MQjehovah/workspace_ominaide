@@ -19,7 +19,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   List<Map<String, dynamic>> _monthEvents = [];
   bool _loading = true;
   bool _viewLoading = false;
-  String _view = 'list';
+  String _view = 'day';
   String _error = '';
   late DateTime _weekStart = _monday(DateTime.now());
   late DateTime _focusedDay = DateTime.now();
@@ -34,7 +34,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadDay();
   }
 
   Future<void> _loadDay() async {
@@ -107,7 +107,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     } else if (_view == 'month') {
       _loadMonth();
     } else {
-      _load();
+      _loadDay();
     }
   }
 
@@ -340,8 +340,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
               children: [
-                _viewChip('列表', 'list', palette),
-                const SizedBox(width: 6),
                 _viewChip('日', 'day', palette),
                 const SizedBox(width: 6),
                 _viewChip('周', 'week', palette),
@@ -433,7 +431,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Widget _buildDayView(AppPalette palette) {
-    const hourHeight = 64.0;
+    const hourHeight = 46.0;
     final now = DateTime.now();
     final dayStart = DateTime(
       _focusedDay.year,
@@ -560,7 +558,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final top = (visibleStart.hour + visibleStart.minute / 60) * hourHeight;
     final height =
         ((visibleEnd.difference(visibleStart).inMinutes / 60) * hourHeight)
-            .clamp(26.0, 24 * hourHeight);
+            .clamp(22.0, 24 * hourHeight);
     final clock =
         '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}'
         '-${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
@@ -572,10 +570,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       child: GestureDetector(
         onTap: () => _edit(event),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
             color: palette.primarySoft,
-            borderRadius: BorderRadius.circular(9),
+            borderRadius: BorderRadius.circular(7),
             border: Border(
               left: BorderSide(color: palette.primary, width: 3),
             ),
@@ -586,7 +584,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               Text(
                 clock,
                 style: TextStyle(
-                  fontSize: 9,
+                  fontSize: 8,
                   fontWeight: FontWeight.w700,
                   color: palette.primary,
                 ),
@@ -596,7 +594,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: palette.ink,
                 ),
@@ -933,6 +931,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       if (start == null || end == null) return false;
       return end.isAfter(dayStart) && start.isBefore(dayEnd);
     }).toList();
+    final slots = _layoutWeekEvents(events);
     return Container(
       decoration: BoxDecoration(
         border: Border(
@@ -940,45 +939,110 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           bottom: BorderSide(color: palette.line.withValues(alpha: 0.7)),
         ),
       ),
-      child: Stack(
-        children: [
-          for (var hour = 0; hour < 24; hour++)
-            Positioned(
-              top: hour * hourHeight,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: hourHeight,
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(
-                      color: palette.line.withValues(alpha: 0.55),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          return Stack(
+            children: [
+              for (var hour = 0; hour < 24; hour++)
+                Positioned(
+                  top: hour * hourHeight,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    height: hourHeight,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(
+                          color: palette.line.withValues(alpha: 0.55),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          for (final event in events)
-            _weekEvent(event, dayStart, dayEnd, palette, hourHeight),
-          if (_isSameDay(day, now))
-            Positioned(
-              top: (now.hour + now.minute / 60) * hourHeight,
-              left: 0,
-              right: 0,
-              child: Container(height: 1.5, color: palette.accent),
-            ),
-        ],
+              for (final slot in slots)
+                _weekEvent(
+                  slot,
+                  width,
+                  dayStart,
+                  dayEnd,
+                  palette,
+                  hourHeight,
+                ),
+              if (_isSameDay(day, now))
+                Positioned(
+                  top: (now.hour + now.minute / 60) * hourHeight,
+                  left: 0,
+                  right: 0,
+                  child: Container(height: 1.5, color: palette.accent),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
 
+  List<_WeekSlot> _layoutWeekEvents(List<Map<String, dynamic>> events) {
+    final sorted = events
+        .where((event) => eventStart(event) != null && eventEnd(event) != null)
+        .toList()
+      ..sort(_compareByStart);
+    final slots = <_WeekSlot>[];
+    var i = 0;
+    while (i < sorted.length) {
+      final firstStart = eventStart(sorted[i]);
+      final firstEnd = eventEnd(sorted[i]);
+      if (firstStart == null || firstEnd == null) {
+        i++;
+        continue;
+      }
+      var clusterEnd = firstEnd;
+      var j = i + 1;
+      while (j < sorted.length) {
+        final start = eventStart(sorted[j]);
+        final end = eventEnd(sorted[j]);
+        if (start == null || end == null || !start.isBefore(clusterEnd)) {
+          break;
+        }
+        if (end.isAfter(clusterEnd)) clusterEnd = end;
+        j++;
+      }
+      final cluster = sorted.sublist(i, j);
+      final columnEnds = <DateTime>[];
+      final columns = <int>[];
+      for (final event in cluster) {
+        final start = eventStart(event)!;
+        final end = eventEnd(event)!;
+        var column = 0;
+        while (
+            column < columnEnds.length && columnEnds[column].isAfter(start)) {
+          column++;
+        }
+        if (column == columnEnds.length) {
+          columnEnds.add(end);
+        } else {
+          columnEnds[column] = end;
+        }
+        columns.add(column);
+      }
+      for (var k = 0; k < cluster.length; k++) {
+        slots.add(_WeekSlot(cluster[k], columns[k], columnEnds.length));
+      }
+      i = j;
+    }
+    return slots;
+  }
+
   Widget _weekEvent(
-    Map<String, dynamic> event,
+    _WeekSlot slot,
+    double width,
     DateTime dayStart,
     DateTime dayEnd,
     AppPalette palette,
     double hourHeight,
   ) {
+    final event = slot.event;
     final start = eventStart(event);
     final end = eventEnd(event);
     if (start == null || end == null) return const SizedBox.shrink();
@@ -988,10 +1052,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final height =
         ((visibleEnd.difference(visibleStart).inMinutes / 60) * hourHeight)
             .clamp(20.0, 24 * hourHeight);
+    final columnWidth = width / slot.columns;
     return Positioned(
       top: top,
-      left: 1,
-      right: 1,
+      left: slot.column * columnWidth + 1,
+      width: (columnWidth - 2).clamp(12.0, width),
       height: height,
       child: GestureDetector(
         onTap: () => _edit(event),
@@ -1133,4 +1198,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return '${dt.hour.toString().padLeft(2, '0')}:'
         '${dt.minute.toString().padLeft(2, '0')}';
   }
+}
+
+class _WeekSlot {
+  const _WeekSlot(this.event, this.column, this.columns);
+  final Map<String, dynamic> event;
+  final int column;
+  final int columns;
 }

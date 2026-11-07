@@ -12,8 +12,11 @@ import '../models/file_item.dart';
 import '../services/api_service.dart';
 import '../services/file_transfer_service.dart';
 import '../services/seen_state_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/loading_state.dart';
+import 'audio_preview_screen.dart';
 import 'pdf_preview_screen.dart';
+import 'text_preview_screen.dart';
 
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
@@ -190,6 +193,40 @@ class _FilesScreenState extends State<FilesScreen> {
   bool _isPdf(FileItem f) =>
       _ext(f) == 'pdf' || (f.mimeType ?? '').toLowerCase() == 'application/pdf';
 
+  bool _isText(FileItem f) {
+    final mime = (f.mimeType ?? '').toLowerCase();
+    return mime.startsWith('text/') ||
+        [
+          'txt',
+          'md',
+          'markdown',
+          'json',
+          'csv',
+          'log',
+          'xml',
+          'yaml',
+          'yml',
+        ].contains(_ext(f));
+  }
+
+  bool _isAudio(FileItem f) {
+    final mime = (f.mimeType ?? '').toLowerCase();
+    return mime.startsWith('audio/') ||
+        ['mp3', 'm4a', 'wav', 'aac', 'flac', 'ogg', 'opus'].contains(_ext(f));
+  }
+
+  String _previewKind(FileItem f) {
+    if (_isPdf(f)) return 'PDF 文档';
+    if (_isImage(f)) return '图片';
+    if (_isText(f)) return '文本';
+    if (_isAudio(f)) return '音频';
+    if (_isStreamable(f)) return '音视频';
+    return '文件';
+  }
+
+  bool _canPreview(FileItem f) =>
+      _isPdf(f) || _isImage(f) || _isText(f) || _isAudio(f) || _isStreamable(f);
+
   bool _isStreamable(FileItem f) => [
         'mp4',
         'mov',
@@ -204,6 +241,225 @@ class _FilesScreenState extends State<FilesScreen> {
         'ogg',
         'pdf',
       ].contains(_ext(f));
+
+  Future<void> _showFileInfo(FileItem f) async {
+    final palette = AppPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: palette.primarySoft,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        _isPdf(f)
+                            ? Icons.picture_as_pdf_outlined
+                            : _isImage(f)
+                                ? Icons.image_outlined
+                                : _isAudio(f)
+                                    ? Icons.audio_file_outlined
+                                    : Icons.insert_drive_file_outlined,
+                        color: palette.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            f.originalName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: palette.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${_previewKind(f)} · ${f.sizeFormatted}'
+                            '${f.createdAt.isNotEmpty ? ' · ${f.createdAt.substring(0, 10)}' : ''}',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: palette.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (f.tags.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 5,
+                    children: [
+                      for (final tag in f.tags)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: palette.primarySoft,
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: Text(
+                            tag,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: palette.primary,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                if (_canPreview(f))
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading:
+                        Icon(Icons.visibility_outlined, color: palette.primary),
+                    title: Text(
+                      _isAudio(f) ? '播放' : '预览',
+                      style: TextStyle(color: palette.ink),
+                    ),
+                    subtitle: Text(
+                      '在 App 内打开，不跳转浏览器',
+                      style: TextStyle(fontSize: 10, color: palette.muted),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _preview(f);
+                    },
+                  ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.download_rounded, color: palette.primary),
+                  title: Text('下载到本机', style: TextStyle(color: palette.ink)),
+                  subtitle: Text(
+                    '需要确认后才会开始下载',
+                    style: TextStyle(fontSize: 10, color: palette.muted),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _downloadFile(f);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.link_rounded, color: palette.primary),
+                  title: Text('复制分享链接', style: TextStyle(color: palette.ink)),
+                  subtitle: Text(
+                    '生成临时访问链接',
+                    style: TextStyle(fontSize: 10, color: palette.muted),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _shareLink(f);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.share_outlined, color: palette.primary),
+                  title: Text('系统分享', style: TextStyle(color: palette.ink)),
+                  subtitle: Text(
+                    '下载后通过系统分享面板发送',
+                    style: TextStyle(fontSize: 10, color: palette.muted),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _shareFile(f);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _downloadFile(FileItem f) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('下载到本机？'),
+        content: Text('${f.originalName}\n${f.sizeFormatted}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('下载'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      File? downloaded;
+      await _withProgress('正在下载', (onProgress) async {
+        downloaded = await FileTransferService().download(
+          f.id,
+          f.originalName,
+          onProgress: onProgress,
+        );
+      });
+      if (!mounted || downloaded == null) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('下载完成'),
+          content: SelectableText(
+            downloaded!.path,
+            style: const TextStyle(fontSize: 11),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('关闭'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Share.shareXFiles(
+                  [XFile(downloaded!.path)],
+                  text: f.originalName,
+                );
+              },
+              child: const Text('分享'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('下载失败: $e')),
+      );
+    }
+  }
 
   Future<void> _preview(FileItem f) async {
     if (_isPdf(f)) {
@@ -252,6 +508,30 @@ class _FilesScreenState extends State<FilesScreen> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('预览失败: $e')));
       }
+      return;
+    }
+    if (_isText(f)) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TextPreviewScreen(
+            fileId: f.id,
+            filename: f.originalName,
+          ),
+        ),
+      );
+      return;
+    }
+    if (_isAudio(f)) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AudioPreviewScreen(
+            fileId: f.id,
+            filename: f.originalName,
+          ),
+        ),
+      );
       return;
     }
     if (_isStreamable(f)) {
@@ -660,7 +940,7 @@ class _FilesScreenState extends State<FilesScreen> {
                               ),
                               onTap: f.isFolder
                                   ? () => _openFolder(f)
-                                  : () => _preview(f),
+                                  : () => _showFileInfo(f),
                               trailing: PopupMenuButton<String>(
                                 icon: const Icon(Icons.more_vert, size: 18),
                                 onSelected: (v) => _handleMenu(v, f),
