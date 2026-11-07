@@ -29,13 +29,7 @@ class ChatBubble extends StatelessWidget {
 
     final bubble = Container(
       constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.80,
-      ),
-      margin: EdgeInsets.only(
-        top: 4,
-        bottom: 4,
-        left: isUser ? 44 : 0,
-        right: isUser ? 0 : 10,
+        maxWidth: MediaQuery.of(context).size.width * 0.72,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
@@ -59,10 +53,10 @@ class ChatBubble extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: isUser
-                ? palette.primary.withValues(alpha: 0.20)
+                ? palette.primary.withValues(alpha: 0.18)
                 : palette.ink.withValues(alpha: 0.04),
-            blurRadius: isUser ? 14 : 10,
-            offset: const Offset(0, 4),
+            blurRadius: isUser ? 12 : 8,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -174,47 +168,58 @@ class ChatBubble extends StatelessWidget {
             ),
     );
 
-    if (isUser) {
-      return Align(alignment: Alignment.centerRight, child: bubble);
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _AssistantAvatar(palette: palette),
-        const SizedBox(width: 8),
-        Flexible(child: bubble),
-      ],
+    final avatar = _ChatAvatar(isUser: isUser, palette: palette);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isUser) ...[avatar, const SizedBox(width: 8)],
+          Flexible(child: bubble),
+          if (isUser) ...[const SizedBox(width: 8), avatar],
+        ],
+      ),
     );
   }
 }
 
-class _AssistantAvatar extends StatelessWidget {
-  const _AssistantAvatar({required this.palette});
+class _ChatAvatar extends StatelessWidget {
+  const _ChatAvatar({required this.isUser, required this.palette});
 
+  final bool isUser;
   final AppPalette palette;
 
   @override
   Widget build(BuildContext context) {
+    final colors = isUser
+        ? [palette.accent.withValues(alpha: 0.72), palette.accent]
+        : [palette.primaryLight, palette.primary];
     return Container(
       width: 30,
       height: 30,
-      margin: const EdgeInsets.only(top: 6),
+      margin: const EdgeInsets.only(top: 2),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [palette.primaryLight, palette.primary],
+          colors: colors,
         ),
         borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withValues(alpha: 0.18),
+            color: colors.last.withValues(alpha: 0.18),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
         ],
       ),
-      child: const Icon(Icons.auto_awesome, size: 15, color: Colors.white),
+      child: Icon(
+        isUser ? Icons.person_rounded : Icons.auto_awesome,
+        size: 15,
+        color: Colors.white,
+      ),
     );
   }
 }

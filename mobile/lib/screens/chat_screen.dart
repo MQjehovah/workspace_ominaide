@@ -1070,8 +1070,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                             !_loading &&
                                             message.role == 'assistant' &&
                                             !message.error)
-                                          Align(
-                                            alignment: Alignment.centerRight,
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              left: 38,
+                                              top: 1,
+                                              bottom: 3,
+                                            ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
@@ -1158,15 +1162,10 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 4, 10, 8),
       decoration: BoxDecoration(
-        color: palette.card.withValues(alpha: 0.86),
-        border: Border(bottom: BorderSide(color: palette.line)),
-        boxShadow: [
-          BoxShadow(
-            color: palette.ink.withValues(alpha: 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        color: Colors.transparent,
+        border: Border(
+          bottom: BorderSide(color: palette.line.withValues(alpha: 0.65)),
+        ),
       ),
       child: Row(
         children: [
@@ -1432,7 +1431,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           Container(
-            padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
+            padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
             decoration: BoxDecoration(
               color: palette.card,
               borderRadius: BorderRadius.circular(24),
@@ -1446,14 +1445,14 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 InkWell(
                   onTap: _showReferences,
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
-                    width: 36,
-                    height: 36,
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
                       color: palette.primarySoft,
                       shape: BoxShape.circle,
@@ -1475,6 +1474,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     onSubmitted: (_) => _send(),
                     style: TextStyle(fontSize: 14, color: palette.ink),
                     cursorColor: palette.primary,
+                    textAlignVertical: TextAlignVertical.center,
                     decoration: InputDecoration(
                       hintText: '继续问，或让我处理一件事…',
                       isDense: true,
@@ -1484,7 +1484,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       focusedBorder: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 6,
-                        vertical: 10,
+                        vertical: 9,
                       ),
                     ),
                   ),
@@ -1496,8 +1496,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     onTap: _loading ? null : _toggleVoice,
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
-                      width: 36,
-                      height: 36,
+                      width: 38,
+                      height: 38,
                       decoration: BoxDecoration(
                         color:
                             _listening ? palette.accent : palette.primarySoft,
@@ -1524,13 +1524,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       child: Opacity(
                         opacity: enabled ? 1 : 0.45,
                         child: Container(
-                          width: 40,
-                          height: 40,
+                          width: 38,
+                          height: 38,
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [palette.primaryLight, palette.primary],
                             ),
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(13),
                             boxShadow: [
                               BoxShadow(
                                 color: palette.primary.withValues(alpha: 0.24),
