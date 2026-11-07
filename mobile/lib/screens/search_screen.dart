@@ -16,6 +16,7 @@ class _SearchScreenState extends State<SearchScreen> {
   List<FileItem> _files = [];
   List<Map<String, dynamic>> _items = [];
   List<Map<String, dynamic>> _semantic = [];
+  List<Map<String, dynamic>> _context = [];
 
   Future<void> _search() async {
     final q = _controller.text.trim();
@@ -26,18 +27,27 @@ class _SearchScreenState extends State<SearchScreen> {
       _files = [];
       _items = [];
       _semantic = [];
+      _context = [];
     });
     try {
       final result = await _api.searchAll(q);
       if (!mounted) return;
+      final context = await _api.buildContext(q);
+      if (!mounted) return;
       setState(() {
         _files = (result['files'] as List? ?? []).cast<FileItem>();
         _items = (result['items'] as List? ?? []).cast<Map<String, dynamic>>();
-        _semantic = (result['semantic'] as List? ?? []).cast<Map<String, dynamic>>();
+        _semantic =
+            (result['semantic'] as List? ?? []).cast<Map<String, dynamic>>();
+        _context = (context['items'] as List? ?? const [])
+            .whereType<Map>()
+            .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+            .toList();
       });
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('搜索失败')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('搜索失败')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -52,7 +62,8 @@ class _SearchScreenState extends State<SearchScreen> {
           controller: _controller,
           autofocus: true,
           textInputAction: TextInputAction.search,
-          decoration: const InputDecoration(hintText: '搜索文件 / 资讯 / 笔记', border: InputBorder.none),
+          decoration: const InputDecoration(
+              hintText: '搜索文件 / 资讯 / 笔记', border: InputBorder.none),
           onSubmitted: (_) => _search(),
         ),
         actions: [
@@ -62,40 +73,68 @@ class _SearchScreenState extends State<SearchScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : (_query.isEmpty
-              ? const Center(child: Text('输入关键词搜索你的数据', style: TextStyle(color: Colors.grey)))
+              ? const Center(
+                  child:
+                      Text('输入关键词搜索你的数据', style: TextStyle(color: Colors.grey)))
               : _buildResults()),
     );
   }
 
   Widget _buildResults() {
-    final total = _files.length + _items.length + _semantic.length;
+    final total =
+        _files.length + _items.length + _semantic.length + _context.length;
     if (total == 0) {
-      return const Center(child: Text('无匹配结果', style: TextStyle(color: Colors.grey)));
+      return const Center(
+          child: Text('无匹配结果', style: TextStyle(color: Colors.grey)));
     }
     return ListView(
       children: [
         if (_files.isNotEmpty) ...[
           _sectionTitle('文件', Icons.folder_outlined),
           ..._files.map((f) => ListTile(
-            leading: const Icon(Icons.insert_drive_file_outlined),
-            title: Text(f.originalName, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(f.mimeType ?? '文件'),
-          )),
+                leading: const Icon(Icons.insert_drive_file_outlined),
+                title: Text(f.originalName,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(f.mimeType ?? '文件'),
+              )),
         ],
         if (_items.isNotEmpty) ...[
           _sectionTitle('资讯', Icons.article_outlined),
           ..._items.map((a) => ListTile(
-            leading: const Icon(Icons.newspaper),
-            title: Text((a['title'] as String?) ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-          )),
+                leading: const Icon(Icons.newspaper),
+                title: Text((a['title'] as String?) ?? '',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              )),
+        ],
+        if (_context.isNotEmpty) ...[
+          _sectionTitle('知识上下文', Icons.hub_outlined),
+          ..._context.map((item) => ListTile(
+                leading: const Icon(Icons.link_rounded),
+                title: Text(
+                  (item['title'] ?? '').toString(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '[${item['type']}] ${item['snippet'] ?? ''}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Text(
+                  (item['citation'] ?? '').toString(),
+                  style: const TextStyle(fontSize: 9, color: Colors.grey),
+                ),
+              )),
         ],
         if (_semantic.isNotEmpty) ...[
           _sectionTitle('语义搜索', Icons.auto_awesome),
           ..._semantic.map((s) => ListTile(
-            leading: const Icon(Icons.tips_and_updates_outlined),
-            title: Text((s['title'] as String?) ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text((s['snippet'] as String?) ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
-          )),
+                leading: const Icon(Icons.tips_and_updates_outlined),
+                title: Text((s['title'] as String?) ?? '',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text((s['snippet'] as String?) ?? '',
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+              )),
         ],
       ],
     );
@@ -107,7 +146,9 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Row(children: [
         Icon(icon, size: 16, color: Colors.grey),
         const SizedBox(width: 6),
-        Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey)),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey)),
       ]),
     );
   }

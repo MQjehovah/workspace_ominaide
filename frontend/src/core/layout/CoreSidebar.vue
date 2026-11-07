@@ -77,6 +77,10 @@
         <el-icon><Monitor /></el-icon>
         <span>插件市场</span>
       </el-menu-item>
+      <el-menu-item v-if="isAdmin" index="/admin/capabilities">
+        <el-icon><Odometer /></el-icon>
+        <span>能力中心</span>
+      </el-menu-item>
       <el-menu-item index="/mcp">
         <el-icon><Connection /></el-icon>
         <span>MCP 管理</span>
@@ -109,7 +113,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   Folder, Document, User, UserFilled, Monitor, Setting, SwitchButton,
   DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound,
-  Sunrise, Message, ChatLineRound, Connection,
+  Sunrise, Message, ChatLineRound, Connection, Odometer,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 

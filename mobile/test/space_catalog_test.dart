@@ -43,6 +43,7 @@ void main() {
         'notifications',
         'schedule',
         'minutes',
+        'agent',
         'todo',
         'projects',
         'insights',

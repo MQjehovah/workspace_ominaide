@@ -76,6 +76,12 @@ List<SpaceGroupSpec> buildSpaceCatalog({
           icon: Icons.mic_rounded,
           color: orange,
         ),
+        const SpaceItemSpec(
+          key: 'agent',
+          label: 'AI 任务',
+          icon: Icons.auto_awesome_motion_rounded,
+          color: purple,
+        ),
         _item('todo', '待办', Icons.check_circle_outline_rounded, orange,
             todoCount),
         _item('projects', '项目', Icons.grid_view_outlined, purple, projectCount),

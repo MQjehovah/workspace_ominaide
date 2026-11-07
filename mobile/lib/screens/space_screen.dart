@@ -11,6 +11,7 @@ import '../services/refresh_bus.dart';
 import '../services/seen_state_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'agent_tasks_screen.dart';
 import 'automation_screen.dart';
 import 'device_screen.dart';
 import 'dingtalk_actions_screen.dart';
@@ -250,6 +251,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       'notifications' => const NotificationsScreen(),
       'schedule' => const ScheduleScreen(),
       'minutes' => const MeetingMinutesScreen(),
+      'agent' => const AgentTasksScreen(),
       'todo' => const TodoScreen(),
       'projects' => const ProjectsScreen(),
       'insights' => const InsightsScreen(),

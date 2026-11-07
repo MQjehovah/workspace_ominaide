@@ -1369,6 +1369,50 @@ class ApiService {
         .toList();
   }
 
+  // -- Agent tasks --
+  Future<List<Map<String, dynamic>>> listAgentTasks({int limit = 50}) async {
+    final res = await get('/agent/tasks?limit=$limit');
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    if (data is! List) return [];
+    return data
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> createAgentTask(
+    String goal, {
+    int? botId,
+  }) async {
+    final res = await post('/agent/tasks', {
+      'goal': goal,
+      if (botId != null) 'bot_id': botId,
+    });
+    if (res.statusCode != 200 && res.statusCode != 202) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> getAgentTask(int id) async {
+    final res = await get('/agent/tasks/$id');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<void> cancelAgentTask(int id) async {
+    final res = await post('/agent/tasks/$id/cancel', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<Map<String, dynamic>> buildContext(String query) async {
+    final res =
+        await get('/context/build?q=${Uri.encodeQueryComponent(query)}');
+    if (res.statusCode != 200) return {};
+    return _asMap(decodeJson(res));
+  }
+
   Future<List<Map<String, dynamic>>> listSourceItems({int limit = 30}) async {
     final res = await get('/sources/items?page_size=$limit');
     if (res.statusCode != 200) return [];

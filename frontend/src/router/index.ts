@@ -105,6 +105,12 @@ const router = createRouter({
           component: () => import('@/views/AdminPlugins.vue')
         },
         {
+          path: 'admin/capabilities',
+          name: 'Capabilities',
+          meta: { title: '能力中心', admin: true },
+          component: () => import('@/views/Capabilities.vue')
+        },
+        {
           path: 'mcp',
           name: 'McpServers',
           meta: { title: 'MCP 管理' },
