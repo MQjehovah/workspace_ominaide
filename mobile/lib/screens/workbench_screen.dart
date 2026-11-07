@@ -129,7 +129,8 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
 
   int get _dueToday {
     final now = DateTime.now();
-    final end = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    final end =
+        DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
     var count = 0;
     for (final todo in _todos) {
       final due = DateTime.tryParse('${todo['due_date'] ?? ''}');
@@ -212,21 +213,23 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                     const SizedBox(height: 9),
                     _buildTodayCard(palette),
                     const SizedBox(height: 9),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: _buildInboxCard(
-                            palette,
-                            inboxCount,
-                            urgent,
-                            sourceCounts,
-                            _unreadNotifications,
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _buildInboxCard(
+                              palette,
+                              inboxCount,
+                              urgent,
+                              sourceCounts,
+                              _unreadNotifications,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(child: _buildBriefCard(palette)),
-                      ],
+                          const SizedBox(width: 9),
+                          Expanded(child: _buildBriefCard(palette)),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 9),
                     _buildFilesCard(palette),
@@ -436,12 +439,11 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Row(
                 children: [
-                  Icon(Icons.event_available_outlined, size: 16, color: palette.muted),
+                  Icon(Icons.event_available_outlined,
+                      size: 16, color: palette.muted),
                   const SizedBox(width: 6),
                   Text(
-                    allEnded
-                        ? '今天的日程已结束。'
-                        : '今天没有日程，适合推进长期任务。',
+                    allEnded ? '今天的日程已结束。' : '今天没有日程，适合推进长期任务。',
                     style: TextStyle(fontSize: 11.5, color: palette.muted),
                   ),
                 ],
@@ -477,7 +479,8 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                       ),
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, size: 16, color: palette.muted),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 16, color: palette.muted),
                 ],
               ),
             ),
@@ -620,7 +623,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
               color: palette.ink.withValues(alpha: 0.82),
             ),
           ),
-          const SizedBox(height: 8),
+          const Spacer(),
           Text(
             '查看今日简报 →',
             style: TextStyle(
@@ -647,7 +650,8 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
               color: palette.primarySoft,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(Icons.folder_outlined, size: 16, color: palette.primary),
+            child:
+                Icon(Icons.folder_outlined, size: 16, color: palette.primary),
           ),
           const SizedBox(width: 9),
           Expanded(

@@ -334,6 +334,7 @@ class _InboxScreenState extends State<InboxScreen> {
                     onTap: () => setState(() => _filter = filter.$1),
                     borderRadius: BorderRadius.circular(18),
                     child: Container(
+                      alignment: Alignment.center,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 13,
                         vertical: 6,
@@ -361,7 +362,8 @@ class _InboxScreenState extends State<InboxScreen> {
             const SizedBox(height: 8),
             Expanded(
               child: _loading
-                  ? Center(child: CircularProgressIndicator(color: palette.primary))
+                  ? Center(
+                      child: CircularProgressIndicator(color: palette.primary))
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,

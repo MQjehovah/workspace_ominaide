@@ -186,7 +186,9 @@ class _MailScreenState extends State<MailScreen> {
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
-        child: widget.detailId == null ? _buildList(palette) : _buildDetail(palette),
+        child: widget.detailId == null
+            ? _buildList(palette)
+            : _buildDetail(palette),
       ),
     );
   }
@@ -197,6 +199,7 @@ class _MailScreenState extends State<MailScreen> {
       onTap: () => setState(() => _filter = key),
       borderRadius: BorderRadius.circular(18),
       child: Container(
+        alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? palette.primary : palette.card,
@@ -223,9 +226,8 @@ class _MailScreenState extends State<MailScreen> {
         PageHeader(
           kicker: 'Mail',
           title: '邮件',
-          subtitle: _loading
-              ? '加载中'
-              : '$_unreadCount 封未读 · 共 ${_messages.length} 封',
+          subtitle:
+              _loading ? '加载中' : '$_unreadCount 封未读 · 共 ${_messages.length} 封',
           actions: [
             RoundIconButton(
               icon: Icons.arrow_back_rounded,
@@ -276,39 +278,41 @@ class _MailScreenState extends State<MailScreen> {
                         )
                       : _visibleMessages.isEmpty
                           ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          children: [
-                            const SizedBox(height: 50),
-                            EmptyState(
-                              icon: Icons.mail_outline_rounded,
-                              title: _filter == 'unread' ? '没有未读邮件' : '还没有邮件',
-                              subtitle: _filter == 'unread'
-                                  ? '所有邮件都已读完。'
-                                  : '在 Web 或桌面端配置邮箱后，邮件会同步到这里。',
-                            ),
-                          ],
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                          itemCount: _visibleMessages.length,
-                          itemBuilder: (context, index) {
-                            final message = _visibleMessages[index];
-                            return _MailRow(
-                              message: message,
-                              onTap: () async {
-                                final id = message['id'];
-                                if (id is! int) return;
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => MailScreen(detailId: id),
-                                  ),
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 50),
+                                EmptyState(
+                                  icon: Icons.mail_outline_rounded,
+                                  title:
+                                      _filter == 'unread' ? '没有未读邮件' : '还没有邮件',
+                                  subtitle: _filter == 'unread'
+                                      ? '所有邮件都已读完。'
+                                      : '在 Web 或桌面端配置邮箱后，邮件会同步到这里。',
+                                ),
+                              ],
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                              itemCount: _visibleMessages.length,
+                              itemBuilder: (context, index) {
+                                final message = _visibleMessages[index];
+                                return _MailRow(
+                                  message: message,
+                                  onTap: () async {
+                                    final id = message['id'];
+                                    if (id is! int) return;
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            MailScreen(detailId: id),
+                                      ),
+                                    );
+                                    if (mounted) _loadList();
+                                  },
                                 );
-                                if (mounted) _loadList();
                               },
-                            );
-                          },
-                        ),
+                            ),
                 ),
         ),
       ],
@@ -452,9 +456,8 @@ class _MailRow extends StatelessWidget {
         onTap: onTap,
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
         color: unread ? palette.primarySoft : null,
-        borderColor: unread
-            ? palette.primary.withValues(alpha: 0.28)
-            : palette.line,
+        borderColor:
+            unread ? palette.primary.withValues(alpha: 0.28) : palette.line,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -555,7 +558,8 @@ class _MailRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    (message['ai_summary'] ?? message['preview'] ?? '').toString(),
+                    (message['ai_summary'] ?? message['preview'] ?? '')
+                        .toString(),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

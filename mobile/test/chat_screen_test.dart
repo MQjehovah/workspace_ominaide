@@ -15,7 +15,8 @@ void main() {
     expect(find.text('帮我看看今天的安排'), findsOneWidget);
   });
 
-  testWidgets('shows typing indicator for empty streaming assistant', (tester) async {
+  testWidgets('shows typing indicator for empty streaming assistant',
+      (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
@@ -41,7 +42,7 @@ void main() {
       ),
     );
     expect(find.text('回复失败'), findsOneWidget);
-    await tester.tap(find.text('重试'));
+    await tester.tap(find.text('点击重试'));
     expect(retried, isTrue);
   });
 }

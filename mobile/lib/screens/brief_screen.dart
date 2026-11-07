@@ -88,7 +88,8 @@ class _BriefScreenState extends State<BriefScreen> {
             const SizedBox(height: 8),
             Expanded(
               child: _loading
-                  ? Center(child: CircularProgressIndicator(color: palette.primary))
+                  ? Center(
+                      child: CircularProgressIndicator(color: palette.primary))
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
@@ -117,6 +118,7 @@ class _BriefScreenState extends State<BriefScreen> {
       onTap: () => setState(() => _tab = value),
       borderRadius: BorderRadius.circular(18),
       child: Container(
+        alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? palette.primary : palette.card,
@@ -323,8 +325,10 @@ class _BriefScreenState extends State<BriefScreen> {
               Row(
                 children: [
                   _stat(palette, '${weekly.stats['todos_done'] ?? 0}', '完成待办'),
-                  _stat(palette, '${weekly.stats['todos_pending'] ?? 0}', '进行中'),
-                  _stat(palette, '${weekly.stats['insight_days'] ?? 0}', '回顾天数'),
+                  _stat(
+                      palette, '${weekly.stats['todos_pending'] ?? 0}', '进行中'),
+                  _stat(
+                      palette, '${weekly.stats['insight_days'] ?? 0}', '回顾天数'),
                 ],
               ),
             ],
