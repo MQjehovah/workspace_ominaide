@@ -4,12 +4,11 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'appearance_screen.dart';
-import 'brief_screen.dart';
+import 'bots_screen.dart';
 import 'device_screen.dart';
 import 'login_screen.dart';
 import 'mcp_screen.dart';
 import 'memory_screen.dart';
-import 'music_screen.dart';
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'vibecoding_screen.dart';
@@ -285,6 +284,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       palette: palette,
                       children: [
                         _MenuRow(
+                          icon: Icons.smart_toy_outlined,
+                          color: palette.primary,
+                          title: 'AI 角色',
+                          value: '切换助理',
+                          onTap: () => _push(const BotsScreen()),
+                        ),
+                        _MenuRow(
                           icon: Icons.auto_awesome_outlined,
                           color: palette.primary,
                           title: '记忆与关于我',
@@ -292,13 +298,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ? '$_pendingMemories 待审核'
                               : null,
                           onTap: () => _push(const MemoryScreen()),
-                        ),
-                        _MenuRow(
-                          icon: Icons.auto_graph_outlined,
-                          color: palette.accent,
-                          title: '幕僚长偏好',
-                          value: '简报 08:30',
-                          onTap: () => _push(const BriefScreen()),
                         ),
                       ],
                     ),
@@ -340,12 +339,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: palette.primary,
                           title: 'MCP 与集成',
                           onTap: () => _push(const McpScreen()),
-                        ),
-                        _MenuRow(
-                          icon: Icons.music_note_outlined,
-                          color: palette.accent,
-                          title: '音乐',
-                          onTap: () => _push(const MusicScreen()),
                         ),
                         _MenuRow(
                           icon: Icons.science_outlined,

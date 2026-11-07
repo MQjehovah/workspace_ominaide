@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
+import '../services/app_lock_service.dart';
+import '../services/music_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/server_settings_dialog.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -15,19 +17,93 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   String _serverUrl = '';
+  int _cacheBytes = 0;
+  bool _appLock = false;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _serverUrl = ApiService().baseUrl;
+    _loadCacheSize();
+    _loadAppLock();
   }
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _loadAppLock() async {
+    final enabled = await AppLockService().isEnabled();
+    if (mounted) setState(() => _appLock = enabled);
+  }
+
+  Future<void> _toggleAppLock(bool value) async {
+    final ok = await AppLockService().authenticate();
+    if (!ok) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('需要先通过 Face ID 或设备密码验证')),
+      );
+      return;
+    }
+    await AppLockService().setEnabled(value);
+    if (mounted) setState(() => _appLock = value);
+  }
+
+  Future<void> _loadCacheSize() async {
+    final bytes = await MusicCache().size();
+    if (mounted) setState(() => _cacheBytes = bytes);
+  }
+
+  Future<void> _clearCache() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清理音乐缓存'),
+        content: Text(
+          '将删除已缓存的音乐（${_fmtBytes(_cacheBytes)}），下次播放时需要重新下载。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清理'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await MusicCache().clear();
+    await _loadCacheSize();
     if (!mounted) return;
-    setState(() {
-      _serverUrl = prefs.getString('serverUrl') ?? '未配置';
-    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('音乐缓存已清理')),
+    );
+  }
+
+  Future<void> _editServer() async {
+    final previous = _serverUrl;
+    final updated = await showServerSettingsDialog(context);
+    if (!mounted || updated == null) return;
+    setState(() => _serverUrl = updated);
+    if (updated == previous) return;
+    final relogin = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('服务器已更新'),
+        content: const Text('服务器地址已保存，需要重新登录才能使用新的服务器。现在重新登录吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('稍后'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('重新登录'),
+          ),
+        ],
+      ),
+    );
+    if (relogin == true) await _logout();
   }
 
   Future<void> _logout() async {
@@ -66,7 +142,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   AppCard(
                     child: Column(
                       children: [
-                        _row(palette, '服务器', _serverUrl),
+                        _row(palette, '服务器', _serverUrl, onTap: _editServer),
+                        Divider(height: 18, color: palette.line),
+                        _row(palette, '音乐缓存', _fmtBytes(_cacheBytes),
+                            onTap: _clearCache,
+                            trailingIcon: Icons.delete_outline),
+                        Divider(height: 18, color: palette.line),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: _appLock,
+                          onChanged: _toggleAppLock,
+                          title: Text(
+                            '应用锁',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: palette.ink,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '打开或切回前台时使用 Face ID / 设备密码',
+                            style: TextStyle(fontSize: 10.5, color: palette.muted),
+                          ),
+                        ),
                         Divider(height: 18, color: palette.line),
                         _row(palette, '版本', '1.0.0'),
                         Divider(height: 18, color: palette.line),
@@ -105,8 +204,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _row(AppPalette palette, String label, String value) {
-    return Row(
+  String _fmtBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  Widget _row(AppPalette palette, String label, String value,
+      {VoidCallback? onTap, IconData trailingIcon = Icons.edit_outlined}) {
+    final row = Row(
       children: [
         Text(
           label,
@@ -126,7 +235,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: TextStyle(fontSize: 11, color: palette.muted),
           ),
         ),
+        if (onTap != null) ...[
+          const SizedBox(width: 6),
+          Icon(trailingIcon, size: 14, color: palette.muted),
+        ],
       ],
+    );
+    if (onTap == null) return row;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: row,
+      ),
     );
   }
 }

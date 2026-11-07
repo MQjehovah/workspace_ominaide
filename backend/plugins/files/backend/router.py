@@ -1,4 +1,5 @@
 import io
+import os
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Request
 from fastapi.responses import StreamingResponse, Response
@@ -51,9 +52,18 @@ async def direct_upload_file(
         folder_path=folder_path,
     )
     upload_url, file_id, object_key = await file_service.generate_upload_url(db, user["id"], req)
-    content = await file.read()
     if minio_client:
-        minio_client.put_object("user-files", object_key, io.BytesIO(content), len(content))
+        upload = file.file
+        upload.seek(0, os.SEEK_END)
+        size = upload.tell()
+        upload.seek(0)
+        minio_client.put_object(
+            "user-files",
+            object_key,
+            upload,
+            size,
+            content_type=req.mime_type or "application/octet-stream",
+        )
     record = await file_service.confirm_upload(db, user["id"], file_id)
     return {"id": record.id, "object_key": object_key}
 
@@ -220,6 +230,33 @@ async def get_download_url(
     else:
         url = None
     return {"download_url": url, "filename": file_record.original_name, "file_id": file_id}
+
+
+@router.post("/{file_id}/share")
+async def share_file_link(
+    file_id: int,
+    expires_hours: int = Query(168, ge=1, le=24 * 30),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import timedelta
+    from core.minio.client import minio_client, public_minio_url
+
+    file_record = await file_service.get_file(db, user["id"], file_id)
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+    if minio_client is None:
+        raise HTTPException(status_code=503, detail="MinIO unavailable")
+    url = minio_client.presigned_get_object(
+        file_record.bucket,
+        file_record.object_key,
+        expires=timedelta(hours=expires_hours),
+    )
+    return {
+        "url": public_minio_url(url),
+        "filename": file_record.original_name,
+        "expires_hours": expires_hours,
+    }
 
 
 @router.get("/{file_id}/download")

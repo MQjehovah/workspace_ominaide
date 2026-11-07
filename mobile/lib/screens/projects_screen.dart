@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'project_runs_screen.dart';
 
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({super.key});
@@ -100,6 +101,20 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: AppCard(
+                                    onTap: () {
+                                      final id = (project['id'] as num?)?.toInt();
+                                      if (id == null) return;
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ProjectRunsScreen(
+                                            projectId: id,
+                                            projectName:
+                                                (project['name'] ?? '项目').toString(),
+                                          ),
+                                        ),
+                                      );
+                                    },
                                     child: Row(
                                       children: [
                                         Container(

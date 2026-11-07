@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../services/local_reminder_service.dart';
 import '../services/notification_service.dart';
+import '../services/refresh_bus.dart';
 import '../widgets/navigation_shell.dart';
 import 'chat_screen.dart';
 import 'profile_screen.dart';
@@ -26,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     NotificationService().start(_showNotification);
+    LocalReminderService().syncAll();
   }
 
   @override
@@ -46,9 +49,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const NavigationShell(
+    return NavigationShell(
       initialIndex: 1,
       pages: _pages,
+      onTabChanged: (index) {
+        if (index == 1) RefreshBus.bump('workbench');
+        if (index == 2) RefreshBus.bump('space');
+      },
     );
   }
 }

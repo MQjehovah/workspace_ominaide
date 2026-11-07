@@ -2,16 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cos_models.dart';
+import '../models/file_item.dart';
 import '../models/space_catalog.dart';
 import '../services/api_service.dart';
 import '../services/cos_repository.dart';
+import '../services/event_time.dart';
+import '../services/refresh_bus.dart';
+import '../services/seen_state_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
-import 'brief_screen.dart';
+import 'automation_screen.dart';
 import 'device_screen.dart';
+import 'dingtalk_actions_screen.dart';
 import 'files_screen.dart';
+import 'insights_screen.dart';
 import 'inbox_screen.dart';
 import 'mail_screen.dart';
+import 'meeting_minutes_screen.dart';
 import 'music_screen.dart';
 import 'notes_screen.dart';
 import 'notifications_screen.dart';
@@ -45,12 +52,24 @@ class _SpaceScreenState extends State<SpaceScreen> {
   Set<String> _hidden = {};
 
   static const _hiddenKey = 'space.hidden';
+  late final ValueNotifier<int> _refresh = RefreshBus.signal('space');
 
   @override
   void initState() {
     super.initState();
+    _refresh.addListener(_onRefreshSignal);
     _loadHidden();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _refresh.removeListener(_onRefreshSignal);
+    super.dispose();
+  }
+
+  void _onRefreshSignal() {
+    if (mounted) _load(force: true);
   }
 
   Future<void> _loadHidden() async {
@@ -133,7 +152,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
                         contentPadding: EdgeInsets.zero,
                         dense: true,
                         value: !_hidden.contains(item.key),
-                        activeThumbColor: palette.primary,
+                        thumbColor: WidgetStatePropertyAll(palette.primary),
                         title: Text(
                           item.label,
                           style: TextStyle(fontSize: 13, color: palette.ink),
@@ -189,23 +208,35 @@ class _SpaceScreenState extends State<SpaceScreen> {
     final events = (results[2] as List<Map<String, dynamic>>?) ?? [];
     final todos = (results[3] as List<Map<String, dynamic>>?) ?? [];
     final projects = (results[4] as List<Map<String, dynamic>>?) ?? [];
-    final files = (results[5] as List<dynamic>?) ?? [];
+    final files = (results[5] as List?)?.whereType<FileItem>().toList() ??
+        const <FileItem>[];
     final sources = (results[6] as List<Map<String, dynamic>>?) ?? [];
-    final sourceCounts = triage?.countsBySource() ?? const <String, int>{};
     final notificationUnread =
         notifications.where((n) => n['read'] == false).length;
 
+    // File badges show files added since the user last opened Files.
+    final filesSeenAt = await SeenStateService().filesSeenAt();
+    final filesBaseline = filesSeenAt ?? DateTime.now();
+    if (filesSeenAt == null) {
+      await SeenStateService().markFilesSeen(filesBaseline);
+    }
+    final newFiles = files.where((file) {
+      final created = DateTime.tryParse(file.createdAt)?.toLocal();
+      return created != null && created.isAfter(filesBaseline);
+    }).length;
+
     setState(() {
       _error = results.every((value) => value == null);
-      _mail = sourceCounts['mail'] ?? 0;
-      _dingtalk = sourceCounts['dingtalk'] ?? 0;
+      // Mail/files/sources badges describe unread or new content, not totals.
+      _mail = triage?.unreadCount('mail') ?? 0;
+      _dingtalk = triage?.bySource('dingtalk').length ?? 0;
       _notifications = notificationUnread;
-      _schedule = events.length;
+      _schedule = events.where((event) => !eventHasEnded(event)).length;
       _todos = todos.length;
       _projects = projects.length;
-      _files = files.length;
-      _sources = sources.length;
-      _inboxTotal = (triage?.total ?? 0) + notificationUnread;
+      _files = newFiles;
+      _sources = sources.where((item) => item['read'] != true).length;
+      _inboxTotal = (triage?.pendingCount ?? 0) + notificationUnread;
       _inboxUrgent = triage?.urgentCount ?? 0;
       _loading = false;
     });
@@ -213,13 +244,16 @@ class _SpaceScreenState extends State<SpaceScreen> {
 
   Future<void> _open(String key) async {
     final Widget? target = switch (key) {
+      'inbox' => const InboxScreen(),
       'mail' => const MailScreen(),
-      'dingtalk' => const InboxScreen(initialFilter: 'dingtalk'),
+      'dingtalk' => const DingTalkActionsScreen(),
       'notifications' => const NotificationsScreen(),
       'schedule' => const ScheduleScreen(),
+      'minutes' => const MeetingMinutesScreen(),
       'todo' => const TodoScreen(),
       'projects' => const ProjectsScreen(),
-      'cos' => const BriefScreen(),
+      'insights' => const InsightsScreen(),
+      'automation' => const AutomationScreen(),
       'files' => const FilesScreen(),
       'notes' => const NotesScreen(),
       'sources' => const SourcesScreen(),
@@ -230,6 +264,9 @@ class _SpaceScreenState extends State<SpaceScreen> {
     };
     if (target == null) return;
     await Navigator.push(context, MaterialPageRoute(builder: (_) => target));
+    if (key == 'files') {
+      await SeenStateService().markFilesSeen();
+    }
     if (mounted) _load(force: true);
   }
 
@@ -307,10 +344,13 @@ class _SpaceScreenState extends State<SpaceScreen> {
                   urgent: _inboxUrgent,
                   mail: _mail,
                   dingtalk: _dingtalk,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const InboxScreen()),
-                  ),
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InboxScreen()),
+                    );
+                    if (mounted) _load(force: true);
+                  },
                 ),
               ),
               for (final group in groups) ...[
@@ -394,7 +434,7 @@ class _InboxCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '统一收件箱',
+                  '收件箱',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,

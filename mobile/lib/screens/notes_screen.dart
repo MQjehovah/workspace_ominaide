@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
+import '../services/notes_import_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'note_versions_screen.dart';
+import 'notes_ask_screen.dart';
+import 'meeting_minutes_screen.dart';
+import 'photo_scan_screen.dart';
+import 'voice_note_screen.dart';
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({super.key});
@@ -23,7 +30,10 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Future<void> _loadNotes() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final res = await ApiService().get('/plugins/notes/tree');
       if (res.statusCode == 200) {
@@ -55,16 +65,19 @@ class _NotesScreenState extends State<NotesScreen> {
 
   Future<void> _createNote() async {
     try {
-      final res = await ApiService().post('/plugins/notes', {'title': '无标题', 'content': ''});
+      final res = await ApiService()
+          .post('/plugins/notes', {'title': '无标题', 'content': ''});
       if (res.statusCode == 201) {
         await _loadNotes();
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('创建失败: $e')));
     }
   }
 
@@ -72,17 +85,20 @@ class _NotesScreenState extends State<NotesScreen> {
     final parentId = parent['id'];
     if (parentId == null) return;
     try {
-      final res = await ApiService().post('/plugins/notes', {'title': '无标题', 'content': '', 'parent_id': parentId});
+      final res = await ApiService().post('/plugins/notes',
+          {'title': '无标题', 'content': '', 'parent_id': parentId});
       if (res.statusCode == 201) {
         _collapsed.remove(parentId);
         await _loadNotes();
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('创建失败: $e')));
     }
   }
 
@@ -95,8 +111,12 @@ class _NotesScreenState extends State<NotesScreen> {
         title: const Text('删除笔记'),
         content: Text('确定删除「${note['title'] ?? '无标题'}」?子笔记也会一并删除。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('删除', style: TextStyle(color: Colors.red))),
+          TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('删除', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -106,7 +126,8 @@ class _NotesScreenState extends State<NotesScreen> {
       await _loadNotes();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('删除失败: $e')));
     }
   }
 
@@ -115,9 +136,210 @@ class _NotesScreenState extends State<NotesScreen> {
       _toggleFolder(note);
       return;
     }
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => NoteEditorScreen(note: note, onSaved: _loadNotes),
-    ));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => NoteEditorScreen(note: note, onSaved: _loadNotes),
+        ));
+  }
+
+  Future<void> _openNoteById(int noteId, String title) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NoteEditorScreen(
+          note: {'id': noteId, 'title': title},
+          onSaved: _loadNotes,
+        ),
+      ),
+    );
+    if (mounted) _loadNotes();
+  }
+
+  Future<void> _openAsk() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotesAskScreen(onOpenNote: _openNoteById),
+      ),
+    );
+  }
+
+  Future<void> _showNotesMenu() async {
+    final palette = AppPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.search, color: palette.primary),
+              title: const Text('搜索笔记'),
+              subtitle: const Text('按标题和正文搜索'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _searchNotes();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.file_upload_outlined, color: palette.primary),
+              title: const Text('从文件导入'),
+              subtitle: const Text('PDF / Word / HTML / 文本 / 音频'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importFile();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.link, color: palette.primary),
+              title: const Text('从 URL 导入'),
+              subtitle: const Text('抓取网页正文并生成笔记'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importUrl();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.mic_rounded, color: palette.primary),
+              title: const Text('会议录音纪要'),
+              subtitle: const Text('录音上传一次，自动转写并生成结构化纪要'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MeetingMinutesScreen(
+                      onOpenNote: _openNoteById,
+                    ),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.mic_none_rounded, color: palette.primary),
+              title: const Text('语音笔记'),
+              subtitle: const Text('录音后自动转写并生成笔记'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => VoiceNoteScreen(
+                      onOpenNote: _openNoteById,
+                    ),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading:
+                  Icon(Icons.document_scanner_outlined, color: palette.primary),
+              title: const Text('拍照扫描'),
+              subtitle: const Text('识别纸质文档/白板文字并保存为笔记'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PhotoScanScreen(
+                      onOpenNote: _openNoteById,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _searchNotes() async {
+    final note = await showSearch<Map<String, dynamic>?>(
+      context: context,
+      delegate: _NotesSearchDelegate(),
+    );
+    if (!mounted || note == null) return;
+    _openNote(note);
+  }
+
+  Future<void> _importFile() async {
+    final result = await FilePicker.platform.pickFiles();
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.path == null) return;
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('正在导入，请稍候…')),
+        );
+      }
+      await NotesImportService().importFile(file.path!, file.name);
+      await _loadNotes();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('笔记已导入')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text('导入失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
+  Future<void> _importUrl() async {
+    final ctl = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('从 URL 导入'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            hintText: 'https://example.com/article',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
+            child: const Text('导入'),
+          ),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (!mounted || url == null || url.isEmpty) return;
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('正在抓取网页…')),
+        );
+      }
+      await ApiService().importNoteFromUrl(url);
+      await _loadNotes();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('笔记已导入')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text('导入失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
   }
 
   bool _isFolder(Map<String, dynamic> note) =>
@@ -143,9 +365,7 @@ class _NotesScreenState extends State<NotesScreen> {
       final id = _noteId(note);
       if (id == null) continue;
       final rawParent = note['parent_id'];
-      parents[id] = rawParent is int
-          ? rawParent
-          : int.tryParse('$rawParent');
+      parents[id] = rawParent is int ? rawParent : int.tryParse('$rawParent');
     }
     bool hiddenByAncestor(Map<String, dynamic> note) {
       var parent = parents[_noteId(note)];
@@ -157,6 +377,7 @@ class _NotesScreenState extends State<NotesScreen> {
       }
       return false;
     }
+
     return _notes.where((note) => !hiddenByAncestor(note)).toList();
   }
 
@@ -179,6 +400,18 @@ class _NotesScreenState extends State<NotesScreen> {
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
                   onTap: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 6),
+                RoundIconButton(
+                  icon: Icons.more_horiz,
+                  tooltip: '搜索与导入',
+                  onTap: _showNotesMenu,
+                ),
+                const SizedBox(width: 6),
+                RoundIconButton(
+                  icon: Icons.auto_awesome,
+                  tooltip: '问笔记',
+                  onTap: _openAsk,
                 ),
                 const SizedBox(width: 6),
                 RoundIconButton(
@@ -226,7 +459,8 @@ class _NotesScreenState extends State<NotesScreen> {
                               color: palette.primary,
                               child: ListView.builder(
                                 physics: const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 20),
                                 itemCount: visible.length,
                                 itemBuilder: (_, i) {
                                   final note = visible[i];
@@ -276,7 +510,8 @@ class _NotesScreenState extends State<NotesScreen> {
                                                 folder
                                                     ? (collapsed
                                                         ? Icons.folder_rounded
-                                                        : Icons.folder_open_rounded)
+                                                        : Icons
+                                                            .folder_open_rounded)
                                                     : Icons.article_outlined,
                                                 size: 18,
                                                 color: folder
@@ -371,7 +606,8 @@ class _NotesScreenState extends State<NotesScreen> {
 class NoteEditorScreen extends StatefulWidget {
   final Map<String, dynamic> note;
   final VoidCallback onSaved;
-  const NoteEditorScreen({super.key, required this.note, required this.onSaved});
+  const NoteEditorScreen(
+      {super.key, required this.note, required this.onSaved});
 
   @override
   State<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -421,16 +657,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       if (text != _originalText) {
         payload['content'] = text;
       }
-      final res = await ApiService().put('/plugins/notes/${widget.note['id']}', payload);
+      final res = await ApiService()
+          .put('/plugins/notes/${widget.note['id']}', payload);
       if (res.statusCode == 200) {
         _originalText = text;
         _markdown = text;
         widget.onSaved();
         if (!mounted) return;
         setState(() => _preview = true);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存'), duration: Duration(seconds: 1)));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('已保存'), duration: Duration(seconds: 1)));
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: ${res.statusCode}')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('保存失败: ${res.statusCode}')));
       }
     } catch (_) {}
     if (mounted) setState(() => _saving = false);
@@ -441,6 +680,149 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     _titleCtrl.dispose();
     _contentCtrl.dispose();
     super.dispose();
+  }
+
+  int? get _noteId {
+    final id = widget.note['id'];
+    if (id is int) return id;
+    return int.tryParse('$id');
+  }
+
+  Future<void> _showMore() async {
+    final palette = AppPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.history, color: palette.primary),
+              title: const Text('版本历史'),
+              subtitle: const Text('查看并恢复之前的保存版本'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showVersions();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.hub_outlined, color: palette.primary),
+              title: const Text('相关笔记'),
+              subtitle: const Text('基于语义相似度找相关笔记'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showSimilar();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showVersions() async {
+    final id = _noteId;
+    if (id == null) return;
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NoteVersionsScreen(
+          noteId: id,
+          noteTitle: _titleCtrl.text,
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _loadContent();
+    }
+  }
+
+  Future<void> _showSimilar() async {
+    final id = _noteId;
+    if (id == null) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    List<Map<String, dynamic>> results;
+    try {
+      results = await ApiService().similarNotes(id);
+    } catch (e) {
+      if (mounted) {
+        try {
+          navigator.pop();
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text('查找失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    try {
+      navigator.pop();
+    } catch (_) {}
+    if (results.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有找到相关笔记')),
+      );
+      return;
+    }
+    final palette = AppPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Text(
+              '相关笔记',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: palette.ink,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final item in results)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text((item['title'] ?? '未命名笔记').toString()),
+                subtitle: Text(
+                  (item['snippet'] ?? '').toString(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  final id = (item['note_id'] as num?)?.toInt();
+                  if (id == null) return;
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => NoteEditorScreen(
+                        note: {'id': id, 'title': item['title'] ?? '笔记'},
+                        onSaved: widget.onSaved,
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -500,6 +882,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                         }
                       });
                     },
+                  ),
+                  const SizedBox(width: 6),
+                  RoundIconButton(
+                    icon: Icons.more_horiz,
+                    tooltip: '更多',
+                    onTap: _showMore,
                   ),
                   const SizedBox(width: 6),
                   if (_saving)
@@ -599,6 +987,86 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _NotesSearchDelegate extends SearchDelegate<Map<String, dynamic>?> {
+  _NotesSearchDelegate() : super(searchFieldLabel: '搜索笔记');
+
+  @override
+  List<Widget> buildActions(BuildContext context) => [
+        if (query.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.clear),
+            onPressed: () => query = '',
+          ),
+      ];
+
+  @override
+  Widget buildLeading(BuildContext context) => IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => close(context, null),
+      );
+
+  @override
+  Widget buildResults(BuildContext context) => _build(context);
+
+  @override
+  Widget buildSuggestions(BuildContext context) => _build(context);
+
+  Widget _build(BuildContext context) {
+    final text = query.trim();
+    if (text.isEmpty) {
+      return const Center(child: Text('输入关键词搜索笔记'));
+    }
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: ApiService().searchNotes(text),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              '搜索失败: ${snapshot.error}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          );
+        }
+        final notes = snapshot.data ?? const <Map<String, dynamic>>[];
+        if (notes.isEmpty) {
+          return const Center(child: Text('没有找到相关笔记'));
+        }
+        final palette = AppPalette.of(context);
+        return ListView.builder(
+          itemCount: notes.length,
+          itemBuilder: (context, index) {
+            final note = notes[index];
+            final content =
+                (note['content'] ?? '').toString().replaceAll('\n', ' ');
+            return ListTile(
+              title: Text(
+                (note['title'] ?? '未命名笔记').toString(),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: palette.ink,
+                ),
+              ),
+              subtitle: content.isEmpty
+                  ? null
+                  : Text(
+                      content,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: palette.muted),
+                    ),
+              onTap: () => close(context, note),
+            );
+          },
+        );
+      },
     );
   }
 }

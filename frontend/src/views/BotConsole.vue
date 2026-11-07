@@ -195,6 +195,45 @@
             </div>
           </el-tab-pane>
 
+          <el-tab-pane label="技能" name="skills">
+            <div class="page-card">
+              <div class="page-card-body">
+                <div class="section-head">
+                  <div>
+                    <h4>Agent Skills</h4>
+                    <p>技能默认全开；关闭后当前 Bot 不再使用这个能力。</p>
+                  </div>
+                  <el-button :icon="Refresh" @click="loadSkills">刷新</el-button>
+                </div>
+                <el-table v-loading="loadingSkills" :data="skills" size="small" empty-text="还没有技能">
+                  <el-table-column prop="name" label="名称" width="160" />
+                  <el-table-column label="Key" width="190">
+                    <template #default="{ row }"><code class="mono">{{ row.key }}</code></template>
+                  </el-table-column>
+                  <el-table-column prop="description" label="说明" min-width="320" show-overflow-tooltip />
+                  <el-table-column label="启用" width="90">
+                    <template #default="{ row }">
+                      <el-switch
+                        :model-value="row.enabled !== false"
+                        @change="toggleSkill(row, $event)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="110">
+                    <template #default="{ row }">
+                      <el-button
+                        link
+                        type="primary"
+                        :loading="runningSkill === row.key"
+                        @click="runSkill(row)"
+                      >试运行</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </el-tab-pane>
+
           <el-tab-pane label="运行" name="runs">
             <div class="page-card">
               <div class="page-card-body">
@@ -405,6 +444,11 @@
       </div>
     </el-dialog>
 
+    <!-- Skills -->
+    <el-dialog v-model="skillDialog" :title="`技能试运行 · ${skillTitle}`" width="760px">
+      <pre class="skill-output">{{ skillOutput }}</pre>
+    </el-dialog>
+
     <!-- Routine run history -->
     <el-drawer v-model="routineRunsDrawer" :title="`例程记录 · ${routineRunsTitle}`" size="620px">
       <div v-loading="routineRunsLoading">
@@ -522,7 +566,7 @@ import {
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 
-type TabName = 'settings' | 'routines' | 'memories' | 'runs' | 'approvals'
+type TabName = 'settings' | 'routines' | 'memories' | 'skills' | 'runs' | 'approvals'
 
 const route = useRoute()
 
@@ -533,6 +577,12 @@ const routines = ref<any[]>([])
 const memories = ref<any[]>([])
 const runs = ref<any[]>([])
 const approvals = ref<any[]>([])
+const skills = ref<any[]>([])
+const loadingSkills = ref(false)
+const runningSkill = ref('')
+const skillDialog = ref(false)
+const skillTitle = ref('')
+const skillOutput = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const selectedBot = computed(() => bots.value.find(b => b.id === selectedId.value) || null)
@@ -768,6 +818,47 @@ async function loadMemories() {
   memories.value = r.data || []
 }
 
+async function loadSkills() {
+  if (!selectedId.value) return
+  loadingSkills.value = true
+  try {
+    const r = await client.get(`/bots/${selectedId.value}/skills`)
+    skills.value = r.data?.skills || []
+  } finally {
+    loadingSkills.value = false
+  }
+}
+
+async function toggleSkill(skill: any, enabled: boolean) {
+  if (!selectedId.value) return
+  try {
+    await client.put(`/bots/${selectedId.value}/skills/${skill.key}`, { enabled })
+    skill.enabled = enabled
+    ElMessage.success(enabled ? '技能已开启' : '技能已关闭')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '保存失败')
+    await loadSkills()
+  }
+}
+
+async function runSkill(skill: any) {
+  if (!selectedId.value) return
+  runningSkill.value = skill.key
+  try {
+    const r = await client.post(`/skills/${skill.key}/run`, {
+      bot_id: selectedId.value,
+      input: {},
+    })
+    skillTitle.value = skill.name
+    skillOutput.value = JSON.stringify(r.data?.output ?? r.data, null, 2)
+    skillDialog.value = true
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '运行失败')
+  } finally {
+    runningSkill.value = ''
+  }
+}
+
 async function loadRuns() {
   if (!selectedId.value) return
   const r = await client.get(`/bots/${selectedId.value}/runs?limit=50`)
@@ -785,6 +876,7 @@ async function loadTab() {
     if (tab.value === 'settings') resetBotForm()
     else if (tab.value === 'routines') await loadRoutines()
     else if (tab.value === 'memories') await loadMemories()
+    else if (tab.value === 'skills') await loadSkills()
     else if (tab.value === 'runs') await loadRuns()
     else if (tab.value === 'approvals') await loadApprovals()
   } catch (e: any) {
@@ -1181,6 +1273,19 @@ watch(() => route.query.tab, (value) => {
 .tpl-action { font-size: 12px; color: #409eff; margin-top: 10px; }
 .nl-preview { margin-top: 14px; padding: 12px 14px; border-radius: 8px; background: #f5f9ff; border: 1px solid #d9e9ff; }
 .nl-prompt { margin-top: 8px; font-size: 13px; color: #303133; line-height: 1.7; white-space: pre-wrap; }
+.skill-output {
+  margin: 0;
+  padding: 14px;
+  max-height: 480px;
+  overflow: auto;
+  border-radius: 8px;
+  background: #f5f9ff;
+  border: 1px solid #d9e9ff;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 @media (max-width: 980px) {
   .console-grid { grid-template-columns: 1fr; }
   .bot-list { position: static; }

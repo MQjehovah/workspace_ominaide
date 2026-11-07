@@ -88,12 +88,13 @@ class _MemoryScreenState extends State<MemoryScreen> {
 
   String _kindLabel(String kind) {
     return const {
-      'fact': '事实',
-      'preference': '偏好',
-      'commitment': '承诺',
-      'relationship': '关系',
-      'project': '项目',
-    }[kind] ?? kind;
+          'fact': '事实',
+          'preference': '偏好',
+          'commitment': '承诺',
+          'relationship': '关系',
+          'project': '项目',
+        }[kind] ??
+        kind;
   }
 
   @override
@@ -139,7 +140,8 @@ class _MemoryScreenState extends State<MemoryScreen> {
             const SizedBox(height: 8),
             Expanded(
               child: _loading
-                  ? Center(child: CircularProgressIndicator(color: palette.primary))
+                  ? Center(
+                      child: CircularProgressIndicator(color: palette.primary))
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
@@ -170,6 +172,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
       onTap: () => setState(() => _tab = value),
       borderRadius: BorderRadius.circular(18),
       child: Container(
+        alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? palette.primary : palette.card,
@@ -235,7 +238,8 @@ class _MemoryScreenState extends State<MemoryScreen> {
                     ),
                     SourcePill(
                       label: trust == 'trusted' ? '可信来源' : '外部内容',
-                      color: trust == 'trusted' ? palette.success : palette.accent,
+                      color:
+                          trust == 'trusted' ? palette.success : palette.accent,
                     ),
                     SourcePill(
                       label: '置信度 ${item['confidence'] ?? 0}',
@@ -332,7 +336,8 @@ class _MemoryScreenState extends State<MemoryScreen> {
                         spacing: 5,
                         children: [
                           SourcePill(
-                            label: _kindLabel((item['kind'] ?? 'fact').toString()),
+                            label:
+                                _kindLabel((item['kind'] ?? 'fact').toString()),
                             color: palette.primary,
                           ),
                           SourcePill(
@@ -369,7 +374,8 @@ class _MemoryScreenState extends State<MemoryScreen> {
                               content: const Text('不会删除原始对话或邮件。'),
                               actions: [
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
                                   child: const Text('取消'),
                                 ),
                                 FilledButton(
@@ -563,8 +569,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
             palette,
             '联系人',
             [
-              for (final c in contacts)
-                (c['name'] ?? '').toString(),
+              for (final c in contacts) (c['name'] ?? '').toString(),
             ],
           ),
         ],
@@ -574,8 +579,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
             palette,
             '项目',
             [
-              for (final p in projects)
-                (p['name'] ?? '').toString(),
+              for (final p in projects) (p['name'] ?? '').toString(),
             ],
           ),
         ],

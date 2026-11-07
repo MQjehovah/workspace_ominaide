@@ -4,6 +4,7 @@ import '../models/cos_models.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/loading_state.dart';
 import 'mail_screen.dart';
 import 'schedule_screen.dart';
 import 'todo_screen.dart';
@@ -36,29 +37,33 @@ class _InboxScreenState extends State<InboxScreen> {
     _load();
   }
 
+  Future<T?> _safe<T>(Future<T> future) async {
+    try {
+      return await future;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = false;
     });
     final api = ApiService();
-    TriageSnapshot? triage;
-    List<Map<String, dynamic>> notifications = [];
-    var failed = false;
-    try {
-      triage = await api.getTriage();
-    } catch (_) {
-      failed = true;
-    }
-    try {
-      notifications = await api.listNotifications(limit: 50);
-    } catch (_) {
-      failed = true;
-    }
+    final results = await Future.wait<dynamic>([
+      _safe(api.getTriage()),
+      _safe(api.listNotifications(limit: 50)),
+    ]);
     if (!mounted) return;
+    final triage = results[0] as TriageSnapshot?;
+    final notifications =
+        (results[1] as List<Map<String, dynamic>>?) ?? const [];
+    final failed = results[0] == null || results[1] == null;
     final items = <TriageItem>[];
     if (triage != null) {
-      for (final key in const ['urgent', 'needs_reply', 'today', 'fyi']) {
+      // FYI contains read mail/news; the inbox is only for actionable rows.
+      for (final key in const ['urgent', 'needs_reply', 'today']) {
         items.addAll(triage.groups[key] ?? const []);
       }
     }
@@ -307,7 +312,10 @@ class _InboxScreenState extends State<InboxScreen> {
                   icon: Icons.done_all_rounded,
                   tooltip: '全部已读',
                   onTap: () async {
-                    await ApiService().markNotificationsRead();
+                    await Future.wait([
+                      ApiService().markNotificationsRead(),
+                      ApiService().markAllMailRead(),
+                    ]);
                     await _load();
                   },
                 ),
@@ -327,6 +335,7 @@ class _InboxScreenState extends State<InboxScreen> {
                     onTap: () => setState(() => _filter = filter.$1),
                     borderRadius: BorderRadius.circular(18),
                     child: Container(
+                      alignment: Alignment.center,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 13,
                         vertical: 6,
@@ -354,7 +363,7 @@ class _InboxScreenState extends State<InboxScreen> {
             const SizedBox(height: 8),
             Expanded(
               child: _loading
-                  ? Center(child: CircularProgressIndicator(color: palette.primary))
+                  ? const SkeletonList(count: 6)
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,

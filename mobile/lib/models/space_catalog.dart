@@ -54,7 +54,6 @@ List<SpaceGroupSpec> buildSpaceCatalog({
   const orange = Color(0xFFF97316);
   const green = Color(0xFF0FA97A);
   const purple = Color(0xFF7C5CF6);
-  const pink = Color(0xFFE0507F);
   const grey = Color(0xFF6F7D92);
 
   return [
@@ -71,14 +70,17 @@ List<SpaceGroupSpec> buildSpaceCatalog({
       title: '工作',
       items: [
         _item('schedule', '日程', Icons.event_outlined, blue, scheduleCount),
-        _item('todo', '待办', Icons.check_circle_outline_rounded, orange, todoCount),
-        _item('projects', '项目', Icons.grid_view_outlined, purple, projectCount),
         const SpaceItemSpec(
-          key: 'cos',
-          label: '幕僚长',
-          icon: Icons.auto_awesome_outlined,
-          color: pink,
+          key: 'minutes',
+          label: '录音纪要',
+          icon: Icons.mic_rounded,
+          color: orange,
         ),
+        _item('todo', '待办', Icons.check_circle_outline_rounded, orange,
+            todoCount),
+        _item('projects', '项目', Icons.grid_view_outlined, purple, projectCount),
+        _item('insights', '回顾', Icons.insights_outlined, green, 0),
+        _item('automation', '自动化', Icons.auto_mode_rounded, grey, 0),
       ],
     ),
     SpaceGroupSpec(
@@ -92,17 +94,17 @@ List<SpaceGroupSpec> buildSpaceCatalog({
           color: green,
         ),
         _item('sources', '资讯', Icons.dynamic_feed_rounded, purple, sourceCount),
-      ],
-    ),
-    SpaceGroupSpec(
-      title: '更多',
-      items: [
         const SpaceItemSpec(
           key: 'music',
           label: '音乐',
           icon: Icons.music_note_outlined,
           color: orange,
         ),
+      ],
+    ),
+    SpaceGroupSpec(
+      title: '更多',
+      items: [
         const SpaceItemSpec(
           key: 'device',
           label: '设备',

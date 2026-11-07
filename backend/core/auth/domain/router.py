@@ -1,5 +1,6 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse, AdminUserResponse, ToggleActiveRequest, UpdateUserRequest, UserProfileResponse, UserProfileUpdate
 from core.auth.domain.service import register, login, refresh_access_token

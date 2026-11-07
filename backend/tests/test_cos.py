@@ -78,7 +78,7 @@ async def _seed_sources(user_id: int, tag: str) -> dict:
 
 
 async def test_cos_requires_auth(client):
-    r = await client.get("/api/cos/triage")
+    r = await client.get("/api/inbox/groups")
     assert r.status_code == 401
 
 
@@ -88,7 +88,7 @@ async def test_triage_aggregates_user_sources_only(client):
     await _seed_sources(user_a, "alpha")
     await _seed_sources(user_b, "bravo")
 
-    r = await client.get("/api/cos/triage?days=7", headers=auth(token_a))
+    r = await client.get("/api/inbox/groups?days=7", headers=auth(token_a))
     assert r.status_code == 200, r.text
     body = r.json()
     text = str(body)
@@ -104,9 +104,13 @@ async def test_daily_brief_has_sections_and_summary(client):
     token, user_id = await _new_user(client)
     await _seed_sources(user_id, "brief")
 
-    r = await client.get("/api/cos/daily-brief", headers=auth(token))
+    r = await client.post(
+        "/api/skills/daily-brief/run",
+        json={"input": {}},
+        headers=auth(token),
+    )
     assert r.status_code == 200, r.text
-    body = r.json()
+    body = r.json()["output"]
     assert body["summary"]
     keys = {s["key"] for s in body["sections"]}
     assert {"schedule", "todos", "mail", "news"} <= keys
@@ -118,12 +122,12 @@ async def test_meeting_prep_collects_context(client):
     await _seed_sources(user_id, "prep")
 
     r = await client.post(
-        "/api/cos/meeting-prep",
-        json={"title": "预算评审会", "query": "预算", "attendees": ["张三"]},
+        "/api/skills/meeting-prepare/run",
+        json={"input": {"title": "预算评审会", "query": "预算", "attendees": ["张三"]}},
         headers=auth(token),
     )
     assert r.status_code == 200, r.text
-    body = r.json()
+    body = r.json()["output"]
     assert body["agenda"]
     assert any("预算" in (c.get("title") or "") for c in body["context"])
     assert "张三" in str(body)
@@ -148,9 +152,13 @@ async def test_weekly_review_uses_daily_insights(client):
         await db.commit()
     await _seed_sources(user_id, "weekly")
 
-    r = await client.get("/api/cos/weekly-review", headers=auth(token))
+    r = await client.post(
+        "/api/skills/weekly-review/run",
+        json={"input": {}},
+        headers=auth(token),
+    )
     assert r.status_code == 200, r.text
-    body = r.json()
+    body = r.json()["output"]
     assert "预算评审" in body["summary"]
     assert body["stats"]["insight_days"] == 1
     assert body["period"]["start"] and body["period"]["end"]
@@ -180,13 +188,181 @@ async def test_dingtalk_payload_ignores_sender_objects(client):
     assert items[0]["time"]
 
 
+async def test_skill_toggle_disables_run(client):
+    token, _ = await _new_user(client)
+    bots = (await client.get("/api/bots", headers=auth(token))).json()
+    bot_id = next(b for b in bots if b["is_default"])["id"]
+
+    r = await client.get(f"/api/bots/{bot_id}/skills", headers=auth(token))
+    assert r.status_code == 200, r.text
+    skills = {s["key"]: s for s in r.json()["skills"]}
+    assert {"daily-brief", "meeting-prepare", "weekly-review"} <= set(skills)
+    assert skills["daily-brief"]["enabled"] is True
+
+    r = await client.put(
+        f"/api/bots/{bot_id}/skills/daily-brief",
+        json={"enabled": False},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    r = await client.post(
+        "/api/skills/daily-brief/run",
+        json={"bot_id": bot_id, "input": {}},
+        headers=auth(token),
+    )
+    assert r.status_code == 409, r.text
+
+    r = await client.put(
+        f"/api/bots/{bot_id}/skills/daily-brief",
+        json={"enabled": True},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+
+
+async def test_mark_all_mail_read(client):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "readall")
+
+    r = await client.put(
+        "/api/plugins/mail/messages/read-all",
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] >= 1
+
+    r = await client.get(
+        "/api/plugins/mail/messages?unread=true",
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["items"] == []
+
+
+async def test_dingtalk_unread_is_cached(monkeypatch):
+    import json
+    import types
+
+    from core.cos import collectors
+    from core.mcp_hub.hub import mcp_hub
+
+    calls = 0
+
+    async def fake_server(user_id):
+        return types.SimpleNamespace(id=4242)
+
+    async def fake_call(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        payload = {
+            "data": {
+                "conversations": [
+                    {
+                        "conversationTitle": "项目群",
+                        "lastMessage": "下午开会",
+                        "openConversationId": "cid-1",
+                    }
+                ]
+            }
+        }
+        return types.SimpleNamespace(
+            isError=False,
+            content=[types.SimpleNamespace(text=json.dumps(payload))],
+        )
+
+    collectors._DINGTALK_UNREAD_CACHE.clear()
+    monkeypatch.setattr(collectors, "_dingtalk_server", fake_server)
+    monkeypatch.setattr(mcp_hub, "call_external", fake_call)
+
+    items1, status1 = await collectors.dingtalk_items(1, limit=5)
+    items2, status2 = await collectors.dingtalk_items(1, limit=5)
+
+    assert calls == 1
+    assert status1 == status2 == "ok"
+    assert items1 and items2
+    collectors._DINGTALK_UNREAD_CACHE.clear()
+
+
+async def test_workbench_suggestions_from_user_context(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "suggest")
+
+    from core.workbench import suggestions as workbench
+
+    workbench._CACHE.clear()
+    monkeypatch.setattr(workbench.settings, "llm_api_key", "")
+
+    r = await client.get("/api/inbox/suggestions", headers=auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["suggestions"]) == 3
+    assert all(isinstance(item, str) and item for item in body["suggestions"])
+    assert body["source"] == "fallback"
+    assert body["expires_at"]
+
+
+async def test_workbench_summary_aggregates_sections(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "summary")
+
+    from core.workbench import suggestions as workbench
+
+    workbench._CACHE.clear()
+    monkeypatch.setattr(workbench.settings, "llm_api_key", "")
+
+    r = await client.get("/api/workbench/summary", headers=auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["events"]
+    assert body["todos"]
+    assert isinstance(body["recent"]["files"], list)
+    assert isinstance(body["recent"]["notes"], list)
+    assert body["inbox"]["pending"] >= 1
+
+
+async def test_send_mail_saves_to_sent(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "sender")
+
+    from plugins.mail.backend import send as mail_send
+
+    monkeypatch.setattr(
+        mail_send,
+        "_smtp_send",
+        lambda *args, **kwargs: "<test-message@example.com>",
+    )
+
+    r = await client.post(
+        "/api/plugins/mail/messages/send",
+        json={
+            "to": ["boss@example.com"],
+            "subject": "预算确认",
+            "body": "预算方案已确认。",
+        },
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["message_id"] == "<test-message@example.com>"
+
+    r = await client.get(
+        "/api/plugins/mail/messages?folder=sent",
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 1
+    assert items[0]["subject"] == "预算确认"
+    assert items[0]["folder"] == "sent"
+    assert items[0]["direction"] == "outbound"
+
+
 async def test_draft_reply_from_mail(client):
     token, user_id = await _new_user(client)
     ids = await _seed_sources(user_id, "reply")
 
     r = await client.post(
-        "/api/cos/draft-reply",
-        json={"source": "mail", "message_id": ids["mail_id"], "tone": "friendly"},
+        f"/api/plugins/mail/messages/{ids['mail_id']}/ai-draft",
+        json={"tone": "friendly"},
         headers=auth(token),
     )
     assert r.status_code == 200, r.text
@@ -199,8 +375,8 @@ async def test_draft_reply_from_mail(client):
     # Cannot draft from another user's message.
     token_b, _ = await _new_user(client)
     r = await client.post(
-        "/api/cos/draft-reply",
-        json={"source": "mail", "message_id": ids["mail_id"]},
+        f"/api/plugins/mail/messages/{ids['mail_id']}/ai-draft",
+        json={},
         headers=auth(token_b),
     )
     assert r.status_code == 404

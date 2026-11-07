@@ -1,5 +1,6 @@
 import '../models/cos_models.dart';
 import 'api_service.dart';
+import 'bot_selection_service.dart';
 
 /// Small in-memory cache for expensive cross-page aggregates.
 ///
@@ -10,6 +11,7 @@ class CosRepository {
 
   DailyBrief? _brief;
   DateTime? _briefAt;
+  int? _briefBotId;
   Future<DailyBrief?>? _briefFuture;
 
   TriageSnapshot? _triage;
@@ -20,19 +22,26 @@ class CosRepository {
   CosRepository._();
 
   Future<DailyBrief?> getDailyBrief({bool force = false}) {
-    if (!force && _brief != null && _isFresh(_briefAt)) return Future.value(_brief);
+    final botId = BotSelectionService().botId;
+    if (!force &&
+        _brief != null &&
+        _briefBotId == botId &&
+        _isFresh(_briefAt)) {
+      return Future.value(_brief);
+    }
     if (_briefFuture != null) return _briefFuture!;
-    final future = _loadBrief();
+    final future = _loadBrief(botId);
     _briefFuture = future;
     return future;
   }
 
-  Future<DailyBrief?> _loadBrief() async {
+  Future<DailyBrief?> _loadBrief(int? botId) async {
     try {
-      final brief = await ApiService().getDailyBrief();
+      final brief = await ApiService().getDailyBrief(botId: botId);
       if (brief != null) {
         _brief = brief;
         _briefAt = DateTime.now();
+        _briefBotId = botId;
       }
       return brief ?? _brief;
     } catch (_) {

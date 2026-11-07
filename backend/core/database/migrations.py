@@ -83,6 +83,10 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("plugin_mail_accounts")}
             if "sync_enabled" not in cols:
                 result.append("mail_sync_state")
+        if "mail_messages" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("mail_messages")}
+            if "folder" not in cols:
+                result.append("mail_sent_fields")
         if "plugin_todo_items" in table_names:
             cols = {c["name"] for c in inspector.get_columns("plugin_todo_items")}
             if "reminded" not in cols:
@@ -147,6 +151,16 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN uidvalidity INTEGER NULL"))
                 await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN last_sync_at TIMESTAMP NULL"))
                 await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN sync_error TEXT NULL"))
+            elif table == "mail_sent_fields":
+                await conn.execute(text("ALTER TABLE mail_messages ADD COLUMN folder VARCHAR(20) DEFAULT 'inbox'"))
+                await conn.execute(text("ALTER TABLE mail_messages ADD COLUMN direction VARCHAR(20) DEFAULT 'inbound'"))
+                await conn.execute(text("ALTER TABLE mail_messages ADD COLUMN in_reply_to VARCHAR(500) NULL"))
+                await conn.execute(text("ALTER TABLE mail_messages ADD COLUMN thread_id VARCHAR(500) NULL"))
+                await conn.execute(text("ALTER TABLE mail_messages ADD COLUMN cc_addresses TEXT NULL"))
+                await conn.execute(text("ALTER TABLE mail_messages ADD COLUMN bcc_addresses TEXT NULL"))
+                await conn.execute(text("ALTER TABLE mail_messages ADD COLUMN attachments JSON NULL"))
+                await conn.execute(text("ALTER TABLE mail_messages ADD COLUMN sent_at TIMESTAMP NULL"))
+                await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mail_messages_folder ON mail_messages (folder)"))
             elif table == "todo_reminded":
                 await conn.execute(text(f"ALTER TABLE plugin_todo_items ADD COLUMN reminded BOOLEAN DEFAULT {bool_default}"))
             elif table == "notification_actions":

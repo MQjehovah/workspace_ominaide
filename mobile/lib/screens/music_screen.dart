@@ -1,7 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../services/api_service.dart';
+import '../services/music_cache.dart';
+import '../services/now_playing_service.dart';
 import '../models/file_item.dart';
 
 class MusicScreen extends StatefulWidget {
@@ -21,6 +22,9 @@ class _MusicScreenState extends State<MusicScreen> {
   final _player = AudioPlayer();
   int? _playingIndex;
   bool _playing = false;
+  bool _buffering = false;
+  bool _downloading = false;
+  String _downloadStatus = '';
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
@@ -28,22 +32,93 @@ class _MusicScreenState extends State<MusicScreen> {
   void initState() {
     super.initState();
     _load();
+    NowPlayingService().init();
+    NowPlayingService().onCommand = _onRemoteCommand;
     _player.onPositionChanged.listen((p) => setState(() => _position = p));
-    _player.onDurationChanged.listen((d) => setState(() => _duration = d));
+    _player.onDurationChanged.listen((d) {
+      setState(() => _duration = d);
+      _updateNowPlaying();
+    });
     _player.onPlayerComplete.listen((_) {
       if (!mounted) return;
       if (_playingIndex != null && _playingIndex! < _currentSongs.length - 1) {
         _playSong(_playingIndex! + 1);
       } else {
         setState(() { _playing = false; _position = Duration.zero; });
+        _updateNowPlaying();
       }
     });
   }
 
   @override
   void dispose() {
+    NowPlayingService().onCommand = null;
+    NowPlayingService().clear();
     _player.dispose();
     super.dispose();
+  }
+
+  void _updateNowPlaying() {
+    final index = _playingIndex;
+    if (index == null || index >= _currentSongs.length) return;
+    final song = _currentSongs[index];
+    NowPlayingService().update(
+      title: (song['name'] ?? '音乐').toString(),
+      duration: _duration,
+      position: _position,
+      playing: _playing,
+    );
+  }
+
+  Future<void> _onRemoteCommand(String command, double? position) async {
+    switch (command) {
+      case 'play':
+        if (!_playing) {
+          await _player.resume();
+          if (!mounted) return;
+          setState(() => _playing = true);
+          _updateNowPlaying();
+        }
+        break;
+      case 'pause':
+        if (_playing) {
+          await _player.pause();
+          if (!mounted) return;
+          setState(() => _playing = false);
+          _updateNowPlaying();
+        }
+        break;
+      case 'toggle':
+        if (_playing) {
+          await _player.pause();
+          if (!mounted) return;
+          setState(() => _playing = false);
+        } else {
+          await _player.resume();
+          if (!mounted) return;
+          setState(() => _playing = true);
+        }
+        _updateNowPlaying();
+        break;
+      case 'next':
+        if (_playingIndex != null && _playingIndex! < _currentSongs.length - 1) {
+          await _playSong(_playingIndex! + 1);
+        }
+        break;
+      case 'previous':
+        if (_playingIndex != null && _playingIndex! > 0) {
+          await _playSong(_playingIndex! - 1);
+        }
+        break;
+      case 'seek':
+        if (position != null) {
+          final target = Duration(milliseconds: (position * 1000).round());
+          await _player.seek(target);
+          if (mounted) setState(() => _position = target);
+          _updateNowPlaying();
+        }
+        break;
+    }
   }
 
   Future<void> _load() async {
@@ -118,17 +193,104 @@ class _MusicScreenState extends State<MusicScreen> {
     if (index < 0 || index >= _currentSongs.length) return;
     await _player.stop();
     final song = _currentSongs[index];
-    setState(() { _playingIndex = index; _playing = false; _position = Duration.zero; });
+    setState(() {
+      _playingIndex = index;
+      _playing = false;
+      _buffering = true;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    });
     try {
-      final bytes = await ApiService().downloadFile(song['file_id']);
-      final temp = File('${Directory.systemTemp.path}/${song['name']}');
-      await temp.writeAsBytes(bytes);
-      await _player.play(DeviceFileSource(temp.path));
+      final fileId = (song['file_id'] as num).toInt();
+      final name = (song['name'] ?? 'track.mp3').toString();
+      // First play downloads to a persistent cache; later plays are local.
+      final file = await MusicCache().cacheTrack(fileId, name);
+      await _player.play(DeviceFileSource(file.path));
+      if (!mounted) return;
       setState(() => _playing = true);
+      _updateNowPlaying();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('播放失败: $e')));
+    } finally {
+      if (mounted) setState(() => _buffering = false);
     }
+  }
+
+  Future<void> _downloadSongs(
+    List<Map<String, dynamic>> songs,
+    String label,
+  ) async {
+    if (_downloading || songs.isEmpty) return;
+    setState(() {
+      _downloading = true;
+      _downloadStatus = '0/${songs.length}';
+    });
+    var ok = 0;
+    var failed = 0;
+    for (var i = 0; i < songs.length; i++) {
+      final id = (songs[i]['file_id'] as num?)?.toInt();
+      if (id != null) {
+        try {
+          await MusicCache().cacheTrack(
+            id,
+            (songs[i]['name'] ?? 'track.mp3').toString(),
+          );
+          ok++;
+        } catch (_) {
+          failed++;
+        }
+      }
+      if (mounted) {
+        setState(() => _downloadStatus = '${i + 1}/${songs.length}');
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _downloading = false;
+      _downloadStatus = '';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failed == 0
+              ? '「$label」已缓存 $ok 首'
+              : '「$label」已缓存 $ok 首，$failed 首失败',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadPlaylist(Map<String, dynamic> playlist) async {
+    try {
+      final songs = await ApiService().listPlaylistSongs(playlist['id']);
+      if (!mounted) return;
+      final normalized = songs
+          .map((s) => {
+                'file_id': s['file_id'],
+                'name': s['name'] ?? s['title'] ?? 'track.mp3',
+              })
+          .toList();
+      await _downloadSongs(normalized, (playlist['name'] ?? '歌单').toString());
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('读取歌单失败: $e')),
+      );
+    }
+  }
+
+  Future<void> _downloadCurrent() async {
+    if (_currentPlaylist != null) {
+      await _downloadPlaylist(_currentPlaylist!);
+      return;
+    }
+    await _downloadSongs(
+      _allTracks
+          .map((f) => {'file_id': f.id, 'name': f.originalName})
+          .toList(),
+      '全部歌曲',
+    );
   }
 
   String _fmt(Duration d) {
@@ -143,6 +305,11 @@ class _MusicScreenState extends State<MusicScreen> {
       appBar: AppBar(
         title: Text(_currentPlaylist != null ? _currentPlaylist!['name'] : '音乐'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download_outlined),
+            onPressed: _downloading ? null : _downloadCurrent,
+            tooltip: _currentPlaylist != null ? '缓存整个歌单' : '缓存全部歌曲',
+          ),
           if (_currentPlaylist != null) ...[
             IconButton(icon: const Icon(Icons.library_music_outlined), onPressed: () => setState(() {
               _currentPlaylist = null;
@@ -153,11 +320,37 @@ class _MusicScreenState extends State<MusicScreen> {
           ],
         ],
       ),
-      body: _loading
-        ? const Center(child: CircularProgressIndicator())
-        : _currentPlaylist == null && _showAll
-          ? _buildPlaylistView()
-          : _buildSongList(),
+      body: Column(
+        children: [
+          if (_downloading) ...[
+            const LinearProgressIndicator(minHeight: 2),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '正在缓存 $_downloadStatus',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _currentPlaylist == null && _showAll
+                    ? _buildPlaylistView()
+                    : _buildSongList(),
+          ),
+        ],
+      ),
       bottomSheet: _playingIndex != null ? _buildPlayer() : null,
     );
   }
@@ -283,6 +476,7 @@ class _MusicScreenState extends State<MusicScreen> {
           Slider(
             value: _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0,
             onChanged: (v) => _player.seek(Duration(milliseconds: (v * _duration.inMilliseconds).round())),
+            onChangeEnd: (_) => _updateNowPlaying(),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -298,10 +492,13 @@ class _MusicScreenState extends State<MusicScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               IconButton(onPressed: _playingIndex! > 0 ? () => _playSong(_playingIndex! - 1) : null, icon: const Icon(Icons.skip_previous)),
-              IconButton(onPressed: () {
+              IconButton(onPressed: _buffering ? null : () {
                 if (_playing) { _player.pause(); setState(() => _playing = false); }
                 else { _player.resume(); setState(() => _playing = true); }
-              }, icon: Icon(_playing ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 48)),
+                _updateNowPlaying();
+              }, icon: _buffering
+                  ? const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3))
+                  : Icon(_playing ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 48)),
               IconButton(onPressed: _playingIndex! < _currentSongs.length - 1 ? () => _playSong(_playingIndex! + 1) : null, icon: const Icon(Icons.skip_next)),
             ],
           ),

@@ -67,6 +67,8 @@ class MailMessageResponse(BaseModel):
     subject: str | None = None
     from_address: str | None = None
     to_addresses: str | None = None
+    cc_addresses: str | None = None
+    bcc_addresses: str | None = None
     date: datetime | None = None
     preview: str | None = None
     has_attachments: bool = False
@@ -75,12 +77,29 @@ class MailMessageResponse(BaseModel):
     ai_actions: list | None = None
     read: bool = False
     starred: bool = False
+    folder: str = "inbox"
+    direction: str = "inbound"
+    in_reply_to: str | None = None
+    thread_id: str | None = None
+    attachments: list | None = None
+    sent_at: datetime | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
 
 class MailMessageDetail(MailMessageResponse):
     content: str | None = None
+
+
+class MailSendRequest(BaseModel):
+    account_id: int | None = None
+    to: list[str]
+    cc: list[str] = []
+    bcc: list[str] = []
+    subject: str
+    body: str
+    reply_to_id: int | None = None
+    attachment_file_ids: list[int] = []
 
 
 class MailEventCreate(BaseModel):

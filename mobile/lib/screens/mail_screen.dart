@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../services/api_service.dart';
+import '../services/bot_selection_service.dart';
+import '../services/local_cache_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/loading_state.dart';
+import 'mail_compose_screen.dart';
 
 class MailScreen extends StatefulWidget {
   const MailScreen({super.key, this.detailId});
@@ -20,6 +23,16 @@ class _MailScreenState extends State<MailScreen> {
   bool _loading = true;
   bool _drafting = false;
   bool _error = false;
+  String _box = 'inbox';
+  bool _unreadOnly = false;
+
+  List<Map<String, dynamic>> get _visibleMessages {
+    if (!_unreadOnly) return _messages;
+    return _messages.where((message) => message['read'] == false).toList();
+  }
+
+  int get _unreadCount =>
+      _messages.where((message) => message['read'] == false).length;
 
   @override
   void initState() {
@@ -33,12 +46,24 @@ class _MailScreenState extends State<MailScreen> {
 
   Future<void> _loadList() async {
     setState(() {
-      _loading = true;
+      _loading = _messages.isEmpty;
       _error = false;
     });
+    if (_messages.isEmpty) {
+      final cached = await LocalCacheService().readList('mail.$_box');
+      if (mounted && cached.isNotEmpty) {
+        setState(() {
+          _messages = cached;
+          _loading = false;
+        });
+      }
+    }
     List<Map<String, dynamic>> messages = [];
     try {
-      messages = await ApiService().listMailMessages();
+      messages = await ApiService().listMailMessages(
+        folder: _box,
+        unread: _unreadOnly,
+      );
     } catch (_) {
       if (mounted) setState(() => _error = true);
     }
@@ -47,6 +72,9 @@ class _MailScreenState extends State<MailScreen> {
       _messages = messages;
       _loading = false;
     });
+    if (messages.isNotEmpty) {
+      await LocalCacheService().writeJson('mail.$_box', messages);
+    }
   }
 
   Future<void> _loadDetail(int id) async {
@@ -70,6 +98,43 @@ class _MailScreenState extends State<MailScreen> {
     });
   }
 
+  Future<void> _markAllRead() async {
+    final updated = await ApiService().markAllMailRead();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          updated > 0 ? '已标记 $updated 封邮件为已读' : '没有未读邮件',
+        ),
+      ),
+    );
+    await _loadList();
+  }
+
+  Future<void> _composeNew() async {
+    final sent = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const MailComposeScreen()),
+    );
+    if (sent == true) await _loadList();
+  }
+
+  Future<void> _composeReply(Map<String, dynamic> detail) async {
+    final sent = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => MailComposeScreen(replyTo: detail)),
+    );
+    if (sent == true) await _loadList();
+  }
+
+  Future<void> _composeForward(Map<String, dynamic> detail) async {
+    final sent = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => MailComposeScreen(forwardOf: detail)),
+    );
+    if (sent == true) await _loadList();
+  }
+
   Future<void> _draft() async {
     final detail = _detail;
     if (detail == null || _drafting) return;
@@ -79,6 +144,7 @@ class _MailScreenState extends State<MailScreen> {
       draft = await ApiService().getDraftReply(
         source: 'mail',
         messageId: detail['id'] is int ? detail['id'] as int : null,
+        botId: BotSelectionService().botId,
       );
     } catch (_) {}
     if (!mounted) return;
@@ -89,71 +155,17 @@ class _MailScreenState extends State<MailScreen> {
       );
       return;
     }
-    final subject = (draft['subject'] ?? '').toString();
     final body = (draft['body'] ?? '').toString();
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        final palette = AppPalette.of(context);
-        return AlertDialog(
-          backgroundColor: palette.card,
-          title: Text(
-            '回复草稿',
-            style: TextStyle(fontSize: 16, color: palette.ink),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  subject,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: palette.ink,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  body,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.7,
-                    color: palette.muted,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  (draft!['note'] ?? '').toString(),
-                  style: TextStyle(fontSize: 10, color: palette.muted),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                await Clipboard.setData(
-                  ClipboardData(text: '主题：$subject\n\n$body'),
-                );
-                if (!context.mounted) return;
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('草稿已复制')),
-                );
-              },
-              child: const Text('复制草稿'),
-            ),
-          ],
-        );
-      },
+    final sent = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MailComposeScreen(
+          replyTo: detail,
+          draftBody: body,
+        ),
+      ),
     );
+    if (sent == true) await _loadList();
   }
 
   @override
@@ -162,7 +174,40 @@ class _MailScreenState extends State<MailScreen> {
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
-        child: widget.detailId == null ? _buildList(palette) : _buildDetail(palette),
+        child: widget.detailId == null
+            ? _buildList(palette)
+            : _buildDetail(palette),
+      ),
+    );
+  }
+
+  Widget _filterChip(
+    String label,
+    bool selected,
+    VoidCallback onTap,
+    AppPalette palette,
+  ) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? palette.primary : palette.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? palette.primary : palette.line,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : palette.muted,
+          ),
+        ),
       ),
     );
   }
@@ -173,7 +218,11 @@ class _MailScreenState extends State<MailScreen> {
         PageHeader(
           kicker: 'Mail',
           title: '邮件',
-          subtitle: _loading ? '加载中' : '${_messages.length} 封邮件',
+          subtitle: _loading
+              ? '加载中'
+              : _box == 'sent'
+                  ? '${_messages.length} 封已发送'
+                  : '$_unreadCount 封未读 · 共 ${_messages.length} 封',
           actions: [
             RoundIconButton(
               icon: Icons.arrow_back_rounded,
@@ -181,15 +230,68 @@ class _MailScreenState extends State<MailScreen> {
             ),
             const SizedBox(width: 6),
             RoundIconButton(
+              icon: Icons.edit_outlined,
+              tooltip: '写邮件',
+              onTap: _composeNew,
+            ),
+            const SizedBox(width: 6),
+            if (_unreadCount > 0 && _box == 'inbox') ...[
+              RoundIconButton(
+                icon: Icons.done_all_rounded,
+                tooltip: '全部已读',
+                onTap: _markAllRead,
+              ),
+              const SizedBox(width: 6),
+            ],
+            RoundIconButton(
               icon: Icons.refresh_rounded,
               tooltip: '刷新',
               onTap: _loadList,
             ),
           ],
         ),
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              _filterChip(
+                '收件箱',
+                _box == 'inbox' && !_unreadOnly,
+                () => setState(() {
+                  _box = 'inbox';
+                  _unreadOnly = false;
+                }),
+                palette,
+              ),
+              const SizedBox(width: 6),
+              _filterChip(
+                '已发送',
+                _box == 'sent',
+                () => setState(() {
+                  _box = 'sent';
+                  _unreadOnly = false;
+                }),
+                palette,
+              ),
+              const SizedBox(width: 6),
+              _filterChip(
+                '未读 $_unreadCount',
+                _unreadOnly,
+                () => setState(() {
+                  _box = 'inbox';
+                  _unreadOnly = true;
+                }),
+                palette,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
         Expanded(
           child: _loading
-              ? Center(child: CircularProgressIndicator(color: palette.primary))
+              ? const SkeletonList(count: 6)
               : RefreshIndicator(
                   onRefresh: _loadList,
                   color: palette.primary,
@@ -201,39 +303,48 @@ class _MailScreenState extends State<MailScreen> {
                             ErrorState(onRetry: _loadList),
                           ],
                         )
-                      : _messages.isEmpty
+                      : _visibleMessages.isEmpty
                           ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          children: const [
-                            SizedBox(height: 50),
-                            EmptyState(
-                              icon: Icons.mail_outline_rounded,
-                              title: '还没有邮件',
-                              subtitle: '在 Web 或桌面端配置邮箱后，邮件会同步到这里。',
-                            ),
-                          ],
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                          itemCount: _messages.length,
-                          itemBuilder: (context, index) {
-                            final message = _messages[index];
-                            return _MailRow(
-                              message: message,
-                              onTap: () async {
-                                final id = message['id'];
-                                if (id is! int) return;
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => MailScreen(detailId: id),
-                                  ),
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 50),
+                                EmptyState(
+                                  icon: Icons.mail_outline_rounded,
+                                  title: _unreadOnly
+                                      ? '没有未读邮件'
+                                      : _box == 'sent'
+                                          ? '还没有已发送邮件'
+                                          : '还没有邮件',
+                                  subtitle: _unreadOnly
+                                      ? '所有邮件都已读完。'
+                                      : _box == 'sent'
+                                          ? '发送成功的邮件会出现在这里。'
+                                          : '在 Web 或桌面端配置邮箱后，邮件会同步到这里。',
+                                ),
+                              ],
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                              itemCount: _visibleMessages.length,
+                              itemBuilder: (context, index) {
+                                final message = _visibleMessages[index];
+                                return _MailRow(
+                                  message: message,
+                                  onTap: () async {
+                                    final id = message['id'];
+                                    if (id is! int) return;
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            MailScreen(detailId: id),
+                                      ),
+                                    );
+                                    if (mounted) _loadList();
+                                  },
                                 );
-                                if (mounted) _loadList();
                               },
-                            );
-                          },
-                        ),
+                            ),
                 ),
         ),
       ],
@@ -337,6 +448,33 @@ class _MailScreenState extends State<MailScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _composeReply(detail),
+                      icon: const Icon(Icons.reply_rounded, size: 17),
+                      label: const Text('回复'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _composeForward(detail),
+                    icon: const Icon(Icons.forward_rounded, size: 17),
+                    label: const Text('转发'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: _drafting ? null : _draft,
                 icon: _drafting
@@ -346,7 +484,7 @@ class _MailScreenState extends State<MailScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.auto_awesome, size: 17),
-                label: Text(_drafting ? '生成中…' : '起草回复'),
+                label: Text(_drafting ? '生成中…' : 'AI 起草并回复'),
                 style: FilledButton.styleFrom(
                   backgroundColor: palette.primary,
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -370,27 +508,64 @@ class _MailRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     final unread = message['read'] == false;
+    final sent = message['folder'] == 'sent';
     final important = message['important'] == true;
+    final tagText = sent ? '已发送' : (unread ? '未读' : '已读');
+    final tagActive = unread && !sent;
+    final people = sent
+        ? (message['to_addresses'] ?? '').toString()
+        : (message['from_address'] ?? '').toString();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: AppCard(
         onTap: onTap,
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+        color: unread && !sent ? palette.primarySoft : null,
+        borderColor: unread && !sent
+            ? palette.primary.withValues(alpha: 0.28)
+            : palette.line,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: palette.primarySoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                important ? Icons.mark_email_unread_outlined : Icons.mail_outline,
-                size: 16,
-                color: important ? palette.accent : palette.primary,
-              ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: unread && !sent
+                        ? palette.primary.withValues(alpha: 0.16)
+                        : palette.line.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    sent
+                        ? Icons.send_rounded
+                        : unread
+                            ? (important
+                                ? Icons.mark_email_unread_rounded
+                                : Icons.mail_rounded)
+                            : Icons.drafts_outlined,
+                    size: 16,
+                    color: unread && !sent ? palette.primary : palette.muted,
+                  ),
+                ),
+                if (unread && !sent)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: palette.accent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: palette.card, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(width: 9),
             Expanded(
@@ -406,26 +581,56 @@ class _MailRow extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12.5,
-                            fontWeight: unread ? FontWeight.w800 : FontWeight.w600,
-                            color: palette.ink,
+                            fontWeight: unread && !sent
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                            color:
+                                unread && !sent ? palette.ink : palette.muted,
                           ),
                         ),
                       ),
                       if (important)
                         Icon(Icons.priority_high_rounded,
                             size: 13, color: palette.accent),
+                      const SizedBox(width: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: tagActive
+                              ? palette.primary.withValues(alpha: 0.12)
+                              : palette.line.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          tagText,
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: tagActive ? palette.primary : palette.muted,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    (message['from_address'] ?? '').toString(),
+                    people,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10.5, color: palette.muted),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: unread && !sent ? palette.ink : palette.muted,
+                      fontWeight:
+                          unread && !sent ? FontWeight.w600 : FontWeight.w400,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    (message['ai_summary'] ?? message['preview'] ?? '').toString(),
+                    (message['ai_summary'] ?? message['preview'] ?? '')
+                        .toString(),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

@@ -26,124 +26,135 @@ class ChatBubble extends StatelessWidget {
     final palette = AppPalette.of(context);
     final isUser = role == 'user';
     final showTyping = !isUser && streaming && text.isEmpty;
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
+
+    final bubble = Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.72,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        gradient: isUser
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [palette.primaryLight, palette.primary],
+              )
+            : null,
+        color: isUser ? null : palette.card,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(18),
+          topRight: const Radius.circular(18),
+          bottomLeft: Radius.circular(isUser ? 18 : 6),
+          bottomRight: Radius.circular(isUser ? 6 : 18),
         ),
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-        decoration: BoxDecoration(
-          color: isUser ? palette.primary : palette.card,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(15),
-            topRight: const Radius.circular(15),
-            bottomLeft: Radius.circular(isUser ? 15 : 4),
-            bottomRight: Radius.circular(isUser ? 4 : 15),
+        border: isUser
+            ? null
+            : Border.all(color: palette.line.withValues(alpha: 0.9)),
+        boxShadow: [
+          BoxShadow(
+            color: isUser
+                ? palette.primary.withValues(alpha: 0.18)
+                : palette.ink.withValues(alpha: 0.04),
+            blurRadius: isUser ? 12 : 8,
+            offset: const Offset(0, 3),
           ),
-          border: isUser ? null : Border.all(color: palette.line),
-          boxShadow: isUser
-              ? [
-                  BoxShadow(
-                    color: palette.primary.withValues(alpha: 0.18),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : null,
-        ),
-        child: showTyping
-            ? const _TypingRow(key: Key('chat-typing'))
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (error)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.error_outline, size: 14, color: palette.accent),
-                        const SizedBox(width: 4),
-                        Text(
-                          '回复失败',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: palette.accent,
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (error) const SizedBox(height: 4),
-                  if (isUser)
-                    SelectableText(
-                      text,
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.65,
-                        color: Colors.white,
-                      ),
-                    )
-                  else
-                    MarkdownBody(
-                      data: text,
-                      selectable: true,
-                      styleSheet: MarkdownStyleSheet(
-                        p: TextStyle(
-                          fontSize: 14,
-                          height: 1.65,
-                          color: palette.ink,
-                        ),
-                        h1: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: palette.ink,
-                        ),
-                        h2: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: palette.ink,
-                        ),
-                        h3: TextStyle(
-                          fontSize: 15,
+        ],
+      ),
+      child: showTyping
+          ? const _TypingRow(key: Key('chat-typing'))
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (error)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.error_outline,
+                          size: 14, color: palette.accent),
+                      const SizedBox(width: 4),
+                      Text(
+                        '回复失败',
+                        style: TextStyle(
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: palette.ink,
-                        ),
-                        code: TextStyle(
-                          fontSize: 12,
-                          color: palette.primary,
-                          backgroundColor: palette.primarySoft,
-                        ),
-                        codeblockDecoration: BoxDecoration(
-                          color: palette.primarySoft,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        blockquoteDecoration: BoxDecoration(
-                          color: palette.primarySoft,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        listBullet: TextStyle(
-                          fontSize: 14,
-                          color: palette.ink,
-                        ),
-                        a: TextStyle(
-                          color: palette.primary,
-                          decoration: TextDecoration.underline,
+                          color: palette.accent,
                         ),
                       ),
+                    ],
+                  ),
+                if (error) const SizedBox(height: 4),
+                if (isUser)
+                  SelectableText(
+                    text,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.65,
+                      color: Colors.white,
                     ),
-                  if (streaming && text.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3),
-                      child: _BlinkingCursor(color: palette.primary),
+                  )
+                else
+                  MarkdownBody(
+                    data: text,
+                    selectable: true,
+                    styleSheet: MarkdownStyleSheet(
+                      p: TextStyle(
+                        fontSize: 14,
+                        height: 1.7,
+                        color: palette.ink,
+                      ),
+                      h1: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: palette.ink,
+                      ),
+                      h2: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: palette.ink,
+                      ),
+                      h3: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: palette.ink,
+                      ),
+                      code: TextStyle(
+                        fontSize: 12,
+                        color: palette.primary,
+                        backgroundColor: palette.primarySoft,
+                      ),
+                      codeblockDecoration: BoxDecoration(
+                        color: palette.primarySoft,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      blockquoteDecoration: BoxDecoration(
+                        color: palette.primarySoft,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      listBullet: TextStyle(
+                        fontSize: 14,
+                        color: palette.primary,
+                      ),
+                      a: TextStyle(
+                        color: palette.primary,
+                        decoration: TextDecoration.underline,
+                      ),
                     ),
-                  if (error && onRetry != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: InkWell(
-                        onTap: onRetry,
+                  ),
+                if (streaming && text.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: _BlinkingCursor(color: palette.primary),
+                  ),
+                if (error && onRetry != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: InkWell(
+                      onTap: onRetry,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Text(
-                          '重试',
+                          '点击重试',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -152,8 +163,62 @@ class ChatBubble extends StatelessWidget {
                         ),
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
+            ),
+    );
+
+    final avatar = _ChatAvatar(isUser: isUser, palette: palette);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isUser) ...[avatar, const SizedBox(width: 8)],
+          Flexible(child: bubble),
+          if (isUser) ...[const SizedBox(width: 8), avatar],
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatAvatar extends StatelessWidget {
+  const _ChatAvatar({required this.isUser, required this.palette});
+
+  final bool isUser;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = isUser
+        ? [palette.accent.withValues(alpha: 0.72), palette.accent]
+        : [palette.primaryLight, palette.primary];
+    return Container(
+      width: 30,
+      height: 30,
+      margin: const EdgeInsets.only(top: 2),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
+        ),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: colors.last.withValues(alpha: 0.18),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Icon(
+        isUser ? Icons.person_rounded : Icons.auto_awesome,
+        size: 15,
+        color: Colors.white,
       ),
     );
   }

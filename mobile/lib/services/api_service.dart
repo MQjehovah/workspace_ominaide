@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/file_item.dart';
@@ -10,49 +11,212 @@ import 'chat_stream_stub.dart'
 import 'file_save_stub.dart'
     if (dart.library.html) 'file_save_web.dart'
     if (dart.library.io) 'file_save_io.dart';
+import '../config.dart';
+
+/// Thin wrapper around a single long-lived [http.Client] so requests reuse
+/// connections (TLS handshakes are expensive on mobile) and never hang forever.
+class _ApiHttp {
+  final http.Client _client = http.Client();
+  static const Duration _defaultTimeout = Duration(seconds: 20);
+  void Function(int status)? onStatus;
+
+  Future<http.Response> get(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) async {
+    final response = await _client
+        .get(uri, headers: headers)
+        .timeout(timeout ?? _defaultTimeout);
+    onStatus?.call(response.statusCode);
+    return response;
+  }
+
+  Future<http.Response> post(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Encoding? encoding,
+    Duration? timeout,
+  }) async {
+    final response = await _client
+        .post(uri, headers: headers, body: body, encoding: encoding)
+        .timeout(timeout ?? _defaultTimeout);
+    onStatus?.call(response.statusCode);
+    return response;
+  }
+
+  Future<http.Response> put(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Encoding? encoding,
+    Duration? timeout,
+  }) async {
+    final response = await _client
+        .put(uri, headers: headers, body: body, encoding: encoding)
+        .timeout(timeout ?? _defaultTimeout);
+    onStatus?.call(response.statusCode);
+    return response;
+  }
+
+  Future<http.Response> delete(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration? timeout,
+  }) async {
+    final response = await _client
+        .delete(uri, headers: headers, body: body)
+        .timeout(timeout ?? _defaultTimeout);
+    onStatus?.call(response.statusCode);
+    return response;
+  }
+
+  Future<http.Response> patch(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Encoding? encoding,
+    Duration? timeout,
+  }) async {
+    final response = await _client
+        .patch(uri, headers: headers, body: body, encoding: encoding)
+        .timeout(timeout ?? _defaultTimeout);
+    onStatus?.call(response.statusCode);
+    return response;
+  }
+
+  Future<http.StreamedResponse> send(
+    http.BaseRequest request, {
+    Duration? timeout,
+  }) async {
+    final response =
+        await _client.send(request).timeout(timeout ?? _defaultTimeout);
+    onStatus?.call(response.statusCode);
+    return response;
+  }
+}
 
 class ApiService {
-  String _baseUrl = 'http://mqgeek.com:8000';
+  static const _tokenKey = 'omniaide.token';
+  final _http = _ApiHttp();
+  final _secure = const FlutterSecureStorage();
+  String _baseUrl = kDefaultServerUrl;
   String? _token;
+  bool _handlingUnauthorized = false;
+
+  /// Set by main() to route back to the login screen when the session expires.
+  void Function()? onUnauthorized;
 
   static final ApiService _instance = ApiService._();
   factory ApiService() => _instance;
-  ApiService._();
+  ApiService._() {
+    _http.onStatus = _handleStatus;
+  }
+
+  String get baseUrl => _baseUrl;
+  String? get token => _token;
 
   Map<String, String> get _headers => {
-    'Content-Type': 'application/json',
-    if (_token != null) 'Authorization': 'Bearer $_token',
-  };
+        'Content-Type': 'application/json',
+        if (_token != null) 'Authorization': 'Bearer $_token',
+      };
 
   Map<String, String> get _authHeaders => {
-    if (_token != null) 'Authorization': 'Bearer $_token',
-  };
+        if (_token != null) 'Authorization': 'Bearer $_token',
+      };
+
+  void _handleStatus(int status) {
+    if (status != 401 || _handlingUnauthorized) return;
+    if (_token == null || _token!.isEmpty) return;
+    _handlingUnauthorized = true;
+    _token = null;
+    _clearStoredToken();
+    onUnauthorized?.call();
+  }
+
+  Future<String?> _readStoredToken() async {
+    try {
+      final value = await _secure.read(key: _tokenKey);
+      if (value != null && value.isNotEmpty) return value;
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _writeStoredToken(String token) async {
+    try {
+      await _secure.write(key: _tokenKey, value: token);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('token');
+    } catch (_) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', token);
+    }
+  }
+
+  Future<void> _clearStoredToken() async {
+    try {
+      await _secure.delete(key: _tokenKey);
+    } catch (_) {}
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+  }
 
   Future<void> loadToken() async {
     final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString('token');
-    _baseUrl = prefs.getString('serverUrl') ?? 'http://mqgeek.com:8000';
+    var token = await _readStoredToken();
+    if (token == null) {
+      // Migrate the token saved by older versions in plain SharedPreferences.
+      final legacy = prefs.getString('token');
+      if (legacy != null && legacy.isNotEmpty) {
+        token = legacy;
+        await _writeStoredToken(legacy);
+      }
+    }
+    _token = token;
+    _handlingUnauthorized = false;
+    final stored = prefs.getString('serverUrl');
+    // Migrate the old, unreachable default (port 8000) to the new API prefix.
+    if (stored == null ||
+        stored.isEmpty ||
+        stored == 'http://mqgeek.com:8000') {
+      _baseUrl = kDefaultServerUrl;
+      await prefs.setString('serverUrl', _baseUrl);
+    } else {
+      _baseUrl = normalizeServerUrl(stored);
+    }
+  }
+
+  /// Persist a new server address. The currently stored token is not cleared;
+  /// callers should ask the user to log in again when the server changes.
+  Future<void> setServerUrl(String serverUrl) async {
+    _baseUrl = normalizeServerUrl(serverUrl);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('serverUrl', _baseUrl);
   }
 
   Future<void> saveAuth(String token, String serverUrl) async {
     _token = token;
-    _baseUrl = serverUrl;
+    _handlingUnauthorized = false;
+    _baseUrl = normalizeServerUrl(serverUrl);
+    await _writeStoredToken(token);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('token', token);
-    await prefs.setString('serverUrl', serverUrl);
+    await prefs.setString('serverUrl', _baseUrl);
   }
 
   Future<void> logout() async {
     _token = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
-    await prefs.remove('serverUrl');
+    _handlingUnauthorized = false;
+    await _clearStoredToken();
+    // Keep serverUrl so the next login pre-fills the server the user chose.
   }
 
   bool get isLoggedIn => _token != null;
 
-  Future<String> login(String serverUrl, String username, String password) async {
-    final res = await http.post(
+  Future<String> login(
+      String serverUrl, String username, String password) async {
+    final res = await _http.post(
       Uri.parse('$serverUrl/api/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
@@ -67,20 +231,42 @@ class ApiService {
   }
 
   // -- Files --
-  Future<List<FileItem>> listFiles({String folderPath = '/'}) async {
-    final res = await http.get(
-      Uri.parse('$_baseUrl/api/files?page_size=100&folder_path=${Uri.encodeComponent(folderPath)}'),
-      headers: _headers,
-    ).timeout(const Duration(seconds: 15));
+  Future<List<FileItem>> listFiles({
+    String folderPath = '/',
+    String? search,
+  }) async {
+    final params = <String, String>{'page_size': '100'};
+    if (search == null || search.isEmpty) {
+      params['folder_path'] = folderPath;
+    } else {
+      params['search'] = search;
+    }
+    final uri =
+        Uri.parse('$_baseUrl/api/files').replace(queryParameters: params);
+    final res = await _http
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final data = decodeJson(res);
     return (data['files'] as List).map((f) => FileItem.fromJson(f)).toList();
   }
 
+  Future<Map<String, dynamic>> shareFileLink(
+    int fileId, {
+    int expiresHours = 168,
+  }) async {
+    final res = await post(
+      '/files/$fileId/share?expires_hours=$expiresHours',
+      const {},
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
   // -- Vibecoding --
   Future<List<dynamic>> listVibecodingTasks({int limit = 50}) async {
     try {
-      final res = await http.get(
+      final res = await _http.get(
         Uri.parse('$_baseUrl/api/vibecoding/tasks?limit=$limit'),
         headers: _authHeaders,
       );
@@ -94,7 +280,7 @@ class ApiService {
 
   Future<List<dynamic>> listVibecodingDevices() async {
     try {
-      final res = await http.get(
+      final res = await _http.get(
         Uri.parse('$_baseUrl/api/vibecoding/devices'),
         headers: _authHeaders,
       );
@@ -108,7 +294,7 @@ class ApiService {
 
   /// Download file bytes through backend proxy (or presigned URL).
   Future<List<int>> downloadFile(int fileId) async {
-    final dlRes = await http.get(
+    final dlRes = await _http.get(
       Uri.parse('$_baseUrl/api/files/$fileId/download-url'),
       headers: _headers,
     );
@@ -117,17 +303,43 @@ class ApiService {
     final dlUrl = dlData['download_url'] as String?;
 
     if (dlUrl != null && dlUrl.isNotEmpty) {
-      final res = await http.get(Uri.parse(dlUrl));
-      if (res.statusCode != 200) throw Exception('Download failed: ${res.statusCode}');
+      final res = await _http.get(
+        Uri.parse(dlUrl),
+        timeout: const Duration(minutes: 5),
+      );
+      if (res.statusCode != 200)
+        throw Exception('Download failed: ${res.statusCode}');
       return res.bodyBytes;
     } else {
-      final res = await http.get(
+      final res = await _http.get(
         Uri.parse('$_baseUrl/api/files/$fileId/download'),
         headers: _authHeaders,
+        timeout: const Duration(minutes: 5),
       );
-      if (res.statusCode != 200) throw Exception('Download failed: ${res.statusCode}');
+      if (res.statusCode != 200)
+        throw Exception('Download failed: ${res.statusCode}');
       return res.bodyBytes;
     }
+  }
+
+  /// Resolve the real download URL and headers without loading the bytes.
+  /// Used by the music cache to stream large files to disk.
+  Future<({Uri uri, Map<String, String> headers})> getFileDownloadRequest(
+      int fileId) async {
+    final dlRes = await _http.get(
+      Uri.parse('$_baseUrl/api/files/$fileId/download-url'),
+      headers: _headers,
+    );
+    if (dlRes.statusCode != 200) throw Exception('Failed to get download info');
+    final dlData = decodeJson(dlRes);
+    final dlUrl = dlData['download_url'] as String?;
+    if (dlUrl != null && dlUrl.isNotEmpty) {
+      return (uri: Uri.parse(dlUrl), headers: <String, String>{});
+    }
+    return (
+      uri: Uri.parse('$_baseUrl/api/files/$fileId/download'),
+      headers: _authHeaders,
+    );
   }
 
   /// Save downloaded bytes to local file, returns the file path.
@@ -138,17 +350,76 @@ class ApiService {
   }
 
   /// Upload file directly through backend proxy.
-  Future<void> uploadFileDirect(String filePath, String filename, String folderPath) async {
-    final uri = Uri.parse('$_baseUrl/api/files/upload/direct?folder_path=${Uri.encodeComponent(folderPath)}');
+  Future<void> uploadFileDirect(
+      String filePath, String filename, String folderPath) async {
+    final uri = Uri.parse(
+        '$_baseUrl/api/files/upload/direct?folder_path=${Uri.encodeComponent(folderPath)}');
     final request = http.MultipartRequest('POST', uri)
       ..headers.addAll(_authHeaders)
-      ..files.add(await http.MultipartFile.fromPath('file', filePath, filename: filename));
-    final streamed = await request.send();
-    if (streamed.statusCode != 200) throw Exception('Upload failed: ${streamed.statusCode}');
+      ..files.add(await http.MultipartFile.fromPath('file', filePath,
+          filename: filename));
+    final streamed = await _http.send(
+      request,
+      timeout: const Duration(minutes: 10),
+    );
+    if (streamed.statusCode != 200)
+      throw Exception('Upload failed: ${streamed.statusCode}');
   }
 
-  Future<Map<String, dynamic>> getUploadUrl(String filename, String folderPath) async {
-    final res = await http.post(
+  // -- Meeting minutes --
+  Future<Map<String, dynamic>> createMeetingMinutes({
+    required int fileId,
+    String? title,
+    int? eventId,
+    String? language,
+  }) async {
+    final res = await post('/meetings/minutes', {
+      'file_id': fileId,
+      if (title != null && title.isNotEmpty) 'title': title,
+      if (eventId != null) 'event_id': eventId,
+      if (language != null) 'language': language,
+    });
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> getMeetingMinutes(int id) async {
+    final res = await get('/meetings/minutes/$id');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> listMeetingMinutes(
+      {int limit = 30}) async {
+    final res = await get('/meetings/minutes?limit=$limit');
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<void> retryMeetingMinutes(int id) async {
+    final res = await post('/meetings/minutes/$id/retry', const {});
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+  }
+
+  Future<void> deleteMeetingMinutes(int id, {bool deleteAudio = true}) async {
+    final res = await delete(
+      '/meetings/minutes/$id?delete_audio=$deleteAudio',
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<Map<String, dynamic>> getUploadUrl(
+      String filename, String folderPath) async {
+    final res = await _http.post(
       Uri.parse('$_baseUrl/api/files/upload-url'),
       headers: _headers,
       body: jsonEncode({'filename': filename, 'folder_path': folderPath}),
@@ -158,7 +429,7 @@ class ApiService {
   }
 
   Future<void> confirmUpload(int fileId) async {
-    await http.post(
+    await _http.post(
       Uri.parse('$_baseUrl/api/files/confirm'),
       headers: _headers,
       body: jsonEncode({'file_id': fileId}),
@@ -166,7 +437,7 @@ class ApiService {
   }
 
   Future<FileItem> createFolder(String name, String parentPath) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl/api/files/folder'),
       headers: _headers,
       body: jsonEncode({'name': name, 'parent_path': parentPath}),
@@ -226,7 +497,8 @@ class ApiService {
       if (raw is! Map) continue;
       final node = raw.map((k, v) => MapEntry(k.toString(), v));
       final type = node['type']?.toString() ?? '';
-      final content = node['content'] is List ? node['content'] as List : const [];
+      final content =
+          node['content'] is List ? node['content'] as List : const [];
 
       if (type == 'text') {
         out.write(_markedText(node));
@@ -292,7 +564,9 @@ class ApiService {
               : const <Map>[];
           final values = cells
               .map((cell) => _proseMirrorToMarkdown(
-                    cell['content'] is List ? cell['content'] as List : const [],
+                    cell['content'] is List
+                        ? cell['content'] as List
+                        : const [],
                     depth: depth,
                   ).trim().replaceAll('\n', ' '))
               .toList();
@@ -359,7 +633,8 @@ class ApiService {
         buffer.write(node['text']);
       }
       if (node['type'] == 'paragraph') {
-        if (buffer.isNotEmpty && !buffer.toString().endsWith('\n')) buffer.writeln();
+        if (buffer.isNotEmpty && !buffer.toString().endsWith('\n'))
+          buffer.writeln();
       }
       if (node['type'] == 'heading') {
         if (buffer.isNotEmpty) buffer.writeln();
@@ -375,7 +650,9 @@ class ApiService {
       if (node['type'] == 'table') {
         if (node['content'] is List) {
           for (final row in node['content'] as List) {
-            if (row is Map && row['type'] == 'tableRow' && row['content'] is List) {
+            if (row is Map &&
+                row['type'] == 'tableRow' &&
+                row['content'] is List) {
               for (final cell in row['content'] as List) {
                 if (cell is Map && cell['content'] is List) {
                   _extractText(cell['content'] as List, buffer);
@@ -397,39 +674,45 @@ class ApiService {
   }
 
   Future<http.Response> get(String path) async {
-    return await http
-        .get(Uri.parse('$_baseUrl/api$path'), headers: _headers)
-        .timeout(const Duration(seconds: 15));
+    return await _http.get(Uri.parse('$_baseUrl/api$path'), headers: _headers);
   }
 
   Future<http.Response> post(String path, Map<String, dynamic> body) async {
-    return await http
-        .post(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 15));
+    return await _http.post(
+      Uri.parse('$_baseUrl/api$path'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
   }
 
   Future<http.Response> put(String path, Map<String, dynamic> body) async {
-    return await http
-        .put(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 15));
+    return await _http.put(
+      Uri.parse('$_baseUrl/api$path'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
   }
 
   Future<http.Response> delete(String path) async {
-    return await http
-        .delete(Uri.parse('$_baseUrl/api$path'), headers: _headers)
-        .timeout(const Duration(seconds: 15));
+    return await _http.delete(Uri.parse('$_baseUrl/api$path'),
+        headers: _headers);
   }
 
   Future<http.Response> patch(String path, Map<String, dynamic> body) async {
-    return await http
-        .patch(Uri.parse('$_baseUrl/api$path'), headers: _headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 15));
+    return await _http.patch(
+      Uri.parse('$_baseUrl/api$path'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
   }
 
   // -- Chat --
-  Future<String> chat(String message, {List<Map<String, String>>? history, bool agent = false, String? sessionId}) async {
+  Future<String> chat(String message,
+      {List<Map<String, String>>? history,
+      bool agent = false,
+      String? sessionId}) async {
     final path = agent ? '/api/chat/agent' : '/api/chat';
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl$path'),
       headers: _headers,
       body: jsonEncode({
@@ -437,6 +720,7 @@ class ApiService {
         'history': history ?? [],
         if (sessionId != null) 'session_id': sessionId,
       }),
+      timeout: const Duration(minutes: 2),
     );
     if (res.statusCode != 200) {
       final detail = _extractError(res);
@@ -447,7 +731,8 @@ class ApiService {
   }
 
   /// Stream chat via SSE (incremental on all platforms).
-  Stream<String> chatStream(String message, {List<Map<String, String>>? history, String? sessionId}) {
+  Stream<String> chatStream(String message,
+      {List<Map<String, String>>? history, String? sessionId, int? botId}) {
     final path = '/api/chat/stream';
     final uri = Uri.parse('$_baseUrl$path');
     final headers = <String, String>{..._headers};
@@ -455,17 +740,22 @@ class ApiService {
       'message': message,
       'history': history ?? [],
       if (sessionId != null) 'session_id': sessionId,
+      if (botId != null) 'bot_id': botId,
     });
     return streamChatSse(uri, headers, body);
   }
 
   /// Load persisted chat history so the mobile client shares context with Web/desktop.
-  Future<List<Map<String, dynamic>>> loadChatHistory({String? sessionId, int limit = 50, int? beforeId}) async {
+  Future<List<Map<String, dynamic>>> loadChatHistory(
+      {String? sessionId, int limit = 50, int? beforeId}) async {
     final q = <String, String>{'limit': '$limit'};
     if (sessionId != null) q['session_id'] = sessionId;
     if (beforeId != null) q['before_id'] = '$beforeId';
-    final uri = Uri.parse('$_baseUrl/api/chat/history').replace(queryParameters: q);
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
+    final uri =
+        Uri.parse('$_baseUrl/api/chat/history').replace(queryParameters: q);
+    final res = await _http
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final dynamic d = decodeJson(res);
     if (d is! List) return [];
@@ -484,33 +774,54 @@ class ApiService {
   }
 
   // -- Schedule --
-  Future<List<Map<String, dynamic>>> listScheduleEvents({String? start, String? end}) async {    final q = <String, String>{};
+  Future<List<Map<String, dynamic>>> listScheduleEvents(
+      {String? start, String? end}) async {
+    final q = <String, String>{};
     if (start != null) q['start'] = start;
     if (end != null) q['end'] = end;
-    final uri = Uri.parse('$_baseUrl/api/schedule').replace(queryParameters: q.isEmpty ? null : q);
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
+    final uri = Uri.parse('$_baseUrl/api/schedule')
+        .replace(queryParameters: q.isEmpty ? null : q);
+    final res = await _http
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final d = decodeJson(res);
     return (d as List? ?? []).cast<Map<String, dynamic>>();
   }
 
-  Future<Map<String, dynamic>> createScheduleEvent(Map<String, dynamic> data) async {
-    final res = await http.post(Uri.parse('$_baseUrl/api/schedule'), headers: _headers, body: jsonEncode(data));
-    if (res.statusCode != 201 && res.statusCode != 200) throw Exception(_extractError(res));
+  Future<Map<String, dynamic>> createScheduleEvent(
+      Map<String, dynamic> data) async {
+    final res = await _http.post(Uri.parse('$_baseUrl/api/schedule'),
+        headers: _headers, body: jsonEncode(data));
+    if (res.statusCode != 201 && res.statusCode != 200)
+      throw Exception(_extractError(res));
     return decodeJson(res);
   }
 
+  Future<Map<String, dynamic>> updateScheduleEvent(
+    int eventId,
+    Map<String, dynamic> data,
+  ) async {
+    final res = await put('/schedule/$eventId', data);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
   Future<void> deleteScheduleEvent(int id) async {
-    await http.delete(Uri.parse('$_baseUrl/api/schedule/$id'), headers: _headers);
+    await _http.delete(Uri.parse('$_baseUrl/api/schedule/$id'),
+        headers: _headers);
   }
 
   // -- Todo --
-  Future<List<Map<String, dynamic>>> listTodoItems({String? status, int pageSize = 50}) async {
+  Future<List<Map<String, dynamic>>> listTodoItems(
+      {String? status, int pageSize = 50}) async {
     final q = <String, String>{'page_size': '$pageSize'};
     if (status != null) q['status'] = status;
     final uri = Uri.parse('$_baseUrl/api/plugins/todo/items')
         .replace(queryParameters: q);
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
+    final res = await _http
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final dynamic d = decodeJson(res);
     final List list = d is List
@@ -520,23 +831,28 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> createTodoItem(Map<String, dynamic> data) async {
-    final res = await http.post(Uri.parse('$_baseUrl/api/plugins/todo/items'), headers: _headers, body: jsonEncode(data));
-    if (res.statusCode != 201 && res.statusCode != 200) throw Exception(_extractError(res));
+    final res = await _http.post(Uri.parse('$_baseUrl/api/plugins/todo/items'),
+        headers: _headers, body: jsonEncode(data));
+    if (res.statusCode != 201 && res.statusCode != 200)
+      throw Exception(_extractError(res));
     return decodeJson(res);
   }
 
   Future<void> updateTodoItem(int id, Map<String, dynamic> data) async {
-    await http.put(Uri.parse('$_baseUrl/api/plugins/todo/items/$id'), headers: _headers, body: jsonEncode(data));
+    await _http.put(Uri.parse('$_baseUrl/api/plugins/todo/items/$id'),
+        headers: _headers, body: jsonEncode(data));
   }
 
   Future<void> deleteTodoItem(int id) async {
-    await http.delete(Uri.parse('$_baseUrl/api/plugins/todo/items/$id'), headers: _headers);
+    await _http.delete(Uri.parse('$_baseUrl/api/plugins/todo/items/$id'),
+        headers: _headers);
   }
 
   // -- Notifications --
   Future<List<Map<String, dynamic>>> listNotifications({int limit = 20}) async {
     final res = await http
-        .get(Uri.parse('$_baseUrl/api/notifications?limit=$limit'), headers: _headers)
+        .get(Uri.parse('$_baseUrl/api/notifications?limit=$limit'),
+            headers: _headers)
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return [];
     final dynamic d = decodeJson(res);
@@ -545,11 +861,12 @@ class ApiService {
   }
 
   Future<void> markNotificationsRead() async {
-    await http.put(Uri.parse('$_baseUrl/api/notifications/read-all'), headers: _headers, body: '{}');
+    await _http.put(Uri.parse('$_baseUrl/api/notifications/read-all'),
+        headers: _headers, body: '{}');
   }
 
   Future<void> markNotificationRead(int id) async {
-    await http.put(
+    await _http.put(
       Uri.parse('$_baseUrl/api/notifications/$id/read'),
       headers: _headers,
       body: '{}',
@@ -558,7 +875,7 @@ class ApiService {
 
   /// Execute an inline notification action (complete_todo / snooze / open).
   Future<Map<String, dynamic>> actOnNotification(int id, String action) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl/api/notifications/$id/action'),
       headers: _headers,
       body: jsonEncode({'action': action}),
@@ -569,7 +886,7 @@ class ApiService {
 
   // -- MCP --
   Future<String> callMCP(String toolName, Map<String, dynamic> args) async {
-    final res = await http.post(
+    final res = await _http.post(
       Uri.parse('$_baseUrl/api/mcp/call'),
       headers: _headers,
       body: jsonEncode({'name': toolName, 'arguments': args}),
@@ -587,8 +904,9 @@ class ApiService {
       'semantic': <Map<String, dynamic>>[],
     };
     try {
-      final filesRes = await http.get(
-        Uri.parse('$_baseUrl/api/files?search=${Uri.encodeComponent(query)}&page_size=10'),
+      final filesRes = await _http.get(
+        Uri.parse(
+            '$_baseUrl/api/files?search=${Uri.encodeComponent(query)}&page_size=10'),
         headers: _headers,
       );
       if (filesRes.statusCode == 200) {
@@ -600,24 +918,27 @@ class ApiService {
       }
     } catch (_) {}
     try {
-      final sourcesRes = await http.get(
-        Uri.parse('$_baseUrl/api/sources/search?q=${Uri.encodeComponent(query)}&page_size=10'),
+      final sourcesRes = await _http.get(
+        Uri.parse(
+            '$_baseUrl/api/sources/search?q=${Uri.encodeComponent(query)}&page_size=10'),
         headers: _headers,
       );
       if (sourcesRes.statusCode == 200) {
         final data = decodeJson(sourcesRes);
-        result['items'] = (data['items'] as List? ?? []).cast<Map<String, dynamic>>();
+        result['items'] =
+            (data['items'] as List? ?? []).cast<Map<String, dynamic>>();
       }
     } catch (_) {}
     try {
-      final semRes = await http.post(
+      final semRes = await _http.post(
         Uri.parse('$_baseUrl/api/search'),
         headers: _headers,
         body: jsonEncode({'q': query, 'top_k': 5}),
       );
       if (semRes.statusCode == 200) {
         final data = decodeJson(semRes);
-        result['semantic'] = (data['results'] as List? ?? []).cast<Map<String, dynamic>>();
+        result['semantic'] =
+            (data['results'] as List? ?? []).cast<Map<String, dynamic>>();
       }
     } catch (_) {}
     return result;
@@ -625,67 +946,91 @@ class ApiService {
 
   // -- Audio --
   Future<List<FileItem>> listAudioFiles() async {
-    final res = await http.get(
+    final res = await _http.get(
       Uri.parse('$_baseUrl/api/files?page_size=200'),
       headers: _headers,
     );
     if (res.statusCode != 200) return [];
     final data = decodeJson(res);
-    final audioMimes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/flac', 'audio/ogg', 'audio/aac', 'audio/wma', 'audio/x-m4a'];
+    final audioMimes = [
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/wav',
+      'audio/flac',
+      'audio/ogg',
+      'audio/aac',
+      'audio/wma',
+      'audio/x-m4a'
+    ];
     final audioExts = ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'wma'];
     return (data['files'] as List)
-      .map((f) => FileItem.fromJson(f))
-      .where((f) => !f.isFolder && (
-        audioMimes.contains(f.mimeType) ||
-        audioExts.contains(f.originalName.split('.').last.toLowerCase())
-      ))
-      .toList();
+        .map((f) => FileItem.fromJson(f))
+        .where((f) =>
+            !f.isFolder &&
+            (audioMimes.contains(f.mimeType) ||
+                audioExts
+                    .contains(f.originalName.split('.').last.toLowerCase())))
+        .toList();
   }
 
   // -- Playlists --
   Future<List<Map<String, dynamic>>> listPlaylists() async {
-    final res = await http.get(Uri.parse('$_baseUrl/api/music/playlists'), headers: _headers);
+    final res = await _http.get(Uri.parse('$_baseUrl/api/music/playlists'),
+        headers: _headers);
     if (res.statusCode != 200) return [];
-    return ((decodeJson(res)['playlists'] as List?) ?? []).cast<Map<String, dynamic>>();
+    return ((decodeJson(res)['playlists'] as List?) ?? [])
+        .cast<Map<String, dynamic>>();
   }
 
   Future<Map<String, dynamic>> createPlaylist(String name) async {
-    final res = await http.post(Uri.parse('$_baseUrl/api/music/playlists'),
-      headers: _headers, body: jsonEncode({'name': name}));
+    final res = await _http.post(Uri.parse('$_baseUrl/api/music/playlists'),
+        headers: _headers, body: jsonEncode({'name': name}));
     if (res.statusCode != 201) throw Exception('Failed to create playlist');
     return decodeJson(res);
   }
 
   Future<void> deletePlaylist(int id) async {
-    await http.delete(Uri.parse('$_baseUrl/api/music/playlists/$id'), headers: _headers);
+    await _http.delete(Uri.parse('$_baseUrl/api/music/playlists/$id'),
+        headers: _headers);
   }
 
   Future<List<Map<String, dynamic>>> listPlaylistSongs(int playlistId) async {
-    final res = await http.get(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs'), headers: _headers);
+    final res = await _http.get(
+        Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs'),
+        headers: _headers);
     if (res.statusCode != 200) return [];
     final data = decodeJson(res);
     return (data['songs'] as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
 
   Future<void> addSongToPlaylist(int playlistId, int fileId) async {
-    final res = await http.post(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs'),
-      headers: _headers, body: jsonEncode({'file_id': fileId}));
+    final res = await _http.post(
+        Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs'),
+        headers: _headers,
+        body: jsonEncode({'file_id': fileId}));
     if (res.statusCode != 201) throw Exception('Failed to add song');
   }
 
   Future<void> removeSongFromPlaylist(int playlistId, int itemId) async {
-    await http.delete(Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs/$itemId'), headers: _headers);
+    await _http.delete(
+        Uri.parse('$_baseUrl/api/music/playlists/$playlistId/songs/$itemId'),
+        headers: _headers);
   }
 
   // -- Chat sessions --
-  Future<List<ChatSession>> listChatSessions() async {
-    final res = await get('/chat/sessions');
+  Future<List<ChatSession>> listChatSessions({int? botId}) async {
+    final q = <String, String>{};
+    if (botId != null) q['bot_id'] = '$botId';
+    final uri = Uri.parse('$_baseUrl/api/chat/sessions')
+        .replace(queryParameters: q.isEmpty ? null : q);
+    final res = await _http.get(uri, headers: _headers);
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     if (data is! List) return [];
     return data
         .whereType<Map>()
-        .map((e) => ChatSession.fromJson(e.map((k, v) => MapEntry(k.toString(), v))))
+        .map((e) =>
+            ChatSession.fromJson(e.map((k, v) => MapEntry(k.toString(), v))))
         .where((s) => s.id.isNotEmpty)
         .toList();
   }
@@ -700,29 +1045,89 @@ class ApiService {
     return res.statusCode == 200;
   }
 
-  // -- Chief of Staff --
-  Future<DailyBrief?> getDailyBrief() async {
-    final res = await get('/cos/daily-brief');
-    if (res.statusCode != 200) return null;
-    final dynamic data = decodeJson(res);
-    if (data is! Map) return null;
-    return DailyBrief.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+  // -- Agent Skills --
+  Future<List<Map<String, dynamic>>> listBotSkills(int botId) async {
+    final res = await get('/bots/$botId/skills');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(_asMap(decodeJson(res))['skills']);
   }
 
-  Future<WeeklyReview?> getWeeklyReview({int weeks = 1}) async {
-    final res = await get('/cos/weekly-review?weeks=$weeks');
-    if (res.statusCode != 200) return null;
-    final dynamic data = decodeJson(res);
-    if (data is! Map) return null;
-    return WeeklyReview.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+  Future<void> setBotSkill(int botId, String key, bool enabled) async {
+    final res = await put('/bots/$botId/skills/$key', {'enabled': enabled});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<Map<String, dynamic>> runSkill(
+    String key, {
+    int? botId,
+    Map<String, dynamic> input = const {},
+  }) async {
+    final res = await post('/skills/$key/run', {
+      if (botId != null) 'bot_id': botId,
+      'input': input,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  // -- Briefing surfaces (powered by Agent Skills) --
+  Future<DailyBrief?> getDailyBrief({int? botId}) async {
+    try {
+      final res = await post('/skills/daily-brief/run', {
+        if (botId != null) 'bot_id': botId,
+        'input': <String, dynamic>{},
+      });
+      if (res.statusCode == 200) {
+        final data = _asMap(decodeJson(res));
+        return DailyBrief.fromJson(_asMap(data['output']));
+      }
+      // Transitional fallback while the backend is being upgraded. Remove once
+      // every deployment runs the Agent Skills API.
+      if (res.statusCode == 404) {
+        final legacy = await get('/cos/daily-brief');
+        if (legacy.statusCode == 200) {
+          return DailyBrief.fromJson(_asMap(decodeJson(legacy)));
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<WeeklyReview?> getWeeklyReview({int weeks = 1, int? botId}) async {
+    try {
+      final res = await post('/skills/weekly-review/run', {
+        if (botId != null) 'bot_id': botId,
+        'input': {'weeks': weeks},
+      });
+      if (res.statusCode == 200) {
+        final data = _asMap(decodeJson(res));
+        return WeeklyReview.fromJson(_asMap(data['output']));
+      }
+      if (res.statusCode == 404) {
+        final legacy = await get('/cos/weekly-review?weeks=$weeks');
+        if (legacy.statusCode == 200) {
+          return WeeklyReview.fromJson(_asMap(decodeJson(legacy)));
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<TriageSnapshot?> getTriage({int days = 3}) async {
-    final res = await get('/cos/triage?days=$days');
-    if (res.statusCode != 200) return null;
-    final dynamic data = decodeJson(res);
-    if (data is! Map) return null;
-    return TriageSnapshot.fromJson(data.map((k, v) => MapEntry(k.toString(), v)));
+    try {
+      var res = await get('/inbox/groups?days=$days');
+      if (res.statusCode == 404) {
+        res = await get('/cos/triage?days=$days');
+      }
+      if (res.statusCode != 200) return null;
+      final data = decodeJson(res);
+      if (data is! Map) return null;
+      return TriageSnapshot.fromJson(
+        data.map((k, v) => MapEntry(k.toString(), v)),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Map<String, dynamic>?> getDraftReply({
@@ -731,28 +1136,98 @@ class ApiService {
     String? message,
     String? subject,
     String tone = 'professional',
+    int? botId,
   }) async {
-    final res = await post('/cos/draft-reply', {
-      'source': source,
-      if (messageId != null) 'message_id': messageId,
-      if (message != null) 'message': message,
-      if (subject != null) 'subject': subject,
-      'tone': tone,
-    });
-    if (res.statusCode != 200) return null;
-    final dynamic data = decodeJson(res);
-    return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+    if (messageId == null) return null;
+    try {
+      var res = await post(
+        '/plugins/mail/messages/$messageId/ai-draft',
+        {
+          'tone': tone,
+          if (botId != null) 'bot_id': botId,
+        },
+      );
+      if (res.statusCode == 404) {
+        res = await post('/cos/draft-reply', {
+          'source': source,
+          'message_id': messageId,
+          'tone': tone,
+        });
+      }
+      if (res.statusCode != 200) return null;
+      final dynamic data = decodeJson(res);
+      return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   // -- Mail --
-  Future<List<Map<String, dynamic>>> listMailMessages({int limit = 50}) async {
-    final res = await get('/plugins/mail/messages?page_size=$limit');
+  Future<List<Map<String, dynamic>>> listMailMessages({
+    int limit = 50,
+    String folder = 'inbox',
+    bool unread = false,
+  }) async {
+    final res = await get(
+      '/plugins/mail/messages?page_size=$limit&folder=$folder&unread=$unread',
+    );
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     final List list = data is Map
         ? (data['items'] as List? ?? const [])
         : (data is List ? data : const []);
-    return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listMailAccounts() async {
+    final res = await get('/plugins/mail/accounts');
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    if (data is! List) return [];
+    return data
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> sendMail({
+    int? accountId,
+    required List<String> to,
+    List<String> cc = const [],
+    List<String> bcc = const [],
+    required String subject,
+    required String body,
+    int? replyToId,
+    List<int> attachmentFileIds = const [],
+  }) async {
+    final res = await post('/plugins/mail/messages/send', {
+      if (accountId != null) 'account_id': accountId,
+      'to': to,
+      'cc': cc,
+      'bcc': bcc,
+      'subject': subject,
+      'body': body,
+      if (replyToId != null) 'reply_to_id': replyToId,
+      'attachment_file_ids': attachmentFileIds,
+    });
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  Future<int> markAllMailRead() async {
+    final res = await put('/plugins/mail/messages/read-all', const {});
+    if (res.statusCode != 200) return 0;
+    final data = decodeJson(res);
+    if (data is Map) {
+      final value = data['updated'];
+      return value is int ? value : int.tryParse('$value') ?? 0;
+    }
+    return 0;
   }
 
   Future<Map<String, dynamic>?> getMailMessage(int id) async {
@@ -763,12 +1238,16 @@ class ApiService {
   }
 
   // -- Memory --
-  Future<List<Map<String, dynamic>>> listMemoryCandidates({String status = 'pending'}) async {
+  Future<List<Map<String, dynamic>>> listMemoryCandidates(
+      {String status = 'pending'}) async {
     final res = await get('/memory/candidates?status=$status&limit=100');
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     final list = data is Map ? (data['items'] as List? ?? const []) : const [];
-    return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> listMemoryRecords() async {
@@ -776,7 +1255,10 @@ class ApiService {
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     final list = data is Map ? (data['items'] as List? ?? const []) : const [];
-    return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
   }
 
   Future<bool> approveMemory(int id) async {
@@ -826,7 +1308,65 @@ class ApiService {
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     if (data is! List) return [];
-    return data.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+    return data
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  /// Flattened notes list (tree endpoint) for workbench "recently used".
+  Future<List<Map<String, dynamic>>> listNotes() async {
+    final res = await get('/plugins/notes/tree');
+    if (res.statusCode != 200) return [];
+    final dynamic data = decodeJson(res);
+    if (data is! List) return [];
+    final out = <Map<String, dynamic>>[];
+    void walk(List<dynamic> nodes) {
+      for (final node in nodes) {
+        if (node is! Map) continue;
+        final map = node.map((k, v) => MapEntry(k.toString(), v));
+        out.add(map);
+        final children = map['children'];
+        if (children is List) walk(children);
+      }
+    }
+
+    walk(data);
+    return out;
+  }
+
+  Future<Map<String, dynamic>> getWorkbenchSummary() async {
+    final res = await get('/workbench/summary');
+    if (res.statusCode != 200) return {};
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> getDingTalkActions({
+    bool refresh = false,
+  }) async {
+    final res = await get(
+      '/workbench/dingtalk-actions${refresh ? '?refresh=true' : ''}',
+    );
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<List<String>> getWorkbenchSuggestions({bool refresh = false}) async {
+    final res =
+        await get('/inbox/suggestions${refresh ? '?refresh=true' : ''}');
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    final list = data is Map ? data['suggestions'] : null;
+    if (list is! List) return [];
+    return list
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> listSourceItems({int limit = 30}) async {
@@ -834,7 +1374,10 @@ class ApiService {
     if (res.statusCode != 200) return [];
     final dynamic data = decodeJson(res);
     final list = data is Map ? (data['items'] as List? ?? const []) : const [];
-    return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> listMcpServers() async {
@@ -893,5 +1436,313 @@ class ApiService {
     } catch (_) {
       // Cross-device sync is best-effort; local settings remain authoritative.
     }
+  }
+
+  // -- Helpers for JSON maps/lists --
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map) {
+      return data.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return {};
+  }
+
+  List<Map<String, dynamic>> _asMapList(dynamic data) {
+    if (data is! List) return [];
+    return data
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  // -- File actions --
+  Future<FileItem> renameFile(int fileId, String newName) async {
+    final res = await put('/files/$fileId/rename', {'new_name': newName});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return FileItem.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<FileItem> moveFile(int fileId, String newFolderPath) async {
+    final res =
+        await put('/files/$fileId/move', {'new_folder_path': newFolderPath});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return FileItem.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<FileItem> toggleFavoriteFile(int fileId) async {
+    final res = await post('/files/$fileId/favorite', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return FileItem.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<FileItem> updateFileTags(int fileId, List<String> tags) async {
+    final res = await put('/files/$fileId/tags', {'tags': tags});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return FileItem.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<void> deleteFile(int fileId) async {
+    final res = await delete('/files/$fileId');
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw Exception(_extractError(res));
+    }
+  }
+
+  String fileStreamUrl(int fileId) =>
+      '$_baseUrl/api/files/$fileId/stream?token=${Uri.encodeComponent(_token ?? '')}';
+
+  // -- Project runs --
+  Future<List<Map<String, dynamic>>> listProjectRuns(
+    int projectId, {
+    int limit = 50,
+  }) async {
+    final res = await get('/projects/$projectId/runs?limit=$limit');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> startProjectRun(
+    int projectId,
+    String instruction, {
+    String? branch,
+  }) async {
+    final res = await post('/projects/$projectId/runs', {
+      'instruction': instruction,
+      if (branch != null && branch.isNotEmpty) 'branch': branch,
+    });
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  // -- Automation routines --
+  Future<Map<String, dynamic>> automationOverview() async {
+    final res = await get('/automation/overview');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> automationTemplates() async {
+    final res = await get('/automation/templates');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    final data = _asMap(decodeJson(res));
+    return _asMapList(data['templates']);
+  }
+
+  Future<List<Map<String, dynamic>>> listBots() async {
+    final res = await get('/bots');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> createBot(Map<String, dynamic> data) async {
+    final res = await post('/bots', data);
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> updateBot(
+    int botId,
+    Map<String, dynamic> data,
+  ) async {
+    final res = await patch('/bots/$botId', data);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<void> deleteBot(int botId) async {
+    final res = await delete('/bots/$botId');
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw Exception(_extractError(res));
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listBotRoutines(int botId) async {
+    final res = await get('/bots/$botId/routines');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> parseAutomationRule(String text) async {
+    final res = await post('/automation/parse', {'text': text});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(_asMap(decodeJson(res))['draft']);
+  }
+
+  Future<Map<String, dynamic>> createAutomationFromTemplate(
+    int botId,
+    String templateKey, {
+    Map<String, dynamic>? overrides,
+  }) async {
+    final res = await post('/automation/from-template', {
+      'bot_id': botId,
+      'template_key': templateKey,
+      if (overrides != null) 'overrides': overrides,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> createAutomationRoutine(
+    int botId,
+    Map<String, dynamic> data,
+  ) async {
+    final res = await post('/bots/$botId/routines', data);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> automationRoutine(int routineId) async {
+    final res = await get('/automation/routines/$routineId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> dryRunAutomationRoutine(int routineId) async {
+    final res = await post('/automation/routines/$routineId/dry-run', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> automationRuns(
+    int routineId, {
+    int limit = 20,
+  }) async {
+    final res = await get('/automation/routines/$routineId/runs?limit=$limit');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> automationStats(
+    int routineId, {
+    int days = 30,
+  }) async {
+    final res = await get('/automation/routines/$routineId/stats?days=$days');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> updateAutomationRoutine(
+    int botId,
+    int routineId,
+    Map<String, dynamic> data,
+  ) async {
+    final res = await patch('/bots/$botId/routines/$routineId', data);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<void> deleteAutomationRoutine(int botId, int routineId) async {
+    final res = await delete('/bots/$botId/routines/$routineId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<Map<String, dynamic>> runAutomationRoutineNow(
+    int botId,
+    int routineId,
+  ) async {
+    final res = await post('/bots/$botId/routines/$routineId/run', const {});
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  // -- Daily insights --
+  Future<List<Map<String, dynamic>>> dailyInsights({int days = 7}) async {
+    final res = await get('/insights/daily?days=$days');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> runDailyInsight({String? day}) async {
+    final res = await post('/insights/daily/run', {
+      'force': true,
+      if (day != null) 'day': day,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  // -- Notes knowledge base (RAG) --
+  Future<Map<String, dynamic>> askNotes(String question, {int? topK}) async {
+    final res = await post('/plugins/notes/rag/ask', {
+      'question': question,
+      if (topK != null) 'top_k': topK,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> searchNotesRag(String query, {int? topK}) async {
+    final res = await post('/plugins/notes/rag/search', {
+      'q': query,
+      if (topK != null) 'top_k': topK,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> noteVersions(int noteId) async {
+    final res = await get('/plugins/notes/$noteId/versions');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(_asMap(decodeJson(res))['versions']);
+  }
+
+  Future<Map<String, dynamic>> noteVersion(int noteId, int versionId) async {
+    final res = await get('/plugins/notes/$noteId/versions/$versionId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> restoreNoteVersion(
+    int noteId,
+    int versionId,
+  ) async {
+    final res = await post(
+        '/plugins/notes/$noteId/versions/$versionId/restore', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> similarNotes(
+    int noteId, {
+    int limit = 5,
+  }) async {
+    final res = await get('/plugins/notes/$noteId/similar?limit=$limit');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(_asMap(decodeJson(res))['results']);
+  }
+
+  Future<List<Map<String, dynamic>>> searchNotes(String query) async {
+    final res = await get(
+      '/plugins/notes/search?q=${Uri.encodeQueryComponent(query)}',
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> importNoteFromUrl(
+    String url, {
+    int? parentId,
+    String? title,
+  }) async {
+    final res = await post('/plugins/notes/import/url', {
+      'url': url,
+      if (parentId != null) 'parent_id': parentId,
+      if (title != null && title.isNotEmpty) 'title': title,
+    });
+    if (res.statusCode != 201 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> backfillInsights({int days = 7}) async {
+    final res = await post('/insights/daily/backfill?days=$days', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res));
   }
 }

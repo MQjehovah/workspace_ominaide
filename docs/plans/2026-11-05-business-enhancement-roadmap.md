@@ -73,9 +73,9 @@
 - 向量检索 + 使用反馈：注入命中的记录累加 `use_count`
 - 支持修正记忆内容与重要度（`PATCH /api/memory/records/{id}`）
 
-## Chief-of-Staff 场景包（2026-11-05 追加）
+## Chief-of-Staff 场景包（已迁移为 Agent Skills）
 
-详见 `docs/chief-of-staff.md`：
+已迁移到 `docs/skills.md`：简报/会议准备/周报是 Bot 技能，统一收件箱是确定性功能面，回复邮件是邮件功能里的 AI 起草动作。
 
 - 统一收件箱 triage：邮件/资讯/钉钉/待办/日程合并为紧急、待回复、今天、知会
 - 每日简报：日程、到期/逾期待办、未读邮件、钉钉未读、资讯、长期记忆提醒

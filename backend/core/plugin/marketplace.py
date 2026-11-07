@@ -3,8 +3,14 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
 from core.auth.dependencies import get_current_admin
+from core.config.settings import settings
 
-MARKETPLACE_DIR = Path(__file__).resolve().parent.parent.parent / "desktop_plugins"
+_plugins_dir = Path(settings.desktop_plugins_dir)
+MARKETPLACE_DIR = (
+    _plugins_dir
+    if _plugins_dir.is_absolute()
+    else Path(__file__).resolve().parent.parent.parent / _plugins_dir
+)
 router = APIRouter(prefix="/api/plugins/marketplace", tags=["marketplace"])
 
 

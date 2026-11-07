@@ -6,6 +6,8 @@ class FileItem {
   final int size;
   final String? mimeType;
   final String createdAt;
+  final bool isFavorite;
+  final List<String> tags;
 
   FileItem({
     required this.id,
@@ -15,9 +17,12 @@ class FileItem {
     this.size = 0,
     this.mimeType,
     this.createdAt = '',
+    this.isFavorite = false,
+    this.tags = const [],
   });
 
   factory FileItem.fromJson(Map<String, dynamic> json) {
+    final rawTags = json['tags'];
     return FileItem(
       id: json['id'] ?? 0,
       originalName: json['original_name'] ?? '',
@@ -26,6 +31,8 @@ class FileItem {
       size: json['size'] ?? 0,
       mimeType: json['mime_type'],
       createdAt: json['created_at'] ?? '',
+      isFavorite: json['is_favorite'] == true,
+      tags: rawTags is List ? rawTags.map((e) => e.toString()).toList() : const [],
     );
   }
 

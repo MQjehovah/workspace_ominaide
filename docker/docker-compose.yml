@@ -71,8 +71,8 @@ services:
       minio:
         condition: service_started
     volumes:
-      - backend_uploads:/app/uploads
-      - dws_data:/data/dws
+      - backend_data:/data
+      - backend_config:/config
     restart: unless-stopped
 
 volumes:
@@ -80,5 +80,5 @@ volumes:
   minio_data:
   qdrant_data:
   redis_data:
-  backend_uploads:
-  dws_data:
+  backend_data:
+  backend_config:

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/cos_models.dart';
 import '../services/api_service.dart';
+import '../services/bot_selection_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 
@@ -31,13 +32,14 @@ class _BriefScreenState extends State<BriefScreen> {
       _error = false;
     });
     final api = ApiService();
+    final botId = BotSelectionService().botId;
     DailyBrief? brief;
     WeeklyReview? weekly;
     try {
-      brief = await api.getDailyBrief();
+      brief = await api.getDailyBrief(botId: botId);
     } catch (_) {}
     try {
-      weekly = await api.getWeeklyReview();
+      weekly = await api.getWeeklyReview(botId: botId);
     } catch (_) {}
     if (!mounted) return;
     setState(() {
@@ -57,8 +59,8 @@ class _BriefScreenState extends State<BriefScreen> {
         child: Column(
           children: [
             PageHeader(
-              kicker: 'Chief of Staff',
-              title: '幕僚长',
+              kicker: 'Briefing',
+              title: '简报',
               subtitle: _tab == 0 ? '今日简报' : '本周回顾',
               actions: [
                 RoundIconButton(
@@ -86,7 +88,8 @@ class _BriefScreenState extends State<BriefScreen> {
             const SizedBox(height: 8),
             Expanded(
               child: _loading
-                  ? Center(child: CircularProgressIndicator(color: palette.primary))
+                  ? Center(
+                      child: CircularProgressIndicator(color: palette.primary))
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
@@ -115,6 +118,7 @@ class _BriefScreenState extends State<BriefScreen> {
       onTap: () => setState(() => _tab = value),
       borderRadius: BorderRadius.circular(18),
       child: Container(
+        alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? palette.primary : palette.card,
@@ -321,8 +325,10 @@ class _BriefScreenState extends State<BriefScreen> {
               Row(
                 children: [
                   _stat(palette, '${weekly.stats['todos_done'] ?? 0}', '完成待办'),
-                  _stat(palette, '${weekly.stats['todos_pending'] ?? 0}', '进行中'),
-                  _stat(palette, '${weekly.stats['insight_days'] ?? 0}', '回顾天数'),
+                  _stat(
+                      palette, '${weekly.stats['todos_pending'] ?? 0}', '进行中'),
+                  _stat(
+                      palette, '${weekly.stats['insight_days'] ?? 0}', '回顾天数'),
                 ],
               ),
             ],

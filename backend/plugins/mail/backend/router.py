@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
 from .schemas import (
@@ -12,12 +13,19 @@ from .schemas import (
     MailEventResponse,
     MailMessageDetail,
     MailMessageResponse,
+    MailSendRequest,
 )
 from . import service as mail_service
 from . import sync as mail_sync
 from .models import MailAccount, MailEvent, MailMessage
 
 router = APIRouter(prefix="/api/plugins/mail", tags=["mail"])
+
+
+class AiDraftRequest(BaseModel):
+    tone: str = "professional"
+    instructions: str | None = None
+    bot_id: int | None = None
 
 
 @router.get("/accounts", response_model=list[MailAccountResponse])
@@ -124,13 +132,15 @@ async def list_messages(
     unread: bool = False,
     important: bool = False,
     starred: bool = False,
+    folder: str = Query("inbox"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await mail_sync.list_messages(
-        db, user["id"], account_id, unread, important, starred, page, page_size
+        db, user["id"], account_id, unread, important, starred, page, page_size,
+        folder=folder,
     )
     return {
         "items": [MailMessageResponse.model_validate(m) for m in items],
@@ -138,6 +148,29 @@ async def list_messages(
         "page": page,
         "page_size": page_size,
     }
+
+
+@router.post("/messages/send")
+async def send_message(
+    req: MailSendRequest,
+    user: dict = Depends(get_current_user),
+):
+    from plugins.mail.backend.send import MailSendError, send_mail
+
+    try:
+        return await send_mail(
+            user_id=user["id"],
+            account_id=req.account_id,
+            to=req.to,
+            cc=req.cc,
+            bcc=req.bcc,
+            subject=req.subject,
+            body=req.body,
+            reply_to_id=req.reply_to_id,
+            attachment_file_ids=req.attachment_file_ids,
+        )
+    except MailSendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.get("/messages/{message_id}", response_model=MailMessageDetail)
@@ -154,6 +187,53 @@ async def get_message(
     if msg is None:
         raise HTTPException(status_code=404, detail="Message not found")
     return msg
+
+
+@router.post("/messages/{message_id}/ai-draft")
+async def ai_draft(
+    message_id: int,
+    req: AiDraftRequest,
+    user: dict = Depends(get_current_user),
+):
+    from core.bots.registry import get_active_bot, get_or_create_default_bot
+    from core.cos.service import draft_reply
+
+    try:
+        bot = (
+            await get_active_bot(user["id"], req.bot_id)
+            if req.bot_id
+            else await get_or_create_default_bot(user["id"])
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    draft = await draft_reply(
+        user["id"],
+        source="mail",
+        message_id=message_id,
+        tone=req.tone,
+        instructions=req.instructions,
+        bot=bot,
+    )
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Message not found or empty")
+    return draft
+
+
+@router.put("/messages/read-all")
+async def mark_all_messages_read(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        update(MailMessage)
+        .where(
+            MailMessage.user_id == user["id"],
+            MailMessage.read == False,  # noqa: E712
+        )
+        .values(read=True)
+    )
+    await db.flush()
+    return {"updated": result.rowcount or 0}
 
 
 @router.put("/messages/{message_id}/read")

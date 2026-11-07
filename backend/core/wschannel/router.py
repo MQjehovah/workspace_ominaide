@@ -1,8 +1,27 @@
-﻿from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+﻿from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from core.auth.dependencies import get_current_user
 from core.auth.jwt import decode_access_token
 from core.wschannel.hub import host_channel
 
 router = APIRouter(tags=["wschannel"])
+
+
+@router.get("/api/vibecoding/devices")
+async def list_vibecoding_devices(user: dict = Depends(get_current_user)):
+    """Connected desktop hosts for the current user.
+
+    The Hub only knows live WebSocket hosts; after a backend restart the
+    desktop reconnects and repopulates this list.
+    """
+    return [
+        {
+            "device_id": device_id,
+            "name": host_channel.device_name(device_id),
+            "platform": "desktop",
+            "status": "online",
+        }
+        for device_id in host_channel.device_ids(user["id"])
+    ]
 
 
 @router.websocket("/ws/host")

@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config.dart';
+
 /// The single multiplexed WebSocket (`/ws/host`, role=viewer) shared by all
 /// mobile services. Every message on the wire carries a `channel` namespace;
 /// consumers filter by channel. Auto-reconnects with exponential backoff.
@@ -43,7 +45,9 @@ class HostChannelService {
         return;
       }
       final token = prefs.getString('token');
-      final serverUrl = prefs.getString('serverUrl') ?? 'http://10.0.2.2:8000';
+      final serverUrl = normalizeServerUrl(
+        prefs.getString('serverUrl') ?? kDefaultServerUrl,
+      );
       if (token == null || token.isEmpty) {
         _connecting = false;
         return;

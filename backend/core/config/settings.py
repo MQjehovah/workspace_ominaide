@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     asr_api_key: str = ""
     asr_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     asr_model: str = "glm-asr"
+    # Long meeting recordings are sent to ASR as one stream from MinIO; these
+    # controls are intentionally independent of the 25MB voice-note limit.
+    asr_timeout_seconds: int = 3600
+    asr_diarize: bool = True
+    meeting_asr_concurrency: int = 1
     tts_api_key: str = ""
     tts_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     tts_model: str = "glm-tts"
@@ -71,6 +76,12 @@ class Settings(BaseSettings):
     rsshub_base_url: str = ""
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
+    # Runtime data. Production mounts one host directory at /data/omniaide and
+    # points every persistent path below at a subdirectory of it.
+    # Agent Skills: built-in skills live under backend/skills/builtin; user/bot
+    # skills are discovered under skills_dir (relative to the backend cwd).
+    skills_dir: str = "data/skills"
+    desktop_plugins_dir: str = "desktop_plugins"
     # Daily memory agent auto-approves candidates at or above this confidence.
     memory_auto_approve_threshold: int = 85
     # Lightweight DingTalk message sync (no LLM) feeding the daily memory agent.

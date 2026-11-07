@@ -181,11 +181,14 @@ async def list_messages(
     starred: bool = False,
     page: int = 1,
     page_size: int = 20,
+    folder: str = "inbox",
 ):
     from sqlalchemy import func, select
     from plugins.mail.backend.models import MailMessage
 
     q = select(MailMessage).where(MailMessage.user_id == user_id)
+    if folder:
+        q = q.where(MailMessage.folder == folder)
     if account_id:
         q = q.where(MailMessage.account_id == account_id)
     if unread:

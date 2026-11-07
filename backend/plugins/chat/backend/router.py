@@ -144,6 +144,11 @@ async def build_messages(
     ctx = await build_bot_context(user_id, bot, req.message)
     if ctx:
         messages.append({"role": "system", "content": ctx})
+    from core.skills.runtime import build_skill_context
+
+    skill_ctx = await build_skill_context(bot)
+    if skill_ctx:
+        messages.append({"role": "system", "content": skill_ctx})
     if req.context_refs:
         from core.objects.registry import build_context_block
 
