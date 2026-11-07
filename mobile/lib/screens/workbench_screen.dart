@@ -332,7 +332,8 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                     tooltip: '随手记',
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const QuickCaptureScreen()),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -398,175 +399,164 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   }
 
   Widget _buildHeroChat(AppPalette palette) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [palette.primaryLight, palette.primary],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: palette.primary.withValues(alpha: 0.24),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _pushAndRefresh(const BriefScreen()),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [palette.primaryLight, palette.primary],
           ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            right: -30,
-            top: -38,
-            child: Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.14),
-                shape: BoxShape.circle,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: palette.primary.withValues(alpha: 0.24),
+              blurRadius: 22,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -30,
+              top: -38,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                ),
               ),
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome,
-                    size: 14,
-                    color: Colors.white.withValues(alpha: 0.95),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.auto_awesome,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.95),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      '今日简报',
+                      style: TextStyle(
+                        fontSize: 11,
+                        letterSpacing: 0.5,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _briefSummary,
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.6,
+                    color: Colors.white.withValues(alpha: 0.94),
                   ),
-                  const SizedBox(width: 5),
-                  Text(
-                    '今日简报',
-                    style: TextStyle(
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _chatController,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: _ask,
+                  style: const TextStyle(fontSize: 13, color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: '问点什么，或让我处理一件事…',
+                    hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.82),
                       fontSize: 12,
-                      letterSpacing: 0.6,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _briefSummary,
-                maxLines: 5,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.65,
-                  color: Colors.white.withValues(alpha: 0.94),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerRight,
-                child: GestureDetector(
-                  onTap: () => _pushAndRefresh(const BriefScreen()),
-                  child: Text(
-                    '查看今日简报 →',
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white.withValues(alpha: 0.92),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.16),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
                     ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _chatController,
-                textInputAction: TextInputAction.send,
-                onSubmitted: _ask,
-                style: const TextStyle(fontSize: 13, color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: '问点什么，或让我处理一件事…',
-                  hintStyle: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.82),
-                    fontSize: 12,
-                  ),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.16),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.24),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.24),
+                      ),
                     ),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.24),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.24),
+                      ),
                     ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.55),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
                     ),
-                  ),
-                  suffixIcon: IconButton(
-                    onPressed: () => _ask(_chatController.text),
-                    icon: const Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 17,
-                      color: Colors.white,
+                    suffixIcon: IconButton(
+                      onPressed: () => _ask(_chatController.text),
+                      icon: const Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 17,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 28,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _suggestions.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 5),
-                  itemBuilder: (context, index) {
-                    final prompt = _suggestions[index];
-                    return InkWell(
-                      onTap: () => _ask(prompt),
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 250),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.18),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 28,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _suggestions.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 5),
+                    itemBuilder: (context, index) {
+                      final prompt = _suggestions[index];
+                      return InkWell(
+                        onTap: () => _ask(prompt),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          constraints: const BoxConstraints(maxWidth: 250),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18),
+                            ),
                           ),
-                        ),
-                        child: Center(
-                          widthFactor: 1,
-                          heightFactor: 1,
-                          child: Text(
-                            prompt,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white.withValues(alpha: 0.9),
+                          child: Center(
+                            widthFactor: 1,
+                            heightFactor: 1,
+                            child: Text(
+                              prompt,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.9),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
