@@ -90,6 +90,30 @@ async def _recent_projects(user_id: int) -> list[dict]:
     ]
 
 
+def _event_out(item: dict) -> dict:
+    meta = item.get("meta") or {}
+    return {
+        "id": item.get("source_id"),
+        "title": item.get("title") or "日程",
+        "start_time": item.get("time"),
+        "end_time": meta.get("end"),
+        "notes": item.get("summary") or "",
+        "source": item.get("source") or "manual",
+    }
+
+
+def _todo_out(item: dict) -> dict:
+    meta = item.get("meta") or {}
+    return {
+        "id": item.get("source_id"),
+        "title": item.get("title") or "待办",
+        "description": item.get("summary") or "",
+        "due_date": meta.get("due"),
+        "status": "pending",
+        "priority": meta.get("priority") or 0,
+    }
+
+
 @router.get("/summary")
 async def workbench_summary(user: dict = Depends(get_current_user)):
     user_id = user["id"]
@@ -153,8 +177,8 @@ async def workbench_summary(user: dict = Depends(get_current_user)):
             "mail": mail_unread,
             "dingtalk": dingtalk_count,
         },
-        "events": events or [],
-        "todos": todos or [],
+        "events": [_event_out(item) for item in (events or [])],
+        "todos": [_todo_out(item) for item in (todos or [])],
         "recent": {
             "files": files or [],
             "notes": notes or [],
