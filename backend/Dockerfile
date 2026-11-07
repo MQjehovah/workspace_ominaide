@@ -12,15 +12,19 @@ RUN apt-get update && \
 RUN npm config set registry https://registry.npmmirror.com && \
     npm install -g dingtalk-workspace-cli@1.0.62
 
-# All persistent runtime data lives under one host directory mounted at
-# /data/omniaide (workspace, skills, DWS credentials, SSH key, plugins).
-ENV DWS_CONFIG_DIR=/data/omniaide/dws \
-    SKILLS_DIR=/data/omniaide/skills \
-    CODING_WORKSPACE_ROOT=/data/omniaide/workspace \
-    CODING_SSH_KEY_PATH=/data/omniaide/ssh/id_rsa \
-    DESKTOP_PLUGINS_DIR=/data/omniaide/desktop_plugins
-RUN mkdir -p /data/omniaide/dws /data/omniaide/skills /data/omniaide/workspace \
-    /data/omniaide/ssh /data/omniaide/desktop_plugins
+# Two standard mounts:
+#   /data   - mutable data (workspace, skills, uploads, desktop plugins)
+#   /config - credentials/config (DWS config + token store, SSH key)
+ENV DWS_CONFIG_DIR=/config/dws \
+    SKILLS_DIR=/data/skills \
+    CODING_WORKSPACE_ROOT=/data/workspace \
+    CODING_SSH_KEY_PATH=/config/ssh/id_rsa \
+    DESKTOP_PLUGINS_DIR=/data/desktop_plugins
+# The DWS CLI keeps its encrypted token outside DWS_CONFIG_DIR, under
+# ~/.local/share/dws-cli. Point it into /config so login survives recreation.
+RUN mkdir -p /data/skills /data/workspace /data/desktop_plugins \
+    /config/dws /config/ssh /root/.local/share && \
+    ln -sfn /config/dws-cli /root/.local/share/dws-cli
 
 COPY requirements.txt .
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \

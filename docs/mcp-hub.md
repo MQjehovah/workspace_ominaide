@@ -70,10 +70,15 @@ GET    /api/mcp/templates
 Dockerfile 已安装 Node + `dingtalk-workspace-cli@1.0.62`，并设置：
 
 ```
-DWS_CONFIG_DIR=/data/omniaide/dws
+DWS_CONFIG_DIR=/config/dws
 ```
 
-生产环境用一个挂载点 `/data/omniaide`（主机 `/data/docker/omniaide`）保存全部持久化数据，DWS 配置在其子目录 `dws/` 下。首次登录：
+生产环境使用两个标准挂载点：
+
+- `/data/omniaide` → `/data`：workspace、skills、配件数据
+- `/config/omniaide` → `/config`：DWS 配置、DWS token store、SSH 部署密钥
+
+DWS CLI 的加密 token 存在 `~/.local/share/dws-cli`（不在 `DWS_CONFIG_DIR` 内），镜像中已把该目录软链到 `/config/dws-cli`，所以容器重建后登录态不会丢。首次登录：
 
 ```bash
 docker compose exec backend dws auth login --device --recommend

@@ -71,7 +71,8 @@ services:
       minio:
         condition: service_started
     volumes:
-      - backend_data:/data/omniaide
+      - backend_data:/data
+      - backend_config:/config
     restart: unless-stopped
 
 volumes:
@@ -80,3 +81,4 @@ volumes:
   qdrant_data:
   redis_data:
   backend_data:
+  backend_config:
