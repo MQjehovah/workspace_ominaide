@@ -15,11 +15,16 @@ class ScheduleScreen extends StatefulWidget {
 class _ScheduleScreenState extends State<ScheduleScreen> {
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _weekEvents = [];
+  List<Map<String, dynamic>> _dayEvents = [];
+  List<Map<String, dynamic>> _monthEvents = [];
   bool _loading = true;
-  bool _weekLoading = false;
-  bool _weekView = false;
+  bool _viewLoading = false;
+  String _view = 'list';
   String _error = '';
   late DateTime _weekStart = _monday(DateTime.now());
+  late DateTime _focusedDay = DateTime.now();
+  late DateTime _monthStart =
+      DateTime(DateTime.now().year, DateTime.now().month, 1);
 
   static DateTime _monday(DateTime date) {
     final day = DateTime(date.year, date.month, date.day);
@@ -32,8 +37,48 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _load();
   }
 
+  Future<void> _loadDay() async {
+    setState(() => _viewLoading = true);
+    try {
+      final start = DateTime(
+        _focusedDay.year,
+        _focusedDay.month,
+        _focusedDay.day,
+      );
+      final events = await ApiService().listScheduleEvents(
+        start: start.toIso8601String(),
+        end: start.add(const Duration(days: 1)).toIso8601String(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _dayEvents = events;
+        _viewLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _viewLoading = false);
+    }
+  }
+
+  Future<void> _loadMonth() async {
+    setState(() => _viewLoading = true);
+    try {
+      final gridStart = _monday(_monthStart);
+      final events = await ApiService().listScheduleEvents(
+        start: gridStart.toIso8601String(),
+        end: gridStart.add(const Duration(days: 42)).toIso8601String(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _monthEvents = events;
+        _viewLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _viewLoading = false);
+    }
+  }
+
   Future<void> _loadWeek() async {
-    setState(() => _weekLoading = true);
+    setState(() => _viewLoading = true);
     try {
       final events = await ApiService().listScheduleEvents(
         start: _weekStart.toIso8601String(),
@@ -42,16 +87,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       if (!mounted) return;
       setState(() {
         _weekEvents = events;
-        _weekLoading = false;
+        _viewLoading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _weekLoading = false);
+      if (mounted) setState(() => _viewLoading = false);
     }
   }
 
-  void _toggleWeek() {
-    setState(() => _weekView = !_weekView);
-    if (_weekView) _loadWeek();
+  void _switchView(String view) {
+    setState(() => _view = view);
+    _refreshCurrentView();
+  }
+
+  void _refreshCurrentView() {
+    if (_view == 'day') {
+      _loadDay();
+    } else if (_view == 'week') {
+      _loadWeek();
+    } else if (_view == 'month') {
+      _loadMonth();
+    } else {
+      _load();
+    }
   }
 
   void _shiftWeek(int days) {
@@ -59,9 +116,25 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _loadWeek();
   }
 
+  void _shiftDay(int days) {
+    setState(() => _focusedDay = _focusedDay.add(Duration(days: days)));
+    _loadDay();
+  }
+
+  void _shiftMonth(int months) {
+    final next = DateTime(_monthStart.year, _monthStart.month + months, 1);
+    setState(() => _monthStart = next);
+    _loadMonth();
+  }
+
   void _goToday() {
-    setState(() => _weekStart = _monday(DateTime.now()));
-    _loadWeek();
+    final now = DateTime.now();
+    setState(() {
+      _weekStart = _monday(now);
+      _focusedDay = now;
+      _monthStart = DateTime(now.year, now.month, 1);
+    });
+    _refreshCurrentView();
   }
 
   Future<void> _load() async {
@@ -150,7 +223,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             selected.add(const Duration(hours: 1)).toUtc().toIso8601String(),
       });
       if (!mounted) return;
-      _load();
+      _refreshCurrentView();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -230,7 +303,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             selected.add(const Duration(hours: 1)).toUtc().toIso8601String(),
       });
       if (!mounted) return;
-      _load();
+      _refreshCurrentView();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -256,54 +329,460 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       appBar: AppBar(
         title: const Text('日程'),
         actions: [
-          IconButton(
-            icon: Icon(
-                _weekView ? Icons.view_list_rounded : Icons.view_week_rounded),
-            tooltip: _weekView ? '列表视图' : '周视图',
-            onPressed: _toggleWeek,
-          ),
           IconButton(onPressed: _add, icon: const Icon(Icons.add)),
         ],
       ),
-      body: _weekView
-          ? _buildWeekView(palette)
-          : _loading
-              ? const SkeletonList(count: 5)
-              : _error.isNotEmpty
-                  ? Center(
-                      child: Text(_error,
-                          style: const TextStyle(color: Colors.red)))
-                  : _events.isEmpty
-                      ? const Center(child: Text('暂无日程'))
-                      : RefreshIndicator(
-                          onRefresh: _load,
-                          child: ListView(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
+      body: Column(
+        children: [
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
+              children: [
+                _viewChip('列表', 'list', palette),
+                const SizedBox(width: 6),
+                _viewChip('日', 'day', palette),
+                const SizedBox(width: 6),
+                _viewChip('周', 'week', palette),
+                const SizedBox(width: 6),
+                _viewChip('月', 'month', palette),
+              ],
+            ),
+          ),
+          Expanded(child: _buildCurrentView(palette, active, ended)),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewChip(String label, String value, AppPalette palette) {
+    final selected = _view == value;
+    return InkWell(
+      onTap: () => _switchView(value),
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? palette.primary : palette.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? palette.primary : palette.line,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : palette.muted,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentView(
+    AppPalette palette,
+    List<Map<String, dynamic>> active,
+    List<Map<String, dynamic>> ended,
+  ) {
+    return switch (_view) {
+      'day' => _buildDayView(palette),
+      'week' => _buildWeekView(palette),
+      'month' => _buildMonthView(palette),
+      _ => _loading
+          ? const SkeletonList(count: 5)
+          : _error.isNotEmpty
+              ? Center(
+                  child: Text(
+                    _error,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                )
+              : _events.isEmpty
+                  ? const Center(child: Text('暂无日程'))
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        children: [
+                          if (active.isNotEmpty) ...[
+                            _sectionTitle(
+                              '待开始 / 进行中',
+                              active.length,
+                              palette,
                             ),
-                            children: [
-                              if (active.isNotEmpty) ...[
-                                _sectionTitle(
-                                  '待开始 / 进行中',
-                                  active.length,
-                                  palette,
+                            for (final event in active)
+                              _eventCard(event, ended: false, palette: palette),
+                          ],
+                          if (ended.isNotEmpty) ...[
+                            if (active.isNotEmpty) const SizedBox(height: 8),
+                            _sectionTitle('已结束', ended.length, palette),
+                            for (final event in ended)
+                              _eventCard(event, ended: true, palette: palette),
+                          ],
+                        ],
+                      ),
+                    ),
+    };
+  }
+
+  Widget _buildDayView(AppPalette palette) {
+    const hourHeight = 64.0;
+    final now = DateTime.now();
+    final dayStart = DateTime(
+      _focusedDay.year,
+      _focusedDay.month,
+      _focusedDay.day,
+    );
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    final events = _dayEvents;
+    const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left_rounded),
+                onPressed: () => _shiftDay(-1),
+              ),
+              Expanded(
+                child: Text(
+                  '${_focusedDay.month}月${_focusedDay.day}日 周${weekdays[_focusedDay.weekday - 1]}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: palette.ink,
+                  ),
+                ),
+              ),
+              TextButton(onPressed: _goToday, child: const Text('今天')),
+              IconButton(
+                icon: const Icon(Icons.chevron_right_rounded),
+                onPressed: () => _shiftDay(1),
+              ),
+            ],
+          ),
+        ),
+        if (_viewLoading)
+          LinearProgressIndicator(
+            color: palette.primary,
+            backgroundColor: palette.primarySoft,
+          ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: SizedBox(
+              height: 24 * hourHeight,
+              child: Stack(
+                children: [
+                  for (var hour = 0; hour < 24; hour++)
+                    Positioned(
+                      top: hour * hourHeight,
+                      left: 0,
+                      right: 0,
+                      height: hourHeight,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 44,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 2, right: 4),
+                              child: Text(
+                                '${hour.toString().padLeft(2, '0')}:00',
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  fontSize: 8.5,
+                                  color: palette.muted,
                                 ),
-                                for (final event in active)
-                                  _eventCard(event,
-                                      ended: false, palette: palette),
-                              ],
-                              if (ended.isNotEmpty) ...[
-                                if (active.isNotEmpty)
-                                  const SizedBox(height: 8),
-                                _sectionTitle('已结束', ended.length, palette),
-                                for (final event in ended)
-                                  _eventCard(event,
-                                      ended: true, palette: palette),
-                              ],
-                            ],
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  top: BorderSide(
+                                    color: palette.line.withValues(alpha: 0.55),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  for (final event in events)
+                    _dayEvent(
+                      event,
+                      dayStart,
+                      dayEnd,
+                      palette,
+                      hourHeight,
+                    ),
+                  if (_isSameDay(_focusedDay, now))
+                    Positioned(
+                      top: (now.hour + now.minute / 60) * hourHeight,
+                      left: 44,
+                      right: 0,
+                      child: Container(height: 1.5, color: palette.accent),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dayEvent(
+    Map<String, dynamic> event,
+    DateTime dayStart,
+    DateTime dayEnd,
+    AppPalette palette,
+    double hourHeight,
+  ) {
+    final start = eventStart(event);
+    final end = eventEnd(event);
+    if (start == null || end == null) return const SizedBox.shrink();
+    final visibleStart = start.isBefore(dayStart) ? dayStart : start;
+    final visibleEnd = end.isAfter(dayEnd) ? dayEnd : end;
+    final top = (visibleStart.hour + visibleStart.minute / 60) * hourHeight;
+    final height =
+        ((visibleEnd.difference(visibleStart).inMinutes / 60) * hourHeight)
+            .clamp(26.0, 24 * hourHeight);
+    final clock =
+        '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}'
+        '-${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
+    return Positioned(
+      top: top,
+      left: 48,
+      right: 8,
+      height: height,
+      child: GestureDetector(
+        onTap: () => _edit(event),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: palette.primarySoft,
+            borderRadius: BorderRadius.circular(9),
+            border: Border(
+              left: BorderSide(color: palette.primary, width: 3),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                clock,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: palette.primary,
+                ),
+              ),
+              Text(
+                (event['title'] ?? '日程').toString(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: palette.ink,
+                ),
+              ),
+              if ((event['notes'] ?? '').toString().isNotEmpty)
+                Text(
+                  (event['notes'] ?? '').toString(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 9, color: palette.muted),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthView(AppPalette palette) {
+    final now = DateTime.now();
+    final gridStart = _monday(_monthStart);
+    final days = [
+      for (var i = 0; i < 42; i++) gridStart.add(Duration(days: i)),
+    ];
+    const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left_rounded),
+                onPressed: () => _shiftMonth(-1),
+              ),
+              Expanded(
+                child: Text(
+                  '${_monthStart.year}年${_monthStart.month}月',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: palette.ink,
+                  ),
+                ),
+              ),
+              TextButton(onPressed: _goToday, child: const Text('今天')),
+              IconButton(
+                icon: const Icon(Icons.chevron_right_rounded),
+                onPressed: () => _shiftMonth(1),
+              ),
+            ],
+          ),
+        ),
+        if (_viewLoading)
+          LinearProgressIndicator(
+            color: palette.primary,
+            backgroundColor: palette.primarySoft,
+          ),
+        Row(
+          children: [
+            for (final label in weekdays)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 9, color: palette.muted),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        Expanded(
+          child: Column(
+            children: [
+              for (var row = 0; row < 6; row++)
+                Expanded(
+                  child: Row(
+                    children: [
+                      for (var col = 0; col < 7; col++)
+                        Expanded(
+                          child: _monthCell(
+                            days[row * 7 + col],
+                            palette,
+                            now,
                           ),
                         ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _monthCell(DateTime day, AppPalette palette, DateTime now) {
+    final inMonth = day.month == _monthStart.month;
+    final isToday = _isSameDay(day, now);
+    final dayEvents = _monthEvents.where((event) {
+      final start = eventStart(event);
+      if (start == null) return false;
+      return _isSameDay(start, day);
+    }).toList();
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _focusedDay = day;
+          _view = 'day';
+        });
+        _loadDay();
+      },
+      child: Container(
+        margin: const EdgeInsets.all(1),
+        padding: const EdgeInsets.fromLTRB(2, 2, 2, 1),
+        decoration: BoxDecoration(
+          color: inMonth ? palette.card : palette.background,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: palette.line.withValues(alpha: 0.6)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 20,
+                height: 20,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: isToday ? palette.primary : Colors.transparent,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '${day.day}',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: isToday
+                        ? Colors.white
+                        : inMonth
+                            ? palette.ink
+                            : palette.muted,
+                  ),
+                ),
+              ),
+            ),
+            for (final event in dayEvents.take(2))
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 3,
+                      decoration: BoxDecoration(
+                        color: palette.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Expanded(
+                      child: Text(
+                        (event['title'] ?? '').toString(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 6.5,
+                          height: 1.2,
+                          color: palette.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (dayEvents.length > 2)
+              Text(
+                '+${dayEvents.length - 2}',
+                style: TextStyle(fontSize: 6, color: palette.muted),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -385,7 +864,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           ],
         ),
         const SizedBox(height: 2),
-        if (_weekLoading)
+        if (_viewLoading)
           LinearProgressIndicator(
             color: palette.primary,
             backgroundColor: palette.primarySoft,
@@ -610,7 +1089,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             final id = event['id'];
             if (id is int) {
               await ApiService().deleteScheduleEvent(id);
-              _load();
+              _refreshCurrentView();
             }
           },
         ),

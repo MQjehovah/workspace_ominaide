@@ -13,6 +13,7 @@ import '../services/api_service.dart';
 import '../services/file_transfer_service.dart';
 import '../services/seen_state_service.dart';
 import '../widgets/loading_state.dart';
+import 'pdf_preview_screen.dart';
 
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
@@ -186,6 +187,9 @@ class _FilesScreenState extends State<FilesScreen> {
   bool _isImage(FileItem f) =>
       ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp'].contains(_ext(f));
 
+  bool _isPdf(FileItem f) =>
+      _ext(f) == 'pdf' || (f.mimeType ?? '').toLowerCase() == 'application/pdf';
+
   bool _isStreamable(FileItem f) => [
         'mp4',
         'mov',
@@ -202,6 +206,18 @@ class _FilesScreenState extends State<FilesScreen> {
       ].contains(_ext(f));
 
   Future<void> _preview(FileItem f) async {
+    if (_isPdf(f)) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PdfPreviewScreen(
+            fileId: f.id,
+            filename: f.originalName,
+          ),
+        ),
+      );
+      return;
+    }
     if (_isImage(f)) {
       try {
         final bytes = await ApiService().downloadFile(f.id);

@@ -439,20 +439,21 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 5,
-                runSpacing: 5,
-                children: [
-                  for (final prompt in _suggestions)
-                    InkWell(
+              SizedBox(
+                height: 28,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _suggestions.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 5),
+                  itemBuilder: (context, index) {
+                    final prompt = _suggestions[index];
+                    return InkWell(
                       onTap: () => _ask(prompt),
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
+                        alignment: Alignment.center,
                         constraints: const BoxConstraints(maxWidth: 250),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 5,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
@@ -471,8 +472,9 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                           ),
                         ),
                       ),
-                    ),
-                ],
+                    );
+                  },
+                ),
               ),
             ],
           ),
