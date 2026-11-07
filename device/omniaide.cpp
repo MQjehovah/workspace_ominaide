@@ -391,9 +391,10 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
     snprintf(ctype, sizeof(ctype), "multipart/form-data; boundary=%s", B);
     http.addHeader("Content-Type", ctype);
 
-    Serial.printf("%s voice stream upload %u B...\n", TAG, (unsigned)n);
+    Serial.printf("%s voice stream upload %u B at %lu ...\n", TAG, (unsigned)n, (unsigned long)millis());
     int code = http.POST(body, n);
     free(body);
+    Serial.printf("%s voice stream HTTP %d at %lu\n", TAG, code, (unsigned long)millis());
     if (code != 200) {
         String s = http.getString();
         Serial.printf("%s voice stream err HTTP %d: %.200s\n", TAG, code, s.c_str());
@@ -422,7 +423,10 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
     auto flushPcm = [&]() -> bool {
         if (!accLen) return true;
         bool ok = true;
+        Serial.printf("%s play start %u B rate=%u at %lu\n",
+                      TAG, (unsigned)accLen, (unsigned)pcmRate, (unsigned long)millis());
         if (cb) ok = cb("audio", nullptr, pcmBuf, accLen, pcmRate, ud);
+        Serial.printf("%s play done at %lu\n", TAG, (unsigned long)millis());
         accLen = 0;
         return ok;
     };
@@ -465,11 +469,6 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
                 size_t copy = dlen < space ? dlen : space;
                 memcpy(pcmBuf + accLen, audioBuf, copy);
                 accLen += copy;
-                // 边收边播，但先攒够约 4s：网关的 TTS 是 2s 一块、
-                // 块间有 2-3s 间隔，小缓冲会断断续续。
-                if (accLen >= TTS_PREBUFFER_BYTES) {
-                    if (!flushPcm()) { finished = true; return false; }
-                }
             }
         } else if (!strcmp(t, "status")) {
             if (cb) return cb("status", doc["text"] | "", nullptr, 0, 0, ud);
@@ -481,27 +480,33 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
         return true;
     };
 
+    static uint8_t rx[512];
     while (!finished && (http.connected() || stream->available())) {
-        if (!stream->available()) {
+        int avail = stream->available();
+        if (avail <= 0) {
             if (millis() - lastData > 120000) break;
             delay(2);
             continue;
         }
-        int c = stream->read();
-        if (c < 0) continue;
+        int n = stream->read(rx, avail < (int)sizeof(rx) ? avail : (int)sizeof(rx));
+        if (n <= 0) continue;
         lastData = millis();
-        if (c == '\n') {
-            lineBuf[ll] = 0;
-            if (ll && !handleLine(lineBuf)) { finished = true; break; }
-            ll = 0;
-        } else if (ll < LINE_CAP - 1) {
-            lineBuf[ll++] = (char)c;
+        for (int i = 0; i < n && !finished; i++) {
+            char c = (char)rx[i];
+            if (c == '\n') {
+                lineBuf[ll] = 0;
+                if (ll && !handleLine(lineBuf)) { finished = true; break; }
+                ll = 0;
+            } else if (ll < LINE_CAP - 1) {
+                lineBuf[ll++] = c;
+            }
         }
     }
     http.end();
     tlsClient.stop();
     flushPcm();
-    Serial.printf("%s voice stream done: T=%s R=%u\n", TAG, transcript, (unsigned)strlen(reply));
+    Serial.printf("%s voice stream done: T=%s R=%u at %lu\n", TAG, transcript,
+                  (unsigned)strlen(reply), (unsigned long)millis());
     return transcript[0] || reply[0];
 }
 
