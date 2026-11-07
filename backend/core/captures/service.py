@@ -105,6 +105,30 @@ async def _llm_analyze(title: str, content: str) -> dict:
         return {}
 
 
+async def _file_text(file_id: int) -> str:
+    try:
+        from plugins.files.backend.models import File
+        from core.database.session import async_session
+        from core.minio.client import minio_client
+
+        if minio_client is None:
+            return ""
+        async with async_session() as db:
+            row = await db.get(File, file_id)
+        if row is None or (row.size or 0) > 20 * 1024 * 1024:
+            return ""
+        data = await asyncio.to_thread(
+            lambda: minio_client.get_object(row.bucket, row.object_key).read()
+        )
+        from plugins.notes.backend.importers import extract_document
+
+        _title, text = extract_document(row.original_name or "capture.txt", data)
+        return _clean(text)
+    except Exception as exc:
+        log.debug("capture file extract failed id=%s: %s", file_id, exc)
+        return ""
+
+
 async def analyze_capture(capture_id: int) -> dict:
     async with async_session() as db:
         row = await db.get(QuickCapture, capture_id)
@@ -122,6 +146,8 @@ async def analyze_capture(capture_id: int) -> dict:
             fetched_title, fetched_text, final_url = await _fetch_article(row.url)
             title = title or fetched_title
             content = fetched_text
+        if row.kind in ("file", "image") and row.file_id and not content:
+            content = await _file_text(row.file_id)
         analysis = await _llm_analyze(title, content)
         summary = str(analysis.get("summary") or "").strip() or _clean(content, 300)
         async with async_session() as db:
