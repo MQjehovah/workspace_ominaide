@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 from datetime import datetime
 from typing import Any
 
@@ -385,7 +388,7 @@ async def search_objects(
         try:
             ids = await searcher(user_id, query, per_type)
         except Exception as e:
-            print(f"[objects] search {object_type} failed: {e}")
+            log.warning(f"[objects] search {object_type} failed: {e}")
             continue
         for object_id in ids:
             item = await resolve_object(user_id, object_type, object_id)

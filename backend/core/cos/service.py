@@ -7,6 +7,9 @@ complete, usable result.
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import json
 from datetime import date, datetime, time, timedelta
 
@@ -75,7 +78,7 @@ async def _llm_json(
         parsed = json.loads(raw[start:end + 1])
         return parsed if isinstance(parsed, dict) else None
     except Exception as e:
-        print(f"[cos] llm error: {e}")
+        log.warning(f"[cos] llm error: {e}")
         return None
 
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import asyncio
 import time
 from contextlib import asynccontextmanager
@@ -39,7 +42,7 @@ async def _write_trace(
             )
             await db.commit()
     except Exception as exc:
-        print(f"[observability] trace write error: {exc}")
+        log.warning(f"[observability] trace write error: {exc}")
 
 
 def record_trace(

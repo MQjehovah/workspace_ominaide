@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import asyncio
 import json
 from datetime import datetime
@@ -286,7 +289,7 @@ async def _run_job(job_id: int) -> None:
                 job.finished_at = datetime.now()
                 await db.flush()
                 await db.commit()
-        print(f"[meetings] job {job_id} failed: {exc}")
+        log.warning(f"[meetings] job {job_id} failed: {exc}")
 
 
 def schedule_job(job_id: int) -> None:

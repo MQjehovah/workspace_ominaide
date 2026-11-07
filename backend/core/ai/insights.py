@@ -1,6 +1,9 @@
 """Insight discovery — mines activity + schedule data to build a picture of the
 user's work patterns, and produces natural-language insights & proactive suggestions."""
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 from datetime import datetime, timedelta, timezone
 
 
@@ -164,6 +167,6 @@ async def discover_insights(user_id: int):
                 prefs["insights"] = insights
                 pr.preferences = _json.dumps(prefs, ensure_ascii=False)
                 await db.commit()
-                print(f"[insights] generated for user {user_id}")
+                log.info(f"[insights] generated for user {user_id}")
     except Exception as e:
-        print(f"[insights] error: {e}")
+        log.warning(f"[insights] error: {e}")

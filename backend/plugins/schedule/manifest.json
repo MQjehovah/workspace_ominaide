@@ -1,0 +1,11 @@
+{
+  "id": "schedule",
+  "version": "1.0.0",
+  "title": "日程",
+  "description": "日历、提醒与钉钉日程同步",
+  "icon": "Calendar",
+  "permissions": [],
+  "routes": {
+    "main": "/schedule"
+  }
+}

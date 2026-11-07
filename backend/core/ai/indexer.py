@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import json
 import re
 from core.config.settings import settings
@@ -49,7 +52,7 @@ async def index_content(
         )
         return True
     except Exception as e:
-        print(f"[indexer] error: {e}")
+        log.warning(f"[indexer] error: {e}")
         return False
 
 
@@ -122,4 +125,4 @@ async def extract_and_store_entities(user_id: int, content: str, source_type: st
                 },
             )
     except Exception as e:
-        print(f"[entity] error: {e}")
+        log.warning(f"[entity] error: {e}")

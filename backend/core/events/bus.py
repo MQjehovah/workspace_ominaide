@@ -4,6 +4,9 @@ Business modules call record_event() to emit events. The recorder writes
 to DB and pushes to Redis queue. A background worker pops events and
 calls registered handlers (indexing, entity extraction, etc.).
 """
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import asyncio
 import json
 from typing import Callable, Awaitable
@@ -51,7 +54,7 @@ async def record_event(
             "entity_id": entity_id,
         }, ensure_ascii=False))
     except Exception as e:
-        print(f"[bus] redis push error: {e}")
+        log.warning(f"[bus] redis push error: {e}")
 
     return event
 
@@ -78,7 +81,7 @@ async def _process_event(payload: dict):
             try:
                 await handler(event)
             except Exception as e:
-                print(f"[bus] handler error: {e}")
+                log.warning(f"[bus] handler error: {e}")
 
 
 async def worker_loop():
@@ -95,5 +98,5 @@ async def worker_loop():
         except asyncio.TimeoutError:
             continue
         except Exception as e:
-            print(f"[bus] worker error: {e}")
+            log.warning(f"[bus] worker error: {e}")
             await asyncio.sleep(5)

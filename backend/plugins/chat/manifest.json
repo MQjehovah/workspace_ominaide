@@ -1,0 +1,11 @@
+{
+  "id": "chat",
+  "version": "1.0.0",
+  "title": "对话",
+  "description": "AI 对话与语音交互",
+  "icon": "ChatDotRound",
+  "permissions": [],
+  "routes": {
+    "main": "/chat"
+  }
+}

@@ -101,7 +101,7 @@ const rules = { username: [{ required: true, message: '必填' }], email: [{ req
 async function handleAdd() {
   if (!addForm.value.username || !addForm.value.email || !addForm.value.password) return ElMessage.warning('请填写完整')
   addLoading.value = true
-  try { await client.post('/auth/register', addForm.value); ElMessage.success('已添加'); showAdd.value = false; fetchUsers(); addForm.value = { username: '', email: '', password: '' } }
+  try { await client.post('/auth/users', addForm.value); ElMessage.success('已添加'); showAdd.value = false; fetchUsers(); addForm.value = { username: '', email: '', password: '' } }
   catch (e: any) { ElMessage.error(e.response?.data?.detail || '添加失败') } finally { addLoading.value = false }
 }
 

@@ -3,6 +3,9 @@
 The loop runs in the FastAPI lifespan alongside the existing system scheduler.
 Cron expressions are the standard 5-field form (minute hour dom month dow).
 """
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import asyncio
 from datetime import datetime, timedelta
 
@@ -231,7 +234,7 @@ async def routine_loop() -> None:
         try:
             await _tick()
         except Exception as e:
-            print(f"[bots.routines] loop error: {e}")
+            log.warning(f"[bots.routines] loop error: {e}")
         await asyncio.sleep(30)
 
 
@@ -273,7 +276,7 @@ async def _tick() -> None:
             )
             await _mark_tick(r.id, next_run(r.cron_expr, now), "queued")
         except Exception as e:
-            print(f"[bots.routines] tick {r.id} failed: {e}")
+            log.warning(f"[bots.routines] tick {r.id} failed: {e}")
             try:
                 await _mark_tick(r.id, datetime.now() + timedelta(hours=1), "error")
             except Exception:
@@ -336,7 +339,7 @@ async def _on_event(event) -> None:
                 idempotency_key=f"routine:{r.id}:event:{event.id}",
             )
     except Exception as e:
-        print(f"[bots.routines] event handler error: {e}")
+        log.warning(f"[bots.routines] event handler error: {e}")
 
 
 def _event_context(event) -> str:

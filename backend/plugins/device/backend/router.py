@@ -6,6 +6,9 @@
 - GET  /api/device/gestures 查看手势映射
 - PUT  /api/device/gestures 修改手势映射
 """
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import asyncio
 import io
 import os
@@ -398,7 +401,7 @@ async def _current_weather() -> dict | None:
             }
             _weather_cache["t"] = _time.time()
         except Exception as e:
-            print(f"[device] weather error: {e}")
+            log.warning(f"[device] weather error: {e}")
     return _weather_cache["data"]
 
 

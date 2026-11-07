@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -369,7 +372,7 @@ async def decide_approval(
                 },
             )
         except Exception as e:
-            print(f"[approvals] activity record failed: {e}")
+            log.warning(f"[approvals] activity record failed: {e}")
 
         await db.commit()
         await db.refresh(approval)

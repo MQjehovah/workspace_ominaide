@@ -5,5 +5,8 @@
   "description": "文件同步引擎",
   "icon": "Refresh",
   "permissions": [],
-  "routes": { "main": "/sync" }
+  "routes": {
+    "main": "/sync"
+  },
+  "id": "sync"
 }

@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import asyncio
 import feedparser
 import httpx
@@ -239,5 +242,5 @@ async def fetch_source_content(db: AsyncSession, source: ContentSource) -> int:
             pass
         return new
     except Exception as ex:
-        print(f"[sources] fetch error {source.url}: {ex}")
+        log.warning(f"[sources] fetch error {source.url}: {ex}")
         raise

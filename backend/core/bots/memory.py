@@ -4,6 +4,9 @@ L0 shared facts stay in ``user_profiles``. L1 long-term memory lives in
 ``bot_memories`` (and is mirrored into the pgvector ``entities`` collection for
 semantic retrieval). L2 conversation history lives in ``chat_messages``.
 """
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import json
 from datetime import datetime
 
@@ -95,7 +98,7 @@ async def add_memory(
                 },
             )
     except Exception as e:
-        print(f"[bots.memory] vector mirror failed: {e}")
+        log.warning(f"[bots.memory] vector mirror failed: {e}")
 
     return mem
 

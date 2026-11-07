@@ -7,6 +7,9 @@ suggestions that the user can accept as local todos, events or notes.
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import json
 import time
 from datetime import datetime
@@ -143,7 +146,7 @@ async def dingtalk_actions(user_id: int, *, refresh: bool = False) -> dict:
                 items = (clean + items)[:5]
                 source = "llm"
     except Exception as exc:
-        print(f"[dingtalk-actions] llm error: {exc}")
+        log.warning(f"[dingtalk-actions] llm error: {exc}")
 
     payload = {
         "items": items,

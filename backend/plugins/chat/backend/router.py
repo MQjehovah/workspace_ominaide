@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import asyncio
 import base64
 import json
@@ -694,7 +697,7 @@ async def voice_stream(
             else:
                 await out_q.put({"t": "status", "text": "语音合成失败"})
 
-        print(f"[voice_stream] reply={reply!r} pcm={len(pcm) if pcm else 0}", flush=True)
+        log.debug("[voice_stream] reply=%r pcm=%s", reply, len(pcm) if pcm else 0)
         await save_message(user["id"], "assistant", reply, sid, bot=bot)
         await out_q.put({"t": "done", "reply": reply})
 

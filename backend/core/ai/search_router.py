@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from core.auth.dependencies import get_current_user
@@ -147,7 +150,7 @@ async def search(req: SearchRequest, user: dict = Depends(get_current_user)):
             seen.add(key)
             results.append(item)
     except Exception as e:
-        print(f"[search] keyword error: {e}")
+        log.warning(f"[search] keyword error: {e}")
 
     # Semantic results enrich the keyword pass when the vector store is available.
     if settings.data_layer_enabled:
@@ -178,7 +181,7 @@ async def search(req: SearchRequest, user: dict = Depends(get_current_user)):
                         link=f"/{h.get('source_type', '')}/{h.get('source_id', '')}",
                     ))
         except Exception as e:
-            print(f"[search] semantic error: {e}")
+            log.warning(f"[search] semantic error: {e}")
 
     results.sort(key=lambda x: x.score, reverse=True)
     return SearchResponse(results=results[:req.top_k])

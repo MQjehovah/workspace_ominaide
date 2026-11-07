@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 from datetime import datetime, timedelta
 
 from sqlalchemy import or_, select
@@ -185,7 +188,7 @@ async def sync_dingtalk_calendar(
             )
             events = _unwrap(payload, "events") or []
         except Exception as e:
-            print(f"[schedule.sync] dingtalk calendar user {user_id} failed: {e}")
+            log.warning(f"[schedule.sync] dingtalk calendar user {user_id} failed: {e}")
             errors.append(f"{user_id}: {str(e)[:200]}")
             continue
 
@@ -196,11 +199,11 @@ async def sync_dingtalk_calendar(
                 result = await _upsert_event(user_id, raw)
                 counts[result] = counts.get(result, 0) + 1
             except Exception as e:
-                print(f"[schedule.sync] event {raw.get('id')} failed: {e}")
+                log.warning(f"[schedule.sync] event {raw.get('id')} failed: {e}")
                 counts["skipped"] += 1
 
     if errors:
         counts["error"] = "; ".join(errors)[:300]
     if counts.get("created") or counts.get("updated"):
-        print(f"[schedule.sync] dingtalk calendar: {counts}")
+        log.info(f"[schedule.sync] dingtalk calendar: {counts}")
     return counts

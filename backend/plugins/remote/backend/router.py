@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from core.auth.dependencies import get_current_user
@@ -8,7 +11,7 @@ from plugins.remote.backend import service as remote_service
 
 def _log(msg: str):
     import sys
-    print(f"[remote] {msg}", flush=True, file=sys.stderr)
+    log.info("[remote] %s", msg)
 
 
 router = APIRouter(prefix="/api/remote", tags=["remote"])

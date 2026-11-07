@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import json
 import re
 from datetime import datetime, timedelta
@@ -146,7 +149,7 @@ async def _llm_extract(text: str) -> list[dict]:
             })
         return out
     except Exception as e:
-        print(f"[memory] extract error: {e}")
+        log.warning(f"[memory] extract error: {e}")
         return []
 
 
@@ -231,7 +234,7 @@ async def _link_edges(db, user_id: int, record: MemoryRecord) -> None:
                 ))
                 existing.add(name)
     except Exception as e:
-        print(f"[memory] edge error: {e}")
+        log.warning(f"[memory] edge error: {e}")
 
 
 async def _supersede_conflicts(db, user_id: int, candidate: MemoryCandidate, new_record_id: int) -> list[int]:
@@ -275,7 +278,7 @@ async def _index_record(user_id: int, record: MemoryRecord) -> None:
             metadata={"kind": record.kind, "link": "/about"},
         )
     except Exception as e:
-        print(f"[memory] index error: {e}")
+        log.warning(f"[memory] index error: {e}")
 
 
 def _vector_backend_available() -> bool:

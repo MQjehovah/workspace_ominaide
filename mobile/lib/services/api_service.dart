@@ -12,6 +12,7 @@ import 'file_save_stub.dart'
     if (dart.library.html) 'file_save_web.dart'
     if (dart.library.io) 'file_save_io.dart';
 import '../config.dart';
+import 'token_utils.dart';
 
 /// Thin wrapper around a single long-lived [http.Client] so requests reuse
 /// connections (TLS handshakes are expensive on mobile) and never hang forever.
@@ -19,17 +20,45 @@ class _ApiHttp {
   final http.Client _client = http.Client();
   static const Duration _defaultTimeout = Duration(seconds: 20);
   void Function(int status)? onStatus;
+  Future<void> Function()? beforeRequest;
+  Future<bool> Function()? refresh;
+  String? Function()? accessToken;
+
+  Map<String, String>? _headersFor(Map<String, String>? headers) {
+    final next = headers == null ? <String, String>{} : Map.of(headers);
+    final token = accessToken?.call();
+    if (token != null && token.isNotEmpty) {
+      next['Authorization'] = 'Bearer $token';
+    } else {
+      next.remove('Authorization');
+    }
+    return next;
+  }
+
+  Future<http.Response> _run(
+    Future<http.Response> Function() call, {
+    bool retry = true,
+  }) async {
+    await beforeRequest?.call();
+    var response = await call();
+    if (retry && response.statusCode == 401 && refresh != null) {
+      if (await refresh!()) {
+        await beforeRequest?.call();
+        response = await call();
+      }
+    }
+    onStatus?.call(response.statusCode);
+    return response;
+  }
 
   Future<http.Response> get(
     Uri uri, {
     Map<String, String>? headers,
     Duration? timeout,
-  }) async {
-    final response = await _client
-        .get(uri, headers: headers)
-        .timeout(timeout ?? _defaultTimeout);
-    onStatus?.call(response.statusCode);
-    return response;
+  }) {
+    return _run(() => _client
+        .get(uri, headers: _headersFor(headers))
+        .timeout(timeout ?? _defaultTimeout));
   }
 
   Future<http.Response> post(
@@ -38,12 +67,10 @@ class _ApiHttp {
     Object? body,
     Encoding? encoding,
     Duration? timeout,
-  }) async {
-    final response = await _client
-        .post(uri, headers: headers, body: body, encoding: encoding)
-        .timeout(timeout ?? _defaultTimeout);
-    onStatus?.call(response.statusCode);
-    return response;
+  }) {
+    return _run(() => _client
+        .post(uri, headers: _headersFor(headers), body: body, encoding: encoding)
+        .timeout(timeout ?? _defaultTimeout));
   }
 
   Future<http.Response> put(
@@ -52,12 +79,10 @@ class _ApiHttp {
     Object? body,
     Encoding? encoding,
     Duration? timeout,
-  }) async {
-    final response = await _client
-        .put(uri, headers: headers, body: body, encoding: encoding)
-        .timeout(timeout ?? _defaultTimeout);
-    onStatus?.call(response.statusCode);
-    return response;
+  }) {
+    return _run(() => _client
+        .put(uri, headers: _headersFor(headers), body: body, encoding: encoding)
+        .timeout(timeout ?? _defaultTimeout));
   }
 
   Future<http.Response> delete(
@@ -65,12 +90,10 @@ class _ApiHttp {
     Map<String, String>? headers,
     Object? body,
     Duration? timeout,
-  }) async {
-    final response = await _client
-        .delete(uri, headers: headers, body: body)
-        .timeout(timeout ?? _defaultTimeout);
-    onStatus?.call(response.statusCode);
-    return response;
+  }) {
+    return _run(() => _client
+        .delete(uri, headers: _headersFor(headers), body: body)
+        .timeout(timeout ?? _defaultTimeout));
   }
 
   Future<http.Response> patch(
@@ -79,18 +102,21 @@ class _ApiHttp {
     Object? body,
     Encoding? encoding,
     Duration? timeout,
-  }) async {
-    final response = await _client
-        .patch(uri, headers: headers, body: body, encoding: encoding)
-        .timeout(timeout ?? _defaultTimeout);
-    onStatus?.call(response.statusCode);
-    return response;
+  }) {
+    return _run(() => _client
+        .patch(uri, headers: _headersFor(headers), body: body, encoding: encoding)
+        .timeout(timeout ?? _defaultTimeout));
   }
 
   Future<http.StreamedResponse> send(
     http.BaseRequest request, {
     Duration? timeout,
   }) async {
+    await beforeRequest?.call();
+    final token = accessToken?.call();
+    if (token != null && token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
     final response =
         await _client.send(request).timeout(timeout ?? _defaultTimeout);
     onStatus?.call(response.statusCode);
@@ -100,11 +126,14 @@ class _ApiHttp {
 
 class ApiService {
   static const _tokenKey = 'omniaide.token';
+  static const _refreshTokenKey = 'omniaide.refresh_token';
   final _http = _ApiHttp();
   final _secure = const FlutterSecureStorage();
   String _baseUrl = kDefaultServerUrl;
   String? _token;
+  String? _refreshToken;
   bool _handlingUnauthorized = false;
+  Future<bool>? _refreshing;
 
   /// Set by main() to route back to the login screen when the session expires.
   void Function()? onUnauthorized;
@@ -113,6 +142,9 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._() {
     _http.onStatus = _handleStatus;
+    _http.beforeRequest = _ensureFreshToken;
+    _http.refresh = _refreshAccessToken;
+    _http.accessToken = () => _token;
   }
 
   String get baseUrl => _baseUrl;
@@ -132,8 +164,51 @@ class ApiService {
     if (_token == null || _token!.isEmpty) return;
     _handlingUnauthorized = true;
     _token = null;
+    _refreshToken = null;
     _clearStoredToken();
     onUnauthorized?.call();
+  }
+
+  Future<void> _ensureFreshToken() async {
+    if (_token == null || _token!.isEmpty) return;
+    if (!tokenNeedsRefresh(_token)) return;
+    await _refreshAccessToken();
+  }
+
+  Future<bool> _refreshAccessToken() {
+    final existing = _refreshing;
+    if (existing != null) return existing;
+    final future = _doRefresh();
+    _refreshing = future;
+    future.whenComplete(() => _refreshing = null);
+    return future;
+  }
+
+  Future<bool> _doRefresh() async {
+    final refresh = _refreshToken ?? await _readStoredRefreshToken();
+    if (refresh == null || refresh.isEmpty) return false;
+    try {
+      final res = await http.post(
+        Uri.parse('$_baseUrl/api/auth/refresh'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': refresh}),
+      ).timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) return false;
+      final data = decodeJson(res);
+      final access = data['access_token'];
+      final nextRefresh = data['refresh_token'];
+      if (access is! String || access.isEmpty) return false;
+      _token = access;
+      _refreshToken = nextRefresh is String && nextRefresh.isNotEmpty
+          ? nextRefresh
+          : refresh;
+      _handlingUnauthorized = false;
+      await _writeStoredToken(access);
+      await _writeStoredRefreshToken(_refreshToken!);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<String?> _readStoredToken() async {
@@ -155,9 +230,24 @@ class ApiService {
     }
   }
 
+  Future<String?> _readStoredRefreshToken() async {
+    try {
+      final value = await _secure.read(key: _refreshTokenKey);
+      if (value != null && value.isNotEmpty) return value;
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _writeStoredRefreshToken(String token) async {
+    try {
+      await _secure.write(key: _refreshTokenKey, value: token);
+    } catch (_) {}
+  }
+
   Future<void> _clearStoredToken() async {
     try {
       await _secure.delete(key: _tokenKey);
+      await _secure.delete(key: _refreshTokenKey);
     } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
@@ -175,6 +265,7 @@ class ApiService {
       }
     }
     _token = token;
+    _refreshToken = await _readStoredRefreshToken();
     _handlingUnauthorized = false;
     final stored = prefs.getString('serverUrl');
     // Migrate the old, unreachable default (port 8000) to the new API prefix.
@@ -196,17 +287,30 @@ class ApiService {
     await prefs.setString('serverUrl', _baseUrl);
   }
 
-  Future<void> saveAuth(String token, String serverUrl) async {
+  Future<void> saveAuth(
+    String token,
+    String serverUrl, {
+    String? refreshToken,
+  }) async {
     _token = token;
+    _refreshToken = refreshToken;
     _handlingUnauthorized = false;
     _baseUrl = normalizeServerUrl(serverUrl);
     await _writeStoredToken(token);
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      await _writeStoredRefreshToken(refreshToken);
+    } else {
+      try {
+        await _secure.delete(key: _refreshTokenKey);
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('serverUrl', _baseUrl);
   }
 
   Future<void> logout() async {
     _token = null;
+    _refreshToken = null;
     _handlingUnauthorized = false;
     await _clearStoredToken();
     // Keep serverUrl so the next login pre-fills the server the user chose.
@@ -226,7 +330,11 @@ class ApiService {
       throw Exception(detail['detail'] ?? 'Login failed');
     }
     final data = decodeJson(res);
-    await saveAuth(data['access_token'], serverUrl);
+    await saveAuth(
+      data['access_token'],
+      serverUrl,
+      refreshToken: data['refresh_token'],
+    );
     return data['access_token'];
   }
 

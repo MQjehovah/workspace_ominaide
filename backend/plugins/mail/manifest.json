@@ -4,5 +4,7 @@
   "title": "邮件",
   "description": "邮件账号配置云端同步",
   "icon": "Message",
-  "permissions": []
+  "permissions": [],
+  "id": "mail",
+  "routes": {}
 }

@@ -2,8 +2,9 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse, AdminUserResponse, ToggleActiveRequest, UpdateUserRequest, UserProfileResponse, UserProfileUpdate
-from core.auth.domain.service import register, login, refresh_access_token
+from core.auth.domain.schemas import AdminCreateUserRequest, RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse, AdminUserResponse, ToggleActiveRequest, UpdateUserRequest, UserProfileResponse, UserProfileUpdate
+from core.auth.domain.service import admin_create_user, register, login, refresh_access_token
+from core.config.settings import settings
 from core.auth.domain.profile_service import get_or_create_profile, update_profile
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user, get_current_admin
@@ -13,6 +14,16 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_endpoint(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    from core.auth.domain.models import User as UserModel
+
+    count = (await db.execute(select(func.count(UserModel.id)))).scalar() or 0
+    # Allow the first account to bootstrap an empty deployment. After that,
+    # registration is closed unless an operator explicitly enables it.
+    if count > 0 and not settings.allow_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="公开注册已关闭，请联系管理员创建账号",
+        )
     try:
         user = await register(db, req)
         return {"message": "User created", "user_id": user.id}
@@ -30,9 +41,9 @@ async def login_endpoint(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_endpoint(req: RefreshRequest):
+async def refresh_endpoint(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
     try:
-        access_token, refresh_token = await refresh_access_token(req.refresh_token)
+        access_token, refresh_token = await refresh_access_token(db, req.refresh_token)
         return TokenResponse(access_token=access_token, refresh_token=refresh_token)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
@@ -47,6 +58,21 @@ async def get_me(user: dict = Depends(get_current_user), db: AsyncSession = Depe
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
     return UserResponse.model_validate(u)
+
+
+@router.post("/users", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    req: AdminCreateUserRequest,
+    admin: dict = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        user = await admin_create_user(db, req)
+        await db.commit()
+        await db.refresh(user)
+        return AdminUserResponse.model_validate(user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
 @router.get("/users", response_model=list[AdminUserResponse])

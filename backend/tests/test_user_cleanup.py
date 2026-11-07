@@ -138,6 +138,25 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
 
     await _seed_user_data(user_id)
 
+    from sqlalchemy import text
+
+    from core.database.session import engine
+
+    other_user = user_id + 100000
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS embeddings ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, content TEXT)"
+        ))
+        await conn.execute(
+            text("INSERT INTO embeddings (user_id, content) VALUES (:uid, :text)"),
+            {"uid": user_id, "text": "target"},
+        )
+        await conn.execute(
+            text("INSERT INTO embeddings (user_id, content) VALUES (:uid, :text)"),
+            {"uid": other_user, "text": "keep"},
+        )
+
     fake = _FakeMinio()
     monkeypatch.setattr("core.minio.client.minio_client", fake)
 
@@ -146,6 +165,7 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
     result = await delete_user_data(user_id)
     assert result["found"] is True
     assert result["workspace_deleted"] is True
+    assert result["embeddings_deleted"] == 1
     assert not user_root(user_id).exists()
     assert ("user-files", f"{user_id}/a.txt") in fake.removed
 
@@ -202,6 +222,18 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
             else:
                 count = []
             assert count == [], f"leftover rows in {model.__tablename__}"
+
+    async with engine.begin() as conn:
+        target_rows = (await conn.execute(
+            text("SELECT count(*) FROM embeddings WHERE user_id = :uid"),
+            {"uid": user_id},
+        )).scalar()
+        kept_rows = (await conn.execute(
+            text("SELECT count(*) FROM embeddings WHERE user_id = :uid"),
+            {"uid": other_user},
+        )).scalar()
+    assert target_rows == 0
+    assert kept_rows == 1
 
     # Second call is idempotent.
     again = await delete_user_data(user_id)

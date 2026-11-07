@@ -5,5 +5,8 @@
   "description": "文件管理与网盘",
   "icon": "Folder",
   "permissions": [],
-  "routes": { "main": "/files" }
+  "routes": {
+    "main": "/files"
+  },
+  "id": "files"
 }

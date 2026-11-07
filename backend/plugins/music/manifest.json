@@ -1,0 +1,9 @@
+{
+  "id": "music",
+  "version": "1.0.0",
+  "title": "音乐",
+  "description": "歌单与音乐播放",
+  "icon": "Headset",
+  "permissions": [],
+  "routes": {}
+}

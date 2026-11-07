@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import asyncio
 import time
 from datetime import datetime, timedelta
@@ -168,7 +171,7 @@ async def worker_loop() -> None:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            print(f"[jobs] worker error: {exc}")
+            log.warning(f"[jobs] worker error: {exc}")
             await asyncio.sleep(5)
 
 

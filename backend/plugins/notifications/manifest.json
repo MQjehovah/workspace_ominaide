@@ -1,0 +1,11 @@
+{
+  "id": "notifications",
+  "version": "1.0.0",
+  "title": "通知",
+  "description": "实时通知中心",
+  "icon": "Bell",
+  "permissions": [],
+  "routes": {
+    "main": "/notifications"
+  }
+}

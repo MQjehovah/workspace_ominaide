@@ -1,0 +1,11 @@
+{
+  "id": "projects",
+  "version": "1.0.0",
+  "title": "项目",
+  "description": "代码项目与 Coding 任务",
+  "icon": "FolderOpened",
+  "permissions": [],
+  "routes": {
+    "main": "/projects"
+  }
+}

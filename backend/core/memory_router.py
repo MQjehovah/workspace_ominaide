@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -97,7 +100,7 @@ async def list_entities(
                 {"uid": user["id"], "limit": limit},
             )).mappings().all()
     except Exception as e:
-        print(f"[memory] entities error: {e}")
+        log.warning(f"[memory] entities error: {e}")
         return {"items": [], "counts": {}, "supported": False}
 
     items = []
@@ -147,7 +150,7 @@ async def entity_graph(
                 {"uid": user["id"], "limit": limit},
             )).mappings().all()
     except Exception as e:
-        print(f"[memory] entity graph error: {e}")
+        log.warning(f"[memory] entity graph error: {e}")
         return {"nodes": [], "links": [], "counts": {}, "supported": False}
 
     nodes = []
@@ -279,7 +282,7 @@ async def _record_candidate_review(
             )
             await db.commit()
     except Exception as e:
-        print(f"[memory] candidate activity record failed: {e}")
+        log.warning(f"[memory] candidate activity record failed: {e}")
 
 
 @router.get("/records")

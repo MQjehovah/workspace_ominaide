@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import io
 import os
 from pathlib import Path
@@ -291,10 +294,8 @@ async def download_file(
         filename_safe = quote(file_record.original_name)
         return StreamingResponse(gen(), media_type=mime_type,
                                  headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename_safe}"})
-    except Exception as e:
-        import traceback
-        print(f"[download ERROR] file_id={file_id}: {e}")
-        traceback.print_exc()
+    except Exception:
+        log.exception("download failed file_id=%s", file_id)
         raise HTTPException(status_code=404, detail="File not found in storage")
 
 

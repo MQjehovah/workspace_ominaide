@@ -7,7 +7,9 @@
   "description": "Notion 风格笔记 + 知识库 RAG：分块索引、混合检索、带引用的问答",
   "icon": "Book",
   "permissions": [],
-  "routes": { "main": "/apps/notes" },
+  "routes": {
+    "main": "/apps/notes"
+  },
   "tools": [
     {
       "name": "ask_notes",
@@ -15,9 +17,14 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "question": { "type": "string", "description": "要询问的问题" }
+          "question": {
+            "type": "string",
+            "description": "要询问的问题"
+          }
         },
-        "required": ["question"]
+        "required": [
+          "question"
+        ]
       }
     },
     {
@@ -26,10 +33,18 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "自然语言检索词" },
-          "limit": { "type": "integer", "description": "返回条数，默认 8" }
+          "query": {
+            "type": "string",
+            "description": "自然语言检索词"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "返回条数，默认 8"
+          }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       }
     }
   ]

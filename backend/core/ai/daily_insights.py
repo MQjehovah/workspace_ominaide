@@ -7,6 +7,9 @@ by rescanning a 30-day raw window.
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import json
 import re
 from datetime import date, datetime, time, timedelta
@@ -241,7 +244,7 @@ async def _llm_insight(data: dict) -> dict | None:
             ],
         }
     except Exception as e:
-        print(f"[insights] llm error: {e}")
+        log.warning(f"[insights] llm error: {e}")
         return None
 
 
@@ -334,7 +337,7 @@ async def _notify_review(db, user_id: int, row) -> None:
             "link": "/insights",
         })
     except Exception as e:
-        print(f"[insights] notify error: {e}")
+        log.warning(f"[insights] notify error: {e}")
 
 
 async def get_recent_insights(user_id: int, days: int = 7) -> list:

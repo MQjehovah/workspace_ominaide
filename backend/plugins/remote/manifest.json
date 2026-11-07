@@ -1,0 +1,9 @@
+{
+  "id": "remote",
+  "version": "1.0.0",
+  "title": "远程控制",
+  "description": "桌面远程控制",
+  "icon": "Monitor",
+  "permissions": [],
+  "routes": {}
+}

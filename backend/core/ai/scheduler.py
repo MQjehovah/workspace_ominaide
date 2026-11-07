@@ -4,6 +4,9 @@ Scheduled LLM jobs (event scan, profile refresh, morning brief, daily review,
 资讯 digest) intentionally live in the Bot routine system instead, so every token
 spend is visible and can be paused from Bot Console.
 """
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import asyncio
 from time import time as _clock
 from datetime import datetime, timedelta
@@ -94,7 +97,7 @@ async def _check_reminders():
                 except Exception:
                     pass
     except Exception as e:
-        print(f"[scheduler] reminder error: {e}")
+        log.warning(f"[scheduler] reminder error: {e}")
 
 
 async def _sync_mail() -> None:
@@ -105,9 +108,9 @@ async def _sync_mail() -> None:
 
         result = await sync_due_accounts(_settings.mail_sync_interval_seconds)
         if result.get("new"):
-            print(f"[scheduler] mail synced: {result['new']} new message(s)")
+            log.info(f"[scheduler] mail synced: {result['new']} new message(s)")
     except Exception as e:
-        print(f"[scheduler] mail sync error: {e}")
+        log.warning(f"[scheduler] mail sync error: {e}")
 
 
 async def _refresh_sources() -> None:
@@ -139,12 +142,12 @@ async def _refresh_sources() -> None:
                     new = await fetch_source_content(db, source)
                     await db.commit()
                     if new:
-                        print(f"[scheduler] sources {source.url}: {new} new")
+                        log.info(f"[scheduler] sources {source.url}: {new} new")
                 except Exception as e:
                     await db.rollback()
-                    print(f"[scheduler] sources refresh error {source_id}: {e}")
+                    log.warning(f"[scheduler] sources refresh error {source_id}: {e}")
     except Exception as e:
-        print(f"[scheduler] sources refresh loop error: {e}")
+        log.warning(f"[scheduler] sources refresh loop error: {e}")
 
 
 def _unwrap(payload, key: str):
@@ -201,7 +204,7 @@ async def _sync_dingtalk() -> None:
                     env=env,
                 )
             except Exception as e:
-                print(f"[scheduler] dingtalk user {user_id} skipped: {e}")
+                log.info(f"[scheduler] dingtalk user {user_id} skipped: {e}")
                 continue
             conversations = _unwrap(payload, "conversations")
             if not conversations:
@@ -273,9 +276,9 @@ async def _sync_dingtalk() -> None:
                 existing.add(key)
                 stored += 1
             if stored:
-                print(f"[scheduler] dingtalk synced: {stored} conversation(s) for user {user_id}")
+                log.info(f"[scheduler] dingtalk synced: {stored} conversation(s) for user {user_id}")
     except Exception as e:
-        print(f"[scheduler] dingtalk sync error: {e}")
+        log.warning(f"[scheduler] dingtalk sync error: {e}")
 
 
 async def _sync_dingtalk_calendar() -> None:
@@ -289,7 +292,7 @@ async def _sync_dingtalk_calendar() -> None:
             days_after=_settings.dingtalk_calendar_days_after,
         )
     except Exception as e:
-        print(f"[scheduler] dingtalk calendar sync error: {e}")
+        log.warning(f"[scheduler] dingtalk calendar sync error: {e}")
 
 
 async def scheduler_loop():
@@ -330,6 +333,6 @@ async def scheduler_loop():
                 _last_dingtalk_calendar_sync = _clock()
                 await _sync_dingtalk_calendar()
         except Exception as e:
-            print(f"[scheduler] error: {e}")
+            log.warning(f"[scheduler] error: {e}")
 
         await asyncio.sleep(CHECK_INTERVAL)

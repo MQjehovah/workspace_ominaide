@@ -10,6 +10,9 @@ Design notes:
 - Cancellation is cooperative: checked before each model turn and tool call.
 - Recovery marks stale ``running`` runs as failed and re-enqueues ``queued`` ones.
 """
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import asyncio
 import json
 import time
@@ -117,7 +120,7 @@ async def execute_run(run_id: int) -> None:
         async with _sem():
             await _execute(run_id)
     except Exception as e:
-        print(f"[bots.runner] run {run_id} crashed: {e}")
+        log.warning(f"[bots.runner] run {run_id} crashed: {e}")
         await _finalize(run_id, "failed", error=str(e))
     finally:
         _active.discard(run_id)
@@ -653,7 +656,7 @@ async def _broadcast_chat_reply(run: BotRun) -> None:
             },
         )
     except Exception as e:
-        print(f"[bots.runner] broadcast chat reply failed: {e}")
+        log.warning(f"[bots.runner] broadcast chat reply failed: {e}")
 
 
 async def _save_chat_reply(run: BotRun) -> None:
@@ -669,7 +672,7 @@ async def _save_chat_reply(run: BotRun) -> None:
             run.user_id, "assistant", run.output, run.session_id, bot=bot
         )
     except Exception as e:
-        print(f"[bots.runner] save chat reply failed: {e}")
+        log.warning(f"[bots.runner] save chat reply failed: {e}")
 
 
 async def _emit_run_finished(run: BotRun) -> None:
@@ -700,7 +703,7 @@ async def _emit_run_finished(run: BotRun) -> None:
             )
             await db.commit()
     except Exception as e:
-        print(f"[bots.runner] run-finished event failed: {e}")
+        log.warning(f"[bots.runner] run-finished event failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -737,7 +740,7 @@ async def _notify_approval(run: BotRun, approval: BotApproval, reason: str) -> N
         except Exception:
             pass
     except Exception as e:
-        print(f"[bots.runner] approval notify failed: {e}")
+        log.warning(f"[bots.runner] approval notify failed: {e}")
 
 
 # ---------------------------------------------------------------------------

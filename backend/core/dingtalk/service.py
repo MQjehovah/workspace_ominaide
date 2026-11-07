@@ -7,6 +7,9 @@ so tokens never leak between accounts.
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import asyncio
 import json
 import os
@@ -111,7 +114,7 @@ async def connect_dingtalk_server(user_id: int) -> None:
         row = await ensure_dingtalk_server(user_id)
         await mcp_hub.connect_server(row.id, user_id)
     except Exception as e:
-        print(f"[dingtalk] connect server for user {user_id} failed: {e}")
+        log.warning(f"[dingtalk] connect server for user {user_id} failed: {e}")
 
 
 def _authenticated(payload: dict) -> bool:

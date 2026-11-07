@@ -40,4 +40,6 @@ RUN find /app -name '__pycache__' -type d -prune -exec rm -rf {} + || true
 # into the image instead of relying on a post-start chmod.
 RUN chmod 700 /app
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--ws-ping-interval", "20", "--ws-ping-timeout", "30"]
+# Access logs are emitted by TraceMiddleware with query strings stripped, so
+# tokens used by media/WebSocket URLs never end up in Uvicorn logs.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--ws-ping-interval", "20", "--ws-ping-timeout", "30"]

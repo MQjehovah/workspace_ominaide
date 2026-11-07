@@ -3,11 +3,15 @@ import zipfile
 import shutil
 import importlib.util
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import async_session
+from core.logging import get_logger
+from core.plugin.manifest import load_manifest
 from core.plugin.models import PluginRegistry
+
+log = get_logger(__name__)
 
 PLUGINS_DIR = Path(__file__).resolve().parent.parent.parent / "plugins"
 
@@ -39,7 +43,7 @@ async def discover_plugins(app: FastAPI):
                 record = PluginRegistry(
                     name=plugin_id,
                     version=version,
-                    title=manifest.get("displayName", plugin_id),
+                    title=manifest.get("title") or plugin_id,
                     description=manifest.get("description", ""),
                     icon=manifest.get("icon", ""),
                     enabled=True,
@@ -47,6 +51,12 @@ async def discover_plugins(app: FastAPI):
                 )
                 db.add(record)
                 await db.flush()
+            else:
+                record.version = version
+                record.title = manifest.get("title") or record.title
+                record.description = manifest.get("description", "") or record.description
+                record.icon = manifest.get("icon", "") or record.icon
+                record.manifest = manifest
 
             if record.enabled:
                 await _register_plugin_routes(app, plugin_id, plugin_dir)
@@ -56,54 +66,40 @@ async def discover_plugins(app: FastAPI):
 
 
 def _load_manifest(plugin_dir: Path) -> dict | None:
-    """Load manifest from either manifest.json or package.json (legacy)."""
-    manifest_path = plugin_dir / "manifest.json"
-    if manifest_path.exists():
-        return json.loads(manifest_path.read_text(encoding="utf-8"))
-
-    pkg_path = plugin_dir / "package.json"
-    if pkg_path.exists():
-        pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
-        ns = pkg.get("omniaide") or pkg.get("mqbox") or {}
-        return {
-            "id": ns.get("id", pkg.get("name")),
-            "name": pkg.get("name"),
-            "displayName": ns.get("displayName", pkg.get("displayName", pkg.get("name"))),
-            "description": pkg.get("description", ""),
-            "version": pkg.get("version", "0.0.0"),
-            "icon": ns.get("icon"),
-            "permissions": ns.get("permissions", []),
-            "main": pkg.get("main", "dist/index.js"),
-            "builtin": True,
-        }
-
-    return None
+    """Load and validate manifest.json (or legacy package.json)."""
+    try:
+        return load_manifest(plugin_dir, expected_id=plugin_dir.name)
+    except Exception as exc:
+        log.warning("skip plugin %s: %s", plugin_dir.name, exc)
+        return None
 
 
 async def _register_plugin_routes(app: FastAPI, name: str, plugin_dir: Path):
-    """Dynamically import and register plugin's backend router."""
+    """Import a plugin router module and mount every APIRouter it exports."""
     router_path = plugin_dir / "backend" / "router.py"
     if not router_path.exists():
         return
 
-    spec = importlib.util.spec_from_file_location(
-        f"plugins.{name}.backend.router", router_path
-    )
-    if spec and spec.loader:
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        if hasattr(module, "router"):
-            router = module.router
-            # If the router already carries a full /api/... prefix, mount it
-            # as-is; otherwise mount under /api/plugins/{name}.
-            has_api_prefix = any(
-                getattr(r, "path", "").startswith("/api/")
-                for r in getattr(router, "routes", [])
-            )
-            if has_api_prefix:
-                app.include_router(router)
-            else:
-                app.include_router(router, prefix=f"/api/plugins/{name}")
+    module_name = f"plugins.{name}.backend.router"
+    spec = importlib.util.spec_from_file_location(module_name, router_path)
+    if not (spec and spec.loader):
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    mounted: set[int] = set()
+    for attr, value in vars(module).items():
+        if not isinstance(value, APIRouter) or id(value) in mounted:
+            continue
+        mounted.add(id(value))
+        has_api_prefix = any(
+            getattr(r, "path", "").startswith(("/api/", "/ws/"))
+            for r in getattr(value, "routes", [])
+        )
+        if has_api_prefix:
+            app.include_router(value)
+        else:
+            app.include_router(value, prefix=f"/api/plugins/{name}")
 
 
 async def get_plugins(db: AsyncSession) -> list[PluginRegistry]:
@@ -140,47 +136,24 @@ async def uninstall_plugin(db: AsyncSession, app: FastAPI, name: str):
 
 
 def install_plugin_from_zip(zip_path: Path, plugin_name: str | None = None) -> dict:
-    """Extract a plugin zip into the plugins directory and return its manifest.
-
-    Supports both new unified format (manifest.json) and legacy format (package.json).
-    """
+    """Extract a unified plugin zip into ``plugins/<manifest.id>``."""
     import tempfile
+
+    from core.plugin.manifest import find_plugin_source
 
     with tempfile.TemporaryDirectory() as tmp:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(tmp)
 
-        # try new unified format first
-        manifest_paths = list(Path(tmp).rglob("manifest.json"))
-        if not manifest_paths:
-            # fallback to legacy format
-            pkg_paths = list(Path(tmp).rglob("package.json"))
-            if not pkg_paths:
-                raise ValueError("No manifest.json or package.json found in plugin archive")
-            pkg = json.loads(pkg_paths[0].read_text(encoding="utf-8"))
-            ns = pkg.get("omniaide") or pkg.get("mqbox") or {}
-            manifest = {
-                "id": ns.get("id", pkg.get("name")),
-                "name": pkg.get("name"),
-                "displayName": ns.get("displayName", pkg.get("displayName", pkg.get("name"))),
-                "description": pkg.get("description", ""),
-                "version": pkg.get("version", "0.0.0"),
-                "icon": ns.get("icon"),
-                "permissions": ns.get("permissions", []),
-                "main": pkg.get("main", "dist/index.js"),
-                "builtin": False,
-            }
-            source = pkg_paths[0].parent
-        else:
-            manifest = json.loads(manifest_paths[0].read_text(encoding="utf-8"))
-            source = manifest_paths[0].parent
+        source, manifest = find_plugin_source(Path(tmp))
+        plugin_id = manifest["id"]
+        if plugin_name and plugin_name != plugin_id:
+            raise ValueError(
+                f"插件目录名 '{plugin_name}' 与 manifest id '{plugin_id}' 不一致"
+            )
 
-        name = plugin_name or manifest.get("id") or manifest.get("name", source.name)
-
-        target = PLUGINS_DIR / name
+        target = PLUGINS_DIR / plugin_id
         if target.exists():
             shutil.rmtree(target)
-
         shutil.copytree(str(source), str(target), dirs_exist_ok=True)
-
     return manifest

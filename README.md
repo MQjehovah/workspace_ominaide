@@ -44,7 +44,7 @@
                    │ 全部向量化
 ┌──────────────────▼──────────────────────────┐
 │              数据层                          │
-│  统一索引 → Qdrant → 统一语义搜索           │
+│  统一索引 → pgvector → 统一语义搜索         │
 │  文件/笔记/资讯/日程/活动，一个接口查全部    │
 └─────────────────────────────────────────────┘
 ```
@@ -61,7 +61,7 @@
                          │ HTTPS + WebSocket
                   ┌──────▼──────────────────┐
                   │   FastAPI 后端            │
-                  │   · 13+ 业务插件          │
+                  │   · 13 个业务插件         │
                   │   · MCP 工具注册中心      │
                   │   · WebSocket 通知        │
                   └──────┬──────────────────┘
@@ -70,7 +70,7 @@
     │                    │                    │
     ▼                    ▼                    ▼
 ┌────────┐    ┌──────────────┐    ┌─────────────────┐
-│ MinIO  │    │  MySQL 8.0   │    │ Qdrant 向量库    │
+│ MinIO  │    │ PostgreSQL   │    │ pgvector        │
 │ 对象存储│    │  结构化数据   │    │ 语义搜索+记忆   │
 └────────┘    └──────────────┘    └─────────────────┘
                          │
@@ -91,8 +91,8 @@
 | 后端 | Python FastAPI + SQLAlchemy |
 | AI API | OpenAI / DeepSeek / 任意兼容接口 |
 | 对象存储 | MinIO |
-| 关系数据库 | MySQL 8.0 |
-| 向量数据库 | Qdrant |
+| 关系数据库 | PostgreSQL 16 |
+| 向量检索 | pgvector |
 | 部署 | Docker Compose |
 
 ## 桌面端插件
@@ -115,15 +115,51 @@ cd OmniAide
 # 配置环境变量
 cp .env.example .env
 # 编辑 .env 填入 LLM_API_KEY（可选，AI 对话需要）
+# 数据库默认使用 PostgreSQL 16 + pgvector
 
 # 启动全部服务
-docker compose up -d
+docker compose -f docker/docker-compose.yml up -d
 
-# 初始化数据库 & 创建管理员用户
-docker compose exec backend python manage.py init
+# 初始化数据库
+docker compose -f docker/docker-compose.yml exec backend python manage.py init
 ```
 
 启动后访问 `http://localhost:3000`（Web 管理界面）或用桌面端连接。
+
+### 账号与注册
+
+- 空库启动时，第一个注册账号会自动成为管理员
+- 之后公开注册默认关闭，由管理员在「用户管理」中创建账号
+- 如需临时开放注册，设置 `ALLOW_REGISTRATION=true`
+- Web 和移动端会使用 refresh token 自动续期，不需要每 30 分钟重新登录
+
+### 插件清单
+
+后端插件使用统一的 `backend/plugins/<id>/manifest.json`：
+
+```json
+{
+  "id": "files",
+  "version": "1.0.0",
+  "title": "文件",
+  "description": "文件管理与网盘",
+  "icon": "Folder",
+  "permissions": [],
+  "routes": { "main": "/files" },
+  "tools": []
+}
+```
+
+`id` 必须与插件目录名一致。后端会在启动时自动挂载插件导出的所有 `APIRouter`。
+
+### 日志
+
+```env
+LOG_LEVEL=INFO
+LOG_JSON=false
+```
+
+日志会带 `trace_id` 和 `user_id`，并自动脱敏 `token`、密码和 Bearer token。
 
 ## 桌面端开发
 

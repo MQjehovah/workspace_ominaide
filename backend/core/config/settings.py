@@ -8,6 +8,9 @@ _RANDOM_SECRET = secrets.token_urlsafe(48)
 
 
 class Settings(BaseSettings):
+    # Logging. JSON is optional for log collectors; text is the default.
+    log_level: str = "INFO"
+    log_json: bool = False
     database_url: str = "postgresql+asyncpg://omniaide:omniaide_pass@postgres:5432/omniaide"
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "omniaide_minio"
@@ -16,7 +19,6 @@ class Settings(BaseSettings):
     # Public base URL used to rewrite presigned MinIO URLs, e.g.
     # https://mqgeek.com/minio (nginx strips /minio and keeps Host=minio:9000).
     minio_public_url: str = ""
-    qdrant_url: str = "http://qdrant:6333"
     redis_url: str = "redis://redis:6379/0"
     llm_provider: str = "openai"
     llm_api_key: str = ""
@@ -58,6 +60,9 @@ class Settings(BaseSettings):
         "4. 保护隐私，不泄露与请求无关的信息。"
     )
     chat_history_limit: int = 20
+    # Public self-registration. The first user can always be created to bootstrap
+    # an empty deployment; afterwards only admins may add accounts.
+    allow_registration: bool = False
     jwt_secret: str = _RANDOM_SECRET
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30

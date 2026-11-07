@@ -53,6 +53,10 @@ class RegisterRequest(BaseModel):
     password: str
 
 
+class AdminCreateUserRequest(RegisterRequest):
+    is_admin: bool = False
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str

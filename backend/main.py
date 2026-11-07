@@ -1,9 +1,15 @@
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import Response
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from core.events.middleware import ActivityMiddleware
+from core.config.settings import settings as app_settings
+from core.logging import configure_logging, get_logger
+from core.observability.context import get_trace_id
+
+configure_logging()
+log = get_logger("omniaide")
 
 
 @asynccontextmanager
@@ -105,7 +111,14 @@ app = FastAPI(
     default_response_class=UTCJSONResponse,
 )
 
-from core.config.settings import settings as app_settings
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    log.exception("unhandled error %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "request_id": get_trace_id()},
+    )
 
 _origins = app_settings.cors_origins_list
 _allow_all = "*" in _origins
@@ -152,33 +165,8 @@ app.include_router(plugin_router)
 from core.plugin.marketplace import router as marketplace_router
 app.include_router(marketplace_router)
 
-# Manifest-backed plugins (files / sync / todo / notes / mail / sources / device)
-# are mounted once by core.plugin.registry.discover_plugins during startup.
-# Only modules without a manifest are included manually here.
-
-from plugins.music.backend.router import router as music_router
-app.include_router(music_router)
-
-from plugins.remote.backend.router import router as remote_router
-from plugins.remote.backend.router import ws_router as remote_ws_router
-app.include_router(remote_router)
-app.include_router(remote_ws_router)
-
-from plugins.chat.backend.router import router as chat_router
-app.include_router(chat_router)
-
-from plugins.schedule.backend.router import router as schedule_router
-app.include_router(schedule_router)
-
-from plugins.projects.backend.router import router as projects_router
-app.include_router(projects_router)
-
-from plugins.notifications.backend.router import router as notifications_router
-app.include_router(notifications_router)
-
-# Manifest-backed plugins (files / sync / todo / notes / mail / sources / device)
-# are mounted once by core.plugin.registry.discover_plugins during startup.
-# Only modules without a manifest are included manually here.
+# All business plugins now have a manifest and are mounted by
+# core.plugin.registry.discover_plugins during startup.
 
 from core.ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)

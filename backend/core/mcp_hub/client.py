@@ -7,6 +7,9 @@ separate bridge process and works for both container-local and remote servers.
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import asyncio
 import json
 import os
@@ -133,7 +136,7 @@ class StdioMcpConnection(McpConnection):
             text = line.decode("utf-8", errors="replace").strip()
             if text:
                 self.stderr_tail = (self.stderr_tail + "\n" + text)[-2000:]
-                print(f"[mcp:{self.command}] {text}", file=sys.stderr)
+                log.info("[mcp:%s] %s", self.command, text)
 
     async def _notify(self, method: str, params: dict) -> None:
         assert self.proc and self.proc.stdin

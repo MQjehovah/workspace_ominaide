@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import asyncio
 import json
 import re
@@ -96,9 +99,9 @@ class McpHub:
                 try:
                     await self.connect_server(server.id, server.user_id)
                 except Exception as e:
-                    print(f"[mcp] startup {server.slug} failed: {e}")
+                    log.warning(f"[mcp] startup {server.slug} failed: {e}")
         except Exception as e:
-            print(f"[mcp] startup error: {e}")
+            log.warning(f"[mcp] startup error: {e}")
 
     async def shutdown(self) -> None:
         for server_id in list(self._conns.keys()):
@@ -280,7 +283,7 @@ class McpHub:
                 # child restarted). Reconnect once and retry instead of failing.
                 if "超时" not in str(e):
                     raise
-                print(f"[mcp] {server.slug} 超时，重连后重试 {tool_name}")
+                log.warning(f"[mcp] {server.slug} 超时，重连后重试 {tool_name}")
                 conn = await self._ensure_conn(server_id, user_id, force=True)
                 async with trace_span("mcp", f"{server.slug}.{tool_name}"):
                     result = await conn.call_tool(tool_name, arguments or {})
@@ -316,7 +319,7 @@ class McpHub:
                 ))
                 await db.commit()
         except Exception as e:
-            print(f"[mcp] audit error: {e}")
+            log.warning(f"[mcp] audit error: {e}")
 
 
 def _content_text(result: dict) -> str:

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import json
 import re
 from datetime import datetime, timedelta
@@ -175,7 +178,7 @@ async def parse_rule(text: str) -> dict:
             "explanation": str(data.get("explanation") or ""),
         }
     except Exception as e:
-        print(f"[automation] parse llm error: {e}")
+        log.warning(f"[automation] parse llm error: {e}")
         return parse_rule_locally(text)
 
 
@@ -243,7 +246,7 @@ async def dry_run(user_id: int, routine_id: int) -> dict:
             )
             plan = (resp.choices[0].message.content or "").strip()
         except Exception as e:
-            print(f"[automation] dry-run llm error: {e}")
+            log.warning(f"[automation] dry-run llm error: {e}")
 
     if not plan:
         plan = (

@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 from fastapi import APIRouter, Depends
 import time
 
@@ -54,6 +57,6 @@ async def call_tool(
             )
             await db.commit()
     except Exception as e:
-        print(f"[mcp] activity record failed: {e}")
+        log.warning(f"[mcp] activity record failed: {e}")
 
     return payload

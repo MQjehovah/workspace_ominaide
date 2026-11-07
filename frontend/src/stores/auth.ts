@@ -1,16 +1,17 @@
 import { defineStore } from 'pinia'
 import client from '@/api/client'
+import { clearTokens, getAccessToken, setTokens } from '@/api/tokens'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: localStorage.getItem('token') || '',
+    token: getAccessToken(),
     user: null as any
   }),
   actions: {
     async login(username: string, password: string) {
       const res = await client.post('/auth/login', { username, password })
       this.token = res.data.access_token
-      localStorage.setItem('token', this.token)
+      setTokens(res.data.access_token, res.data.refresh_token)
       await this.fetchUser()
     },
     async fetchUser() {
@@ -20,7 +21,7 @@ export const useAuthStore = defineStore('auth', {
     logout() {
       this.token = ''
       this.user = null
-      localStorage.removeItem('token')
+      clearTokens()
     }
   }
 })

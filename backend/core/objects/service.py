@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import asyncio
 from datetime import datetime
 
@@ -141,7 +144,7 @@ async def create_comment(
             )
             await db.commit()
         except Exception as e:
-            print(f"[objects] comment event failed: {e}")
+            log.warning(f"[objects] comment event failed: {e}")
             await db.commit()
 
     _index_comment(user_id, row, obj)
@@ -251,4 +254,4 @@ def _index_comment(user_id: int, row: BusinessComment, obj: dict) -> None:
             },
         ))
     except Exception as e:
-        print(f"[objects] comment indexing failed: {e}")
+        log.warning(f"[objects] comment indexing failed: {e}")

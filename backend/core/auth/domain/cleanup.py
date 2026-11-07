@@ -14,12 +14,15 @@ from sqlalchemy import delete, select, update
 from core.auth.domain.models import User
 from core.bots.models import BotRun, BotRunStep
 from core.database.session import async_session
+from core.logging import get_logger
 from core.mcp_hub.models import McpServer, McpTool
 from core.objects.models import BusinessComment
 from core.paths import is_within, user_root, workspace_root
 from plugins.files.backend.models import File
 from plugins.music.backend.models import Playlist, PlaylistItem
 from plugins.sources.backend.models import ContentItem, ContentSource
+
+logger = get_logger(__name__)
 
 
 async def _user_exists(user_id: int) -> bool:
@@ -46,9 +49,9 @@ async def _stop_runtime(user_id: int) -> None:
             try:
                 await cancel_run(user_id, run_id)
             except Exception as exc:
-                print(f"[cleanup] cancel run {run_id} failed: {exc}")
+                logger.warning("cancel run %s failed: %s", run_id, exc)
     except Exception as exc:
-        print(f"[cleanup] cancel runs failed: {exc}")
+        logger.warning("cancel runs failed: %s", exc)
 
     # Cancel queued/running jobs owned by the user.
     try:
@@ -65,7 +68,7 @@ async def _stop_runtime(user_id: int) -> None:
             )
             await db.commit()
     except Exception as exc:
-        print(f"[cleanup] cancel jobs failed: {exc}")
+        logger.warning("cancel jobs failed: %s", exc)
 
     # Stop MCP child processes and remove their tools from the registry.
     try:
@@ -79,9 +82,9 @@ async def _stop_runtime(user_id: int) -> None:
             try:
                 await mcp_hub.disconnect_server(server_id)
             except Exception as exc:
-                print(f"[cleanup] disconnect mcp {server_id} failed: {exc}")
+                logger.warning("disconnect mcp %s failed: %s", server_id, exc)
     except Exception as exc:
-        print(f"[cleanup] disconnect mcps failed: {exc}")
+        logger.warning("disconnect mcps failed: %s", exc)
 
     # Stop a pending DingTalk device-flow login process.
     try:
@@ -156,6 +159,27 @@ async def _delete_workspace(user_id: int) -> bool:
         return False
     await asyncio.to_thread(shutil.rmtree, target, True)
     return True
+
+
+async def _delete_embeddings(user_id: int) -> int:
+    """Delete pgvector rows that live outside ``Base.metadata``.
+
+    The table is created lazily by ``vector_store`` and older deployments may
+    not have it, so a missing table must not abort user cleanup.
+    """
+    from core.database.session import engine
+    from sqlalchemy import text
+
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                text("DELETE FROM embeddings WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+            return int(result.rowcount or 0)
+    except Exception as exc:
+        logger.debug("embeddings cleanup skipped for user %s: %s", user_id, exc)
+        return 0
 
 
 async def _delete_db_rows(user_id: int) -> None:
@@ -246,6 +270,7 @@ async def delete_user_data(user_id: int) -> dict:
     result["workspace_deleted"] = await _delete_workspace(user_id)
 
     if exists:
+        result["embeddings_deleted"] = await _delete_embeddings(user_id)
         await _delete_db_rows(user_id)
 
     return result
@@ -257,10 +282,11 @@ async def _handle_admin_user_delete(job) -> dict:
     if target_user_id is None:
         raise ValueError("target_user_id 缺失")
     result = await delete_user_data(int(target_user_id))
-    print(
-        f"[admin] job {job.id} deleted user {target_user_id}: "
-        f"workspace={result['workspace_deleted']} objects={result['objects_seen']} "
-        f"errors={len(result['storage_errors'])}"
+    logger.info(
+        "job %s deleted user %s: workspace=%s objects=%s embeddings=%s errors=%s",
+        job.id, target_user_id, result["workspace_deleted"],
+        result["objects_seen"], result.get("embeddings_deleted", 0),
+        len(result["storage_errors"]),
     )
     return result
 

@@ -6,6 +6,8 @@ from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 
+from core.plugin.manifest import find_plugin_source
+
 PLUGINS_DIR = Path(__file__).resolve().parent.parent.parent / "plugins"
 
 router = APIRouter(prefix="/api/plugins/distributor", tags=["distributor"])
@@ -24,20 +26,18 @@ def extract_plugin_zip(zip_path: Path, target_name: str | None = None) -> dict:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(tmp)
 
-        # validate manifest
-        manifest_path = Path(tmp) / "manifest.json"
-        if not manifest_path.exists():
-            raise ValueError("Missing manifest.json in plugin archive")
-
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        plugin_id = target_name or manifest.get("id") or manifest.get("name", "unknown")
+        source, manifest = find_plugin_source(Path(tmp))
+        plugin_id = manifest["id"]
+        if target_name and target_name != plugin_id:
+            raise ValueError(
+                f"插件目录名 '{target_name}' 与 manifest id '{plugin_id}' 不一致"
+            )
 
         target = PLUGINS_DIR / plugin_id
         if target.exists():
             shutil.rmtree(target)
 
-        # copy everything
-        shutil.copytree(str(Path(tmp)), str(target), dirs_exist_ok=True)
+        shutil.copytree(str(source), str(target), dirs_exist_ok=True)
 
     return manifest
 

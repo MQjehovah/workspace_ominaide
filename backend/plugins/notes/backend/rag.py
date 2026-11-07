@@ -14,7 +14,11 @@ No external services beyond the configured embedding/LLM endpoints are
 required, and every stage degrades gracefully (keyword-only when embeddings
 are unavailable).
 """
+
 from __future__ import annotations
+
+from core.logging import get_logger
+log = get_logger(__name__)
 
 import asyncio
 import json
@@ -249,7 +253,7 @@ async def _index_note_rag_locked(
                     inputs, model=settings.embedding_model
                 )
             except Exception as e:
-                print(f"[notes.rag] embedding error note={note_id}: {e}")
+                log.warning(f"[notes.rag] embedding error note={note_id}: {e}")
                 embeddings = []
 
             for i, c in enumerate(chunks):
@@ -271,7 +275,7 @@ async def _index_note_rag_locked(
             await db.flush()
         return {"chunks": len(chunks), "terms": len(terms), "embedded": embedded}
     except Exception as e:
-        print(f"[notes.rag] index error note={note_id}: {e}")
+        log.warning(f"[notes.rag] index error note={note_id}: {e}")
         if own_session:
             await db.rollback()
         return {"chunks": 0, "terms": 0, "embedded": 0}
@@ -716,7 +720,7 @@ async def _judge_sufficiency(question: str, results: list[dict[str, Any]]) -> di
         data = json.loads(m.group(0))
         return data if isinstance(data, dict) else {"sufficient": True}
     except Exception as e:
-        print(f"[notes.rag] sufficiency judge error: {e}")
+        log.warning(f"[notes.rag] sufficiency judge error: {e}")
         return {"sufficient": True}
 
 

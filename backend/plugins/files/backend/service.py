@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import asyncio
 import io
 import uuid
@@ -47,7 +50,7 @@ async def _emit_sync_change(
             file_size=file_record.size,
         )
     except Exception as e:
-        print(f"[files] sync event error: {e}")
+        log.warning(f"[files] sync event error: {e}")
 
 
 def _generate_object_key(user_id: int, filename: str) -> str:

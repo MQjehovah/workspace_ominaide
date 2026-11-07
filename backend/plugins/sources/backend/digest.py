@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 from datetime import datetime, timedelta
 
 
@@ -67,7 +70,7 @@ async def _llm_summary(digest: dict) -> str | None:
         )
         return (resp.choices[0].message.content or "").strip() or None
     except Exception as e:
-        print(f"[sources] digest llm error: {e}")
+        log.warning(f"[sources] digest llm error: {e}")
         return None
 
 

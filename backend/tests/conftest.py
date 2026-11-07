@@ -8,6 +8,7 @@ except OSError:
     pass
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["LLM_API_KEY"] = ""
+os.environ["ALLOW_REGISTRATION"] = "true"
 # Use a closed port so MinIO startup probes fail fast in tests (no 15s DNS/connect wait).
 os.environ["MINIO_ENDPOINT"] = "127.0.0.1:1"
 

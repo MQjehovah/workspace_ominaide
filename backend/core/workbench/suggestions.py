@@ -8,6 +8,9 @@ workbench stays fast and the suggestions only change on the requested cadence.
 
 from __future__ import annotations
 
+from core.logging import get_logger
+log = get_logger(__name__)
+
 import json
 import time
 from datetime import datetime, timedelta
@@ -259,7 +262,7 @@ async def workbench_suggestions(user_id: int, *, refresh: bool = False) -> dict:
                     suggestions = (clean + suggestions)[:3]
                     source = "llm"
         except Exception as exc:
-            print(f"[workbench] suggestion llm error: {exc}")
+            log.warning(f"[workbench] suggestion llm error: {exc}")
 
     generated = datetime.now()
     payload = {

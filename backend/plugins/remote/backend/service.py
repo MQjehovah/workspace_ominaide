@@ -1,3 +1,6 @@
+
+from core.logging import get_logger
+log = get_logger(__name__)
 import secrets
 import time
 import sys
@@ -9,7 +12,7 @@ _pairs: dict[str, dict] = {}
 
 
 def _log(msg: str):
-    print(f"[remote] {msg}", flush=True, file=sys.stderr)
+    log.info("[remote] %s", msg)
 
 
 async def connect(ws: WebSocket):
