@@ -7,6 +7,7 @@ import '../models/space_catalog.dart';
 import '../services/api_service.dart';
 import '../services/cos_repository.dart';
 import '../services/event_time.dart';
+import '../services/refresh_bus.dart';
 import '../services/seen_state_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
@@ -49,12 +50,24 @@ class _SpaceScreenState extends State<SpaceScreen> {
   Set<String> _hidden = {};
 
   static const _hiddenKey = 'space.hidden';
+  late final ValueNotifier<int> _refresh = RefreshBus.signal('space');
 
   @override
   void initState() {
     super.initState();
+    _refresh.addListener(_onRefreshSignal);
     _loadHidden();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _refresh.removeListener(_onRefreshSignal);
+    super.dispose();
+  }
+
+  void _onRefreshSignal() {
+    if (mounted) _load(force: true);
   }
 
   Future<void> _loadHidden() async {
@@ -328,10 +341,13 @@ class _SpaceScreenState extends State<SpaceScreen> {
                   urgent: _inboxUrgent,
                   mail: _mail,
                   dingtalk: _dingtalk,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const InboxScreen()),
-                  ),
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InboxScreen()),
+                    );
+                    if (mounted) _load(force: true);
+                  },
                 ),
               ),
               for (final group in groups) ...[

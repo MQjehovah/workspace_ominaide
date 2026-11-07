@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/bot_selection_service.dart';
 import '../services/cos_repository.dart';
 import '../services/event_time.dart';
+import '../services/refresh_bus.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'brief_screen.dart';
@@ -35,11 +36,17 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   String _botName = '';
   bool _loading = true;
   bool _error = false;
+  late final ValueNotifier<int> _refresh = RefreshBus.signal('workbench');
 
   @override
   void initState() {
     super.initState();
+    _refresh.addListener(_onRefreshSignal);
     _load();
+  }
+
+  void _onRefreshSignal() {
+    if (mounted) _load(force: true);
   }
 
   Future<T?> _safe<T>(Future<T> future) async {
@@ -151,6 +158,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
 
   @override
   void dispose() {
+    _refresh.removeListener(_onRefreshSignal);
     _chatController.dispose();
     super.dispose();
   }
