@@ -42,6 +42,7 @@ void main() {
         'dingtalk',
         'notifications',
         'schedule',
+        'minutes',
         'todo',
         'projects',
         'insights',

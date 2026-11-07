@@ -17,6 +17,7 @@ import 'files_screen.dart';
 import 'insights_screen.dart';
 import 'inbox_screen.dart';
 import 'mail_screen.dart';
+import 'meeting_minutes_screen.dart';
 import 'music_screen.dart';
 import 'notes_screen.dart';
 import 'notifications_screen.dart';
@@ -247,6 +248,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       'dingtalk' => const InboxScreen(initialFilter: 'dingtalk'),
       'notifications' => const NotificationsScreen(),
       'schedule' => const ScheduleScreen(),
+      'minutes' => const MeetingMinutesScreen(),
       'todo' => const TodoScreen(),
       'projects' => const ProjectsScreen(),
       'insights' => const InsightsScreen(),

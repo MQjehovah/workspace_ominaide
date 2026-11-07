@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     asr_api_key: str = ""
     asr_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     asr_model: str = "glm-asr"
+    # Long meeting recordings are sent to ASR as one stream from MinIO; these
+    # controls are intentionally independent of the 25MB voice-note limit.
+    asr_timeout_seconds: int = 3600
+    asr_diarize: bool = True
+    meeting_asr_concurrency: int = 1
     tts_api_key: str = ""
     tts_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     tts_model: str = "glm-tts"

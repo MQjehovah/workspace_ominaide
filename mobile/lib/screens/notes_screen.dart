@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'note_versions_screen.dart';
 import 'notes_ask_screen.dart';
+import 'meeting_minutes_screen.dart';
 import 'photo_scan_screen.dart';
 import 'voice_note_screen.dart';
 
@@ -29,7 +30,10 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Future<void> _loadNotes() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final res = await ApiService().get('/plugins/notes/tree');
       if (res.statusCode == 200) {
@@ -61,16 +65,19 @@ class _NotesScreenState extends State<NotesScreen> {
 
   Future<void> _createNote() async {
     try {
-      final res = await ApiService().post('/plugins/notes', {'title': '无标题', 'content': ''});
+      final res = await ApiService()
+          .post('/plugins/notes', {'title': '无标题', 'content': ''});
       if (res.statusCode == 201) {
         await _loadNotes();
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('创建失败: $e')));
     }
   }
 
@@ -78,17 +85,20 @@ class _NotesScreenState extends State<NotesScreen> {
     final parentId = parent['id'];
     if (parentId == null) return;
     try {
-      final res = await ApiService().post('/plugins/notes', {'title': '无标题', 'content': '', 'parent_id': parentId});
+      final res = await ApiService().post('/plugins/notes',
+          {'title': '无标题', 'content': '', 'parent_id': parentId});
       if (res.statusCode == 201) {
         _collapsed.remove(parentId);
         await _loadNotes();
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('创建失败: ${res.statusCode}')));
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('创建失败: $e')));
     }
   }
 
@@ -101,8 +111,12 @@ class _NotesScreenState extends State<NotesScreen> {
         title: const Text('删除笔记'),
         content: Text('确定删除「${note['title'] ?? '无标题'}」?子笔记也会一并删除。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('删除', style: TextStyle(color: Colors.red))),
+          TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('删除', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -112,7 +126,8 @@ class _NotesScreenState extends State<NotesScreen> {
       await _loadNotes();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('删除失败: $e')));
     }
   }
 
@@ -121,9 +136,11 @@ class _NotesScreenState extends State<NotesScreen> {
       _toggleFolder(note);
       return;
     }
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => NoteEditorScreen(note: note, onSaved: _loadNotes),
-    ));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => NoteEditorScreen(note: note, onSaved: _loadNotes),
+        ));
   }
 
   Future<void> _openNoteById(int noteId, String title) async {
@@ -186,6 +203,22 @@ class _NotesScreenState extends State<NotesScreen> {
               },
             ),
             ListTile(
+              leading: Icon(Icons.mic_rounded, color: palette.primary),
+              title: const Text('会议录音纪要'),
+              subtitle: const Text('录音上传一次，自动转写并生成结构化纪要'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MeetingMinutesScreen(
+                      onOpenNote: _openNoteById,
+                    ),
+                  ),
+                );
+              },
+            ),
+            ListTile(
               leading: Icon(Icons.mic_none_rounded, color: palette.primary),
               title: const Text('语音笔记'),
               subtitle: const Text('录音后自动转写并生成笔记'),
@@ -202,7 +235,8 @@ class _NotesScreenState extends State<NotesScreen> {
               },
             ),
             ListTile(
-              leading: Icon(Icons.document_scanner_outlined, color: palette.primary),
+              leading:
+                  Icon(Icons.document_scanner_outlined, color: palette.primary),
               title: const Text('拍照扫描'),
               subtitle: const Text('识别纸质文档/白板文字并保存为笔记'),
               onTap: () {
@@ -253,7 +287,9 @@ class _NotesScreenState extends State<NotesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+        SnackBar(
+            content:
+                Text('导入失败: ${e.toString().replaceFirst('Exception: ', '')}')),
       );
     }
   }
@@ -273,7 +309,8 @@ class _NotesScreenState extends State<NotesScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
             child: const Text('导入'),
@@ -298,7 +335,9 @@ class _NotesScreenState extends State<NotesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+        SnackBar(
+            content:
+                Text('导入失败: ${e.toString().replaceFirst('Exception: ', '')}')),
       );
     }
   }
@@ -326,9 +365,7 @@ class _NotesScreenState extends State<NotesScreen> {
       final id = _noteId(note);
       if (id == null) continue;
       final rawParent = note['parent_id'];
-      parents[id] = rawParent is int
-          ? rawParent
-          : int.tryParse('$rawParent');
+      parents[id] = rawParent is int ? rawParent : int.tryParse('$rawParent');
     }
     bool hiddenByAncestor(Map<String, dynamic> note) {
       var parent = parents[_noteId(note)];
@@ -340,6 +377,7 @@ class _NotesScreenState extends State<NotesScreen> {
       }
       return false;
     }
+
     return _notes.where((note) => !hiddenByAncestor(note)).toList();
   }
 
@@ -421,7 +459,8 @@ class _NotesScreenState extends State<NotesScreen> {
                               color: palette.primary,
                               child: ListView.builder(
                                 physics: const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 20),
                                 itemCount: visible.length,
                                 itemBuilder: (_, i) {
                                   final note = visible[i];
@@ -471,7 +510,8 @@ class _NotesScreenState extends State<NotesScreen> {
                                                 folder
                                                     ? (collapsed
                                                         ? Icons.folder_rounded
-                                                        : Icons.folder_open_rounded)
+                                                        : Icons
+                                                            .folder_open_rounded)
                                                     : Icons.article_outlined,
                                                 size: 18,
                                                 color: folder
@@ -566,7 +606,8 @@ class _NotesScreenState extends State<NotesScreen> {
 class NoteEditorScreen extends StatefulWidget {
   final Map<String, dynamic> note;
   final VoidCallback onSaved;
-  const NoteEditorScreen({super.key, required this.note, required this.onSaved});
+  const NoteEditorScreen(
+      {super.key, required this.note, required this.onSaved});
 
   @override
   State<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -616,16 +657,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       if (text != _originalText) {
         payload['content'] = text;
       }
-      final res = await ApiService().put('/plugins/notes/${widget.note['id']}', payload);
+      final res = await ApiService()
+          .put('/plugins/notes/${widget.note['id']}', payload);
       if (res.statusCode == 200) {
         _originalText = text;
         _markdown = text;
         widget.onSaved();
         if (!mounted) return;
         setState(() => _preview = true);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存'), duration: Duration(seconds: 1)));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('已保存'), duration: Duration(seconds: 1)));
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: ${res.statusCode}')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('保存失败: ${res.statusCode}')));
       }
     } catch (_) {}
     if (mounted) setState(() => _saving = false);
@@ -716,7 +760,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('查找失败: ${e.toString().replaceFirst('Exception: ', '')}')),
+        SnackBar(
+            content:
+                Text('查找失败: ${e.toString().replaceFirst('Exception: ', '')}')),
       );
       return;
     }
@@ -997,7 +1043,8 @@ class _NotesSearchDelegate extends SearchDelegate<Map<String, dynamic>?> {
           itemCount: notes.length,
           itemBuilder: (context, index) {
             final note = notes[index];
-            final content = (note['content'] ?? '').toString().replaceAll('\n', ' ');
+            final content =
+                (note['content'] ?? '').toString().replaceAll('\n', ' ');
             return ListTile(
               title: Text(
                 (note['title'] ?? '未命名笔记').toString(),

@@ -1,4 +1,5 @@
 import io
+import os
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Request
 from fastapi.responses import StreamingResponse, Response
@@ -51,9 +52,18 @@ async def direct_upload_file(
         folder_path=folder_path,
     )
     upload_url, file_id, object_key = await file_service.generate_upload_url(db, user["id"], req)
-    content = await file.read()
     if minio_client:
-        minio_client.put_object("user-files", object_key, io.BytesIO(content), len(content))
+        upload = file.file
+        upload.seek(0, os.SEEK_END)
+        size = upload.tell()
+        upload.seek(0)
+        minio_client.put_object(
+            "user-files",
+            object_key,
+            upload,
+            size,
+            content_type=req.mime_type or "application/octet-stream",
+        )
     record = await file_service.confirm_upload(db, user["id"], file_id)
     return {"id": record.id, "object_key": object_key}
 

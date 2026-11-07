@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -36,9 +37,8 @@ class FileTransferService {
     try {
       final req = http.Request('GET', request.uri);
       req.headers.addAll(request.headers);
-      final response = await client
-          .send(req)
-          .timeout(const Duration(seconds: 30));
+      final response =
+          await client.send(req).timeout(const Duration(seconds: 30));
       if (response.statusCode != 200) {
         throw Exception('下载失败: ${response.statusCode}');
       }
@@ -70,7 +70,7 @@ class FileTransferService {
     }
   }
 
-  Future<void> upload(
+  Future<Map<String, dynamic>> upload(
     String filePath,
     String filename,
     String folderPath, {
@@ -84,14 +84,14 @@ class FileTransferService {
     final total = await file.length();
     var sent = 0;
     final stream = file.openRead().transform(
-          StreamTransformer<List<int>, List<int>>.fromHandlers(
-            handleData: (chunk, sink) {
-              sent += chunk.length;
-              onProgress?.call(sent, total);
-              sink.add(chunk);
-            },
-          ),
-        );
+      StreamTransformer<List<int>, List<int>>.fromHandlers(
+        handleData: (chunk, sink) {
+          sent += chunk.length;
+          onProgress?.call(sent, total);
+          sink.add(chunk);
+        },
+      ),
+    );
 
     final uri = Uri.parse(
       '${api.baseUrl}/api/files/upload/direct'
@@ -105,9 +105,8 @@ class FileTransferService {
 
     final client = http.Client();
     try {
-      final streamed = await client
-          .send(request)
-          .timeout(const Duration(minutes: 10));
+      final streamed =
+          await client.send(request).timeout(const Duration(minutes: 10));
       final bytes = <int>[];
       await for (final chunk in streamed.stream) {
         bytes.addAll(chunk);
@@ -115,6 +114,12 @@ class FileTransferService {
       if (streamed.statusCode != 200) {
         throw Exception('上传失败: ${streamed.statusCode}');
       }
+      final text = utf8.decode(bytes, allowMalformed: true);
+      if (text.isEmpty) return <String, dynamic>{};
+      final decoded = jsonDecode(text);
+      return decoded is Map
+          ? decoded.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
     } finally {
       client.close();
     }

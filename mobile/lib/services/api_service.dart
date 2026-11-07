@@ -347,6 +347,57 @@ class ApiService {
       throw Exception('Upload failed: ${streamed.statusCode}');
   }
 
+  // -- Meeting minutes --
+  Future<Map<String, dynamic>> createMeetingMinutes({
+    required int fileId,
+    String? title,
+    int? eventId,
+    String? language,
+  }) async {
+    final res = await post('/meetings/minutes', {
+      'file_id': fileId,
+      if (title != null && title.isNotEmpty) 'title': title,
+      if (eventId != null) 'event_id': eventId,
+      if (language != null) 'language': language,
+    });
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> getMeetingMinutes(int id) async {
+    final res = await get('/meetings/minutes/$id');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> listMeetingMinutes(
+      {int limit = 30}) async {
+    final res = await get('/meetings/minutes?limit=$limit');
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
+    return list
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<void> retryMeetingMinutes(int id) async {
+    final res = await post('/meetings/minutes/$id/retry', const {});
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+  }
+
+  Future<void> deleteMeetingMinutes(int id, {bool deleteAudio = true}) async {
+    final res = await delete(
+      '/meetings/minutes/$id?delete_audio=$deleteAudio',
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
   Future<Map<String, dynamic>> getUploadUrl(
       String filename, String folderPath) async {
     final res = await _http.post(
