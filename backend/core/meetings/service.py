@@ -332,12 +332,15 @@ async def delete_job(job_id: int, user_id: int, *, delete_audio: bool) -> bool:
                 await notes_service.delete_note(db, user_id, note_id)
             except Exception:
                 pass
+        # Delete the job before its audio file; meeting_minutes_jobs.file_id
+        # has a foreign key to files, so the reverse order violates the FK.
+        await db.delete(job)
+        await db.flush()
         if delete_audio:
             try:
                 await file_service.permanent_delete(db, user_id, file_id)
             except Exception:
                 pass
-        await db.delete(job)
         await db.flush()
         await db.commit()
     return True
