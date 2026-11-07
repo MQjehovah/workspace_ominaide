@@ -535,6 +535,9 @@ void wifiTick() {
         else    Serial.println("[WiFi] lost");
         int rssi = up ? WiFi.RSSI() : -100;
         ui::setWifi(up, rssi >= -60 ? 3 : (rssi >= -70 ? 2 : 1));
+        if (up && state == ST_READY) {
+            setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+        }
     }
     if (up) {
         if (wifiState != WIFI_IDLE) {       // 连上了，收尾
@@ -684,12 +687,14 @@ void clockTick() {
 // ============================================================================
 char lastStateLabel[64] = "按住 KEY3 或说 Hi ESP";
 uint32_t lastStateColor = 0x4caf50;   // 绿
+uint32_t tStateChangeMs = 0;
 
 // 用 int 而非 State 作参数：Arduino 会把函数原型插到枚举声明之前，自定义类型会编译失败
 void setState(int s, const char* label, uint16_t color) {
     state = (State)s;
     snprintf(lastStateLabel, sizeof(lastStateLabel), "%s", label);
     lastStateColor = color;
+    tStateChangeMs = millis();
     ui::setState(label, color);
 }
 
@@ -1425,6 +1430,12 @@ void loop() {
     uiCompleteTick();
     uiNotifTick();
     settingsTick();
+
+    // 任何错误状态最多停留 4 秒，避免按键/网络抖动把状态机锁死。
+    if (state == ST_ERR && millis() - tStateChangeMs > 4000) {
+        setState(ST_READY, "按住 KEY3 或说 Hi ESP", 0x4caf50);
+    }
+
     if (!screenOn && digitalRead(PIN_KEY_TALK) == LOW) setScreenOn(true);   // 按说话键顺手亮屏
 
     // 唤醒词：空闲时自动进入录音 → 流式对话
@@ -1436,10 +1447,17 @@ void loop() {
     switch (state) {
     case ST_READY:
         if (digitalRead(PIN_KEY_TALK) == LOW) {
-            if (!wifiOk) { setState(ST_ERR, "未连接网络", 0xff5252); }
-            else if (recBuf) {
+            if (!wifiOk) {
+                // 不要把状态锁死在 ST_ERR；唤醒/重连期间按到键只提示一次。
+                static uint32_t tPrompt = 0;
+                if (millis() - tPrompt > 3000) {
+                    tPrompt = millis();
+                    ui::setState("正在连接网络 ...", 0xffab40);
+                    wifiRequestConnect();
+                }
+            } else if (recBuf) {
                 setState(ST_REC, "录音中 0s", 0xff5252);
-                        }
+            }
         }
         break;
     case ST_REC:
