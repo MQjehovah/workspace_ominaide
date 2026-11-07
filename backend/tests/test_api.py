@@ -305,7 +305,12 @@ async def _init_repo(path):
 def _git_out(path, *args) -> str:
     import subprocess
 
-    out = subprocess.run(["git", *args], cwd=path, capture_output=True)
+    # delivery hands .git to the sandbox user; root still needs safe.directory.
+    out = subprocess.run(
+        ["git", "-c", "safe.directory=*", *args],
+        cwd=path,
+        capture_output=True,
+    )
     stdout = out.stdout
     if isinstance(stdout, bytes):
         stdout = stdout.decode("utf-8", errors="replace")
