@@ -4,7 +4,7 @@ log = get_logger(__name__)
 import asyncio
 import io
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from sqlalchemy import select, func, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from minio import Minio
@@ -292,8 +292,9 @@ async def trash_file(db: AsyncSession, user_id: int, file_id: int) -> File:
     if not file_record:
         raise ValueError("File not found")
     file_record.status = "trash"
-    file_record.deleted_at = datetime.now(timezone.utc)
+    file_record.deleted_at = datetime.now()
     await db.flush()
+    await db.refresh(file_record)
     await _emit_sync_change(db, user_id, "deleted", file_record)
     return file_record
 
@@ -308,6 +309,7 @@ async def restore_file(db: AsyncSession, user_id: int, file_id: int) -> File:
     file_record.status = "active"
     file_record.deleted_at = None
     await db.flush()
+    await db.refresh(file_record)
     await _emit_sync_change(db, user_id, "created", file_record)
     return file_record
 

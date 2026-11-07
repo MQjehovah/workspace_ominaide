@@ -37,6 +37,18 @@
       </div>
     </div>
 
+    <div v-if="uploads.length" class="upload-queue">
+      <div v-for="item in uploads" :key="item.id" class="upload-row">
+        <span class="upload-name" :title="item.name">{{ item.name }}</span>
+        <el-progress
+          class="upload-progress"
+          :percentage="item.percent"
+          :status="item.status || undefined"
+          :stroke-width="8"
+        />
+      </div>
+    </div>
+
     <div v-if="!trashMode && !searchText.trim()" class="crumb-bar">
       <el-breadcrumb separator="/">
         <el-breadcrumb-item>
@@ -224,6 +236,14 @@ const previewSrc = ref('')
 const searchText = ref('')
 const currentPath = ref('/')
 const trashMode = ref(false)
+interface UploadTask {
+  id: number
+  name: string
+  percent: number
+  status: '' | 'success' | 'exception'
+}
+const uploads = ref<UploadTask[]>([])
+let uploadSeq = 0
 let searchTimer: any = null
 
 function fmtTime(value?: string | null) {
@@ -336,22 +356,51 @@ async function toggleTrash() {
   await loadFiles()
 }
 
+function isCancel(err: any) {
+  return err === 'cancel' || err === 'close'
+}
+
+function showError(err: any, fallback: string) {
+  if (isCancel(err)) return
+  ElMessage.error(err?.response?.data?.detail || err?.message || fallback)
+}
+
 async function createFolder() {
   try {
     const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', { inputPattern: /\S+/, inputErrorMessage: '名称不能为空' })
     await store.createFolder(value.trim(), currentPath.value)
     ElMessage.success('文件夹已创建')
     await loadFiles()
-  } catch { /* cancelled */ }
+  } catch (err: any) { showError(err, '创建文件夹失败') }
 }
 
 async function handleUpload(options: any) {
   const { file, onProgress, onSuccess, onError } = options
+  const task: UploadTask = {
+    id: ++uploadSeq,
+    name: file.name,
+    percent: 0,
+    status: '',
+  }
+  uploads.value.push(task)
+  const update = (patch: Partial<UploadTask>) => {
+    const target = uploads.value.find(item => item.id === task.id)
+    if (target) Object.assign(target, patch)
+  }
+  const clearSoon = (delay: number) => {
+    setTimeout(() => {
+      uploads.value = uploads.value.filter(item => item.id !== task.id)
+    }, delay)
+  }
   try {
     const { upload_url, file_id } = await store.getUploadUrl(file.name, currentPath.value)
     const xhr = new XMLHttpRequest()
     xhr.upload.onprogress = (e) => {
-      if (e.total) onProgress({ percent: Math.round((e.loaded / e.total) * 100) })
+      if (e.total) {
+        const percent = Math.round((e.loaded / e.total) * 100)
+        update({ percent })
+        onProgress({ percent })
+      }
     }
     await new Promise<void>((resolve, reject) => {
       xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`上传失败: ${xhr.status}`))
@@ -360,11 +409,16 @@ async function handleUpload(options: any) {
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
       xhr.send(file)
     })
+    update({ percent: 100 })
     await store.confirmUpload(file_id)
+    update({ percent: 100, status: 'success' })
     ElMessage.success(`已上传 ${file.name}`)
     await loadFiles()
+    clearSoon(1200)
     onSuccess?.()
   } catch (err: any) {
+    update({ status: 'exception' })
+    clearSoon(5000)
     ElMessage.error(err?.message || '上传失败')
     onError?.(err)
   }
@@ -377,7 +431,7 @@ async function handleCommand(cmd: string, file: FileItem) {
       await store.renameFile(file.id, value.trim())
       ElMessage.success('已重命名')
       await loadFiles()
-    } catch { /* cancelled */ }
+    } catch (err: any) { showError(err, '重命名失败') }
   } else if (cmd === 'move') {
     try {
       const target = file.is_folder
@@ -387,25 +441,27 @@ async function handleCommand(cmd: string, file: FileItem) {
       await store.moveFile(file.id, value.trim())
       ElMessage.success('已移动')
       await loadFiles()
-    } catch { /* cancelled */ }
+    } catch (err: any) { showError(err, '移动失败') }
   } else if (cmd === 'delete') {
     try {
       await ElMessageBox.confirm(`确定把「${file.original_name}」移到回收站？`, '删除', { type: 'warning' })
       await store.deleteFile(file.id)
       ElMessage.success('已移入回收站')
       await loadFiles()
-    } catch { /* cancelled */ }
+    } catch (err: any) { showError(err, '删除失败') }
   } else if (cmd === 'restore') {
-    await store.restoreFile(file.id)
-    ElMessage.success('已还原')
-    await loadFiles()
+    try {
+      await store.restoreFile(file.id)
+      ElMessage.success('已还原')
+      await loadFiles()
+    } catch (err: any) { showError(err, '还原失败') }
   } else if (cmd === 'permanent') {
     try {
       await ElMessageBox.confirm(`彻底删除「${file.original_name}」？此操作不可恢复。`, '彻底删除', { type: 'error' })
       await store.deletePermanent(file.id)
       ElMessage.success('已彻底删除')
       await loadFiles()
-    } catch { /* cancelled */ }
+    } catch (err: any) { showError(err, '彻底删除失败') }
   } else if (cmd === 'kb') {
     try {
       const res = await client.post('/plugins/notes/import/library', { file_id: file.id }, { timeout: 180000 })
@@ -531,4 +587,14 @@ onMounted(async () => {
 .markdown-preview :deep(th), .markdown-preview :deep(td) { border: 1px solid #e2e8f0; padding: 6px 8px; }
 .preview-actions { text-align:center; margin-top:12px; }
 .file-comments { margin-top: 18px; padding-top: 14px; border-top: 1px solid #eef1f7; }
+.upload-queue {
+  margin: 0 0 12px; padding: 8px 12px; border-radius: 8px;
+  background: #f5f7fa; border: 1px solid #e4e7ed;
+}
+.upload-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+.upload-name {
+  width: 220px; max-width: 40vw; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 13px; color: #303133;
+}
+.upload-progress { flex: 1; }
 </style>

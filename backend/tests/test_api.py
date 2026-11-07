@@ -58,6 +58,37 @@ async def test_files_list_requires_auth(client):
     assert r.status_code == 401
 
 
+async def test_file_trash_restore_roundtrip(client, admin_token):
+    r = await client.post(
+        "/api/files/folder",
+        json={"name": "trash-roundtrip-test", "parent_path": "/"},
+        headers=auth(admin_token),
+    )
+    assert r.status_code == 201, r.text
+    file_id = r.json()["id"]
+
+    r = await client.delete(f"/api/files/{file_id}", headers=auth(admin_token))
+    assert r.status_code == 200, r.text
+
+    from core.database.session import async_session
+    from plugins.files.backend.models import File
+
+    async with async_session() as db:
+        row = await db.get(File, file_id)
+        assert row is not None
+        assert row.status == "trash"
+        # deleted_at is a TIMESTAMP WITHOUT TIME ZONE column; asyncpg rejects
+        # timezone-aware values, so keep it naive.
+        assert row.deleted_at is not None
+        assert row.deleted_at.tzinfo is None
+
+    r = await client.post(f"/api/files/{file_id}/restore", headers=auth(admin_token))
+    assert r.status_code == 200, r.text
+
+    r = await client.delete(f"/api/files/{file_id}/permanent", headers=auth(admin_token))
+    assert r.status_code == 200, r.text
+
+
 async def test_chat_history_endpoints(client, admin_token):
     r = await client.get("/api/chat/history", headers=auth(admin_token))
     assert r.status_code == 200

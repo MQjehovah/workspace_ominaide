@@ -17,37 +17,60 @@ class _BriefScreenState extends State<BriefScreen> {
   DailyBrief? _brief;
   WeeklyReview? _weekly;
   bool _loading = true;
+  bool _dailyLoaded = false;
+  bool _weeklyLoaded = false;
   int _tab = 0;
-  bool _error = false;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadDaily();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = false;
-    });
-    final api = ApiService();
-    final botId = BotSelectionService().botId;
+  Future<void> _loadDaily() async {
+    setState(() => _loading = true);
     DailyBrief? brief;
-    WeeklyReview? weekly;
     try {
-      brief = await api.getDailyBrief(botId: botId);
-    } catch (_) {}
-    try {
-      weekly = await api.getWeeklyReview(botId: botId);
+      brief = await ApiService().getDailyBrief(
+        botId: BotSelectionService().botId,
+      );
     } catch (_) {}
     if (!mounted) return;
     setState(() {
       _brief = brief;
-      _weekly = weekly;
-      _error = brief == null && weekly == null;
+      _dailyLoaded = true;
       _loading = false;
     });
+  }
+
+  Future<void> _loadWeekly() async {
+    setState(() => _loading = true);
+    WeeklyReview? weekly;
+    try {
+      weekly = await ApiService().getWeeklyReview(
+        botId: BotSelectionService().botId,
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _weekly = weekly;
+      _weeklyLoaded = true;
+      _loading = false;
+    });
+  }
+
+  Future<void> _refreshCurrent() {
+    return _tab == 0 ? _loadDaily() : _loadWeekly();
+  }
+
+  void _selectTab(int value) {
+    if (_tab == value) return;
+    setState(() => _tab = value);
+    if (value == 0 && !_dailyLoaded) {
+      _loadDaily();
+    } else if (value == 1 && !_weeklyLoaded) {
+      _loadWeekly();
+    }
   }
 
   @override
@@ -71,7 +94,7 @@ class _BriefScreenState extends State<BriefScreen> {
                 RoundIconButton(
                   icon: Icons.refresh_rounded,
                   tooltip: '刷新',
-                  onTap: _load,
+                  onTap: _refreshCurrent,
                 ),
               ],
             ),
@@ -91,14 +114,14 @@ class _BriefScreenState extends State<BriefScreen> {
                   ? Center(
                       child: CircularProgressIndicator(color: palette.primary))
                   : RefreshIndicator(
-                      onRefresh: _load,
+                      onRefresh: _refreshCurrent,
                       color: palette.primary,
-                      child: _error
+                      child: (_tab == 0 ? _brief == null : _weekly == null)
                           ? ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: [
                                 const SizedBox(height: 40),
-                                ErrorState(onRetry: _load),
+                                ErrorState(onRetry: _refreshCurrent),
                               ],
                             )
                           : _tab == 0
@@ -115,7 +138,7 @@ class _BriefScreenState extends State<BriefScreen> {
   Widget _tabChip(AppPalette palette, int value, String label) {
     final selected = _tab == value;
     return InkWell(
-      onTap: () => setState(() => _tab = value),
+      onTap: () => _selectTab(value),
       borderRadius: BorderRadius.circular(18),
       child: Container(
         alignment: Alignment.center,
