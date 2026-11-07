@@ -480,7 +480,7 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
         return true;
     };
 
-    static uint8_t rx[512];
+    static uint8_t rx[4096];
     while (!finished && (http.connected() || stream->available())) {
         int avail = stream->available();
         if (avail <= 0) {
