@@ -14,7 +14,7 @@
 
 // ==================== 设备 ====================
 #define DEVICE_NAME     "SmartAssistant"   // 蓝牙配对时显示的名字
-#define FW_VERSION      "2.5.3"            // 固件版本（设置页显示 + OTA 比对）
+#define FW_VERSION      "2.5.4"            // 固件版本（设置页显示 + OTA 比对）
 
 // TLS 证书校验：粘贴 CA 根证书（PEM）启用校验；留空跳过校验（内网/frp 场景）
 #ifndef TLS_CA_CERT
@@ -57,7 +57,7 @@
 #define REC_MIN_MS    400      // 短于此视为误触，丢弃
 #define MIC_VOLUME    85       // ES8311 播放音量 0-100
 #define TTS_MAX_BYTES (2UL * 1024 * 1024)   // TTS 返回 WAV 的下载上限
-#define TTS_PREBUFFER_BYTES (192UL * 1024)  // 流式播放前预缓冲（24k/16bit ≈ 4s），吸收网关分块间隔
+#define TTS_PREBUFFER_BYTES (48UL * 1024)   // 流式播放前预缓冲（24k/16bit ≈ 1s）；网关现在远快于实时
 
 // ==================== 板载引脚（微雪 pin_config）====================
 #define IIC_SDA        15
