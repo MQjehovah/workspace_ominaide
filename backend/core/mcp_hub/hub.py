@@ -42,12 +42,25 @@ def _slugify(value: str) -> str:
 
 
 def is_dingtalk_server(server: McpServer) -> bool:
-    """Detect a DingTalk stdio server regardless of its historical slug."""
-    if (server.slug or "").lower().startswith("dingtalk"):
-        return True
-    if "钉钉" in (server.name or ""):
-        return True
+    """Detect the built-in DingTalk stdio server.
+
+    Requiring the module argument (not just a slug/name) prevents a user from
+    disguising an arbitrary command as DingTalk.
+    """
     return any("mcp_servers.dingtalk" in str(arg) for arg in (server.args or []))
+
+
+async def user_is_admin(user_id: int) -> bool:
+    try:
+        from core.auth.domain.models import User
+
+        async with async_session() as db:
+            row = (await db.execute(
+                select(User.is_admin).where(User.id == user_id)
+            )).scalar_one_or_none()
+        return bool(row)
+    except Exception:
+        return False
 
 
 def _infer_risk(tool_name: str, default: str) -> str:
@@ -132,6 +145,9 @@ class McpHub:
         server = await self._load_server(server_id, user_id)
         if server is None:
             raise McpError("MCP 服务器不存在")
+        if server.transport == "stdio" and not is_dingtalk_server(server):
+            if not await user_is_admin(server.user_id):
+                raise McpError("普通用户不能运行 stdio MCP")
         async with self._lock(server_id):
             old = self._conns.pop(server_id, None)
             if old:

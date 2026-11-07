@@ -186,6 +186,13 @@ async def create_server(req: McpServerCreate, user: dict = Depends(get_current_u
 async def update_server(server_id: int, req: McpServerUpdate, user: dict = Depends(get_current_user)):
     server = await _load_server(user["id"], server_id)
     fields = req.model_dump(exclude_unset=True)
+    if not user.get("is_admin") and any(
+        key in fields for key in ("transport", "command", "args", "scope")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="普通用户不能修改 stdio MCP 的执行配置",
+        )
     async with async_session() as db:
         row = (await db.execute(
             select(McpServer).where(McpServer.id == server_id, McpServer.user_id == user["id"])
