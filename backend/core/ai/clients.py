@@ -45,3 +45,13 @@ async def warm_voice_clients() -> None:
             print(f"[clients] warmed {base_url}", flush=True)
         except Exception as e:
             print(f"[clients] warm-up failed {base_url}: {e}", flush=True)
+
+    # Embedding calls sit in the voice critical path (memory lookup), so pay
+    # their TLS handshake at startup too.
+    try:
+        from core.ai.embeddings import generate_embedding
+
+        await asyncio.wait_for(generate_embedding("warm"), timeout=8)
+        print(f"[clients] warmed embeddings {settings.embedding_base_url}", flush=True)
+    except Exception as e:
+        print(f"[clients] embedding warm-up failed: {e}", flush=True)

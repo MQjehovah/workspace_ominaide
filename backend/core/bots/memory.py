@@ -8,6 +8,8 @@ semantic retrieval). L2 conversation history lives in ``chat_messages``.
 from core.logging import get_logger
 log = get_logger(__name__)
 import json
+import time
+import asyncio
 from datetime import datetime
 
 from sqlalchemy import select, delete, or_
@@ -147,6 +149,7 @@ async def search_memories(
     *,
     limit: int = 5,
     include_legacy: bool = False,
+    vec: list[float] | None = None,
 ) -> list[dict]:
     """Return memory dicts with ``content`` + ``kind``.
 
@@ -185,7 +188,8 @@ async def search_memories(
             from core.ai.embeddings import generate_embedding
             from core.ai import vector_store
 
-            vec = await generate_embedding(query)
+            if vec is None:
+                vec = await generate_embedding(query)
             if vec:
                 hits = await vector_store.search(
                     "entities", user_id, vec, limit=max(limit * 4, 12)
@@ -283,74 +287,114 @@ async def _insight_block(user_id: int) -> str | None:
         return None
 
 
-async def _long_term_memory_block(user_id: int, query: str) -> str | None:
+async def _long_term_memory_block(
+    user_id: int, query: str, vec: list[float] | None = None
+) -> str | None:
     try:
         from core.memory_service import build_memory_context
 
-        return await build_memory_context(user_id, query, limit=8)
+        return await build_memory_context(user_id, query, limit=8, vec=vec)
     except Exception:
         return None
 
 
 async def build_bot_context(
-    user_id: int, bot: Bot | None = None, query: str = ""
+    user_id: int, bot: Bot | None = None, query: str = "", timing: dict | None = None
 ) -> str | None:
-    """Compose the bot's context block: shared facts + bot memory + entities."""
+    """Compose the bot's context block: shared facts + bot memory + entities.
+
+    The three memory lookups all need an embedding of the same query.  Compute
+    it once and run the vector searches concurrently: doing this serially used
+    to add ~1.8s to every voice turn.
+    """
     parts: list[str] = []
 
+    t = time.monotonic()
     profile = await _profile_block(user_id)
+    if timing is not None:
+        timing["profile"] = time.monotonic() - t
     if profile:
         parts.append(profile)
 
+    t = time.monotonic()
     insight = await _insight_block(user_id)
+    if timing is not None:
+        timing["insight"] = time.monotonic() - t
     if insight:
         parts.append(insight)
 
-    long_term = await _long_term_memory_block(user_id, query)
-    if long_term:
-        parts.append(long_term)
+    vec = None
+    if query and settings.memory_layer_enabled:
+        t = time.monotonic()
+        try:
+            from core.ai.embeddings import generate_embedding
 
-    # L1 bot memory (or all memories in legacy mode).
+            vec = await generate_embedding(query)
+        except Exception:
+            vec = None
+        if timing is not None:
+            timing["embedding"] = time.monotonic() - t
+
+    t = time.monotonic()
     if bot is not None:
-        memories = await search_memories(
-            user_id, bot.id, query, include_legacy=bool(bot.is_default)
+        memories_coro = search_memories(
+            user_id, bot.id, query, include_legacy=bool(bot.is_default), vec=vec
         )
     else:
-        memories = await _legacy_memories(user_id, query)
+        memories_coro = _legacy_memories(user_id, query, vec=vec)
+    long_term, memories, entities = await asyncio.gather(
+        _long_term_memory_block(user_id, query, vec=vec),
+        memories_coro,
+        _entities_block(user_id, query, vec=vec),
+    )
+    if timing is not None:
+        timing["memory_lookup"] = time.monotonic() - t
 
+    if long_term:
+        parts.append(long_term)
     if memories:
         lines = [f"- {m['content']}" for m in memories]
         parts.append("【本 Bot 的记忆】\n" + "\n".join(lines))
-
-    # Non-memory entities (people, projects, files...).
-    if query and settings.memory_layer_enabled:
-        try:
-            from core.ai.embeddings import generate_embedding
-            from core.ai import vector_store
-
-            vec = await generate_embedding(query)
-            if vec:
-                hits = await vector_store.search("entities", user_id, vec, limit=8)
-                related = []
-                for h in hits:
-                    meta = h.get("metadata") or {}
-                    if meta.get("type") == "memory":
-                        continue
-                    if _is_external_entity(meta):
-                        continue
-                    title = h.get("title") or ""
-                    if not title:
-                        continue
-                    related.append(f"{title}({meta.get('type', '')})")
-                if related:
-                    parts.append("【相关实体】\n" + ", ".join(related[:5]))
-        except Exception:
-            pass
+    if entities:
+        parts.append(entities)
 
     return "\n\n".join(parts) if parts else None
 
 
-async def _legacy_memories(user_id: int, query: str, limit: int = 5) -> list[dict]:
+async def _entities_block(user_id: int, query: str, vec: list[float] | None = None) -> str | None:
+    """Non-memory entities (people, projects, files...) related to the query."""
+    if not (query and settings.memory_layer_enabled):
+        return None
+    try:
+        from core.ai.embeddings import generate_embedding
+        from core.ai import vector_store
+
+        if vec is None:
+            vec = await generate_embedding(query)
+        if not vec:
+            return None
+        hits = await vector_store.search("entities", user_id, vec, limit=8)
+        related = []
+        for h in hits:
+            meta = h.get("metadata") or {}
+            if meta.get("type") == "memory":
+                continue
+            if _is_external_entity(meta):
+                continue
+            title = h.get("title") or ""
+            if not title:
+                continue
+            related.append(f"{title}({meta.get('type', '')})")
+        if related:
+            return "【相关实体】\n" + ", ".join(related[:5])
+    except Exception:
+        pass
+    return None
+
+
+async def _legacy_memories(
+    user_id: int, query: str, limit: int = 5, vec: list[float] | None = None
+) -> list[dict]:
     """Pre-bot memories stored without a bot_id (read-compatible path)."""
     if not (query and settings.memory_layer_enabled):
         return []
@@ -358,7 +402,8 @@ async def _legacy_memories(user_id: int, query: str, limit: int = 5) -> list[dic
         from core.ai.embeddings import generate_embedding
         from core.ai import vector_store
 
-        vec = await generate_embedding(query)
+        if vec is None:
+            vec = await generate_embedding(query)
         if not vec:
             return []
         hits = await vector_store.search("entities", user_id, vec, limit=limit * 2)

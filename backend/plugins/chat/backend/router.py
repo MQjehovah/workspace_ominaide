@@ -135,6 +135,7 @@ async def build_messages(
     persona: bool = True,
     extra_system: str | None = None,
     history_limit: int | None = None,
+    timing: dict | None = None,
 ) -> list[dict]:
     messages: list[dict] = []
     persona_text = (
@@ -146,12 +147,18 @@ async def build_messages(
         messages.append({"role": "system", "content": persona_text})
     if extra_system:
         messages.append({"role": "system", "content": extra_system})
-    ctx = await build_bot_context(user_id, bot, req.message)
+    t_ctx = time.monotonic()
+    ctx = await build_bot_context(user_id, bot, req.message, timing=timing)
+    if timing is not None:
+        timing["bot_context"] = time.monotonic() - t_ctx
     if ctx:
         messages.append({"role": "system", "content": ctx})
     from core.skills.runtime import build_skill_context
 
+    t_skill = time.monotonic()
     skill_ctx = await build_skill_context(bot)
+    if timing is not None:
+        timing["skill_context"] = time.monotonic() - t_skill
     if skill_ctx:
         messages.append({"role": "system", "content": skill_ctx})
     if req.context_refs:
@@ -164,7 +171,11 @@ async def build_messages(
         )
         if block:
             messages.append({"role": "system", "content": block})
-    messages.extend(await resolve_history(req, user_id, limit=history_limit, bot=bot))
+    t_hist = time.monotonic()
+    history = await resolve_history(req, user_id, limit=history_limit, bot=bot)
+    if timing is not None:
+        timing["history"] = time.monotonic() - t_hist
+    messages.extend(history)
     messages.append({"role": "user", "content": _user_content(req)})
     return messages
 
@@ -670,7 +681,9 @@ async def voice_stream(
     if not settings.llm_api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
 
+    t_enter = time.monotonic()
     data = await file.read()
+    t_read = time.monotonic()
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio file")
 
@@ -683,15 +696,37 @@ async def voice_stream(
         transcript = (getattr(tr, "text", "") or "").strip()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"ASR failed: {e}")
+    t_asr = time.monotonic()
     if not transcript:
         raise HTTPException(status_code=422, detail="No speech recognized")
 
     sid = session_id or DEFAULT_SESSION
     bot = await _resolve_bot(user["id"], bot_id)
+    t_bot = time.monotonic()
     req = ChatRequest(message=transcript, session_id=sid, bot_id=bot.id)
     voice_system = VOICE_STYLE + await _voice_context()
-    messages = await build_messages(req, user["id"], bot=bot, extra_system=voice_system, history_limit=6)
+    t_ctx = time.monotonic()
+    t_msgs = time.monotonic()
+    msg_timing: dict = {}
+    messages = await build_messages(
+        req, user["id"], bot=bot, extra_system=voice_system, history_limit=6, timing=msg_timing
+    )
+    t_msgs_done = time.monotonic()
     await save_message(user["id"], "user", transcript, sid, bot=bot)
+    t_save = time.monotonic()
+    log.info(
+        "[voice_asr] bytes=%d read=%.2fs asr=%.2fs bot=%.2fs ctx=%.2fs "
+        "messages=%.2fs save=%.2fs total_pre_agent=%.2fs %s",
+        len(data),
+        t_read - t_enter,
+        t_asr - t_read,
+        t_bot - t_asr,
+        t_ctx - t_bot,
+        t_msgs_done - t_msgs,
+        t_save - t_msgs_done,
+        t_save - t_enter,
+        " ".join(f"{k}={v:.2f}" for k, v in msg_timing.items()),
+    )
 
     out_q: asyncio.Queue = asyncio.Queue(maxsize=64)
 

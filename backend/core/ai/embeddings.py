@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI
 from core.config.settings import settings
+from core.ai.clients import get_openai_client
 
 _embedding_client: AsyncOpenAI | None = None
 
@@ -10,7 +11,7 @@ def get_embedding_client() -> AsyncOpenAI | None:
         key = settings.embedding_api_key or settings.llm_api_key
         base = settings.embedding_base_url
         if key:
-            _embedding_client = AsyncOpenAI(api_key=key, base_url=base)
+            _embedding_client = get_openai_client(base, key)
     return _embedding_client
 
 
