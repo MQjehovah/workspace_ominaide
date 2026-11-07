@@ -21,6 +21,15 @@ class _MailScreenState extends State<MailScreen> {
   bool _loading = true;
   bool _drafting = false;
   bool _error = false;
+  String _filter = 'all';
+
+  List<Map<String, dynamic>> get _visibleMessages {
+    if (_filter == 'all') return _messages;
+    return _messages.where((message) => message['read'] == false).toList();
+  }
+
+  int get _unreadCount =>
+      _messages.where((message) => message['read'] == false).length;
 
   @override
   void initState() {
@@ -169,13 +178,41 @@ class _MailScreenState extends State<MailScreen> {
     );
   }
 
+  Widget _filterChip(String key, String label, AppPalette palette) {
+    final selected = _filter == key;
+    return InkWell(
+      onTap: () => setState(() => _filter = key),
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? palette.primary : palette.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? palette.primary : palette.line,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : palette.muted,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildList(AppPalette palette) {
     return Column(
       children: [
         PageHeader(
           kicker: 'Mail',
           title: '邮件',
-          subtitle: _loading ? '加载中' : '${_messages.length} 封邮件',
+          subtitle: _loading
+              ? '加载中'
+              : '$_unreadCount 封未读 · 共 ${_messages.length} 封',
           actions: [
             RoundIconButton(
               icon: Icons.arrow_back_rounded,
@@ -189,6 +226,19 @@ class _MailScreenState extends State<MailScreen> {
             ),
           ],
         ),
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              _filterChip('all', '全部 ${_messages.length}', palette),
+              const SizedBox(width: 6),
+              _filterChip('unread', '未读 $_unreadCount', palette),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
         Expanded(
           child: _loading
               ? Center(child: CircularProgressIndicator(color: palette.primary))
@@ -203,23 +253,25 @@ class _MailScreenState extends State<MailScreen> {
                             ErrorState(onRetry: _loadList),
                           ],
                         )
-                      : _messages.isEmpty
+                      : _visibleMessages.isEmpty
                           ? ListView(
                           physics: const AlwaysScrollableScrollPhysics(),
-                          children: const [
-                            SizedBox(height: 50),
+                          children: [
+                            const SizedBox(height: 50),
                             EmptyState(
                               icon: Icons.mail_outline_rounded,
-                              title: '还没有邮件',
-                              subtitle: '在 Web 或桌面端配置邮箱后，邮件会同步到这里。',
+                              title: _filter == 'unread' ? '没有未读邮件' : '还没有邮件',
+                              subtitle: _filter == 'unread'
+                                  ? '所有邮件都已读完。'
+                                  : '在 Web 或桌面端配置邮箱后，邮件会同步到这里。',
                             ),
                           ],
                         )
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                          itemCount: _messages.length,
+                          itemCount: _visibleMessages.length,
                           itemBuilder: (context, index) {
-                            final message = _messages[index];
+                            final message = _visibleMessages[index];
                             return _MailRow(
                               message: message,
                               onTap: () async {
@@ -378,21 +430,50 @@ class _MailRow extends StatelessWidget {
       child: AppCard(
         onTap: onTap,
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+        color: unread ? palette.primarySoft : null,
+        borderColor: unread
+            ? palette.primary.withValues(alpha: 0.28)
+            : palette.line,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: palette.primarySoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                important ? Icons.mark_email_unread_outlined : Icons.mail_outline,
-                size: 16,
-                color: important ? palette.accent : palette.primary,
-              ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: unread
+                        ? palette.primary.withValues(alpha: 0.16)
+                        : palette.line.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    unread
+                        ? (important
+                            ? Icons.mark_email_unread_rounded
+                            : Icons.mail_rounded)
+                        : Icons.drafts_outlined,
+                    size: 16,
+                    color: unread ? palette.primary : palette.muted,
+                  ),
+                ),
+                if (unread)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: palette.accent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: palette.card, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(width: 9),
             Expanded(
@@ -408,14 +489,36 @@ class _MailRow extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12.5,
-                            fontWeight: unread ? FontWeight.w800 : FontWeight.w600,
-                            color: palette.ink,
+                            fontWeight:
+                                unread ? FontWeight.w800 : FontWeight.w500,
+                            color: unread ? palette.ink : palette.muted,
                           ),
                         ),
                       ),
                       if (important)
                         Icon(Icons.priority_high_rounded,
                             size: 13, color: palette.accent),
+                      const SizedBox(width: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: unread
+                              ? palette.primary.withValues(alpha: 0.12)
+                              : palette.line.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          unread ? '未读' : '已读',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: unread ? palette.primary : palette.muted,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 3),
@@ -423,7 +526,11 @@ class _MailRow extends StatelessWidget {
                     (message['from_address'] ?? '').toString(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10.5, color: palette.muted),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: unread ? palette.ink : palette.muted,
+                      fontWeight: unread ? FontWeight.w600 : FontWeight.w400,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Text(
