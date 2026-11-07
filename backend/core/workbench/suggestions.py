@@ -32,7 +32,7 @@ _DEFAULT_SUGGESTIONS = [
 ]
 
 _SYSTEM = (
-    "你是用户的私人助理。根据给定的日程、待办、未读邮件、钉钉未读、"
+    "你是用户的私人助理。根据给定的日程、待办、未读邮件、钉钉最近会话、"
     "最近笔记/文件/项目，推断用户接下来最可能需要处理的 3 件事。"
     '只输出 JSON：{"suggestions":["...","...","..."]}。'
     "每条 6-14 个中文字符，动词开头、可直接执行；不要编号、不要解释。"
@@ -165,7 +165,7 @@ async def _context(user_id: int) -> dict:
             {"from": item.get("from"), "subject": item.get("title")}
             for item in mail
         ],
-        "unread_dingtalk": [
+        "recent_dingtalk": [
             {"conversation": item.get("title"), "text": item.get("summary")}
             for item in dingtalk
         ],
@@ -200,7 +200,7 @@ def _fallback(context: dict) -> list[str]:
         sender = _short(mail[0].get("from"), 10)
         out.append(f"回复{sender}的邮件" if sender else "整理未读邮件")
 
-    if context["unread_dingtalk"]:
+    if context["recent_dingtalk"]:
         out.append("查看钉钉未读消息")
 
     if context["recent_notes"]:

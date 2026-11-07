@@ -183,6 +183,9 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     final token = ++_loadToken;
     await BotSelectionService().load();
     final api = ApiService();
+    // The backend serves the daily brief from its hourly cache, so start it in
+    // parallel; it still never blocks the first paint.
+    final briefFuture = _safe(cosRepository.getDailyBrief(force: force));
 
     // Fast, cheap calls first: these unblock the whole workbench.
     final results = await Future.wait<dynamic>([
@@ -221,8 +224,8 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       unawaited(_loadSuggestions());
     }
 
-    // The daily brief runs an LLM, so never block the first paint on it.
-    final brief = await _safe(cosRepository.getDailyBrief(force: force));
+    // The daily brief is served from the backend's hourly snapshot.
+    final brief = await briefFuture;
     if (!mounted || token != _loadToken) return;
     setState(() {
       _briefLoading = false;

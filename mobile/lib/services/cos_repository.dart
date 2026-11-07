@@ -30,17 +30,14 @@ class CosRepository {
       return Future.value(_brief);
     }
     if (_briefFuture != null) return _briefFuture!;
-    final future = _loadBrief(botId, force);
+    final future = _loadBrief(botId);
     _briefFuture = future;
     return future;
   }
 
-  Future<DailyBrief?> _loadBrief(int? botId, bool force) async {
+  Future<DailyBrief?> _loadBrief(int? botId) async {
     try {
-      final brief = await ApiService().getDailyBrief(
-        botId: botId,
-        refresh: force,
-      );
+      final brief = await ApiService().getDailyBrief(botId: botId);
       if (brief != null) {
         _brief = brief;
         _briefAt = DateTime.now();

@@ -1,14 +1,12 @@
 """Collect and normalise the signals Chief-of-Staff works from.
 
-Every collector is user-scoped. External MCP sources (DingTalk) are optional:
-when no server is configured the collector returns an empty list plus a status
-string instead of failing the whole brief.
+Every collector is user-scoped. DingTalk is read from the conversations that
+the background scheduler already synced into user activities; collectors never
+launch the dws CLI or scan unread messages on demand.
 """
 
 from __future__ import annotations
 
-import json
-import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_, select
@@ -232,130 +230,14 @@ async def source_items(
     ]
 
 
-def _walk_dicts(value, out: list[dict], depth: int = 0) -> None:
-    if depth > 6:
-        return
-    if isinstance(value, dict):
-        out.append(value)
-        for child in value.values():
-            _walk_dicts(child, out, depth + 1)
-    elif isinstance(value, list):
-        for child in value:
-            _walk_dicts(child, out, depth + 1)
-
-
-def _first(mapping: dict, keys: tuple[str, ...]) -> str:
-    for key in keys:
-        value = mapping.get(key)
-        if isinstance(value, (str, int, float)) and str(value).strip():
-            return str(value).strip()
-    return ""
-
-
-def _parse_mcp_data(response) -> dict | None:
-    if response is None or response.isError or not response.content:
-        return None
-    text = response.content[0].text or ""
-    try:
-        payload = json.loads(text)
-    except Exception:
-        return None
-    if isinstance(payload, dict) and payload.get("ok") is False:
-        return None
-    return payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
-
-
-async def _dingtalk_server(user_id: int):
-    from core.mcp_hub.models import McpServer
-
-    async with async_session() as db:
-        return (await db.execute(
-            select(McpServer).where(
-                McpServer.user_id == user_id,
-                McpServer.enabled == True,  # noqa: E712
-                or_(
-                    McpServer.slug == "dingtalk",
-                    McpServer.slug.like("dingtalk%"),
-                    McpServer.name.ilike("%钉钉%"),
-                ),
-            ).order_by(McpServer.id).limit(1)
-        )).scalar_one_or_none()
-
-
-def _normalise_dingtalk_time(value) -> str | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    if raw.isdigit():
-        stamp = int(raw)
-        if stamp > 10**12:
-            stamp //= 1000
-        try:
-            return datetime.fromtimestamp(stamp).isoformat()
-        except Exception:
-            return None
-    try:
-        from core.timeutil import parse_datetime
-
-        return parse_datetime(raw).isoformat()
-    except Exception:
-        return None
-
-
-_DINGTALK_UNREAD_CACHE: dict[tuple[int, int, int], tuple[float, list[dict], str]] = {}
-_DINGTALK_UNREAD_TTL = 60.0
-
-_DINGTALK_TITLE_KEYS = (
-    "conversationTitle", "conversationName", "chatName", "groupName",
-    "title", "name",
-)
-_DINGTALK_TEXT_KEYS = (
-    "lastMessage", "text", "content", "summary", "message", "preview",
-)
-_DINGTALK_TIME_KEYS = ("lastMessageTime", "lastMsgTime", "createTime", "time", "timestamp")
-_DINGTALK_ID_KEYS = ("openConversationId", "conversationId", "chatId", "openId")
-
-
-def normalise_dingtalk_payload(data, limit: int = 15) -> list[dict]:
-    """Turn an unknown dws payload into inbox items.
-
-    Only dicts that actually carry message text become items; nested objects
-    such as ``{"sender": {"name": "张三"}}`` are ignored instead of appearing
-    as fake conversations.
-    """
-    candidates: list[dict] = []
-    _walk_dicts(data, candidates)
-    items: list[dict] = []
-    seen: set[str] = set()
-    for row in candidates:
-        text = _first(row, _DINGTALK_TEXT_KEYS)
-        if not text:
-            continue
-        raw_title = _first(row, _DINGTALK_TITLE_KEYS)
-        source_id = _first(row, _DINGTALK_ID_KEYS)
-        if not raw_title and not source_id:
-            continue
-        title = raw_title or "钉钉消息"
-        key = f"{title}|{text}"
-        if key in seen:
-            continue
-        seen.add(key)
-        items.append({
-            "id": f"dingtalk:{source_id or len(items)}",
-            "source": "dingtalk",
-            "source_id": None,
-            "title": title,
-            "summary": _snippet(text),
-            "from": title,
-            "time": _normalise_dingtalk_time(_first(row, _DINGTALK_TIME_KEYS)),
-            "priority": "needs_reply",
-            "needs_reply": True,
-            "link": "/mcp",
-            "meta": {"conversation_id": source_id or None},
-        })
-        if len(items) >= limit:
-            break
-    return items
+def _dingtalk_summary(content: str, query: str | None, size: int = 180) -> str:
+    lines = [line.strip() for line in (content or "").splitlines() if line.strip()]
+    if query:
+        needle = query.lower()
+        matched = [line for line in lines if needle in line.lower()]
+        if matched:
+            lines = matched
+    return _snippet(" ".join(lines[-2:]), size)
 
 
 async def dingtalk_items(
@@ -364,42 +246,60 @@ async def dingtalk_items(
     query: str | None = None,
     limit: int = 15,
 ) -> tuple[list[dict], str]:
-    """Return normalised DingTalk items and a source status string.
+    """Read DingTalk conversations cached by the background sync.
 
-    ``list_unread`` shells out to the DingTalk CLI and typically takes 1.5-4s.
-    The inbox is opened often, so cache that read for a minute; DB-backed
-    sources stay fresh. Stale data is also used as a fallback on errors.
+    The scheduler stores one activity per conversation per day. Request
+    handlers must never launch the dws CLI: the sync owns that work, and the
+    workbench must stay fast (the CLI takes seconds).
     """
-    server = await _dingtalk_server(user_id)
-    if server is None:
-        return [], "not_configured"
+    from core.events.models import UserActivity
 
-    from core.mcp_hub.hub import mcp_hub
+    # The scheduler syncs once a day; keep the latest day (two days of slack)
+    # so a missed sync does not empty the inbox. Keyword search looks wider.
+    since = datetime.now() - timedelta(days=7 if query else 2)
+    async with async_session() as db:
+        rows = list((await db.execute(
+            select(UserActivity)
+            .where(
+                UserActivity.user_id == user_id,
+                UserActivity.event_type == "dingtalk.conversation",
+                UserActivity.created_at >= since,
+            )
+            .order_by(UserActivity.created_at.desc())
+            .limit(max(limit * 3, 30))
+        )).scalars().all())
 
-    cache_key = (server.id, user_id, limit) if query is None else None
-    cached = _DINGTALK_UNREAD_CACHE.get(cache_key) if cache_key else None
-    if cached and time.monotonic() - cached[0] < _DINGTALK_UNREAD_TTL:
-        return [dict(item) for item in cached[1]], cached[2]
-
-    tool = "search_messages" if query else "list_unread"
-    args = {"query": query, "limit": limit} if query else {"count": limit}
-    try:
-        response = await mcp_hub.call_external(server.id, tool, user_id, args)
-    except Exception:
-        if cached:
-            return [dict(item) for item in cached[1]], "stale"
-        return [], "error"
-    data = _parse_mcp_data(response)
-    if data is None:
-        if cached:
-            return [dict(item) for item in cached[1]], "stale"
-        return [], "error"
-
-    items = normalise_dingtalk_payload(data, limit)
-    status = "ok" if items else "empty"
-    if cache_key:
-        _DINGTALK_UNREAD_CACHE[cache_key] = (time.monotonic(), items, status)
-    return items, status
+    items: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        details = row.details if isinstance(row.details, dict) else {}
+        conv_id = str(details.get("conversation_id") or "")
+        conv_name = str(details.get("conversation") or conv_id or "钉钉会话")
+        content = str(details.get("content") or "")
+        if query:
+            needle = query.lower()
+            if needle not in conv_name.lower() and needle not in content.lower():
+                continue
+        key = conv_id or str(row.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({
+            "id": f"dingtalk:{conv_id or row.id}",
+            "source": "dingtalk",
+            "source_id": None,
+            "title": conv_name,
+            "summary": _dingtalk_summary(content, query),
+            "from": conv_name,
+            "time": _iso(row.created_at),
+            "priority": "needs_reply",
+            "needs_reply": True,
+            "link": "/mcp",
+            "meta": {"conversation_id": conv_id or None, "day": details.get("day")},
+        })
+        if len(items) >= limit:
+            break
+    return items, ("cached" if items else "empty")
 
 
 def group_items(items: list[dict]) -> dict[str, list[dict]]:

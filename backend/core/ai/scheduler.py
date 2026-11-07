@@ -3,6 +3,9 @@
 Scheduled LLM jobs (event scan, profile refresh, morning brief, daily review,
 资讯 digest) intentionally live in the Bot routine system instead, so every token
 spend is visible and can be paused from Bot Console.
+
+One exception: the workbench daily brief is rendered once per hour here and
+cached, because the mobile first paint must never wait for an LLM call.
 """
 
 from core.logging import get_logger
@@ -17,6 +20,22 @@ _last_mail_sync = 0.0
 _last_sources_refresh = 0.0
 _last_dingtalk_sync_date: str | None = None
 _last_dingtalk_calendar_sync = 0.0
+_last_brief_generation = 0.0
+_brief_task: asyncio.Task | None = None
+
+
+async def _refresh_briefs() -> None:
+    """Render the hourly daily-brief snapshot for every user."""
+    try:
+        from core.skills.brief_cache import refresh_all
+
+        result = await refresh_all()
+        log.info(
+            f"[scheduler] daily briefs rendered: "
+            f"{result['generated']} ok, {result['failed']} failed"
+        )
+    except Exception as e:
+        log.warning(f"[scheduler] daily brief render error: {e}")
 
 
 async def _check_reminders():
@@ -296,14 +315,20 @@ async def _sync_dingtalk_calendar() -> None:
 
 
 async def scheduler_loop():
-    """Check every 60s. Only reminders and fetching live here — no LLM calls."""
+    """Check every 60s. Reminders and background syncing run here; the hourly
+    daily-brief snapshot is the single LLM job scheduled from this loop."""
     global _last_mail_sync, _last_sources_refresh, _last_dingtalk_sync_date
-    global _last_dingtalk_calendar_sync
+    global _last_dingtalk_calendar_sync, _last_brief_generation, _brief_task
     while True:
         try:
             now = datetime.now()
             today_key = now.strftime("%Y-%m-%d")
             await _check_reminders()
+
+            if _clock() - _last_brief_generation >= 3600:
+                _last_brief_generation = _clock()
+                if _brief_task is None or _brief_task.done():
+                    _brief_task = asyncio.create_task(_refresh_briefs())
 
             from core.config.settings import settings as _settings
 

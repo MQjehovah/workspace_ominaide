@@ -173,3 +173,8 @@ async def run_skill(
             await db.commit()
 
     return {"skill_key": skill_key, "run_id": run_id, "output": output}
+
+
+async def is_skill_enabled(bot: Bot, skill_key: str) -> bool:
+    """Whether a bot has not explicitly disabled a skill."""
+    return skill_key not in await _disabled_keys(bot.id)

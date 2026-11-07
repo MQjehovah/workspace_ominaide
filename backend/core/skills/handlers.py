@@ -21,7 +21,7 @@ class SkillContext:
 
 
 async def _daily_brief(ctx: SkillContext) -> dict:
-    from core.cos.service import daily_brief
+    from core.skills import brief_cache
 
     raw_day = ctx.input.get("day")
     day = None
@@ -30,11 +30,11 @@ async def _daily_brief(ctx: SkillContext) -> dict:
             day = date.fromisoformat(str(raw_day))
         except ValueError:
             raise ValueError("day 必须是 YYYY-MM-DD")
-    return await daily_brief(
+    return await brief_cache.generate(
         ctx.user_id,
-        day=day,
         bot=ctx.bot,
-        extra_system=ctx.skill.body,
+        day=day,
+        refresh=bool(ctx.input.get("refresh")),
     )
 
 

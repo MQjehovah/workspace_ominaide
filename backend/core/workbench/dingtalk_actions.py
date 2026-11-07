@@ -1,7 +1,7 @@
 """Read-only DingTalk action suggestions.
 
 The product deliberately does not mirror DingTalk chat or send replies. It
-reads unread conversations/calendar/todos and turns them into actionable
+reads synced conversations/calendar/todos and turns them into actionable
 suggestions that the user can accept as local todos, events or notes.
 """
 
@@ -21,7 +21,7 @@ _TTL = 600.0
 _CACHE: dict[int, tuple[float, dict]] = {}
 
 _SYSTEM = (
-    "你是用户的私人助理。根据钉钉未读会话、即将开始的日程和待办，"
+    "你是用户的私人助理。根据钉钉最近会话、即将开始的日程和待办，"
     "判断用户接下来需要处理什么。只输出 JSON："
     '{"items":[{"title":"短动作","reason":"一句话原因","kind":"todo|meeting|follow_up|review","conversation":"来源会话"}]}。'
     "最多 5 条，每条动作 6-18 个中文字符；只依据给定数据，不要编造。"
@@ -41,7 +41,7 @@ def _fallback(dingtalk: list[dict], events: list[dict], todos: list[dict]) -> li
         items.append(
             {
                 "title": title,
-                "reason": "钉钉未读会话",
+                "reason": "钉钉最近会话",
                 "kind": "follow_up",
                 "conversation": row.get("title") or "",
             }

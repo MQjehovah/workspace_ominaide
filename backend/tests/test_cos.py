@@ -164,28 +164,36 @@ async def test_weekly_review_uses_daily_insights(client):
     assert body["period"]["start"] and body["period"]["end"]
 
 
-async def test_dingtalk_payload_ignores_sender_objects(client):
-    from core.cos.collectors import normalise_dingtalk_payload
+async def test_dingtalk_items_read_synced_conversations(client):
+    token, user_id = await _new_user(client)
+    from core.database.session import async_session
+    from core.events.models import UserActivity
+    from core.cos import collectors
 
-    payload = {
-        "conversations": [
-            {
-                "conversationTitle": "项目群",
-                "lastMessage": "预算已发，请确认",
-                "lastMessageTime": "1762300800000",
-                "openConversationId": "cid-1",
-                "sender": {"name": "张三"},
+    async with async_session() as db:
+        db.add(UserActivity(
+            user_id=user_id,
+            event_type="dingtalk.conversation",
+            entity_type="dingtalk",
+            summary="项目群",
+            details={
+                "conversation": "项目群",
+                "conversation_id": "cid-1",
+                "day": "2026-11-08",
+                "message_count": 2,
+                "content": "张三: 预算已发，请确认\n李四: 下午开会",
             },
-            {"sender": {"name": "李四"}},
-            {"name": "王五"},
-        ]
-    }
-    items = normalise_dingtalk_payload(payload)
-    assert len(items) == 1
-    assert items[0]["title"] == "项目群"
+        ))
+        await db.commit()
+
+    items, status = await collectors.dingtalk_items(user_id, limit=5)
+    assert status == "cached"
+    assert items and items[0]["title"] == "项目群"
     assert items[0]["id"] == "dingtalk:cid-1"
     assert "预算" in items[0]["summary"]
-    assert items[0]["time"]
+
+    hits, _ = await collectors.dingtalk_items(user_id, query="开会", limit=5)
+    assert hits and "开会" in hits[0]["summary"]
 
 
 async def test_skill_toggle_disables_run(client):
@@ -239,48 +247,61 @@ async def test_mark_all_mail_read(client):
     assert r.json()["items"] == []
 
 
-async def test_dingtalk_unread_is_cached(monkeypatch):
-    import json
-    import types
-
+async def test_dingtalk_items_never_calls_the_cli(monkeypatch):
+    """Workbench reads must not shell out to dws; the scheduler owns syncing."""
     from core.cos import collectors
     from core.mcp_hub.hub import mcp_hub
 
+    async def fail(*args, **kwargs):
+        raise AssertionError("dingtalk collector must not call MCP/dws")
+
+    monkeypatch.setattr(mcp_hub, "call_external", fail)
+    items, status = await collectors.dingtalk_items(999999, limit=5)
+    assert items == []
+    assert status == "empty"
+
+
+async def test_daily_brief_is_served_from_hourly_cache(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "briefcache")
+
+    from core.cos import service as cos_service
+
     calls = 0
+    original = cos_service.daily_brief
 
-    async def fake_server(user_id):
-        return types.SimpleNamespace(id=4242)
-
-    async def fake_call(*args, **kwargs):
+    async def counting(*args, **kwargs):
         nonlocal calls
         calls += 1
-        payload = {
-            "data": {
-                "conversations": [
-                    {
-                        "conversationTitle": "项目群",
-                        "lastMessage": "下午开会",
-                        "openConversationId": "cid-1",
-                    }
-                ]
-            }
-        }
-        return types.SimpleNamespace(
-            isError=False,
-            content=[types.SimpleNamespace(text=json.dumps(payload))],
-        )
+        return await original(*args, **kwargs)
 
-    collectors._DINGTALK_UNREAD_CACHE.clear()
-    monkeypatch.setattr(collectors, "_dingtalk_server", fake_server)
-    monkeypatch.setattr(mcp_hub, "call_external", fake_call)
+    monkeypatch.setattr(cos_service, "daily_brief", counting)
 
-    items1, status1 = await collectors.dingtalk_items(1, limit=5)
-    items2, status2 = await collectors.dingtalk_items(1, limit=5)
+    r = await client.post(
+        "/api/skills/daily-brief/run",
+        json={"input": {}},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    first = r.json()["output"]
 
+    r = await client.post(
+        "/api/skills/daily-brief/run",
+        json={"input": {}},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["output"] == first
     assert calls == 1
-    assert status1 == status2 == "ok"
-    assert items1 and items2
-    collectors._DINGTALK_UNREAD_CACHE.clear()
+
+    # An explicit refresh bypasses the hourly snapshot.
+    r = await client.post(
+        "/api/skills/daily-brief/run",
+        json={"input": {"refresh": True}},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert calls == 2
 
 
 async def test_workbench_suggestions_from_user_context(client, monkeypatch):
