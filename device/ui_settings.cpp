@@ -32,12 +32,17 @@ static lv_obj_t* s_chimeDot = nullptr;
 static lv_obj_t* s_chimeLabel = nullptr;
 static bool s_chimeOn = true;
 
+// 连接状态卡
+static lv_obj_t* s_connDot = nullptr;
+static lv_obj_t* s_connLabel = nullptr;
+static lv_obj_t* s_connDetail = nullptr;
+
 namespace uii {
 
 static lv_obj_t* rowSlider(lv_obj_t* parent, const char* name, int lo, int hi, int val,
                            lv_obj_t** slider, lv_obj_t** valLabel) {
     lv_obj_t* card = lv_obj_create(parent);
-    lv_obj_set_size(card, lv_pct(100), 72);
+    lv_obj_set_size(card, lv_pct(100), 64);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -65,6 +70,43 @@ static lv_obj_t* rowSlider(lv_obj_t* parent, const char* name, int lo, int hi, i
     lv_obj_set_style_bg_color(*slider, lv_color_hex(COL_CYAN), LV_PART_INDICATOR);
     lv_obj_set_style_pad_all(*slider, 4, LV_PART_KNOB);
     return card;
+}
+
+// 连接状态卡：一眼看出是否已连上后端，未配置时一键进配网
+static void connCard(lv_obj_t* parent) {
+    lv_obj_t* card = lv_obj_create(parent);
+    lv_obj_set_size(card, lv_pct(100), 84);
+    lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_radius(card, 12, 0);
+    lv_obj_set_style_pad_all(card, 12, 0);
+    lv_obj_set_style_pad_row(card, 6, 0);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(card, [](lv_event_t*) { s_portalReq = 1; },
+                        LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* row = lv_obj_create(card);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, lv_pct(100), 26);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 8, 0);
+
+    s_connDot = lv_obj_create(row);
+    lv_obj_remove_style_all(s_connDot);
+    lv_obj_set_size(s_connDot, 12, 12);
+    lv_obj_set_style_radius(s_connDot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_connDot, lv_color_hex(COL_GRAY), 0);
+    lv_obj_set_style_bg_opa(s_connDot, LV_OPA_COVER, 0);
+
+    s_connLabel = uii::makeLabel(row, "未配置后端", &cn20, COL_SILVER);
+
+    s_connDetail = uii::makeLabel(card, "点此进入配网模式", &cn20, COL_GRAY);
+    lv_obj_set_width(s_connDetail, lv_pct(100));
+    lv_label_set_long_mode(s_connDetail, LV_LABEL_LONG_DOT);
 }
 
 static void chimeRow(lv_obj_t* parent) {
@@ -106,8 +148,12 @@ void settingsInit(lv_obj_t* tile) {
     lv_obj_set_style_pad_all(tile, 16, 0);
     lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(tile, 12, 0);
+    lv_obj_add_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(tile, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(tile, LV_SCROLLBAR_MODE_OFF);
 
     uii::makeLabel(tile, "设置", &cn20, COL_CYAN);
+    connCard(tile);
     rowSlider(tile, "音量", 0, 100, 85, &s_volSlider, &s_volVal);
     rowSlider(tile, "亮度", 10, 100, 60, &s_brightSlider, &s_brightVal);
     chimeRow(tile);
@@ -152,6 +198,35 @@ void settingsInit(lv_obj_t* tile) {
     lv_obj_set_style_text_align(ver, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(ver, lv_pct(100));
 }
+
+void settingsSetConnection(bool configured, bool loggedIn) {
+    if (!ready()) return;
+    lock();
+    if (s_connDot && s_connLabel && s_connDetail) {
+        uint32_t color = 0x808488;
+        const char* label = "未配置后端";
+        const char* detail = "点此进入配网模式";
+        if (!configured) {
+            color = 0x808488;
+        } else if (loggedIn) {
+            color = 0x4caf50;
+            label = "已连接";
+            detail = "点此重新配置 WiFi / 后端";
+        } else {
+            color = 0xffab40;
+            label = "正在连接后端 ...";
+            detail = "检查 WiFi 或账号后点此重设";
+        }
+        lv_obj_set_style_bg_color(s_connDot, lv_color_hex(color), 0);
+        lv_label_set_text(s_connLabel, label);
+        lv_obj_set_style_text_color(s_connLabel, lv_color_hex(color), 0);
+        lv_label_set_text(s_connDetail, detail);
+    }
+    unlock();
+}
+
+void requestPortal() { s_portalReq = 1; }
+void requestOta()    { s_otaReq = 1; }
 
 }  // namespace uii
 

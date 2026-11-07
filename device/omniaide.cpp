@@ -737,7 +737,7 @@ bool OmniAide::fetchChatHistory(OaChatMsg* msgs, int max, int& cnt) {
     return true;
 }
 
-// ---------------- RSS 资讯头条 ----------------
+// ---------------- 资讯头条（sources 插件）----------------
 
 bool OmniAide::fetchHeadlines(OaHeadline* out, int max, int& cnt) {
     cnt = 0;
@@ -747,7 +747,7 @@ bool OmniAide::fetchHeadlines(OaHeadline* out, int max, int& cnt) {
     char* scratch = bigScratch(12288);
     if (!scratch) return false;
 
-    String url = String(_url) + "/api/rss/entries?page_size=8";
+    String url = String(_url) + "/api/sources/items?page_size=8";
     int code = httpReq(url.c_str(), "GET", "", _token, scratch, 12288);
     if (code == 401) {
         if (!login()) return false;
@@ -760,7 +760,7 @@ bool OmniAide::fetchHeadlines(OaHeadline* out, int max, int& cnt) {
     for (JsonVariant e : doc["items"].as<JsonArray>()) {
         if (cnt >= max) break;
         snprintf(out[cnt].title, sizeof(out[cnt].title), "%s", e["title"] | "");
-        snprintf(out[cnt].feed, sizeof(out[cnt].feed), "%s", e["feed_title"] | "");
+        snprintf(out[cnt].feed, sizeof(out[cnt].feed), "%s", e["source_title"] | "");
         if (out[cnt].title[0]) cnt++;
     }
     Serial.printf("%s headlines %d\n", TAG, cnt);

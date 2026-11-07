@@ -48,7 +48,7 @@ struct Notif {
 // 初始化：lv_init + 显示/触摸驱动 + 界面搭建（含开机画面），并启动 LVGL 任务
 bool init(Arduino_GFX* gfx, TouchDrvInterface* tp, int w, int h);
 
-// 开机完成：撤掉开机画面，显示正式四页（时钟/待办/消息/对话）
+// 开机完成：撤掉开机画面，停在首页（对话 / 首页 / 信息 / 设置 四页可滑）
 void bootDone();
 
 // ---- 状态（线程安全）----
@@ -57,11 +57,11 @@ void setBattery(int pct, bool charging, bool pmuOk);  // pct<0 = 无电池(USB)
 void setWifi(bool ok, int bars);                      // bars 1..3
 void setOa(bool loggedIn);                            // 状态栏后端连接点
 void setTime(const struct tm& ti);                    // 时钟页（ti.tm_year<116 表示无效）
-void setBrief(const Brief& b);                        // 待办页整页刷新
+void setBrief(const Brief& b);                        // 信息页「日程」+ 首页下一项刷新
 void setUnread(int n);                                // 状态栏未读角标（n<0 隐藏铃铛，0 灰色）
-void setNotifs(const Notif* items, int cnt);          // 消息页整页刷新
-void setHeadlines(const Headline* items, int cnt);    // 时钟页资讯轮播（cnt=0 隐藏）
-void setWeather(int temp, int code);                  // 时钟页天气（temp=-999 隐藏）
+void setNotifs(const Notif* items, int cnt);          // 信息页「消息」刷新
+void setHeadlines(const Headline* items, int cnt);    // 首页单行 + 信息页「资讯」列表
+void setWeather(int temp, int code);                  // 首页天气（temp=-999 隐藏）
 void showPortal(const char* apName);                  // 配网模式全屏提示
 
 // ---- 设置页 ----
@@ -78,8 +78,8 @@ bool popSettingReq(SettingReq& out);                   // 主循环轮询取走�
 // ---- 对话页（线程安全）----
 void chatClear();
 void chatAppend(const char* role, const char* text);  // role: "user" / "assistant"
-void showChatPage();                                  // 录音开始时切到对话页
-void showNotifPage();                                 // 实时提醒到达时切到消息页
+void showChatPage();                                  // 录音开始时切到对话页（第 1 页）
+void showNotifPage();                                 // 实时提醒到达时切到信息页「消息」
 
 // ---- 录音/处理覆盖层（线程安全）----
 void recShow(bool on);                                // 显示/隐藏录音音量条区

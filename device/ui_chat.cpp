@@ -29,10 +29,13 @@ static constexpr int MAX_MSGS = 14;
 namespace uii {
 
 void chatInit(lv_obj_t* tile) {
+    const int cw = contentWidth();
+    const int ch = contentHeight();
+
     // 消息滚动区（覆盖层占底部 84px）
     s_scroll = lv_obj_create(tile);
     lv_obj_remove_style_all(s_scroll);
-    lv_obj_set_size(s_scroll, 480, 408 - 84);
+    lv_obj_set_size(s_scroll, cw, ch - 84);
     lv_obj_set_style_pad_all(s_scroll, 14, 0);
     lv_obj_set_flex_flow(s_scroll, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s_scroll, 14, 0);
@@ -43,8 +46,8 @@ void chatInit(lv_obj_t* tile) {
     // 底部覆盖层：转圈 + 文本 + 录音音量条
     s_overlay = lv_obj_create(tile);
     lv_obj_remove_style_all(s_overlay);
-    lv_obj_set_size(s_overlay, 480, 84);
-    lv_obj_set_pos(s_overlay, 0, 408 - 84);
+    lv_obj_set_size(s_overlay, cw, 84);
+    lv_obj_set_pos(s_overlay, 0, ch - 84);
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
 
     s_spinner = lv_spinner_create(s_overlay);
@@ -57,7 +60,7 @@ void chatInit(lv_obj_t* tile) {
 
     s_volBar = lv_bar_create(s_overlay);
     lv_bar_set_range(s_volBar, 0, 100);
-    lv_obj_set_size(s_volBar, 452, 14);
+    lv_obj_set_size(s_volBar, cw - 28, 14);
     lv_obj_set_pos(s_volBar, 14, 52);
     lv_obj_set_style_bg_color(s_volBar, lv_color_hex(0x20242a), 0);
     lv_obj_set_style_bg_opa(s_volBar, LV_OPA_COVER, 0);
@@ -99,9 +102,10 @@ void chatAppend(const char* role, const char* text) {
 
     if (role && !strcmp(role, "user")) {
         // 用户问题：深灰圆角气泡，右对齐；量宽决定单行/换行
+        const int maxW = uii::contentWidth() - 80;
         lv_point_t size;
-        lv_text_get_size(&size, text, &cn20, 0, 0, 400, LV_TEXT_FLAG_NONE);
-        int lw = size.x < 400 ? size.x : 400;
+        lv_text_get_size(&size, text, &cn20, 0, 0, maxW, LV_TEXT_FLAG_NONE);
+        int lw = size.x < maxW ? size.x : maxW;
 
         lv_obj_t* row = lv_obj_create(s_scroll);
         lv_obj_remove_style_all(row);
@@ -126,7 +130,7 @@ void chatAppend(const char* role, const char* text) {
         // 助手回答：正文直出，自动换行
         lv_obj_t* l = uii::makeLabel(s_scroll, text, &cn20, COL_WHITE);
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(l, 452);
+        lv_obj_set_width(l, uii::contentWidth() - 28);
         trimOld();
     }
     scrollEnd();

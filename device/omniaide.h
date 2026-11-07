@@ -90,7 +90,7 @@ public:
     bool fetchEventCursor(int& out);                                // 开机同步游标，避免重放旧通知
     bool markNotifRead(int id);                                     // 单条已读
     bool markAllNotifsRead();                                       // 全部已读
-    bool fetchHeadlines(OaHeadline* out, int max, int& cnt);        // RSS 资讯头条
+    bool fetchHeadlines(OaHeadline* out, int max, int& cnt);        // 资讯头条（sources 插件）
     bool fetchFirmwareInfo(OaFirmware& out);                        // OTA 版本检查
     bool downloadFirmware(OaProgressCb cb, void* ud = nullptr);     // OTA 流式下载写入
 

@@ -273,6 +273,7 @@ static bool recordOnce() {
     uint32_t t0 = millis();
     srPause();
     ui::recShow(true);
+    ui::showChatPage();
     while (digitalRead(PIN_KEY_TALK) == LOW) {
         size_t n = i2s.readBytes((char*)chunk, CHUNK);
         if (n) {
@@ -405,6 +406,7 @@ static bool recordAuto() {
 
     srPause();
     ui::recShow(true);
+    ui::showChatPage();
     ui::busy("我在听...");
 
     while (millis() - t0 < (uint32_t)AUTO_RECORD_MAX_S * 1000UL) {
@@ -1347,7 +1349,7 @@ void setup() {
 #endif
 
     setState(ST_READY, g_wifiNetCount ? "按住 KEY3 或说 Hi ESP" : "未配置网络", 0x4caf50);
-    ui::bootDone();                            // 撤开机画面 → 时钟/待办/对话三页
+    ui::bootDone();                            // 撤开机画面 → 默认停在首页
 
     // Music player task (core 0; ESP-SR is stopped while music plays).
     xTaskCreatePinnedToCore(musicTask, "music", 10240, nullptr, 1, nullptr, 0);

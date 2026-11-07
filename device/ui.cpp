@@ -1,6 +1,7 @@
 /**
- * ui.cpp —— LVGL 初始化、显示/触摸对接、LVGL 任务、根布局 + 状态栏 + 时钟页
+ * ui.cpp —— LVGL 初始化、显示/触摸对接、LVGL 任务、根布局 + 状态栏 + 首页
  *
+ * 四页顺序（底部圆点对应）：对话 → 首页 → 信息 → 设置，开机默认停在首页。
  * 线程模型：LVGL 独立任务（core 1）持续 lv_timer_handler；互斥锁 s_mux 保护
  * 全部控件。ui::* 公开接口（ui.h）可在任意任务调用；uii:: 仅限本模块内部。
  */
@@ -20,8 +21,13 @@ static SemaphoreHandle_t s_mux = nullptr;
 
 static lv_display_t* s_disp = nullptr;
 static lv_obj_t* s_root = nullptr;
-static lv_obj_t* s_tv = nullptr;            // tileview：时钟/待办/对话 三页
+static lv_obj_t* s_tv = nullptr;            // tileview：对话/首页/信息/设置 四页
 static lv_obj_t* s_splash = nullptr;
+
+// 底部四页圆点：当前页青色长条，其余灰色小圆点
+#define PAGE_COUNT 4
+static lv_obj_t* s_dots[PAGE_COUNT] = {};
+static int       s_page = 1;                // 默认首页
 
 // 状态栏控件
 static lv_obj_t* s_battIcon = nullptr;      // 电池图标 + 百分比，不再用进度条
@@ -36,11 +42,12 @@ static lv_obj_t* s_unreadBadge = nullptr;   // 未读角标
 // 底部状态行
 static lv_obj_t* s_stateLabel = nullptr;
 
-// 时钟页控件
+// 首页控件
 static lv_obj_t* s_timeLabel = nullptr;
 static lv_obj_t* s_dateLabel = nullptr;
 static lv_obj_t* s_newsLabel = nullptr;
 static lv_obj_t* s_weatherLabel = nullptr;
+static lv_obj_t* s_nextEvent = nullptr;      // 下一项日程单行
 
 // 首页快捷对话卡
 static lv_obj_t* s_quickUser = nullptr;
@@ -64,12 +71,20 @@ static const uint32_t COL_YELLOW  = 0xffd740;
 static const uint32_t COL_RED     = 0xff5252;
 static const uint32_t COL_ORANGE  = 0xffab40;
 
+// ---- 布局常量 ----
+static constexpr int UI_STATUS_H = 48;   // 顶部状态栏
+static constexpr int UI_CONTENT_Y = 50;  // 状态栏 + 分隔线
+static constexpr int UI_STATE_H = 20;    // 底部状态行（空文本时不可见）
+static constexpr int UI_DOTS_H = 26;     // 底部分页圆点区
+
 // ==================== uii：锁 + 通用标签 ====================
 namespace uii {
 
 void lock()   { if (s_mux) xSemaphoreTake(s_mux, portMAX_DELAY); }
 void unlock() { if (s_mux) xSemaphoreGive(s_mux); }
 bool ready()  { return s_ready; }
+int contentWidth()  { return s_w; }
+int contentHeight() { return s_h - UI_CONTENT_Y - UI_STATE_H - UI_DOTS_H; }
 
 lv_obj_t* makeLabel(lv_obj_t* parent, const char* text,
                     const lv_font_t* font, uint32_t color) {
@@ -82,7 +97,7 @@ lv_obj_t* makeLabel(lv_obj_t* parent, const char* text,
 
 }  // namespace uii
 
-// ---- RSS 头条轮播（全局静态：buildClockTile 与 ui::setHeadlines 共用）----
+// ---- 资讯头条轮播（全局静态：buildHomeTile 与 ui::setHeadlines 共用）----
 static ui::Headline s_news[8];
 static int s_newsCnt = 0;
 static int s_newsIdx = 0;
@@ -219,55 +234,62 @@ static void buildStatusBar(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(line, LV_OPA_COVER, 0);
 }
 
-// ==================== 底部状态行 ====================
+// ==================== 底部状态行（在分页圆点上方，空文本时不可见）====================
 static void buildStateBar(lv_obj_t* parent) {
     s_stateLabel = uii::makeLabel(parent, "", &cn20, COL_GREEN);
-    lv_obj_set_size(s_stateLabel, s_w, 24);
-    lv_obj_set_pos(s_stateLabel, 0, s_h - 24);
+    lv_obj_set_size(s_stateLabel, s_w, UI_STATE_H);
+    lv_obj_set_pos(s_stateLabel, 0, s_h - UI_DOTS_H - UI_STATE_H);
     lv_obj_set_style_pad_left(s_stateLabel, 32, 0);   // 避开屏幕圆角
     lv_label_set_long_mode(s_stateLabel, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_stateLabel, "启动中 ...");
 }
 
-// ==================== 时钟页 ====================
-static void buildClockTile(lv_obj_t* tile) {
+// ==================== 首页 ====================
+static void buildHomeTile(lv_obj_t* tile) {
     // 大号 HH:MM：整屏宽度 + 文本居中（不再显示秒）
     s_timeLabel = uii::makeLabel(tile, "--:--", &num92, 0xf2f4f6);
     lv_obj_set_width(s_timeLabel, s_w);
     lv_obj_set_style_text_align(s_timeLabel, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(s_timeLabel, 0, 54);
+    lv_obj_set_pos(s_timeLabel, 0, 30);
 
     s_dateLabel = uii::makeLabel(tile, "", &cn20, COL_SILVER);
     lv_obj_set_width(s_dateLabel, s_w);
-    lv_obj_set_y(s_dateLabel, 160);
+    lv_obj_set_y(s_dateLabel, 130);
     lv_obj_set_style_text_align(s_dateLabel, LV_TEXT_ALIGN_CENTER, 0);
 
     // 天气（setBrief 带出，无数据时隐藏）
     s_weatherLabel = uii::makeLabel(tile, "", &cn20, 0x8ec9e8);
     lv_obj_set_width(s_weatherLabel, s_w);
-    lv_obj_set_y(s_weatherLabel, 188);
+    lv_obj_set_y(s_weatherLabel, 158);
     lv_obj_set_style_text_align(s_weatherLabel, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_add_flag(s_weatherLabel, LV_OBJ_FLAG_HIDDEN);
 
-    // RSS 头条：静态单行省略，避免圆形滚动持续重绘拖低帧率
+    // 下一项日程：首页最重要的一条信息（具体列表在信息页）
+    s_nextEvent = uii::makeLabel(tile, "", &cn20, COL_CYAN);
+    lv_obj_set_width(s_nextEvent, s_w - 32);
+    lv_obj_set_pos(s_nextEvent, 16, 188);
+    lv_label_set_long_mode(s_nextEvent, LV_LABEL_LONG_DOT);
+    lv_obj_add_flag(s_nextEvent, LV_OBJ_FLAG_HIDDEN);
+
+    // 资讯头条：静态单行省略，避免滚动持续重绘拖低帧率
     s_newsLabel = uii::makeLabel(tile, "", &cn20, 0x6a8a9a);
     lv_obj_set_width(s_newsLabel, s_w - 32);
-    lv_obj_set_pos(s_newsLabel, 16, 218);
+    lv_obj_set_pos(s_newsLabel, 16, 216);
     lv_label_set_long_mode(s_newsLabel, LV_LABEL_LONG_DOT);
     lv_obj_add_flag(s_newsLabel, LV_OBJ_FLAG_HIDDEN);
     lv_timer_create(newsTimer, 8000, nullptr);
 
-    // 首页快捷对话卡：最近一轮问答直接显示在时钟页，不需要切到对话页
+    // 首页快捷对话卡：最近一轮问答直接显示，不需要切到对话页
     lv_obj_t* card = lv_obj_create(tile);
-    lv_obj_set_size(card, s_w - 32, 140);
-    lv_obj_set_pos(card, 16, 252);
+    lv_obj_set_size(card, s_w - 32, 130);
+    lv_obj_set_pos(card, 16, 244);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x12151b), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(card, lv_color_hex(0x252a32), 0);
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_radius(card, 14, 0);
     lv_obj_set_style_pad_all(card, 12, 0);
-    lv_obj_set_style_pad_row(card, 4, 0);
+    lv_obj_set_style_pad_row(card, 3, 0);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -282,9 +304,56 @@ static void buildClockTile(lv_obj_t* tile) {
     lv_obj_set_width(s_quickReply, lv_pct(100));
     lv_label_set_long_mode(s_quickReply, LV_LABEL_LONG_DOT);
 
-    lv_obj_t* hint = uii::makeLabel(card, "左右滑动查看待办 / 消息 / 完整对话", &cn20, 0x5a6068);
+    lv_obj_t* hint = uii::makeLabel(card, "左右滑动切页 · 点下方圆点直达", &cn20, 0x5a6068);
     lv_obj_set_width(hint, lv_pct(100));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_DOT);
+}
+
+// ==================== 底部分页圆点 ====================
+static void styleDots() {
+    for (int i = 0; i < PAGE_COUNT; i++) {
+        if (!s_dots[i]) continue;
+        bool active = (i == s_page);
+        lv_obj_set_size(s_dots[i], active ? 18 : 6, 6);
+        lv_obj_set_style_bg_color(s_dots[i],
+            lv_color_hex(active ? COL_CYAN : 0x3a4048), 0);
+        lv_obj_set_style_bg_opa(s_dots[i], active ? LV_OPA_COVER : LV_OPA_70, 0);
+    }
+}
+
+// 切页（事件回调内调用，不取锁）
+static void showPage(int idx) {
+    if (!s_tv || idx < 0 || idx >= PAGE_COUNT) return;
+    s_page = idx;
+    lv_tileview_set_tile_by_index(s_tv, idx, 0, LV_ANIM_OFF);
+    styleDots();
+}
+
+static void buildDots(lv_obj_t* parent) {
+    lv_obj_t* box = lv_obj_create(parent);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_size(box, s_w, UI_DOTS_H);
+    lv_obj_set_pos(box, 0, s_h - UI_DOTS_H);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(box, 10, 0);
+    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
+    for (int i = 0; i < PAGE_COUNT; i++) {
+        lv_obj_t* d = lv_obj_create(box);
+        lv_obj_remove_style_all(d);
+        lv_obj_set_size(d, 6, 6);
+        lv_obj_set_style_radius(d, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(d, lv_color_hex(0x3a4048), 0);
+        lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
+        lv_obj_set_ext_click_area(d, 12);          // 小圆点也要好点
+        lv_obj_add_flag(d, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(d, [](lv_event_t* e) {
+            showPage((int)(intptr_t)lv_event_get_user_data(e));
+        }, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        s_dots[i] = d;
+    }
+    styleDots();
 }
 
 // ==================== 开机画面 ====================
@@ -312,7 +381,7 @@ static void buildSplash() {
     lv_obj_t* en = uii::makeLabel(card, "SmartAssistant", &cn20, COL_GRAY);
     lv_obj_align(en, LV_ALIGN_CENTER, 0, 4);
 
-    lv_obj_t* v = uii::makeLabel(card, "v2.0  LVGL  booting ...", &cn20, 0x3c5a6e);
+    lv_obj_t* v = uii::makeLabel(card, FW_VERSION "  ·  LVGL  booting ...", &cn20, 0x3c5a6e);
     lv_obj_align(v, LV_ALIGN_CENTER, 0, 40);
 }
 
@@ -328,42 +397,54 @@ static void buildRoot() {
 
     buildStatusBar(s_root);
 
-    // 内容区：三页横滑 tileview（时钟 → 待办 → 对话）
+    // 内容区：四页横滑 tileview（对话 → 首页 → 信息 → 设置）
     lv_obj_t* content = lv_obj_create(s_root);
     lv_obj_remove_style_all(content);
-    lv_obj_set_size(content, s_w, s_h - 48 - 24);
-    lv_obj_set_pos(content, 0, 50);
+    lv_obj_set_size(content, s_w, uii::contentHeight());
+    lv_obj_set_pos(content, 0, UI_CONTENT_Y);
 
     s_tv = lv_tileview_create(content);
-    lv_obj_set_size(s_tv, s_w, s_h - 48 - 24);
+    lv_obj_set_size(s_tv, s_w, uii::contentHeight());
     lv_obj_set_style_bg_color(s_tv, lv_color_hex(COL_BG), 0);
     lv_obj_set_style_bg_opa(s_tv, LV_OPA_COVER, 0);
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_pad_all(s_tv, 0, 0);
     lv_obj_set_style_anim_duration(s_tv, 0, 0);   // 页面不再滑动动画，避免 QSPI 局刷撕裂
 
-    lv_obj_t* tileClock = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_HOR);
-    lv_obj_t* tileTodo  = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_HOR);
-    lv_obj_t* tileNotif = lv_tileview_add_tile(s_tv, 2, 0, LV_DIR_HOR);
-    lv_obj_t* tileChat  = lv_tileview_add_tile(s_tv, 3, 0, LV_DIR_HOR);
-    lv_obj_t* tileSet   = lv_tileview_add_tile(s_tv, 4, 0, LV_DIR_HOR);
-    for (lv_obj_t* t : {tileClock, tileTodo, tileNotif, tileChat, tileSet}) {
+    lv_obj_t* tileChat  = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_HOR);   // -1 对话
+    lv_obj_t* tileHome  = lv_tileview_add_tile(s_tv, 1, 0, LV_DIR_HOR);   //  0 首页
+    lv_obj_t* tileInfo  = lv_tileview_add_tile(s_tv, 2, 0, LV_DIR_HOR);   // +1 信息
+    lv_obj_t* tileSet   = lv_tileview_add_tile(s_tv, 3, 0, LV_DIR_HOR);   // +2 设置
+    for (lv_obj_t* t : {tileChat, tileHome, tileInfo, tileSet}) {
         lv_obj_set_style_bg_color(t, lv_color_hex(COL_BG), 0);
         lv_obj_set_style_bg_opa(t, LV_OPA_COVER, 0);
+        lv_obj_set_style_pad_all(t, 0, 0);
     }
-    buildClockTile(tileClock);
-    uii::todoInit(tileTodo);
-    uii::notifInit(tileNotif);
     uii::chatInit(tileChat);
+    buildHomeTile(tileHome);
+    uii::infoInit(tileInfo);
     uii::settingsInit(tileSet);
 
-    // 铃铛点击 → 消息页（s_tv 已创建；事件回调在 LVGL 任务内，直接切页不取锁）
-    lv_obj_add_event_cb(s_bellBox, [](lv_event_t* e) {
-        lv_obj_t* tv = (lv_obj_t*)lv_event_get_user_data(e);
-        lv_tileview_set_tile_by_index(tv, 2, 0, LV_ANIM_OFF);
-    }, LV_EVENT_CLICKED, s_tv);
+    // 滑动切页 → 同步圆点；点圆点 → 直接切页
+    lv_obj_add_event_cb(s_tv, [](lv_event_t* e) {
+        lv_obj_t* tv = (lv_obj_t*)lv_event_get_target(e);
+        lv_obj_t* active = lv_tileview_get_tile_active(tv);
+        if (!active) return;
+        int idx = (int)lv_obj_get_index(active);
+        if (idx >= 0 && idx < PAGE_COUNT) {
+            s_page = idx;
+            styleDots();
+        }
+    }, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    // 铃铛点击 → 信息页的消息标签
+    lv_obj_add_event_cb(s_bellBox, [](lv_event_t*) {
+        showPage(2);
+        uii::infoShowTab(1);
+    }, LV_EVENT_CLICKED, nullptr);
 
     buildStateBar(s_root);
+    buildDots(s_root);
     buildSplash();
 }
 
@@ -413,6 +494,7 @@ void bootDone() {
     uii::lock();
     if (s_splash) { lv_obj_del(s_splash); s_splash = nullptr; }
     lv_label_set_text(s_stateLabel, "");
+    showPage(1);                      // 开机默认停在首页
     uii::unlock();
 }
 
@@ -578,6 +660,10 @@ void setHeadlines(const Headline* items, int cnt) {
         lv_label_set_text(s_newsLabel, line);
         lv_obj_clear_flag(s_newsLabel, LV_OBJ_FLAG_HIDDEN);
     }
+    // 信息页「资讯」标签同步刷新
+    uii::infoClearNews();
+    for (int i = 0; i < s_newsCnt; i++)
+        uii::infoAddNews(s_news[i].title, s_news[i].feed);
     uii::unlock();
 }
 
@@ -653,14 +739,15 @@ void showPortal(const char* apName) {
 void showChatPage() {
     if (!s_ready) return;
     uii::lock();
-    lv_tileview_set_tile_by_index(s_tv, 3, 0, LV_ANIM_OFF);
+    showPage(0);
     uii::unlock();
 }
 
 void showNotifPage() {
     if (!s_ready) return;
     uii::lock();
-    lv_tileview_set_tile_by_index(s_tv, 2, 0, LV_ANIM_OFF);
+    showPage(2);
+    uii::infoShowTab(1);
     uii::unlock();
 }
 
@@ -668,6 +755,17 @@ void showNotifPage() {
 
 // ---- 首页快捷对话卡（ui_chat.cpp 通过 ui_internal.h 调用）----
 namespace uii {
+
+// 下一项日程单行：调用方（ui::setBrief）已持锁，这里不再加锁
+void homeNextEvent(const char* text) {
+    if (!s_ready || !s_nextEvent) return;
+    if (!text || !text[0]) {
+        lv_obj_add_flag(s_nextEvent, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_label_set_text(s_nextEvent, text);
+    lv_obj_clear_flag(s_nextEvent, LV_OBJ_FLAG_HIDDEN);
+}
 
 void quickChat(const char* role, const char* text) {
     if (!s_ready || !s_quickUser || !s_quickReply || !text) return;

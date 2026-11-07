@@ -29,13 +29,12 @@ void notifInit(lv_obj_t* tile) {
     lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(tile, 8, 0);
 
-    // 头部：标题 + 全部已读按钮（点击回调在 LVGL 任务内，只置标志）
+    // 头部：只保留「全部已读」，标签由信息页顶部胶囊承担
     lv_obj_t* hdr = lv_obj_create(tile);
     lv_obj_remove_style_all(hdr);
     lv_obj_set_size(hdr, lv_pct(100), 26);
     lv_obj_set_flex_flow(hdr, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(hdr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    uii::makeLabel(hdr, "消息", &cn20, COL_CYAN);
     lv_obj_t* spacer = lv_obj_create(hdr);
     lv_obj_remove_style_all(spacer);
     lv_obj_set_flex_grow(spacer, 1);
@@ -49,15 +48,16 @@ void notifInit(lv_obj_t* tile) {
     lv_obj_t* bl = uii::makeLabel(allBtn, "全部已读", &cn20, COL_SILVER);
     lv_obj_center(bl);
 
-    // 通知列表（滚动）
+    // 通知列表（滚动，高度由父容器分配）
     s_list = lv_obj_create(tile);
     lv_obj_remove_style_all(s_list);
-    lv_obj_set_size(s_list, lv_pct(100), 340);  // 固定可用高度，内部滚动
+    lv_obj_set_size(s_list, lv_pct(100), 0);
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s_list, 12, 0);
     lv_obj_add_flag(s_list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_flex_grow(s_list, 1);
 }
 
 }  // namespace uii

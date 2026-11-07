@@ -76,6 +76,47 @@ static void sectionHeader(lv_obj_t* parent, const char* text) {
     lv_obj_set_style_pad_top(l, 6, 0);
 }
 
+// 未配置后端：给出可操作的手机配网步骤，而不是开发提示
+static void setupCard(lv_obj_t* parent) {
+    lv_obj_t* card = lv_obj_create(parent);
+    lv_obj_set_size(card, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x14161c), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x2a3038), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_radius(card, 12, 0);
+    lv_obj_set_style_pad_all(card, 14, 0);
+    lv_obj_set_style_pad_row(card, 8, 0);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    uii::makeLabel(card, "连接 OmniAide", &cn20, COL_CYAN);
+
+    lv_obj_t* tip = uii::makeLabel(card, "设备还没有配置后端地址，请用手机完成配网：",
+                                   &cn20, COL_SILVER);
+    lv_obj_set_width(tip, lv_pct(100));
+    lv_label_set_long_mode(tip, LV_LABEL_LONG_WRAP);
+
+    lv_obj_t* steps = uii::makeLabel(card,
+        "1. 进入设置页 → 配网模式\n"
+        "2. 手机连接热点 SmartAssistant-Setup\n"
+        "3. 浏览器打开 http://192.168.4.1\n"
+        "4. 填写 WiFi、后端地址和账号",
+        &cn20, COL_GRAY);
+    lv_obj_set_width(steps, lv_pct(100));
+    lv_label_set_long_mode(steps, LV_LABEL_LONG_WRAP);
+
+    lv_obj_t* btn = lv_btn_create(card);
+    lv_obj_set_size(btn, 168, 42);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_CYAN), 0);
+    lv_obj_set_style_radius(btn, 12, 0);
+    lv_obj_set_style_pad_all(btn, 0, 0);
+    lv_obj_add_event_cb(btn, [](lv_event_t*) { uii::requestPortal(); },
+                        LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* bl = uii::makeLabel(btn, "进入配网模式", &cn20, 0x061014);
+    lv_obj_center(bl);
+}
+
 namespace uii {
 
 void todoInit(lv_obj_t* tile) {
@@ -89,7 +130,7 @@ void todoInit(lv_obj_t* tile) {
     lv_obj_set_size(hdr, lv_pct(100), 26);
     lv_obj_set_flex_flow(hdr, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(hdr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    s_hdrLabel = uii::makeLabel(hdr, "待办", &cn20, COL_CYAN);
+    s_hdrLabel = uii::makeLabel(hdr, "今天", &cn20, COL_CYAN);
     lv_obj_t* spacer = lv_obj_create(hdr);
     lv_obj_remove_style_all(spacer);
     lv_obj_set_flex_grow(spacer, 1);
@@ -98,10 +139,13 @@ void todoInit(lv_obj_t* tile) {
     // 列表（滚动）
     s_list = lv_obj_create(tile);
     lv_obj_remove_style_all(s_list);
-    lv_obj_set_size(s_list, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_size(s_list, lv_pct(100), 0);
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s_list, 10, 0);
     lv_obj_set_flex_grow(s_list, 1);
+    lv_obj_add_flag(s_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_OFF);
 }
 
 }  // namespace uii
@@ -120,22 +164,35 @@ void setBrief(const Brief& b) {
 
     // 时钟页天气：在取锁之前调用，setWeather 内部会自行加锁。
     setWeather(b.weatherTemp, b.weatherCode);
+    uii::settingsSetConnection(b.configured, b.loggedIn);
 
     uii::lock();
     lv_label_set_text(s_hdrTime, b.serverTime);
     lv_obj_clean(s_list);
 
+    // 首页「下一项日程」
+    if (!b.configured || b.eventCnt == 0) {
+        uii::homeNextEvent(nullptr);
+    } else {
+        char line[96];
+        snprintf(line, sizeof(line), "下一项 · %s", b.events[0]);
+        uii::homeNextEvent(line);
+    }
+
     if (!b.configured) {
-        lv_obj_set_style_text_color(s_hdrLabel, lv_color_hex(COL_RED), 0);
-        lv_label_set_text(s_hdrLabel, "后端未配置 (config.h)");
+        lv_obj_set_style_text_color(s_hdrLabel, lv_color_hex(COL_ORANGE), 0);
+        lv_label_set_text(s_hdrLabel, "今天");
+        setupCard(s_list);
         uii::unlock();
         return;
     }
-    lv_label_set_text(s_hdrLabel, "待办");
+    lv_label_set_text(s_hdrLabel, "今天");
     lv_obj_set_style_text_color(s_hdrLabel, lv_color_hex(COL_CYAN), 0);
 
     if (!b.loggedIn) {
         uii::makeLabel(s_list, "正在连接后端 ...", &cn20, COL_ORANGE);
+        uii::makeLabel(s_list, "若长时间无响应，请到设置页检查 WiFi 与后端地址",
+                       &cn20, COL_GRAY);
         uii::unlock();
         return;
     }
