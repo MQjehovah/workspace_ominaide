@@ -640,7 +640,7 @@ async def _synthesize_voice_reply(text: str, tts_client, voice: str | None,
                 edge_succeeded()
                 return pcm, rate, "edge"
         except Exception as e:
-            print(f"[voice_stream] edge tts failed: {e}", flush=True)
+            log.warning("[voice_stream] edge tts failed: %s", e)
             edge_failed(120)
     for attempt in range(3):
         try:
@@ -648,7 +648,7 @@ async def _synthesize_voice_reply(text: str, tts_client, voice: str | None,
             if pcm:
                 return pcm, rate, "gateway"
         except Exception as e:
-            print(f"[voice_stream] gateway tts error attempt={attempt + 1}: {e}", flush=True)
+            log.warning("[voice_stream] gateway tts error attempt=%s: %s", attempt + 1, e)
         if attempt < 2:
             await asyncio.sleep(0.4 * (attempt + 1))
     return b"", 24000, "none"

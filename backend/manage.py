@@ -14,6 +14,20 @@ import core.database.redis  # noqa
 import core.events.models  # noqa
 import plugins.notifications.backend.models  # noqa
 import plugins.chat.backend.models  # noqa
+import core.objects.models  # noqa
+import plugins.sources.backend.models  # noqa
+import core.memory_models  # noqa
+import core.mcp_hub.models  # noqa
+import core.ai.insight_models  # noqa
+import core.graph.models  # noqa
+import core.jobs.models  # noqa
+import core.observability.models  # noqa
+import core.skills.models  # noqa
+import core.meetings.models  # noqa
+import core.bots.models  # noqa
+import core.coding.models  # noqa
+import plugins.schedule.backend.models  # noqa
+import plugins.projects.backend.models  # noqa
 
 
 async def init_db():

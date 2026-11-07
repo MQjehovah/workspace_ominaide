@@ -10,7 +10,7 @@ def _suffix():
     return "".join(random.choices(string.ascii_lowercase, k=8))
 
 
-async def test_public_registration_is_closed(client, monkeypatch):
+async def test_public_registration_is_closed(client, admin_token, monkeypatch):
     from core.config.settings import settings
 
     monkeypatch.setattr(settings, "allow_registration", False)

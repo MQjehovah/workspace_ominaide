@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
     import plugins.chat.backend.models  # noqa
     import core.coding.models  # noqa
     import plugins.projects.backend.models  # noqa
+    import plugins.schedule.backend.models  # noqa
     import core.bots.models  # noqa
     import core.meetings.models  # noqa
     import core.skills.models  # noqa
