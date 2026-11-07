@@ -58,7 +58,8 @@ class _InboxScreenState extends State<InboxScreen> {
     if (!mounted) return;
     final items = <TriageItem>[];
     if (triage != null) {
-      for (final key in const ['urgent', 'needs_reply', 'today', 'fyi']) {
+      // FYI contains read mail/news; the inbox is only for actionable rows.
+      for (final key in const ['urgent', 'needs_reply', 'today']) {
         items.addAll(triage.groups[key] ?? const []);
       }
     }

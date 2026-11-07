@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/event_time.dart';
 import '../services/local_cache_service.dart';
 import '../services/local_reminder_service.dart';
+import '../theme/app_theme.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -35,7 +37,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       }
     }
     try {
-      final events = await ApiService().listScheduleEvents();
+      final now = DateTime.now();
+      final start = DateTime(now.year, now.month, now.day);
+      final events = await ApiService().listScheduleEvents(
+        start: start.toIso8601String(),
+      );
       if (!mounted) return;
       setState(() {
         _events = events;
@@ -183,6 +189,16 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    final now = DateTime.now();
+    final active = _events
+        .where((event) => !eventHasEnded(event, now))
+        .toList()
+      ..sort(_compareByStart);
+    final ended = _events
+        .where((event) => eventHasEnded(event, now))
+        .toList()
+      ..sort(_compareByEndDesc);
     return Scaffold(
       appBar: AppBar(title: const Text('日程'), actions: [IconButton(onPressed: _add, icon: const Icon(Icons.add))]),
       body: _loading
@@ -193,38 +209,134 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   ? const Center(child: Text('暂无日程'))
                   : RefreshIndicator(
                       onRefresh: _load,
-                      child: ListView.builder(
+                      child: ListView(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        itemCount: _events.length,
-                        itemBuilder: (c, i) {
-                          final e = _events[i];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.primaryContainer, child: Icon(Icons.event, color: Theme.of(context).colorScheme.primary)),
-                              title: Text(e['title'] ?? '无标题'),
-                              subtitle: Text(_fmtTime(e['start_time']?.toString())),
-                              onTap: () => _edit(e),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete_outline),
-                                onPressed: () async {
-                                  final id = e['id'];
-                                  if (id is int) { await ApiService().deleteScheduleEvent(id); _load(); }
-                                },
-                              ),
-                            ),
-                          );
-                        },
+                        children: [
+                          if (active.isNotEmpty) ...[
+                            _sectionTitle('待开始 / 进行中', active.length, palette),
+                            for (final event in active)
+                              _eventCard(event, ended: false, palette: palette),
+                          ],
+                          if (ended.isNotEmpty) ...[
+                            if (active.isNotEmpty) const SizedBox(height: 8),
+                            _sectionTitle('已结束', ended.length, palette),
+                            for (final event in ended)
+                              _eventCard(event, ended: true, palette: palette),
+                          ],
+                        ],
                       ),
                     ),
     );
   }
 
-  String _fmtTime(String? iso) {
-    if (iso == null || iso.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) { return iso; }
+  Widget _sectionTitle(String title, int count, AppPalette palette) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 11,
+              letterSpacing: 0.6,
+              fontWeight: FontWeight.w800,
+              color: palette.muted,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count',
+            style: TextStyle(fontSize: 10, color: palette.muted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _eventCard(
+    Map<String, dynamic> event, {
+    required bool ended,
+    required AppPalette palette,
+  }) {
+    final title = (event['title'] ?? '无标题').toString();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: ended
+              ? palette.line
+              : Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(
+            ended ? Icons.event_available_outlined : Icons.event,
+            color: ended
+                ? palette.muted
+                : Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            decoration: ended ? TextDecoration.lineThrough : null,
+            color: ended ? palette.muted : palette.ink,
+            fontWeight: ended ? FontWeight.w500 : FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          ended ? '${_fmtRange(event)} · 已结束' : _fmtRange(event),
+          style: TextStyle(
+            fontSize: 11,
+            color: ended ? palette.muted : null,
+          ),
+        ),
+        onTap: () => _edit(event),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline),
+          onPressed: () async {
+            final id = event['id'];
+            if (id is int) {
+              await ApiService().deleteScheduleEvent(id);
+              _load();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  int _compareByStart(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final left = eventStart(a);
+    final right = eventStart(b);
+    if (left == null && right == null) return 0;
+    if (left == null) return 1;
+    if (right == null) return -1;
+    return left.compareTo(right);
+  }
+
+  int _compareByEndDesc(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final left = eventEnd(a);
+    final right = eventEnd(b);
+    if (left == null && right == null) return 0;
+    if (left == null) return 1;
+    if (right == null) return -1;
+    return right.compareTo(left);
+  }
+
+  String _fmtRange(Map<String, dynamic> event) {
+    final start = eventStart(event);
+    if (start == null) return '';
+    final end = eventEnd(event);
+    final startText = '${start.month}/${start.day} ${_fmtClock(start)}';
+    if (end == null) return startText;
+    if (end.year == start.year &&
+        end.month == start.month &&
+        end.day == start.day) {
+      return '$startText-${_fmtClock(end)}';
+    }
+    return '$startText - ${end.month}/${end.day} ${_fmtClock(end)}';
+  }
+
+  String _fmtClock(DateTime dt) {
+    return '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
   }
 }

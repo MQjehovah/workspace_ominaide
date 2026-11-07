@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cos_models.dart';
+import '../models/file_item.dart';
 import '../models/space_catalog.dart';
 import '../services/api_service.dart';
 import '../services/cos_repository.dart';
+import '../services/event_time.dart';
+import '../services/seen_state_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'automation_screen.dart';
@@ -190,23 +193,35 @@ class _SpaceScreenState extends State<SpaceScreen> {
     final events = (results[2] as List<Map<String, dynamic>>?) ?? [];
     final todos = (results[3] as List<Map<String, dynamic>>?) ?? [];
     final projects = (results[4] as List<Map<String, dynamic>>?) ?? [];
-    final files = (results[5] as List<dynamic>?) ?? [];
+    final files = (results[5] as List?)?.whereType<FileItem>().toList() ??
+        const <FileItem>[];
     final sources = (results[6] as List<Map<String, dynamic>>?) ?? [];
-    final sourceCounts = triage?.countsBySource() ?? const <String, int>{};
     final notificationUnread =
         notifications.where((n) => n['read'] == false).length;
 
+    // File badges show files added since the user last opened Files.
+    final filesSeenAt = await SeenStateService().filesSeenAt();
+    final filesBaseline = filesSeenAt ?? DateTime.now();
+    if (filesSeenAt == null) {
+      await SeenStateService().markFilesSeen(filesBaseline);
+    }
+    final newFiles = files.where((file) {
+      final created = DateTime.tryParse(file.createdAt)?.toLocal();
+      return created != null && created.isAfter(filesBaseline);
+    }).length;
+
     setState(() {
       _error = results.every((value) => value == null);
-      _mail = sourceCounts['mail'] ?? 0;
-      _dingtalk = sourceCounts['dingtalk'] ?? 0;
+      // Mail/files/sources badges describe unread or new content, not totals.
+      _mail = triage?.unreadCount('mail') ?? 0;
+      _dingtalk = triage?.bySource('dingtalk').length ?? 0;
       _notifications = notificationUnread;
-      _schedule = events.length;
+      _schedule = events.where((event) => !eventHasEnded(event)).length;
       _todos = todos.length;
       _projects = projects.length;
-      _files = files.length;
-      _sources = sources.length;
-      _inboxTotal = (triage?.total ?? 0) + notificationUnread;
+      _files = newFiles;
+      _sources = sources.where((item) => item['read'] != true).length;
+      _inboxTotal = (triage?.pendingCount ?? 0) + notificationUnread;
       _inboxUrgent = triage?.urgentCount ?? 0;
       _loading = false;
     });
@@ -233,6 +248,9 @@ class _SpaceScreenState extends State<SpaceScreen> {
     };
     if (target == null) return;
     await Navigator.push(context, MaterialPageRoute(builder: (_) => target));
+    if (key == 'files') {
+      await SeenStateService().markFilesSeen();
+    }
     if (mounted) _load(force: true);
   }
 
@@ -243,7 +261,6 @@ class _SpaceScreenState extends State<SpaceScreen> {
       mailCount: _mail,
       dingtalkCount: _dingtalk,
       notificationCount: _notifications,
-      inboxCount: _inboxTotal,
       scheduleCount: _schedule,
       todoCount: _todos,
       projectCount: _projects,
@@ -398,7 +415,7 @@ class _InboxCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '统一收件箱',
+                  '收件箱',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,

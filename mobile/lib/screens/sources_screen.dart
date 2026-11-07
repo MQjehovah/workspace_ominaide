@@ -86,6 +86,15 @@ class _SourcesScreenState extends State<SourcesScreen> {
         );
       },
     );
+    final id = entry['id'];
+    if (id is int) {
+      try {
+        await ApiService().put('/sources/items/$id/read', const {});
+      } catch (_) {
+        // Badge refresh is best-effort; keep the UI usable offline.
+      }
+      if (mounted) setState(() => entry['read'] = true);
+    }
   }
 
   @override

@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/file_item.dart';
 import '../services/api_service.dart';
 import '../services/file_transfer_service.dart';
+import '../services/seen_state_service.dart';
 
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
@@ -25,7 +26,15 @@ class _FilesScreenState extends State<FilesScreen> {
   @override
   void initState() {
     super.initState();
+    SeenStateService().markFilesSeen();
     _loadFiles();
+  }
+
+  @override
+  void dispose() {
+    // Also clear after leaving so uploads made during the visit count as seen.
+    SeenStateService().markFilesSeen();
+    super.dispose();
   }
 
   Future<void> _loadFiles() async {

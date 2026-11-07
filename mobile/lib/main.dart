@@ -48,8 +48,12 @@ class OmniAideApp extends StatelessWidget {
               data: data.copyWith(
                 textScaler: TextScaler.linear(appTheme.fontScale),
               ),
-              child: AppLockGate(
-                child: child ?? const SizedBox.shrink(),
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                child: AppLockGate(
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
             );
           },

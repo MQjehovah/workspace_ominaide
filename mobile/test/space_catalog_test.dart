@@ -38,7 +38,6 @@ void main() {
     expect(
       keys,
       containsAll([
-        'inbox',
         'mail',
         'dingtalk',
         'notifications',

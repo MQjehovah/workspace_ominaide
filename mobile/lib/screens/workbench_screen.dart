@@ -5,6 +5,7 @@ import '../models/file_item.dart';
 import '../services/api_service.dart';
 import '../services/bot_selection_service.dart';
 import '../services/cos_repository.dart';
+import '../services/event_time.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'brief_screen.dart';
@@ -157,9 +158,12 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
-    final inboxCount = (_triage?.total ?? 0) + _unreadNotifications;
+    final inboxCount = (_triage?.pendingCount ?? 0) + _unreadNotifications;
     final urgent = _triage?.urgentCount ?? 0;
-    final sourceCounts = _triage?.countsBySource() ?? const <String, int>{};
+    final sourceCounts = <String, int>{
+      'mail': _triage?.unreadCount('mail') ?? 0,
+      'dingtalk': _triage?.bySource('dingtalk').length ?? 0,
+    };
 
     return Scaffold(
       backgroundColor: palette.background,
@@ -393,7 +397,10 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   }
 
   Widget _buildTodayCard(AppPalette palette) {
-    final events = _events.take(2).toList();
+    final activeEvents =
+        _events.where((event) => !eventHasEnded(event)).toList();
+    final events = activeEvents.take(2).toList();
+    final allEnded = _events.isNotEmpty && activeEvents.isEmpty;
     return AppCard(
       child: Column(
         children: [
@@ -424,7 +431,9 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                   Icon(Icons.event_available_outlined, size: 16, color: palette.muted),
                   const SizedBox(width: 6),
                   Text(
-                    '今天没有日程，适合推进长期任务。',
+                    allEnded
+                        ? '今天的日程已结束。'
+                        : '今天没有日程，适合推进长期任务。',
                     style: TextStyle(fontSize: 11.5, color: palette.muted),
                   ),
                 ],

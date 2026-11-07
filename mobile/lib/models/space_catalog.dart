@@ -44,7 +44,6 @@ List<SpaceGroupSpec> buildSpaceCatalog({
   int mailCount = 0,
   int dingtalkCount = 0,
   int notificationCount = 0,
-  int inboxCount = 0,
   int scheduleCount = 0,
   int todoCount = 0,
   int projectCount = 0,
@@ -61,7 +60,6 @@ List<SpaceGroupSpec> buildSpaceCatalog({
     SpaceGroupSpec(
       title: '沟通',
       items: [
-        _item('inbox', '收件箱', Icons.inbox_outlined, grey, inboxCount),
         _item('mail', '邮件', Icons.mail_outline_rounded, blue, mailCount),
         _item('dingtalk', '钉钉', Icons.chat_outlined, orange, dingtalkCount),
         _item('notifications', '通知', Icons.notifications_none_rounded, green,

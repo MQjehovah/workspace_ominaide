@@ -151,6 +151,7 @@ class TriageItem {
   final String from;
   final String priority;
   final bool needsReply;
+  final bool read;
   final String link;
   final DateTime? time;
 
@@ -163,11 +164,13 @@ class TriageItem {
     this.from = '',
     this.priority = 'normal',
     this.needsReply = false,
+    this.read = false,
     this.link = '',
     this.time,
   });
 
   factory TriageItem.fromJson(Map<String, dynamic> json) {
+    final meta = _map(json['meta']);
     return TriageItem(
       id: _str(json['id']),
       source: _str(json['source']),
@@ -177,6 +180,7 @@ class TriageItem {
       from: _str(json['from']),
       priority: _str(json['priority']).isEmpty ? 'normal' : _str(json['priority']),
       needsReply: json['needs_reply'] == true,
+      read: meta['read'] == true,
       link: _str(json['link']),
       time: DateTime.tryParse(_str(json['time'])),
     );
@@ -228,6 +232,18 @@ class TriageSnapshot {
   int get urgentCount => counts['urgent'] ?? (groups['urgent']?.length ?? 0);
   int get needsReplyCount =>
       counts['needs_reply'] ?? (groups['needs_reply']?.length ?? 0);
+
+  /// Actionable items only. Read mail and other FYI rows are not "待处理".
+  List<TriageItem> get pendingItems => [
+        ...?groups['urgent'],
+        ...?groups['needs_reply'],
+        ...?groups['today'],
+      ];
+
+  int get pendingCount => pendingItems.length;
+
+  int unreadCount(String source) =>
+      bySource(source).where((item) => !item.read).length;
 
   List<TriageItem> get _all =>
       groups.values.expand((items) => items).toList();
