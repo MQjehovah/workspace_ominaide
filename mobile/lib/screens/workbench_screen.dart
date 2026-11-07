@@ -229,8 +229,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   }
 
   String _eventTime(Map<String, dynamic> event) {
-    final raw = '${event['start_time'] ?? ''}';
-    final parsed = DateTime.tryParse(raw);
+    final parsed = eventStart(event);
     if (parsed == null) return '';
     return '${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
   }
