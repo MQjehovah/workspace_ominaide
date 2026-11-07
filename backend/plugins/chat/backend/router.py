@@ -29,7 +29,7 @@ from plugins.chat.backend.schemas import (
     AsrResponse, TtsRequest, SessionItem, SessionRename,
 )
 from plugins.chat.backend.voice_stream import (
-    iter_agent_events, trim_silence, tts_pcm,
+    iter_agent_events, trim_silence, tts_gateway_stream, tts_pcm,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -732,18 +732,63 @@ async def voice_stream(
 
         reply = "".join(reply_parts).strip() or "已执行。"
         t_tts = time.monotonic()
-        pcm, rate = await _synthesize_voice_reply(reply, tts_client, voice)
-        t_audio = time.monotonic()
-        if pcm:
-            pcm = trim_silence(pcm, rate)
-        if pcm:
-            for i in range(0, len(pcm), 6000):
-                await out_q.put({
-                    "t": "audio",
-                    "rate": rate,
-                    "pcm": base64.b64encode(pcm[i:i + 6000]).decode(),
-                })
-        else:
+        t_audio = None
+        emitted = 0
+        rate = 24000
+
+        # Preferred path: the gateway's frame stream lets the device start
+        # playing as soon as the first audio chunk arrives.
+        if settings.tts_stream_url:
+            pending = bytearray()
+            try:
+                async for pcm, stream_rate in tts_gateway_stream(reply, voice):
+                    if not pcm:
+                        continue
+                    rate = stream_rate
+                    pending.extend(pcm)
+                    while len(pending) >= 6000:
+                        part = bytes(pending[:6000])
+                        del pending[:6000]
+                        await out_q.put({
+                            "t": "audio",
+                            "rate": rate,
+                            "pcm": base64.b64encode(part).decode(),
+                        })
+                        emitted += len(part)
+                        if t_audio is None:
+                            t_audio = time.monotonic()
+                if pending:
+                    await out_q.put({
+                        "t": "audio",
+                        "rate": rate,
+                        "pcm": base64.b64encode(bytes(pending)).decode(),
+                    })
+                    emitted += len(pending)
+                    if t_audio is None:
+                        t_audio = time.monotonic()
+            except Exception as e:
+                print(f"[voice_stream] stream tts failed: {e}", flush=True)
+
+        # Fallback: complete WAV from the non-streaming endpoint.
+        if emitted == 0:
+            pcm, rate = await _synthesize_voice_reply(reply, tts_client, voice)
+            if pcm:
+                pcm = trim_silence(pcm, rate)
+            if pcm:
+                for i in range(0, len(pcm), 6000):
+                    part = pcm[i:i + 6000]
+                    await out_q.put({
+                        "t": "audio",
+                        "rate": rate,
+                        "pcm": base64.b64encode(part).decode(),
+                    })
+                    emitted += len(part)
+                    if t_audio is None:
+                        t_audio = time.monotonic()
+
+        if t_audio is None:
+            t_audio = time.monotonic()
+        if emitted == 0:
             await out_q.put({"t": "status", "text": "语音合成失败"})
 
         elapsed = time.monotonic() - t_start

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import AsyncIterator
 
+import httpx
 from openai import AsyncOpenAI
 
 from core.config.settings import settings
@@ -67,6 +68,68 @@ async def tts_pcm(
     data = await read_audio(speech)
     rate, off, length = parse_wav(data)
     return data[off:off + length], rate
+
+
+async def tts_gateway_stream(
+    text: str,
+    voice: str | None = None,
+    url: str | None = None,
+    api_key: str | None = None,
+) -> AsyncIterator[tuple[bytes, int]]:
+    """Stream PCM16 chunks from the gateway's frame protocol.
+
+    The endpoint returns ``application/vnd.evs.pcm16-frames``:
+    ``tag(1B) | length(4B big-endian) | payload`` where ``A`` is audio,
+    ``E`` is end and ``X`` is an error frame.
+    """
+    target = url or settings.tts_stream_url
+    if not target:
+        return
+    key = api_key or settings.tts_api_key or settings.llm_api_key
+    body = {
+        "model": settings.tts_model,
+        "input": text,
+        "voice": voice or settings.tts_voice,
+    }
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    timeout = httpx.Timeout(300.0, connect=10.0, read=120.0, write=60.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream("POST", target, json=body, headers=headers) as response:
+            if response.status_code != 200:
+                detail = (await response.aread())[:300]
+                raise RuntimeError(f"TTS stream HTTP {response.status_code}: {detail!r}")
+            try:
+                rate = int(response.headers.get("x-audio-sample-rate") or 24000)
+            except ValueError:
+                rate = 24000
+
+            buf = bytearray()
+            async for chunk in response.aiter_bytes():
+                if not chunk:
+                    continue
+                buf.extend(chunk)
+                while True:
+                    if len(buf) < 5:
+                        break
+                    tag = buf[0]
+                    length = int.from_bytes(buf[1:5], "big")
+                    if len(buf) < 5 + length:
+                        break
+                    payload = bytes(buf[5:5 + length])
+                    del buf[:5 + length]
+                    if tag == 0x41:
+                        if payload:
+                            yield payload, rate
+                    elif tag == 0x45:
+                        return
+                    elif tag == 0x58:
+                        msg = payload.decode("utf-8", "replace")
+                        raise RuntimeError(f"TTS stream error frame: {msg[:200]}")
+                    else:
+                        raise RuntimeError(f"bad TTS frame tag 0x{tag:02x}")
 
 
 def trim_silence(pcm: bytes, rate: int, threshold: int = 350, pad_ms: int = 50) -> bytes:
