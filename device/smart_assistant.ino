@@ -422,7 +422,7 @@ static uint8_t* s_ring = nullptr;
 static const uint32_t AUDIO_RING_CAP = 256 * 1024;
 static volatile uint32_t s_ringHead = 0, s_ringTail = 0;
 static volatile uint32_t s_ringRate = 16000;
-static volatile uint32_t s_ringStartBytes = 32000;
+static volatile uint32_t s_ringStartBytes = 16000;
 static volatile bool s_streamDone = false;
 static volatile bool s_playStop = false;
 static volatile bool s_playDone = true;
@@ -434,7 +434,7 @@ static bool audioStreamPush(const uint8_t* data, size_t len, uint32_t rate) {
     if (s_playStop) return false;
     if (rate && rate != s_ringRate) {
         s_ringRate = rate;
-        s_ringStartBytes = rate * 2;       // 1 秒单声道 16-bit
+        s_ringStartBytes = rate;           // 0.5 秒单声道 16-bit
     }
     size_t off = 0;
     while (off < len) {
@@ -504,7 +504,7 @@ static void audioStreamStart() {
     s_playDone = false;
     s_playStarted = false;
     s_ringRate = 16000;
-    s_ringStartBytes = 32000;
+    s_ringStartBytes = 16000;
     if (s_playTask) {
         s_playStop = true;
         for (int i = 0; i < 100 && !s_playDone; i++) vTaskDelay(pdMS_TO_TICKS(10));
