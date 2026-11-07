@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     asr_base_url: str = "https://ai.xzrobot.com/v1"
     asr_model: str = "voice-asr"
     asr_verbose_json: bool = False
+    # 0 means no application-level size limit (meeting audio goes through MinIO).
+    asr_max_audio_mb: int = 0
     # Long meeting recordings are sent to ASR as one stream from MinIO; these
     # controls are intentionally independent of the 25MB voice-note limit.
     asr_timeout_seconds: int = 3600

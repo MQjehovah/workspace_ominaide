@@ -227,8 +227,8 @@ def title_from_text(text: str, fallback: str = "导入笔记") -> str:
 
 async def transcribe_audio(filename: str, data: bytes, mime: str | None = None) -> str:
     """Transcribe an audio/video file via the configured ASR provider."""
-    if len(data) > 25 * 1024 * 1024:
-        raise ImportFailed("音频超过 25MB 限制")
+    if settings.asr_max_audio_mb and len(data) > settings.asr_max_audio_mb * 1024 * 1024:
+        raise ImportFailed(f"音频超过 {settings.asr_max_audio_mb}MB 限制")
     api_key = settings.asr_api_key or settings.llm_api_key
     if not api_key:
         raise ImportFailed("未配置 ASR API Key")
