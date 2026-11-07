@@ -80,6 +80,19 @@ class _MailScreenState extends State<MailScreen> {
     });
   }
 
+  Future<void> _markAllRead() async {
+    final updated = await ApiService().markAllMailRead();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          updated > 0 ? '已标记 $updated 封邮件为已读' : '没有未读邮件',
+        ),
+      ),
+    );
+    await _loadList();
+  }
+
   Future<void> _draft() async {
     final detail = _detail;
     if (detail == null || _drafting) return;
@@ -219,6 +232,14 @@ class _MailScreenState extends State<MailScreen> {
               onTap: () => Navigator.maybePop(context),
             ),
             const SizedBox(width: 6),
+            if (_unreadCount > 0) ...[
+              RoundIconButton(
+                icon: Icons.done_all_rounded,
+                tooltip: '全部已读',
+                onTap: _markAllRead,
+              ),
+              const SizedBox(width: 6),
+            ],
             RoundIconButton(
               icon: Icons.refresh_rounded,
               tooltip: '刷新',

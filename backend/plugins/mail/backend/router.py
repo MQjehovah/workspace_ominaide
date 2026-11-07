@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
 from .schemas import (
@@ -191,6 +191,23 @@ async def ai_draft(
     if draft is None:
         raise HTTPException(status_code=404, detail="Message not found or empty")
     return draft
+
+
+@router.put("/messages/read-all")
+async def mark_all_messages_read(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        update(MailMessage)
+        .where(
+            MailMessage.user_id == user["id"],
+            MailMessage.read == False,  # noqa: E712
+        )
+        .values(read=True)
+    )
+    await db.flush()
+    return {"updated": result.rowcount or 0}
 
 
 @router.put("/messages/{message_id}/read")

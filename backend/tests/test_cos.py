@@ -220,6 +220,69 @@ async def test_skill_toggle_disables_run(client):
     assert r.status_code == 200, r.text
 
 
+async def test_mark_all_mail_read(client):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "readall")
+
+    r = await client.put(
+        "/api/plugins/mail/messages/read-all",
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] >= 1
+
+    r = await client.get(
+        "/api/plugins/mail/messages?unread=true",
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["items"] == []
+
+
+async def test_dingtalk_unread_is_cached(monkeypatch):
+    import json
+    import types
+
+    from core.cos import collectors
+    from core.mcp_hub.hub import mcp_hub
+
+    calls = 0
+
+    async def fake_server(user_id):
+        return types.SimpleNamespace(id=4242)
+
+    async def fake_call(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        payload = {
+            "data": {
+                "conversations": [
+                    {
+                        "conversationTitle": "项目群",
+                        "lastMessage": "下午开会",
+                        "openConversationId": "cid-1",
+                    }
+                ]
+            }
+        }
+        return types.SimpleNamespace(
+            isError=False,
+            content=[types.SimpleNamespace(text=json.dumps(payload))],
+        )
+
+    collectors._DINGTALK_UNREAD_CACHE.clear()
+    monkeypatch.setattr(collectors, "_dingtalk_server", fake_server)
+    monkeypatch.setattr(mcp_hub, "call_external", fake_call)
+
+    items1, status1 = await collectors.dingtalk_items(1, limit=5)
+    items2, status2 = await collectors.dingtalk_items(1, limit=5)
+
+    assert calls == 1
+    assert status1 == status2 == "ok"
+    assert items1 and items2
+    collectors._DINGTALK_UNREAD_CACHE.clear()
+
+
 async def test_draft_reply_from_mail(client):
     token, user_id = await _new_user(client)
     ids = await _seed_sources(user_id, "reply")

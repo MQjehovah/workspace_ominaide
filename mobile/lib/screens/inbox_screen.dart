@@ -36,26 +36,29 @@ class _InboxScreenState extends State<InboxScreen> {
     _load();
   }
 
+  Future<T?> _safe<T>(Future<T> future) async {
+    try {
+      return await future;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = false;
     });
     final api = ApiService();
-    TriageSnapshot? triage;
-    List<Map<String, dynamic>> notifications = [];
-    var failed = false;
-    try {
-      triage = await api.getTriage();
-    } catch (_) {
-      failed = true;
-    }
-    try {
-      notifications = await api.listNotifications(limit: 50);
-    } catch (_) {
-      failed = true;
-    }
+    final results = await Future.wait<dynamic>([
+      _safe(api.getTriage()),
+      _safe(api.listNotifications(limit: 50)),
+    ]);
     if (!mounted) return;
+    final triage = results[0] as TriageSnapshot?;
+    final notifications =
+        (results[1] as List<Map<String, dynamic>>?) ?? const [];
+    final failed = results[0] == null || results[1] == null;
     final items = <TriageItem>[];
     if (triage != null) {
       // FYI contains read mail/news; the inbox is only for actionable rows.
@@ -308,7 +311,10 @@ class _InboxScreenState extends State<InboxScreen> {
                   icon: Icons.done_all_rounded,
                   tooltip: '全部已读',
                   onTap: () async {
-                    await ApiService().markNotificationsRead();
+                    await Future.wait([
+                      ApiService().markNotificationsRead(),
+                      ApiService().markAllMailRead(),
+                    ]);
                     await _load();
                   },
                 ),

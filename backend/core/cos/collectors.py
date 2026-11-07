@@ -8,6 +8,7 @@ string instead of failing the whole brief.
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_, select
@@ -301,6 +302,9 @@ def _normalise_dingtalk_time(value) -> str | None:
         return None
 
 
+_DINGTALK_UNREAD_CACHE: dict[tuple[int, int, int], tuple[float, list[dict], str]] = {}
+_DINGTALK_UNREAD_TTL = 60.0
+
 _DINGTALK_TITLE_KEYS = (
     "conversationTitle", "conversationName", "chatName", "groupName",
     "title", "name",
@@ -360,25 +364,42 @@ async def dingtalk_items(
     query: str | None = None,
     limit: int = 15,
 ) -> tuple[list[dict], str]:
-    """Return normalised DingTalk items and a source status string."""
+    """Return normalised DingTalk items and a source status string.
+
+    ``list_unread`` shells out to the DingTalk CLI and typically takes 1.5-4s.
+    The inbox is opened often, so cache that read for a minute; DB-backed
+    sources stay fresh. Stale data is also used as a fallback on errors.
+    """
     server = await _dingtalk_server(user_id)
     if server is None:
         return [], "not_configured"
 
     from core.mcp_hub.hub import mcp_hub
 
+    cache_key = (server.id, user_id, limit) if query is None else None
+    cached = _DINGTALK_UNREAD_CACHE.get(cache_key) if cache_key else None
+    if cached and time.monotonic() - cached[0] < _DINGTALK_UNREAD_TTL:
+        return [dict(item) for item in cached[1]], cached[2]
+
     tool = "search_messages" if query else "list_unread"
     args = {"query": query, "limit": limit} if query else {"count": limit}
     try:
         response = await mcp_hub.call_external(server.id, tool, user_id, args)
     except Exception:
+        if cached:
+            return [dict(item) for item in cached[1]], "stale"
         return [], "error"
     data = _parse_mcp_data(response)
     if data is None:
+        if cached:
+            return [dict(item) for item in cached[1]], "stale"
         return [], "error"
 
     items = normalise_dingtalk_payload(data, limit)
-    return items, "ok" if items else "empty"
+    status = "ok" if items else "empty"
+    if cache_key:
+        _DINGTALK_UNREAD_CACHE[cache_key] = (time.monotonic(), items, status)
+    return items, status
 
 
 def group_items(items: list[dict]) -> dict[str, list[dict]]:

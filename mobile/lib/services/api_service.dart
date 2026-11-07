@@ -1034,6 +1034,17 @@ class ApiService {
     return list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
   }
 
+  Future<int> markAllMailRead() async {
+    final res = await put('/plugins/mail/messages/read-all', const {});
+    if (res.statusCode != 200) return 0;
+    final data = decodeJson(res);
+    if (data is Map) {
+      final value = data['updated'];
+      return value is int ? value : int.tryParse('$value') ?? 0;
+    }
+    return 0;
+  }
+
   Future<Map<String, dynamic>?> getMailMessage(int id) async {
     final res = await get('/plugins/mail/messages/$id');
     if (res.statusCode != 200) return null;
