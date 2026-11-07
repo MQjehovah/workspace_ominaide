@@ -1,6 +1,6 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.domain.schemas import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest, UserResponse, AdminUserResponse, ToggleActiveRequest, UpdateUserRequest, UserProfileResponse, UserProfileUpdate
 from core.auth.domain.service import register, login, refresh_access_token
@@ -74,18 +74,51 @@ async def toggle_user_active(user_id: int, req: ToggleActiveRequest, admin: dict
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: int, admin: dict = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import select
+async def delete_user(
+    user_id: int,
+    confirm: str | None = Query(None, description="必须与目标用户名一致"),
+    admin: dict = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
     from core.auth.domain.models import User as UserModel
+    from core.jobs.service import enqueue
+
     result = await db.execute(select(UserModel).where(UserModel.id == user_id))
     u = result.scalar_one_or_none()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
     if u.id == admin["id"]:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    await db.delete(u)
-    await db.flush()
-    return {"message": "User deleted"}
+    if (confirm or "").strip() != u.username:
+        raise HTTPException(
+            status_code=400,
+            detail="确认用户名不正确，请输入目标用户名",
+        )
+    if u.is_admin:
+        remaining = (
+            await db.execute(
+                select(func.count())
+                .select_from(UserModel)
+                .where(
+                    UserModel.is_admin == True,  # noqa: E712
+                    UserModel.is_active == True,  # noqa: E712
+                    UserModel.id != user_id,
+                )
+            )
+        ).scalar() or 0
+        if remaining == 0:
+            raise HTTPException(status_code=400, detail="不能删除最后一个管理员")
+
+    # Block access immediately; the background job finishes the cleanup.
+    u.is_active = False
+    await db.commit()
+
+    job = await enqueue(
+        "admin.user_delete",
+        {"target_user_id": u.id, "username": u.username},
+        user_id=admin["id"],
+    )
+    return {"message": "删除任务已提交", "job_id": job.id}
 
 
 @router.get("/profile", response_model=UserProfileResponse)

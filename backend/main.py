@@ -58,6 +58,8 @@ async def lifespan(app: FastAPI):
 
     register_workers()
     worker_task = asyncio.create_task(worker_loop())
+    from core.auth.domain.cleanup import register_cleanup_handlers
+    register_cleanup_handlers()
     from core.jobs.service import start_worker as start_jobs_worker
     jobs_task = start_jobs_worker()
     scheduler_task = asyncio.create_task(scheduler_loop())

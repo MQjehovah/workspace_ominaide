@@ -109,7 +109,7 @@ async def _run_job(job: BackgroundJob) -> None:
         await _finish(job.id, status="failed", error=f"没有注册任务处理器: {job.kind}")
         return
     try:
-        await handler(job)
+        result = await handler(job)
     except Exception as exc:
         if job.attempts >= job.max_attempts:
             await _finish(
@@ -126,7 +126,11 @@ async def _run_job(job: BackgroundJob) -> None:
                 run_after=datetime.now() + timedelta(seconds=delay),
             )
     else:
-        await _finish(job.id, status="done", result={"ok": True})
+        await _finish(
+            job.id,
+            status="done",
+            result=result if isinstance(result, dict) else {"ok": True},
+        )
 
 
 async def _cleanup() -> None:

@@ -177,6 +177,16 @@ def get_login_session(user_id: int) -> LoginSession | None:
     return _sessions.get(user_id)
 
 
+def cancel_login(user_id: int) -> None:
+    """Terminate a pending device-flow login owned by this user."""
+    session = _sessions.pop(user_id, None)
+    if session is not None and session.proc.returncode is None:
+        try:
+            session.proc.terminate()
+        except Exception:
+            pass
+
+
 async def _read_login_output(session: LoginSession) -> None:
     proc = session.proc
     assert proc.stdout is not None
@@ -246,12 +256,7 @@ def session_out(session: LoginSession) -> dict:
 async def logout(user_id: int) -> dict:
     from mcp_servers.dingtalk.dws_client import DwSError, run_dws
 
-    session = _sessions.pop(user_id, None)
-    if session is not None and session.proc.returncode is None:
-        try:
-            session.proc.terminate()
-        except Exception:
-            pass
+    cancel_login(user_id)
     try:
         await run_dws(
             ["auth", "logout", "--yes"],

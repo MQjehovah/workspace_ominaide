@@ -23,11 +23,7 @@
           <el-table-column label="操作" width="140" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" size="small" @click="editUser(row)">编辑</el-button>
-              <el-popconfirm title="确定删除此用户？" @confirm="deleteUser(row.id)">
-                <template #reference>
-                  <el-button link type="danger" size="small">删除</el-button>
-                </template>
-              </el-popconfirm>
+              <el-button link type="danger" size="small" @click="deleteUser(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -122,9 +118,45 @@ async function handleEdit() {
 }
 
 // Delete
-async function deleteUser(id: number) {
-  try { await client.delete(`/auth/users/${id}`); ElMessage.success('已删除'); fetchUsers() }
-  catch { ElMessage.error('删除失败') }
+async function deleteUser(row: AdminUser) {
+  let confirmName = ''
+  try {
+    const res = await ElMessageBox.prompt(
+      `删除会清理该用户的项目、钉钉配置、文件、笔记、日程等全部数据，且不可恢复。请输入用户名「${row.username}」确认。`,
+      '删除用户',
+      {
+        confirmButtonText: '提交删除任务',
+        cancelButtonText: '取消',
+        type: 'warning',
+        inputPlaceholder: row.username,
+        inputValidator: (value: string) =>
+          value === row.username || '用户名不一致',
+      },
+    )
+    confirmName = res.value
+  } catch {
+    return
+  }
+
+  try {
+    const res = await client.delete(`/auth/users/${row.id}`, {
+      params: { confirm: confirmName },
+    })
+    ElMessage.success(res.data?.message || '删除任务已提交')
+    // The user is disabled immediately; poll until the cleanup job removes it.
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const list = await client.get('/auth/users')
+      users.value = list.data
+      if (!list.data.some((u: AdminUser) => u.id === row.id)) {
+        ElMessage.success('用户数据已清理完成')
+        return
+      }
+    }
+    ElMessage.info('删除任务仍在执行，请稍后刷新')
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
 }
 
 onMounted(fetchUsers)
