@@ -39,6 +39,7 @@ async def admin_token(client):
     assert r.status_code in (200, 201), r.text
     r = await client.post("/api/auth/login", json={"username": username, "password": "testpass123"})
     assert r.status_code == 200, r.text
+    await _set_admin(username, True)
     return r.json()["access_token"]
 
 
@@ -54,8 +55,24 @@ async def user_token(client):
     assert r.status_code in (200, 201), r.text
     r = await client.post("/api/auth/login", json={"username": username, "password": "testpass123"})
     assert r.status_code == 200, r.text
+    await _set_admin(username, False)
     return r.json()["access_token"]
 
 
 def auth(token):
     return {"Authorization": f"Bearer {token}"}
+
+
+async def _set_admin(username: str, value: bool) -> None:
+    """Make fixture roles deterministic regardless of test registration order."""
+    from sqlalchemy import select
+
+    from core.auth.domain.models import User
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        row = (await db.execute(
+            select(User).where(User.username == username)
+        )).scalar_one()
+        row.is_admin = value
+        await db.commit()
