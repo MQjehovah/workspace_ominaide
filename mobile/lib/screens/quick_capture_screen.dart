@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/api_service.dart';
+import '../services/ocr_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 
@@ -55,7 +56,16 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
 
   Future<void> _pickImage() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked != null) setState(() => _image = picked);
+    if (picked == null) return;
+    setState(() => _image = picked);
+    try {
+      final text = await OcrService().recognize(picked.path);
+      if (text.trim().isNotEmpty && _text.text.trim().isEmpty) {
+        setState(() => _text.text = text.trim());
+      }
+    } catch (_) {
+      // OCR is optional and currently iOS-only.
+    }
   }
 
   Future<void> _save() async {
