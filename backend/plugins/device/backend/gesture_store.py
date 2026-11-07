@@ -26,7 +26,8 @@ DEFAULT_GESTURES: dict[str, dict] = {
     },
     "flip": {  # 屏幕朝下扣放
         "tool": "ha_call_service",
-        "args": {"domain": "light", "service": "turn_off"},   # 不带 entity = 全屋关灯
+        # 新版 HA 拒绝不带 entity_id 的服务调用（400）；"all" 才是全屋关灯写法。
+        "args": {"domain": "light", "service": "turn_off", "entity_id": "all"},
         "label": "翻转 → 全屋关灯",
     },
 }

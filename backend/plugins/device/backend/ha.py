@@ -20,6 +20,12 @@ CONTROL_DOMAINS = {
     "water_heater", "button", "number", "select",
 }
 
+# Domains where "entity_id: all" is a valid target for turn_on/turn_off/toggle.
+DOMAIN_WIDE_SERVICES = {
+    "light", "switch", "fan", "input_boolean", "media_player",
+    "climate", "cover", "humidifier", "water_heater", "vacuum",
+}
+
 
 def ha_configured() -> bool:
     return bool(settings.ha_base_url and settings.ha_token)

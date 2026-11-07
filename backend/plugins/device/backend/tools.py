@@ -27,7 +27,12 @@ async def ha_call_service(user_id: int, args: dict) -> MCPCallResponse:
         return _resp({"ok": False, "detail": "domain and service are required"}, True)
     if not ha.ha_configured():
         return _resp({"ok": False, "detail": "HA not configured (HA_BASE_URL / HA_TOKEN)"}, True)
-    if entity_id and await ha.get_state(entity_id) is None:
+    # HA 2024+ rejects domain-wide service calls with an empty body (400).
+    # "all" is the documented way to target every entity of the domain.
+    if entity_id is None and service in ("turn_on", "turn_off", "toggle") \
+            and domain in ha.DOMAIN_WIDE_SERVICES:
+        entity_id = "all"
+    if entity_id and entity_id != "all" and await ha.get_state(entity_id) is None:
         return _resp({"ok": False, "detail": f"entity not found: {entity_id}; call ha_list_entities first"}, True)
     result = await ha.call_service(domain, service, entity_id, args.get("data") or {})
     return _resp(result, not result["ok"])
