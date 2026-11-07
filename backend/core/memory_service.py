@@ -473,13 +473,16 @@ async def update_record(
     return row
 
 
-async def _vector_records(user_id: int, query: str, limit: int) -> list[MemoryRecord]:
+async def _vector_records(
+    user_id: int, query: str, limit: int, vec: list[float] | None = None
+) -> list[MemoryRecord]:
     if not _vector_backend_available():
         return []
     from core.ai.embeddings import generate_embedding
     from core.ai import vector_store
 
-    vec = await generate_embedding(query)
+    if vec is None:
+        vec = await generate_embedding(query)
     if not vec:
         return []
     hits = await vector_store.search(
@@ -519,12 +522,15 @@ async def _touch_records(user_id: int, ids: list[int]) -> None:
         pass
 
 
-async def build_memory_context(user_id: int, query: str | None = None, limit: int = 8) -> str | None:
+async def build_memory_context(
+    user_id: int, query: str | None = None, limit: int = 8,
+    vec: list[float] | None = None,
+) -> str | None:
     try:
         rows: list[MemoryRecord] = []
         if query:
             try:
-                rows = await _vector_records(user_id, query, limit)
+                rows = await _vector_records(user_id, query, limit, vec=vec)
             except Exception:
                 rows = []
         if not rows:

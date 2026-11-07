@@ -415,6 +415,121 @@ static bool playPcm16k(const uint8_t* data, size_t len, uint32_t rate) {
     return true;
 }
 
+// ==================== 流式音频环形缓冲 + 播放任务 ====================
+// 网络下载和 I2S 播放解耦：voiceAskStream 只负责把 PCM 写进 ring，
+// audioPlayTask 从 ring 取数据播放；攒够约 1 秒后开始，避免边下边播卡顿。
+static uint8_t* s_ring = nullptr;
+static const uint32_t AUDIO_RING_CAP = 256 * 1024;
+static volatile uint32_t s_ringHead = 0, s_ringTail = 0;
+static volatile uint32_t s_ringRate = 16000;
+static volatile uint32_t s_ringStartBytes = 16000;
+static volatile bool s_streamDone = false;
+static volatile bool s_playStop = false;
+static volatile bool s_playDone = true;
+static volatile bool s_playStarted = false;
+static TaskHandle_t s_playTask = nullptr;
+
+static bool audioStreamPush(const uint8_t* data, size_t len, uint32_t rate) {
+    if (!s_ring || !data || !len) return false;
+    if (s_playStop) return false;
+    if (rate && rate != s_ringRate) {
+        s_ringRate = rate;
+        s_ringStartBytes = rate;           // 0.5 秒单声道 16-bit
+    }
+    size_t off = 0;
+    while (off < len) {
+        if (s_playStop) return false;
+        uint32_t head = s_ringHead;
+        uint32_t tail = s_ringTail;
+        uint32_t used = head - tail;
+        size_t freeBytes = used >= AUDIO_RING_CAP ? 0 : (AUDIO_RING_CAP - used);
+        if (!freeBytes) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
+        size_t n = len - off < freeBytes ? len - off : freeBytes;
+        size_t pos = head & (AUDIO_RING_CAP - 1);
+        size_t first = n < (AUDIO_RING_CAP - pos) ? n : (AUDIO_RING_CAP - pos);
+        memcpy(s_ring + pos, data + off, first);
+        if (n > first) memcpy(s_ring, data + off + first, n - first);
+        s_ringHead = head + (uint32_t)n;
+        off += n;
+    }
+    return true;
+}
+
+static void audioPlayTask(void*) {
+    static uint8_t buf[4096];
+    uint32_t played = 0;
+    Serial.printf("[PLAY] task rate=%u prebuf=%u at %lu\n",
+                  (unsigned)s_ringRate, (unsigned)s_ringStartBytes, (unsigned long)millis());
+    while (!s_playStop) {
+        uint32_t used = s_ringHead - s_ringTail;
+        if (!s_playStarted) {
+            if (!s_streamDone && used < s_ringStartBytes) {
+                vTaskDelay(pdMS_TO_TICKS(5));
+                continue;
+            }
+            s_playStarted = true;
+            Serial.printf("[PLAY] start buffered=%u at %lu\n",
+                          (unsigned)used, (unsigned long)millis());
+        }
+        if (!used) {
+            if (s_streamDone) break;
+            memset(buf, 0, 2048);
+            i2s.write(buf, 2048);             // 欠载时补一小段静音，避免爆音
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
+        size_t n = used < sizeof(buf) ? used : sizeof(buf);
+        n &= ~1u;
+        uint32_t tail = s_ringTail;
+        size_t pos = tail & (AUDIO_RING_CAP - 1);
+        size_t first = n < (AUDIO_RING_CAP - pos) ? n : (AUDIO_RING_CAP - pos);
+        memcpy(buf, s_ring + pos, first);
+        if (n > first) memcpy(buf + first, s_ring, n - first);
+        s_ringTail = tail + (uint32_t)n;
+        if (!playPcm16k(buf, n, s_ringRate)) break;
+        played += n;
+        if (bargeRequested()) { s_playStop = true; break; }
+    }
+    Serial.printf("[PLAY] task done played=%u at %lu\n", (unsigned)played, (unsigned long)millis());
+    s_playDone = true;
+    s_playTask = nullptr;
+    vTaskDelete(nullptr);
+}
+
+static void audioStreamStart() {
+    if (!s_ring) s_ring = (uint8_t*)heap_caps_malloc(AUDIO_RING_CAP, MALLOC_CAP_SPIRAM);
+    s_ringHead = s_ringTail = 0;
+    s_streamDone = false;
+    s_playStop = false;
+    s_playDone = false;
+    s_playStarted = false;
+    s_ringRate = 16000;
+    s_ringStartBytes = 16000;
+    if (s_playTask) {
+        s_playStop = true;
+        for (int i = 0; i < 100 && !s_playDone; i++) vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    s_playStop = false;
+    s_playDone = false;
+    xTaskCreatePinnedToCore(audioPlayTask, "audioplay", 8192, nullptr, 5, &s_playTask, 1);
+}
+
+static void audioStreamEnd() {
+    s_streamDone = true;
+    for (int i = 0; i < 6000 && !s_playDone; i++) {
+        if (bargeRequested()) s_playStop = true;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    s_playStop = true;
+    s_playDone = true;
+}
+
+static void audioStreamStop() {
+    s_playStop = true;
+    s_streamDone = true;
+    s_playDone = true;
+}
+
 // 唤醒后自动录音：开口检测 + 静音自动结束
 static bool recordAuto() {
     if (!recBuf) return false;
@@ -1073,8 +1188,8 @@ static bool voiceStreamCb(const char* type, const char* text,
         voicePlaying = true;
         setState(ST_PLAY, "播报中 ...", 0x00e5ff);
         ui::busy("播报中 ...");
-        // false = 被唤醒词/KEY3 打断，OmniAide 会立即中止 HTTP 流。
-        return playPcm16k(pcm, len, rate);
+        // 只写入环形缓冲，实际播放由 audioPlayTask 负责。
+        return audioStreamPush(pcm, len, rate);
     }
     return true;
 }
@@ -1092,10 +1207,12 @@ void askFlow() {
     srPause();
 
     // Primary path: one ASR call + streaming reply + sentence-level playback.
+    audioStreamStart();
     bool ok = oa.voiceAskStream(recBuf, recLen, REC_RATE,
                                 transcript, sizeof(transcript),
                                 reply, sizeof(reply), voiceStreamCb)
               && (transcript[0] || reply[0]);
+    audioStreamEnd();
 
     // Fallback: if streaming is unavailable, use the stable full-WAV path.
     if (!ok && !transcript[0] && !reply[0]) {

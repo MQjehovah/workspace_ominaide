@@ -14,7 +14,7 @@
 
 // ==================== 设备 ====================
 #define DEVICE_NAME     "SmartAssistant"   // 蓝牙配对时显示的名字
-#define FW_VERSION      "2.5.7"            // 固件版本（设置页显示 + OTA 比对）
+#define FW_VERSION      "2.5.9"            // 固件版本（设置页显示 + OTA 比对）
 
 // TLS 证书校验：粘贴 CA 根证书（PEM）启用校验；留空跳过校验（内网/frp 场景）
 #ifndef TLS_CA_CERT

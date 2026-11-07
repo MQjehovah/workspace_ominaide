@@ -423,10 +423,9 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
     auto flushPcm = [&]() -> bool {
         if (!accLen) return true;
         bool ok = true;
-        Serial.printf("%s play start %u B rate=%u at %lu\n",
+        Serial.printf("%s ring push %u B rate=%u at %lu\n",
                       TAG, (unsigned)accLen, (unsigned)pcmRate, (unsigned long)millis());
         if (cb) ok = cb("audio", nullptr, pcmBuf, accLen, pcmRate, ud);
-        Serial.printf("%s play done at %lu\n", TAG, (unsigned long)millis());
         accLen = 0;
         return ok;
     };
@@ -469,6 +468,10 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
                 size_t copy = dlen < space ? dlen : space;
                 memcpy(pcmBuf + accLen, audioBuf, copy);
                 accLen += copy;
+                // 边下边喂给 ring；audioPlayTask 攒够约 1 秒后开始播放。
+                if (accLen >= 12000) {
+                    if (!flushPcm()) { finished = true; return false; }
+                }
             }
         } else if (!strcmp(t, "status")) {
             if (cb) return cb("status", doc["text"] | "", nullptr, 0, 0, ud);

@@ -15,6 +15,7 @@ from core.config.settings import settings
 from core.database.session import get_db, async_session
 from core.auth.dependencies import get_current_user
 from core.ai.agent import run_agent, run_agent_stream
+from core.ai.clients import get_openai_client
 from core.bots import runner
 from core.bots.context import (
     reset_current_bot_id,
@@ -134,6 +135,7 @@ async def build_messages(
     persona: bool = True,
     extra_system: str | None = None,
     history_limit: int | None = None,
+    timing: dict | None = None,
 ) -> list[dict]:
     messages: list[dict] = []
     persona_text = (
@@ -145,12 +147,18 @@ async def build_messages(
         messages.append({"role": "system", "content": persona_text})
     if extra_system:
         messages.append({"role": "system", "content": extra_system})
-    ctx = await build_bot_context(user_id, bot, req.message)
+    t_ctx = time.monotonic()
+    ctx = await build_bot_context(user_id, bot, req.message, timing=timing)
+    if timing is not None:
+        timing["bot_context"] = time.monotonic() - t_ctx
     if ctx:
         messages.append({"role": "system", "content": ctx})
     from core.skills.runtime import build_skill_context
 
+    t_skill = time.monotonic()
     skill_ctx = await build_skill_context(bot)
+    if timing is not None:
+        timing["skill_context"] = time.monotonic() - t_skill
     if skill_ctx:
         messages.append({"role": "system", "content": skill_ctx})
     if req.context_refs:
@@ -163,7 +171,11 @@ async def build_messages(
         )
         if block:
             messages.append({"role": "system", "content": block})
-    messages.extend(await resolve_history(req, user_id, limit=history_limit, bot=bot))
+    t_hist = time.monotonic()
+    history = await resolve_history(req, user_id, limit=history_limit, bot=bot)
+    if timing is not None:
+        timing["history"] = time.monotonic() - t_hist
+    messages.extend(history)
     messages.append({"role": "user", "content": _user_content(req)})
     return messages
 
@@ -310,9 +322,8 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
     session_id = req.session_id or DEFAULT_SESSION
     bot = await _resolve_bot(user["id"], req.bot_id) if req.bot_id else None
     try:
-        from openai import AsyncOpenAI
         messages = await build_messages(req, user["id"], bot=bot, persona=False)
-        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+        client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
         resp = await client.chat.completions.create(
             model=(bot.model if bot is not None and bot.model else settings.llm_model),
             messages=messages,
@@ -442,11 +453,10 @@ async def asr(file: UploadFile = File(...), user: dict = Depends(get_current_use
     if not api_key:
         raise HTTPException(status_code=400, detail="ASR API key not configured")
     try:
-        from openai import AsyncOpenAI
         data = await file.read()
         if not data:
             raise HTTPException(status_code=400, detail="Empty audio file")
-        client = AsyncOpenAI(api_key=api_key, base_url=settings.asr_base_url)
+        client = get_openai_client(settings.asr_base_url, api_key)
         tr = await client.audio.transcriptions.create(
             model=settings.asr_model,
             file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
@@ -470,8 +480,7 @@ async def tts(req: TtsRequest, user: dict = Depends(get_current_user)):
     fmt = req.format or settings.tts_format
     media = "audio/wav" if fmt.lower() == "wav" else "audio/mpeg"
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key, base_url=settings.tts_base_url)
+        client = get_openai_client(settings.tts_base_url, api_key)
         speech_kwargs = {
             "model": req.model or settings.tts_model,
             "input": text,
@@ -564,9 +573,8 @@ async def voice(
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio file")
 
-    from openai import AsyncOpenAI
     try:
-        asr_client = AsyncOpenAI(api_key=asr_key, base_url=settings.asr_base_url)
+        asr_client = get_openai_client(settings.asr_base_url, asr_key)
         tr = await asr_client.audio.transcriptions.create(
             model=settings.asr_model,
             file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
@@ -605,7 +613,7 @@ async def voice(
     await save_message(user["id"], "assistant", reply, session_id or DEFAULT_SESSION, bot=bot)
 
     try:
-        tts_client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
+        tts_client = get_openai_client(settings.tts_base_url, tts_key)
         speech_kwargs = {
             "model": settings.tts_model,
             "input": reply or transcript,
@@ -673,13 +681,14 @@ async def voice_stream(
     if not settings.llm_api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
 
+    t_enter = time.monotonic()
     data = await file.read()
+    t_read = time.monotonic()
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio file")
 
-    from openai import AsyncOpenAI
     try:
-        asr_client = AsyncOpenAI(api_key=asr_key, base_url=settings.asr_base_url)
+        asr_client = get_openai_client(settings.asr_base_url, asr_key)
         tr = await asr_client.audio.transcriptions.create(
             model=settings.asr_model,
             file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
@@ -687,22 +696,44 @@ async def voice_stream(
         transcript = (getattr(tr, "text", "") or "").strip()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"ASR failed: {e}")
+    t_asr = time.monotonic()
     if not transcript:
         raise HTTPException(status_code=422, detail="No speech recognized")
 
     sid = session_id or DEFAULT_SESSION
     bot = await _resolve_bot(user["id"], bot_id)
+    t_bot = time.monotonic()
     req = ChatRequest(message=transcript, session_id=sid, bot_id=bot.id)
     voice_system = VOICE_STYLE + await _voice_context()
-    messages = await build_messages(req, user["id"], bot=bot, extra_system=voice_system, history_limit=6)
+    t_ctx = time.monotonic()
+    t_msgs = time.monotonic()
+    msg_timing: dict = {}
+    messages = await build_messages(
+        req, user["id"], bot=bot, extra_system=voice_system, history_limit=6, timing=msg_timing
+    )
+    t_msgs_done = time.monotonic()
     await save_message(user["id"], "user", transcript, sid, bot=bot)
+    t_save = time.monotonic()
+    log.info(
+        "[voice_asr] bytes=%d read=%.2fs asr=%.2fs bot=%.2fs ctx=%.2fs "
+        "messages=%.2fs save=%.2fs total_pre_agent=%.2fs %s",
+        len(data),
+        t_read - t_enter,
+        t_asr - t_read,
+        t_bot - t_asr,
+        t_ctx - t_bot,
+        t_msgs_done - t_msgs,
+        t_save - t_msgs_done,
+        t_save - t_enter,
+        " ".join(f"{k}={v:.2f}" for k, v in msg_timing.items()),
+    )
 
     out_q: asyncio.Queue = asyncio.Queue(maxsize=64)
 
     async def supervisor():
         t_first_token = None
         reply_parts: list[str] = []
-        tts_client = AsyncOpenAI(api_key=tts_key, base_url=settings.tts_base_url)
+        tts_client = get_openai_client(settings.tts_base_url, tts_key)
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(sid)
         try:
@@ -837,8 +868,7 @@ async def translate(req: TranslateRequest, user: dict = Depends(get_current_user
     lang_map = {"zh": "中文", "en": "English", "ja": "日语", "ko": "韩语", "fr": "法语", "de": "德语", "es": "西班牙语", "ru": "俄语"}
     target_lang = lang_map.get(req.target, req.target)
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+        client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
         resp = await client.chat.completions.create(
             model=settings.llm_model,
             messages=[
