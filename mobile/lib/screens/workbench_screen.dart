@@ -49,7 +49,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   Timer? _suggestionTimer;
   int _unreadNotifications = 0;
   String _name = '';
-  String _botName = '';
   bool _loading = true;
   bool _briefLoading = true;
   bool _error = false;
@@ -212,7 +211,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       _unreadNotifications =
           notifications.where((n) => n['read'] == false).length;
       _name = (me?['display_name'] ?? me?['username'] ?? '').toString();
-      _botName = BotSelectionService().botName ?? '';
       _loading = false;
       _briefLoading = true;
     });
@@ -436,45 +434,32 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 5,
-                    height: 5,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFD8FFE8),
-                      shape: BoxShape.circle,
-                    ),
+                  Icon(
+                    Icons.auto_awesome,
+                    size: 14,
+                    color: Colors.white.withValues(alpha: 0.95),
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    '${_botName.isEmpty ? 'AI 助手' : _botName} · 每小时更新',
+                    '今日简报',
                     style: TextStyle(
-                      fontSize: 9,
-                      letterSpacing: 1,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white.withValues(alpha: 0.82),
+                      fontSize: 12,
+                      letterSpacing: 0.6,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              const Text(
-                '今天想先处理什么？',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 _briefSummary,
-                maxLines: 4,
+                maxLines: 5,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.6,
-                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 13,
+                  height: 1.65,
+                  color: Colors.white.withValues(alpha: 0.94),
                 ),
               ),
               const SizedBox(height: 4),
