@@ -767,7 +767,7 @@ async def voice_stream(
                     if t_audio is None:
                         t_audio = time.monotonic()
             except Exception as e:
-                print(f"[voice_stream] stream tts failed: {e}", flush=True)
+                log.warning("[voice_stream] stream tts failed: %s", e)
 
         # Fallback: complete WAV from the non-streaming endpoint.
         if emitted == 0:

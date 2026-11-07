@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 
 from core.bots import routines as routine_service
+from core.automation.models import AutomationRun
 from core.bots.models import Bot, BotApproval, BotRoutine, BotRun
 from core.bots.routine_templates import get_template, list_templates
 from core.config.settings import settings
@@ -267,33 +268,45 @@ async def dry_run(user_id: int, routine_id: int) -> dict:
     }
 
 
-async def list_routine_runs(user_id: int, routine_id: int, limit: int = 20) -> list[BotRun]:
+async def list_routine_runs(user_id: int, routine_id: int, limit: int = 20) -> list[dict]:
     async with async_session() as db:
-        rows = await db.execute(
-            select(BotRun).where(
-                BotRun.user_id == user_id,
-                BotRun.routine_id == routine_id,
-            ).order_by(BotRun.id.desc()).limit(max(1, min(limit, 200)))
-        )
-        return list(rows.scalars().all())
+        rows = (await db.execute(
+            select(AutomationRun).where(
+                AutomationRun.user_id == user_id,
+                AutomationRun.routine_id == routine_id,
+            ).order_by(AutomationRun.id.desc()).limit(max(1, min(limit, 200)))
+        )).scalars().all()
+    return [
+        {
+            "id": row.id,
+            "status": row.status,
+            "trigger": row.trigger_type,
+            "created_at": row.created_at,
+            "output": json.dumps(row.action_results, ensure_ascii=False)[:1000]
+            if row.action_results else None,
+            "error": row.error,
+            "agent_run_id": row.agent_run_id,
+        }
+        for row in rows
+    ]
 
 
 async def routine_stats(user_id: int, routine_id: int, days: int = 30) -> dict:
     since = datetime.utcnow() - timedelta(days=max(1, days))
     async with async_session() as db:
         total = (await db.execute(
-            select(func.count(BotRun.id)).where(
-                BotRun.user_id == user_id,
-                BotRun.routine_id == routine_id,
-                BotRun.created_at >= since,
+            select(func.count(AutomationRun.id)).where(
+                AutomationRun.user_id == user_id,
+                AutomationRun.routine_id == routine_id,
+                AutomationRun.created_at >= since,
             )
         )).scalar() or 0
         rows = (await db.execute(
-            select(BotRun.status, func.count(BotRun.id)).where(
-                BotRun.user_id == user_id,
-                BotRun.routine_id == routine_id,
-                BotRun.created_at >= since,
-            ).group_by(BotRun.status)
+            select(AutomationRun.status, func.count(AutomationRun.id)).where(
+                AutomationRun.user_id == user_id,
+                AutomationRun.routine_id == routine_id,
+                AutomationRun.created_at >= since,
+            ).group_by(AutomationRun.status)
         )).all()
     return {"days": days, "total": total, "by_status": {s: c for s, c in rows}}
 

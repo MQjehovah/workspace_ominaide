@@ -468,7 +468,7 @@
           近 30 天：{{ routineRunStats.total || 0 }} 次
           <span v-for="(cnt, st) in routineRunStats.by_status || {}" :key="st"> · {{ st }} {{ cnt }}</span>
         </div>
-        <el-table :data="routineRuns" size="small" empty-text="还没有运行记录" @row-click="openRun">
+        <el-table :data="routineRuns" size="small" empty-text="还没有运行记录">
           <el-table-column prop="id" label="#" width="70" />
           <el-table-column label="状态" width="100">
             <template #default="{ row }">

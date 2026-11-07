@@ -69,7 +69,7 @@ async def dry_run(routine_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.get("/routines/{routine_id}/runs", response_model=list[RunOut])
+@router.get("/routines/{routine_id}/runs")
 async def routine_runs(
     routine_id: int,
     limit: int = Query(20, ge=1, le=200),

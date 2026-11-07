@@ -223,10 +223,6 @@ app.include_router(agent_router)
 from core.connectors.router import router as connectors_router
 app.include_router(connectors_router)
 
-from core.automation.router import router as automation_dsl_router, alias_router as automation_alias_router
-app.include_router(automation_dsl_router)
-app.include_router(automation_alias_router)
-
 from core.meetings.router import router as meetings_router
 app.include_router(meetings_router)
 
