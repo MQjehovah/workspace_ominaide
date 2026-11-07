@@ -62,6 +62,34 @@ def _normalise(payload: Any) -> dict:
     return {"text": text, "segments": segments}
 
 
+class _SizedStream:
+    """Expose an exact length to httpx without copying the MinIO object."""
+
+    def __init__(self, response, size: int):
+        self.response = response
+        self.size = max(0, int(size or 0))
+        self._pos = 0
+
+    def read(self, n: int = -1) -> bytes:
+        data = self.response.read(n)
+        self._pos += len(data or b"")
+        return data
+
+    def tell(self) -> int:
+        return self._pos
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        if whence == 2:
+            return self.size
+        return offset
+
+    def close(self) -> None:
+        try:
+            self.response.close()
+        except Exception:
+            pass
+
+
 def _post(file_record, diarize: bool) -> dict:
     from core.minio.client import minio_client
 
@@ -72,7 +100,45 @@ def _post(file_record, diarize: bool) -> dict:
     if not api_key:
         raise AsrError("未配置 ASR API Key")
 
+    size = int(file_record.size or 0)
+    if size <= 0:
+        try:
+            size = int(
+                minio_client.stat_object(
+                    file_record.bucket, file_record.object_key
+                ).size
+            )
+        except Exception:
+            size = 0
+
     headers = {"Authorization": f"Bearer {api_key}"}
+    timeout = httpx.Timeout(
+        connect=30.0,
+        read=float(settings.asr_timeout_seconds),
+        write=float(settings.asr_timeout_seconds),
+        pool=30.0,
+    )
+
+    def attempt(data: dict) -> httpx.Response:
+        raw = minio_client.get_object(file_record.bucket, file_record.object_key)
+        stream = _SizedStream(raw, size)
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                return client.post(
+                    _endpoint(),
+                    headers=headers,
+                    data=data,
+                    files={
+                        "file": (
+                            file_record.original_name or "meeting.m4a",
+                            stream,
+                            file_record.mime_type or "application/octet-stream",
+                        )
+                    },
+                )
+        finally:
+            stream.close()
+
     data = {
         "model": settings.asr_model,
         "response_format": "verbose_json",
@@ -80,57 +146,17 @@ def _post(file_record, diarize: bool) -> dict:
     if diarize:
         data["diarize"] = "true"
 
-    response = minio_client.get_object(file_record.bucket, file_record.object_key)
-    try:
-        timeout = httpx.Timeout(
-            connect=30.0,
-            read=float(settings.asr_timeout_seconds),
-            write=float(settings.asr_timeout_seconds),
-            pool=30.0,
-        )
-        with httpx.Client(timeout=timeout) as client:
-            res = client.post(
-                _endpoint(),
-                headers=headers,
-                data=data,
-                files={
-                    "file": (
-                        file_record.original_name or "meeting.m4a",
-                        response,
-                        file_record.mime_type or "application/octet-stream",
-                    )
-                },
-            )
-            if res.status_code >= 400:
-                # Some OpenAI-compatible servers reject verbose_json/diarize.
-                if diarize or "response_format" in data:
-                    retry_data = {"model": settings.asr_model}
-                    res = client.post(
-                        _endpoint(),
-                        headers=headers,
-                        data=retry_data,
-                        files={
-                            "file": (
-                                file_record.original_name or "meeting.m4a",
-                                response,
-                                file_record.mime_type
-                                or "application/octet-stream",
-                            )
-                        },
-                    )
-            if res.status_code >= 400:
-                raise AsrError(
-                    f"ASR 返回 {res.status_code}: {res.text[:500]}"
-                )
-            content_type = res.headers.get("content-type", "")
-            if "json" in content_type:
-                return _normalise(res.json())
-            return _normalise(res.text)
-    finally:
-        try:
-            response.close()
-        except Exception:
-            pass
+    res = attempt(data)
+    if res.status_code >= 400 and (diarize or "response_format" in data):
+        # Some OpenAI-compatible servers reject verbose_json/diarize.
+        res = attempt({"model": settings.asr_model})
+    if res.status_code >= 400:
+        raise AsrError(f"ASR 返回 {res.status_code}: {res.text[:500]}")
+    content_type = res.headers.get("content-type", "")
+    if "json" in content_type:
+        return _normalise(res.json())
+    return _normalise(res.text)
+
 
 
 async def transcribe_minio_object(file_record, *, diarize: bool | None = None) -> dict:
