@@ -1,5 +1,6 @@
 import Flutter
 import MediaPlayer
+import receive_sharing_intent
 import UIKit
 import UserNotifications
 import Vision
@@ -8,6 +9,11 @@ import Vision
 @objc class AppDelegate: FlutterAppDelegate {
   private var mediaChannel: FlutterMethodChannel?
   private var mediaCommandsConfigured = false
+
+  /// Share-extension URL captured before Flutter attached its event listener.
+  /// SceneDelegate fills this on a cold start; Dart replays it through the
+  /// omniaide/share_intent channel.
+  static var pendingShareUrl: URL?
 
   override func application(
     _ application: UIApplication,
@@ -30,7 +36,45 @@ import Vision
     GeneratedPluginRegistrant.register(with: self)
     setupMediaChannel()
     setupOcrChannel()
+    setupShareChannel()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // Fallback for the non-scene lifecycle; SceneDelegate handles the scene path.
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    if SwiftReceiveSharingIntentPlugin.instance.hasMatchingSchemePrefix(url: url) {
+      return SwiftReceiveSharingIntentPlugin.instance.application(app, open: url, options: options)
+    }
+    return super.application(app, open: url, options: options)
+  }
+
+  private func setupShareChannel() {
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "omniaide/share_intent",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "replayPendingUrl" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let url = AppDelegate.pendingShareUrl else {
+        result(false)
+        return
+      }
+      AppDelegate.pendingShareUrl = nil
+      result(
+        SwiftReceiveSharingIntentPlugin.instance.application(
+          UIApplication.shared, open: url)
+      )
+    }
   }
 
   private func setupOcrChannel() {

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 class SharedCapture {
@@ -15,8 +16,14 @@ class ShareIntentService {
   factory ShareIntentService() => _instance;
   ShareIntentService._();
 
+  static const MethodChannel _channel = MethodChannel('omniaide/share_intent');
+
   StreamSubscription<List<SharedMediaFile>>? _sub;
   SharedCapture? _pending;
+  bool _ready = false;
+
+  /// Called when a share arrives while the app is already running.
+  void Function(SharedCapture capture)? onCapture;
 
   SharedCapture? takePending() {
     final value = _pending;
@@ -24,18 +31,43 @@ class ShareIntentService {
     return value;
   }
 
+  /// Marks startup as finished so later shares navigate immediately.
+  void markReady() {
+    _ready = true;
+    final pending = _pending;
+    _pending = null;
+    if (pending != null) {
+      onCapture?.call(pending);
+    }
+  }
+
   Future<void> init() async {
     try {
+      _sub = ReceiveSharingIntent.instance.getMediaStream().listen(_handle);
       final initial = await ReceiveSharingIntent.instance.getInitialMedia();
       if (initial.isNotEmpty) {
         _handle(initial);
-        ReceiveSharingIntent.instance.reset();
+        await ReceiveSharingIntent.instance.reset();
       }
-      _sub = ReceiveSharingIntent.instance.getMediaStream().listen(_handle);
+      // Cold starts launched by the iOS share extension deliver the URL before
+      // Dart is listening; SceneDelegate stashes it and we replay it now.
+      final replay = Completer<void>();
+      _replay = replay;
+      final replayed = await _channel.invokeMethod<bool>('replayPendingUrl');
+      if (replayed == true) {
+        await replay.future.timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {},
+        );
+      }
     } catch (_) {
       // Platform not configured (e.g. iOS share extension not installed).
+    } finally {
+      _replay = null;
     }
   }
+
+  Completer<void>? _replay;
 
   void _handle(List<SharedMediaFile> files) {
     if (files.isEmpty) return;
@@ -53,7 +85,12 @@ class ShareIntentService {
         text = file.path;
       }
     }
-    _pending = SharedCapture(text: text, url: url, imagePath: image);
+    final capture = SharedCapture(text: text, url: url, imagePath: image);
+    _pending = capture;
+    _replay?.complete();
+    if (_ready) {
+      onCapture?.call(capture);
+    }
   }
 
   void dispose() {

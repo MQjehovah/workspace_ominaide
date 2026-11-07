@@ -15,6 +15,19 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await appTheme.load();
   await ShareIntentService().init();
+  ShareIntentService().onCapture = (capture) {
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null || !ApiService().isLoggedIn) return;
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => QuickCaptureScreen(
+          initialText: capture.text,
+          initialUrl: capture.url,
+          initialImagePath: capture.imagePath,
+        ),
+      ),
+    );
+  };
   ApiService().onUnauthorized = () {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _messengerKey.currentState?.showSnackBar(
@@ -92,6 +105,7 @@ class _SplashScreenState extends State<SplashScreen> {
     final shared = ApiService().isLoggedIn
         ? ShareIntentService().takePending()
         : null;
+    ShareIntentService().markReady();
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(

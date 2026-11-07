@@ -56,6 +56,8 @@ PODS:
     - FlutterMacOS
   - pdfx (1.0.0):
     - Flutter
+  - receive_sharing_intent (1.8.1):
+    - Flutter
   - record_ios (1.2.1):
     - Flutter
   - SDWebImage (5.21.7):
@@ -89,6 +91,7 @@ DEPENDENCIES:
   - local_auth_darwin (from `.symlinks/plugins/local_auth_darwin/darwin`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - pdfx (from `.symlinks/plugins/pdfx/ios`)
+  - receive_sharing_intent (from `.symlinks/plugins/receive_sharing_intent/ios`)
   - record_ios (from `.symlinks/plugins/record_ios/ios`)
   - SDWebImage (from `Podspecs/SDWebImage.podspec.json`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
@@ -126,6 +129,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/path_provider_foundation/darwin"
   pdfx:
     :path: ".symlinks/plugins/pdfx/ios"
+  receive_sharing_intent:
+    :path: ".symlinks/plugins/receive_sharing_intent/ios"
   record_ios:
     :path: ".symlinks/plugins/record_ios/ios"
   SDWebImage:
@@ -156,6 +161,7 @@ SPEC CHECKSUMS:
   local_auth_darwin: fa4b06454df7df8e97c18d7ee55151c57e7af0de
   path_provider_foundation: 2b6b4c569c0fb62ec74538f866245ac84301af46
   pdfx: 7b876b09de8b7a0bf444a4f82b439ffcff4ee1ec
+  receive_sharing_intent: 79c848f5b045674ad60b9fea3bafea59962ad2c1
   record_ios: 3b171007ae5de51221a3a76d2b379a7105ca98b5
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   share_plus: 8b6f8b3447e494cca5317c8c3073de39b3600d1f
