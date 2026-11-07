@@ -55,6 +55,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   bool _error = false;
   int _loadToken = 0;
   DateTime? _lastLoadAt;
+  bool _suggestionsRequested = false;
   late final ValueNotifier<int> _refresh = RefreshBus.signal('workbench');
 
   @override
@@ -62,7 +63,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     super.initState();
     _refresh.addListener(_onRefreshSignal);
     _loadCachedSuggestions();
-    _loadSuggestions();
     _suggestionTimer = Timer.periodic(
       const Duration(hours: 1),
       (_) => _loadSuggestions(force: true),
@@ -213,6 +213,13 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       _loading = false;
       _briefLoading = true;
     });
+
+    // Suggestions also trigger a DingTalk read; fetch them only after the
+    // summary call has warmed that cache, and only once per app session.
+    if (!_suggestionsRequested) {
+      _suggestionsRequested = true;
+      unawaited(_loadSuggestions());
+    }
 
     // The daily brief runs an LLM, so never block the first paint on it.
     final brief = await _safe(cosRepository.getDailyBrief(force: force));
