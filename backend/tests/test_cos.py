@@ -317,7 +317,6 @@ async def test_workbench_summary_aggregates_sections(client, monkeypatch):
     assert body["todos"]
     assert isinstance(body["recent"]["files"], list)
     assert isinstance(body["recent"]["notes"], list)
-    assert len(body["suggestions"]) == 3
     assert body["inbox"]["pending"] >= 1
 
 

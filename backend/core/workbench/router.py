@@ -9,7 +9,6 @@ from sqlalchemy import select
 from core.auth.dependencies import get_current_user
 from core.cos import collectors
 from core.database.session import async_session
-from core.workbench.suggestions import workbench_suggestions
 from core.workbench.dingtalk_actions import dingtalk_actions
 
 router = APIRouter(prefix="/api/workbench", tags=["workbench"])
@@ -106,7 +105,7 @@ async def workbench_summary(user: dict = Depends(get_current_user)):
 
     from core.cos.service import triage
 
-    triage_data, events, todos, files, notes, projects, suggestions = (
+    triage_data, events, todos, files, notes, projects = (
         await asyncio.gather(
             safe(triage(user_id, 3)),
             safe(
@@ -121,7 +120,6 @@ async def workbench_summary(user: dict = Depends(get_current_user)):
             safe(_recent_files(user_id)),
             safe(_recent_notes(user_id)),
             safe(_recent_projects(user_id)),
-            safe(workbench_suggestions(user_id)),
         )
     )
 
@@ -162,7 +160,6 @@ async def workbench_summary(user: dict = Depends(get_current_user)):
             "notes": notes or [],
             "projects": projects or [],
         },
-        "suggestions": (suggestions or {}).get("suggestions") or [],
         "generated_at": now.isoformat(timespec="seconds"),
     }
 
