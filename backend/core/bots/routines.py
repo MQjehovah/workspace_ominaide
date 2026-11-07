@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select, delete, update
 
+from core.automation.dsl import compile_spec, spec_from_routine, spec_legacy_fields
 from core.bots import runner
 from core.bots.models import Bot, BotRoutine
 from core.database.session import async_session
@@ -114,17 +115,33 @@ async def get_routine(user_id: int, routine_id: int) -> BotRoutine | None:
 async def create_routine(user_id: int, bot_id: int, name: str, *, trigger_type: str = "cron",
                          cron_expr: str | None = None, event_type: str | None = None,
                          event_filter: dict | None = None, prompt: str | None = None,
-                         enabled: bool = True) -> BotRoutine:
-    trigger_type = (trigger_type or "cron").lower()
-    if trigger_type not in ("cron", "event", "manual"):
-        raise ValueError("trigger_type must be cron/event/manual")
+                         enabled: bool = True, spec: dict | None = None) -> BotRoutine:
+    if spec:
+        spec = dict(spec)
+        spec.setdefault("name", name)
+        spec.setdefault("enabled", enabled)
+        raw = {"spec": spec}
+    else:
+        raw = {
+            "name": name,
+            "trigger_type": trigger_type,
+            "cron_expr": cron_expr,
+            "event_type": event_type,
+            "event_filter": event_filter,
+            "prompt": prompt,
+            "enabled": enabled,
+        }
+    compiled = compile_spec(raw)
+    if not compiled.get("valid"):
+        raise ValueError(str(compiled.get("errors")))
+    normalized = compiled["spec"]
+    normalized["name"] = (name or normalized.get("name") or "routine")[:120]
+    normalized["enabled"] = bool(enabled)
+    legacy = spec_legacy_fields(normalized)
+
     nxt = None
-    if trigger_type == "cron":
-        if not cron_expr:
-            raise ValueError("cron_expr is required for cron routines")
-        nxt = next_run(cron_expr)
-    if trigger_type == "event" and not event_type:
-        raise ValueError("event_type is required for event routines")
+    if normalized["trigger"].get("type") == "schedule":
+        nxt = next_run(normalized["trigger"]["cron"])
 
     async with async_session() as db:
         bot = (
@@ -137,14 +154,17 @@ async def create_routine(user_id: int, bot_id: int, name: str, *, trigger_type: 
         routine = BotRoutine(
             bot_id=bot_id,
             user_id=user_id,
-            name=(name or "routine")[:120],
-            trigger_type=trigger_type,
-            cron_expr=cron_expr,
-            event_type=event_type,
+            name=normalized["name"],
+            trigger_type=legacy["trigger_type"],
+            cron_expr=legacy["cron_expr"],
+            event_type=legacy["event_type"],
             event_filter=event_filter,
-            prompt=prompt,
-            enabled=enabled,
+            prompt=legacy["prompt"],
+            enabled=normalized["enabled"],
             next_run_at=nxt,
+            spec=normalized,
+            spec_version=1,
+            run_count=0,
         )
         db.add(routine)
         await db.commit()
@@ -164,31 +184,47 @@ async def update_routine(user_id: int, routine_id: int, data: dict) -> BotRoutin
         if routine is None:
             return None
 
-        if "trigger_type" in data and data["trigger_type"]:
-            trigger_type = str(data["trigger_type"]).lower()
-            if trigger_type not in ("cron", "event", "manual"):
-                raise ValueError("trigger_type must be cron/event/manual")
-            routine.trigger_type = trigger_type
-        if "cron_expr" in data:
-            routine.cron_expr = data["cron_expr"]
-        if "event_type" in data:
-            routine.event_type = data["event_type"]
+        current = spec_from_routine(routine)
+        if isinstance(data.get("spec"), dict):
+            spec = dict(data["spec"])
+            spec.setdefault("name", data.get("name") or routine.name)
+            raw = {"spec": spec}
+        elif any(k in data for k in ("trigger_type", "cron_expr", "event_type", "prompt")):
+            raw = {
+                "name": data.get("name") or current.get("name") or routine.name,
+                "trigger_type": data.get("trigger_type", routine.trigger_type),
+                "cron_expr": data.get("cron_expr", routine.cron_expr),
+                "event_type": data.get("event_type", routine.event_type),
+                "prompt": data.get("prompt", routine.prompt),
+                "enabled": data.get("enabled", routine.enabled),
+            }
+        else:
+            raw = {"spec": current}
+            raw["spec"]["name"] = data.get("name") or current.get("name") or routine.name
+            raw["spec"]["enabled"] = bool(data.get("enabled", routine.enabled))
+
+        compiled = compile_spec(raw)
+        if not compiled.get("valid"):
+            raise ValueError(str(compiled.get("errors")))
+        normalized = compiled["spec"]
+        normalized["name"] = str(data.get("name") or normalized.get("name") or routine.name)[:120]
+        normalized["enabled"] = bool(data.get("enabled", normalized.get("enabled", True)))
+        legacy = spec_legacy_fields(normalized)
+
+        routine.name = normalized["name"]
+        routine.trigger_type = legacy["trigger_type"]
+        routine.cron_expr = legacy["cron_expr"]
+        routine.event_type = legacy["event_type"]
+        routine.prompt = legacy["prompt"]
         if "event_filter" in data:
             routine.event_filter = data["event_filter"]
-        if "name" in data and data["name"]:
-            routine.name = str(data["name"])[:120]
-        if "prompt" in data:
-            routine.prompt = data["prompt"]
-        if "enabled" in data:
-            routine.enabled = bool(data["enabled"])
+        routine.enabled = normalized["enabled"]
+        routine.spec = normalized
+        routine.spec_version = 1
 
-        if routine.trigger_type == "cron":
-            if not routine.cron_expr:
-                raise ValueError("cron_expr is required for cron routines")
-            routine.next_run_at = next_run(routine.cron_expr)
-        elif routine.trigger_type == "event":
-            if not routine.event_type:
-                raise ValueError("event_type is required for event routines")
+        if normalized["trigger"].get("type") == "schedule":
+            routine.next_run_at = next_run(normalized["trigger"]["cron"])
+        else:
             routine.next_run_at = None
 
         await db.commit()
@@ -207,25 +243,28 @@ async def delete_routine(user_id: int, routine_id: int) -> bool:
         return bool(res.rowcount)
 
 
-async def run_routine_now(user_id: int, routine_id: int):
+async def run_routine_now(user_id: int, routine_id: int, *, force: bool = False):
     routine = await get_routine(user_id, routine_id)
     if routine is None:
         return None
-    async with async_session() as db:
-        bot = (
-            await db.execute(select(Bot).where(Bot.id == routine.bot_id))
-        ).scalar_one_or_none()
-    if bot is None:
-        return None
-    run = await runner.create_run(
-        user_id,
-        bot,
-        routine.prompt or routine.name,
-        trigger="manual",
-        routine_id=routine.id,
-        idempotency_key=f"routine:{routine.id}:manual:{datetime.utcnow().isoformat(timespec='seconds')}",
+    from core.automation.executor import execute_automation
+
+    return await execute_automation(
+        routine.id, "manual", manual={"user_id": user_id}, force=force,
     )
-    return run
+
+
+async def list_routine_runs(user_id: int, routine_id: int, limit: int = 50):
+    from core.automation.models import AutomationRun
+
+    async with async_session() as db:
+        rows = list((await db.execute(
+            select(AutomationRun).where(
+                AutomationRun.user_id == user_id,
+                AutomationRun.routine_id == routine_id,
+            ).order_by(AutomationRun.id.desc()).limit(min(max(limit, 1), 200))
+        )).scalars().all())
+    return rows
 
 
 async def routine_loop() -> None:
@@ -265,16 +304,15 @@ async def _tick() -> None:
             if bot is None or bot.status != "active":
                 await _mark_tick(r.id, None, "no_bot")
                 continue
-            key = f"routine:{r.id}:{now.strftime('%Y%m%d%H%M')}"
-            await runner.create_run(
-                r.user_id,
-                bot,
-                r.prompt or r.name,
-                trigger="cron",
-                routine_id=r.id,
-                idempotency_key=key,
+            from core.automation.executor import execute_automation
+
+            result = await execute_automation(
+                r.id, "schedule", scheduled_for=now,
             )
-            await _mark_tick(r.id, next_run(r.cron_expr, now), "queued")
+            await _mark_tick(
+                r.id, next_run(r.cron_expr, now),
+                "skipped" if result.get("status") == "skipped" else "queued",
+            )
         except Exception as e:
             log.warning(f"[bots.routines] tick {r.id} failed: {e}")
             try:
@@ -318,26 +356,15 @@ async def _on_event(event) -> None:
                 ).scalars().all()
             )
         for r in rows:
-            if not _matches_filter(r.event_filter, event):
-                continue
             async with async_session() as db:
                 bot = (
                     await db.execute(select(Bot).where(Bot.id == r.bot_id))
                 ).scalar_one_or_none()
             if bot is None or bot.status != "active":
                 continue
-            prompt = r.prompt or r.name
-            context = _event_context(event)
-            if context:
-                prompt = f"{prompt}\n\n{context}"
-            await runner.create_run(
-                r.user_id,
-                bot,
-                prompt,
-                trigger="event",
-                routine_id=r.id,
-                idempotency_key=f"routine:{r.id}:event:{event.id}",
-            )
+            from core.automation.executor import execute_automation
+
+            await execute_automation(r.id, "event", event=event)
     except Exception as e:
         log.warning(f"[bots.routines] event handler error: {e}")
 

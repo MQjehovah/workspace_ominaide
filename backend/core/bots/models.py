@@ -135,6 +135,10 @@ class BotRoutine(Base):
     next_run_at = Column(DateTime, nullable=True, index=True)
     last_run_at = Column(DateTime, nullable=True)
     last_status = Column(String(20), nullable=True)
+    spec = Column(JSON, nullable=True)
+    spec_version = Column(Integer, default=1)
+    last_error = Column(Text, nullable=True)
+    run_count = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

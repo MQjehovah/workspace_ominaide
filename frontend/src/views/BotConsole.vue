@@ -366,11 +366,23 @@
         <el-form-item v-if="routineForm.trigger_type === 'event'" label="事件类型">
           <el-input v-model="routineForm.event_type" placeholder="例如 schedule.created" />
         </el-form-item>
-        <el-form-item v-if="routineForm.trigger_type === 'event'" label="事件过滤">
-          <el-input v-model="routineForm.event_filter" placeholder='可选 JSON，例如 {"provider":"rss"}' />
+        <el-form-item label="条件匹配">
+          <el-select v-model="routineForm.match" style="width:140px">
+            <el-option label="全部满足" value="all" />
+            <el-option label="任一满足" value="any" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="条件 JSON">
+          <el-input v-model="routineForm.conditionsText" type="textarea" :rows="3"
+            placeholder='[{"field":"event.details.important","op":"eq","value":true}]' />
+        </el-form-item>
+        <el-form-item label="动作 JSON">
+          <el-input v-model="routineForm.actionsText" type="textarea" :rows="5"
+            placeholder='[{"type":"todo","params":{"title":"跟进"}},{"type":"notify","params":{"title":"提醒"}}]' />
         </el-form-item>
         <el-form-item label="Prompt">
-          <el-input v-model="routineForm.prompt" type="textarea" :rows="5" placeholder="触发时交给 Bot 的任务" />
+          <el-input v-model="routineForm.prompt" type="textarea" :rows="3"
+            placeholder="没有动作 JSON 时，会编译成一个 Agent 动作" />
         </el-form-item>
         <el-form-item label="启用"><el-switch v-model="routineForm.enabled" /></el-form-item>
       </el-form>
@@ -603,6 +615,7 @@ const savingRoutine = ref(false)
 const routineForm = reactive({
   name: '', trigger_type: 'cron', cron_expr: '30 7 * * *',
   event_type: '', event_filter: '', prompt: '', enabled: true,
+  match: 'all', conditionsText: '', actionsText: '',
 })
 
 const templateDialog = ref(false)
@@ -896,17 +909,25 @@ async function refreshAll() {
 
 function openRoutineDialog(routine?: any) {
   editingRoutineId.value = routine?.id || null
+  const spec = routine?.spec || null
+  const trigger = spec?.trigger || null
+  const triggerType = trigger?.type === 'schedule' ? 'cron' : (trigger?.type || routine?.trigger_type || 'cron')
+  const agentAction = (spec?.actions || []).find((a: any) => a.type === 'agent')
   Object.assign(routineForm, routine ? {
-    name: routine.name || '',
-    trigger_type: routine.trigger_type || 'cron',
-    cron_expr: routine.cron_expr || '30 7 * * *',
-    event_type: routine.event_type || '',
+    name: routine.name || spec?.name || '',
+    trigger_type: triggerType,
+    cron_expr: trigger?.cron || routine.cron_expr || '30 7 * * *',
+    event_type: trigger?.event_type || routine.event_type || '',
     event_filter: routine.event_filter ? JSON.stringify(routine.event_filter, null, 2) : '',
-    prompt: routine.prompt || '',
+    prompt: agentAction?.params?.prompt || routine.prompt || '',
     enabled: routine.enabled !== false,
+    match: spec?.match || 'all',
+    conditionsText: spec?.conditions?.length ? JSON.stringify(spec.conditions, null, 2) : '',
+    actionsText: spec?.actions?.length ? JSON.stringify(spec.actions, null, 2) : '',
   } : {
     name: '', trigger_type: 'cron', cron_expr: '30 7 * * *',
     event_type: '', event_filter: '', prompt: '', enabled: true,
+    match: 'all', conditionsText: '', actionsText: '',
   })
   routineDialog.value = true
 }
@@ -916,22 +937,37 @@ async function saveRoutine() {
     ElMessage.warning('例程名称不能为空')
     return
   }
-  let filter: any = null
-  if (routineForm.event_filter.trim()) {
-    try {
-      filter = JSON.parse(routineForm.event_filter)
-    } catch {
-      ElMessage.error('事件过滤不是合法 JSON')
-      return
-    }
+  let conditions: any[] = []
+  let actions: any[] = []
+  try {
+    conditions = routineForm.conditionsText.trim() ? JSON.parse(routineForm.conditionsText) : []
+    actions = routineForm.actionsText.trim() ? JSON.parse(routineForm.actionsText) : []
+  } catch {
+    ElMessage.error('条件或动作不是合法 JSON')
+    return
+  }
+  if (!Array.isArray(conditions) || !Array.isArray(actions)) {
+    ElMessage.error('条件或动作必须是数组')
+    return
+  }
+  if (!actions.length && routineForm.prompt.trim()) {
+    actions = [{ type: 'agent', params: { prompt: routineForm.prompt.trim() } }]
+  }
+  const trigger: any = routineForm.trigger_type === 'cron'
+    ? { type: 'schedule', cron: routineForm.cron_expr }
+    : routineForm.trigger_type === 'event'
+      ? { type: 'event', event_type: routineForm.event_type }
+      : { type: 'manual' }
+  const spec = {
+    name: routineForm.name.trim(),
+    trigger,
+    match: routineForm.match || 'all',
+    conditions,
+    actions,
   }
   const payload: any = {
     name: routineForm.name.trim(),
-    trigger_type: routineForm.trigger_type,
-    cron_expr: routineForm.trigger_type === 'cron' ? routineForm.cron_expr : null,
-    event_type: routineForm.trigger_type === 'event' ? routineForm.event_type : null,
-    event_filter: routineForm.trigger_type === 'event' ? filter : null,
-    prompt: routineForm.prompt || null,
+    spec,
     enabled: routineForm.enabled,
   }
   savingRoutine.value = true
@@ -967,9 +1003,15 @@ function onRoutineToggle(row: any, value: any) {
 async function runRoutine(row: any) {
   try {
     const r = await client.post(`/bots/${selectedId.value}/routines/${row.id}/run`)
-    ElMessage.success(`已创建 Run #${r.data.id}`)
-    tab.value = 'runs'
-    await loadRuns()
+    const data = r.data || {}
+    if (data.agent_run_id) {
+      ElMessage.success(`已创建 Agent Run #${data.agent_run_id}`)
+      tab.value = 'runs'
+      await loadRuns()
+    } else {
+      ElMessage.success(`自动化已执行：${data.status || 'done'}`)
+      await loadRoutines()
+    }
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '触发失败')
   }

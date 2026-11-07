@@ -70,6 +70,16 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("user_profiles")}
             if "developer" not in cols:
                 result.append("user_profiles")
+        if "bot_routines" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("bot_routines")}
+            if "spec" not in cols:
+                result.append("bot_routines_spec")
+            if "spec_version" not in cols:
+                result.append("bot_routines_spec_version")
+            if "last_error" not in cols:
+                result.append("bot_routines_last_error")
+            if "run_count" not in cols:
+                result.append("bot_routines_run_count")
         if "bot_runs" in table_names:
             cols = {c["name"] for c in inspector.get_columns("bot_runs")}
             if "parent_run_id" not in cols:
@@ -142,6 +152,14 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE user_profiles ADD COLUMN developer TEXT NULL"))
             elif table == "bot_runs_parent":
                 await conn.execute(text("ALTER TABLE bot_runs ADD COLUMN parent_run_id INTEGER NULL"))
+            elif table == "bot_routines_spec":
+                await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN spec JSON NULL"))
+            elif table == "bot_routines_spec_version":
+                await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN spec_version INTEGER DEFAULT 1"))
+            elif table == "bot_routines_last_error":
+                await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN last_error TEXT NULL"))
+            elif table == "bot_routines_run_count":
+                await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN run_count INTEGER DEFAULT 0"))
             elif table == "projects_is_git":
                 await conn.execute(text(f"ALTER TABLE projects ADD COLUMN is_git BOOLEAN DEFAULT {bool_true}"))
             elif table == "mail_sync_state":

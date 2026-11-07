@@ -1,10 +1,9 @@
-"""Automation center: templates, natural-language parsing, dry runs and logs."""
-from datetime import datetime
+"""Unified automation: spec compilation, conditions and execution."""
 
-from conftest import auth
+from types import SimpleNamespace
 
 
-async def _new_user(client) -> tuple[str, int]:
+async def _new_user(client):
     import random
     import string
 
@@ -15,177 +14,118 @@ async def _new_user(client) -> tuple[str, int]:
         json={"username": username, "email": f"{username}@example.com", "password": "testpass123"},
     )
     assert r.status_code in (200, 201), r.text
-    user_id = r.json()["user_id"]
+    uid = r.json()["user_id"]
     r = await client.post("/api/auth/login", json={"username": username, "password": "testpass123"})
     assert r.status_code == 200, r.text
-    return r.json()["access_token"], user_id
+    return r.json()["access_token"], uid
 
 
-async def _default_bot(client, token: str) -> int:
-    r = await client.get("/api/bots", headers=auth(token))
-    assert r.status_code == 200, r.text
-    return next(b for b in r.json() if b["is_default"])["id"]
+def test_compile_spec_compiles_prompt_and_validates_cron():
+    from core.automation.dsl import compile_spec
+
+    result = compile_spec({
+        "name": "daily",
+        "trigger": {"type": "schedule", "cron": "0 9 * * *"},
+        "actions": [],
+        "prompt": "整理未读",
+    })
+    assert result["valid"], result
+    assert result["spec"]["actions"][0]["type"] == "agent"
+
+    bad = compile_spec({
+        "name": "bad",
+        "trigger": {"type": "schedule", "cron": "not-a-cron"},
+        "actions": [{"type": "notify", "params": {"title": "x"}}],
+    })
+    assert not bad["valid"]
 
 
-async def _create_routine(client, token: str, bot_id: int, **overrides) -> dict:
-    payload = {
-        "name": "测试例程",
-        "trigger_type": "cron",
-        "cron_expr": "0 9 * * *",
-        "prompt": "总结今天的日程",
-        "enabled": True,
-        **overrides,
+def test_condition_evaluation():
+    from core.automation.dsl import evaluate_conditions
+
+    spec = {
+        "match": "all",
+        "conditions": [
+            {"field": "event.details.important", "op": "eq", "value": True},
+            {"field": "event.summary", "op": "contains", "value": "客户"},
+        ],
     }
-    r = await client.post(f"/api/bots/{bot_id}/routines", json=payload, headers=auth(token))
-    assert r.status_code == 200, r.text
-    return r.json()
+    ok, results = evaluate_conditions(spec, {
+        "event": {"details": {"important": True}, "summary": "客户邮件"},
+    })
+    assert ok and all(item["matched"] for item in results)
+
+    ng, _ = evaluate_conditions(spec, {
+        "event": {"details": {"important": False}, "summary": "普通邮件"},
+    })
+    assert not ng
 
 
-async def test_templates_are_available_and_auth_protected(client):
-    token, _ = await _new_user(client)
-    assert (await client.get("/api/automation/templates")).status_code == 401
+async def test_manual_automation_executes_actions(client):
+    token, uid = await _new_user(client)
 
-    r = await client.get("/api/automation/templates", headers=auth(token))
-    assert r.status_code == 200, r.text
-    keys = {t["key"] for t in r.json()["templates"]}
-    assert {"morning_brief", "daily_review", "mail_triage", "file_summary"} <= keys
+    from core.automation.executor import execute_automation
+    from core.bots.registry import get_or_create_default_bot
+    from core.bots.routines import create_routine
 
-
-async def test_natural_language_parser_fallback(client):
-    token, _ = await _new_user(client)
-
-    r = await client.post(
-        "/api/automation/parse", json={"text": "每天 8:30 生成晨报"}, headers=auth(token)
+    bot = await get_or_create_default_bot(uid)
+    routine = await create_routine(
+        uid, bot.id, "auto todo",
+        spec={
+            "name": "auto todo",
+            "trigger": {"type": "manual"},
+            "match": "all",
+            "conditions": [],
+            "actions": [{"type": "todo", "params": {"title": "自动化创建"}}],
+        },
     )
-    assert r.status_code == 200, r.text
-    draft = r.json()["draft"]
-    assert draft["trigger_type"] == "cron"
-    assert draft["cron_expr"] == "30 8 * * *"
+    result = await execute_automation(routine.id, "manual", manual={})
+    assert result["status"] == "succeeded", result
 
-    r = await client.post(
-        "/api/automation/parse", json={"text": "每周一 9 点提醒我开周会"}, headers=auth(token)
-    )
-    draft = r.json()["draft"]
-    assert draft["cron_expr"] == "0 9 * * 1"
-
-    r = await client.post(
-        "/api/automation/parse", json={"text": "每次上传文件后帮我总结内容"}, headers=auth(token)
-    )
-    draft = r.json()["draft"]
-    assert draft["trigger_type"] == "event"
-    assert draft["event_type"] == "file.uploaded"
-
-
-async def test_create_routine_from_template_and_scope(client):
-    token_a, _ = await _new_user(client)
-    token_b, _ = await _new_user(client)
-    bot_id = await _default_bot(client, token_a)
-
-    r = await client.post(
-        "/api/automation/from-template",
-        json={"bot_id": bot_id, "template_key": "mail_triage"},
-        headers=auth(token_a),
-    )
-    assert r.status_code == 200, r.text
-    routine = r.json()
-    assert routine["trigger_type"] == "event"
-    assert routine["event_type"] == "mail.received"
-    # Importance is decided by the model now, not by an event filter.
-    assert routine["event_filter"] in (None, {})
-
-    # Another user cannot create routines on this bot.
-    r = await client.post(
-        "/api/automation/from-template",
-        json={"bot_id": bot_id, "template_key": "morning_brief"},
-        headers=auth(token_b),
-    )
-    assert r.status_code == 404
-
-
-async def test_dry_run_returns_plan_without_creating_a_run(client):
+    from sqlalchemy import select
     from core.database.session import async_session
-    from core.bots.models import BotRun
-    from sqlalchemy import func, select
-
-    token, user_id = await _new_user(client)
-    bot_id = await _default_bot(client, token)
-    routine = await _create_routine(client, token, bot_id)
+    from plugins.todo.backend.models import PluginTodoItem
 
     async with async_session() as db:
-        before = (await db.execute(
-            select(func.count(BotRun.id)).where(BotRun.user_id == user_id)
-        )).scalar()
+        row = (await db.execute(
+            select(PluginTodoItem).where(
+                PluginTodoItem.user_id == uid,
+                PluginTodoItem.title == "自动化创建",
+            )
+        )).scalar_one_or_none()
+    assert row is not None
 
-    r = await client.post(
-        f"/api/automation/routines/{routine['id']}/dry-run", headers=auth(token)
+
+async def test_event_condition_skips_and_is_idempotent(client):
+    _, uid = await _new_user(client)
+
+    from core.automation.executor import execute_automation
+    from core.bots.registry import get_or_create_default_bot
+    from core.bots.routines import create_routine
+
+    bot = await get_or_create_default_bot(uid)
+    routine = await create_routine(
+        uid, bot.id, "important mail",
+        spec={
+            "name": "important mail",
+            "trigger": {"type": "event", "event_type": "mail.received"},
+            "match": "all",
+            "conditions": [
+                {"field": "event.details.important", "op": "eq", "value": True},
+            ],
+            "actions": [{"type": "todo", "params": {"title": "重要邮件跟进"}}],
+        },
     )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["dry_run"] is True
-    assert body["plan"]
-    assert len(body["schedule"]["next_runs"]) == 3
-    assert body["schedule"]["next_runs"][0]
-
-    async with async_session() as db:
-        after = (await db.execute(
-            select(func.count(BotRun.id)).where(BotRun.user_id == user_id)
-        )).scalar()
-    assert after == before
-
-
-async def test_routine_run_history_and_stats(client):
-    from core.database.session import async_session
-    from core.bots.models import BotRun
-
-    token, user_id = await _new_user(client)
-    bot_id = await _default_bot(client, token)
-    routine = await _create_routine(client, token, bot_id)
-
-    async with async_session() as db:
-        db.add(BotRun(
-            bot_id=bot_id, user_id=user_id, routine_id=routine["id"],
-            trigger="cron", status="success", input="总结今天",
-            output="已完成", created_at=datetime.utcnow(),
-        ))
-        db.add(BotRun(
-            bot_id=bot_id, user_id=user_id, routine_id=routine["id"],
-            trigger="cron", status="failed", input="总结今天",
-            error="timeout", created_at=datetime.utcnow(),
-        ))
-        await db.commit()
-
-    r = await client.get(
-        f"/api/automation/routines/{routine['id']}/runs", headers=auth(token)
+    event = SimpleNamespace(
+        id=90001, event_type="mail.received", summary="普通邮件",
+        details={"important": False}, entity_type=None, entity_id=None,
     )
-    assert r.status_code == 200, r.text
-    runs = r.json()
-    assert len(runs) == 2
-    assert {x["status"] for x in runs} == {"success", "failed"}
+    first = await execute_automation(routine.id, "event", event=event)
+    assert first["status"] == "skipped"
+    duplicate = await execute_automation(routine.id, "event", event=event)
+    assert duplicate["status"] == "skipped" and duplicate.get("reason") == "duplicate"
 
-    r = await client.get(
-        f"/api/automation/routines/{routine['id']}/stats", headers=auth(token)
-    )
-    assert r.status_code == 200, r.text
-    stats = r.json()
-    assert stats["total"] == 2
-    assert stats["by_status"]["failed"] == 1
-
-    r = await client.get("/api/automation/overview", headers=auth(token))
-    assert r.status_code == 200, r.text
-    assert r.json()["routines_total"] >= 1
-
-
-async def test_routine_logs_are_user_scoped(client):
-    token_a, _ = await _new_user(client)
-    token_b, _ = await _new_user(client)
-    bot_id = await _default_bot(client, token_a)
-    routine = await _create_routine(client, token_a, bot_id)
-
-    r = await client.get(
-        f"/api/automation/routines/{routine['id']}/runs", headers=auth(token_b)
-    )
-    assert r.status_code == 404
-    r = await client.post(
-        f"/api/automation/routines/{routine['id']}/dry-run", headers=auth(token_b)
-    )
-    assert r.status_code == 404
+    event.details = {"important": True}
+    event.id = 90002
+    ok = await execute_automation(routine.id, "event", event=event)
+    assert ok["status"] == "succeeded"

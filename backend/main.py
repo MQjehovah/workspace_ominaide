@@ -40,6 +40,9 @@ async def lifespan(app: FastAPI):
     import plugins.projects.backend.models  # noqa
     import plugins.schedule.backend.models  # noqa
     import core.bots.models  # noqa
+    import core.automation.models  # noqa
+    import core.captures.models  # noqa
+    import core.people.models  # noqa
     import core.meetings.models  # noqa
     import core.skills.models  # noqa
     import core.observability.models  # noqa
@@ -67,6 +70,8 @@ async def lifespan(app: FastAPI):
     worker_task = asyncio.create_task(worker_loop())
     from core.auth.domain.cleanup import register_cleanup_handlers
     register_cleanup_handlers()
+    from core.captures.service import register_capture_handlers
+    register_capture_handlers()
     from core.jobs.service import start_worker as start_jobs_worker
     jobs_task = start_jobs_worker()
     scheduler_task = asyncio.create_task(scheduler_loop())
@@ -157,6 +162,12 @@ app.include_router(auth_router)
 from core.dingtalk.router import router as dingtalk_router
 app.include_router(dingtalk_router)
 
+from core.captures.router import router as captures_router
+app.include_router(captures_router)
+
+from core.people.router import router as people_router
+app.include_router(people_router)
+
 from core.wschannel import router as host_channel_router
 app.include_router(host_channel_router)
 
@@ -212,8 +223,9 @@ app.include_router(agent_router)
 from core.connectors.router import router as connectors_router
 app.include_router(connectors_router)
 
-from core.automation.router import router as automation_dsl_router
+from core.automation.router import router as automation_dsl_router, alias_router as automation_alias_router
 app.include_router(automation_dsl_router)
+app.include_router(automation_alias_router)
 
 from core.meetings.router import router as meetings_router
 app.include_router(meetings_router)

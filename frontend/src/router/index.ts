@@ -39,6 +39,18 @@ const router = createRouter({
           component: () => import('@/views/Insights.vue')
         },
         {
+          path: 'captures',
+          name: 'Captures',
+          meta: { title: '随手记' },
+          component: () => import('@/views/Captures.vue')
+        },
+        {
+          path: 'people',
+          name: 'People',
+          meta: { title: '人物' },
+          component: () => import('@/views/People.vue')
+        },
+        {
           path: 'about',
           name: 'About',
           meta: { title: '关于我' },

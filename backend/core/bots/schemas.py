@@ -129,6 +129,7 @@ class RoutineCreate(BaseModel):
     event_filter: dict | None = None
     prompt: str | None = None
     enabled: bool = True
+    spec: dict | None = None
 
 
 class RoutineUpdate(BaseModel):
@@ -139,6 +140,7 @@ class RoutineUpdate(BaseModel):
     event_filter: dict | None = None
     prompt: str | None = None
     enabled: bool | None = None
+    spec: dict | None = None
 
 
 class RoutineOut(BaseModel):
@@ -155,6 +157,27 @@ class RoutineOut(BaseModel):
     next_run_at: datetime | None = None
     last_run_at: datetime | None = None
     last_status: str | None = None
+    last_error: str | None = None
+    run_count: int = 0
+    spec: dict | None = None
+    created_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class AutomationRunOut(BaseModel):
+    id: int
+    routine_id: int
+    user_id: int
+    trigger_type: str
+    trigger_context: dict | None = None
+    spec_snapshot: dict | None = None
+    status: str
+    action_results: list | None = None
+    agent_run_id: int | None = None
+    error: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}

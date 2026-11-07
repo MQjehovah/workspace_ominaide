@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/file_item.dart';
 import '../models/chat_session.dart';
@@ -1918,6 +1919,80 @@ class ApiService {
 
   Future<void> dingtalkLogout() async {
     final res = await post('/dingtalk/logout', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+
+  // -- Quick capture --
+  Future<Map<String, dynamic>> createCapture({
+    required String kind,
+    String? url,
+    String? text,
+    String? title,
+    String source = 'mobile',
+  }) async {
+    final res = await _http.post(
+      Uri.parse('$_baseUrl/api/captures'),
+      headers: _headers,
+      body: jsonEncode({
+        'kind': kind,
+        'source': source,
+        if (url != null) 'url': url,
+        if (text != null) 'text': text,
+        if (title != null) 'title': title,
+      }),
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> uploadCapture(
+    List<int> bytes,
+    String filename, {
+    String? text,
+    String? title,
+    String? mimeType,
+    String source = 'mobile',
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$_baseUrl/api/captures/upload'),
+    );
+    if (_token != null) {
+      request.headers['Authorization'] = 'Bearer $_token';
+    }
+    request.fields['text'] = text ?? '';
+    request.fields['title'] = title ?? '';
+    request.fields['source'] = source;
+    request.files.add(http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: filename,
+      contentType: mimeType == null ? null : MediaType.parse(mimeType),
+    ));
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> listCaptures({int limit = 50}) async {
+    final res = await get('/captures?limit=$limit');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    final data = _asMap(decodeJson(res));
+    return _asMapList(data['items']);
+  }
+
+  Future<void> convertCapture(int id, String target, {Map<String, dynamic>? params}) async {
+    final res = await post('/captures/$id/convert', {
+      'target': target,
+      if (params != null) 'params': params,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<void> analyzeCapture(int id) async {
+    final res = await post('/captures/$id/analyze', const {});
     if (res.statusCode != 200) throw Exception(_extractError(res));
   }
 }

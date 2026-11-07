@@ -26,6 +26,14 @@
         <el-icon><ChatLineRound /></el-icon>
         <span>对话</span>
       </el-menu-item>
+      <el-menu-item index="/captures">
+        <el-icon><Collection /></el-icon>
+        <span>随手记</span>
+      </el-menu-item>
+      <el-menu-item index="/people">
+        <el-icon><UserFilled /></el-icon>
+        <span>人物</span>
+      </el-menu-item>
       <el-menu-item index="/insights">
         <el-icon><Sunrise /></el-icon>
         <span>每日回顾</span>
@@ -113,7 +121,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   Folder, Document, User, UserFilled, Monitor, Setting, SwitchButton,
   DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound,
-  Sunrise, Message, ChatLineRound, Connection, Odometer,
+  Sunrise, Message, ChatLineRound, Connection, Odometer, Collection,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 

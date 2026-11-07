@@ -20,6 +20,7 @@ import 'inbox_screen.dart';
 import 'library_screen.dart';
 import 'notes_screen.dart';
 import 'projects_screen.dart';
+import 'quick_capture_screen.dart';
 import 'schedule_screen.dart';
 import 'search_screen.dart';
 import 'todo_screen.dart';
@@ -264,6 +265,15 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                 title: '$_greeting，${_name.isEmpty ? '你好' : _name}',
                 subtitle: _todayLabel,
                 actions: [
+                  RoundIconButton(
+                    icon: Icons.add_rounded,
+                    tooltip: '随手记',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   RoundIconButton(
                     icon: Icons.search_rounded,
                     tooltip: '搜索',

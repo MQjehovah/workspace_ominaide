@@ -19,6 +19,7 @@ from core.bots.schemas import (
     BotUpdate,
     MemoryCreate,
     MemoryOut,
+    AutomationRunOut,
     RoutineCreate,
     RoutineOut,
     RoutineUpdate,
@@ -232,6 +233,7 @@ async def create_bot_routine(
             event_filter=payload.event_filter,
             prompt=payload.prompt,
             enabled=payload.enabled,
+            spec=payload.spec,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -270,18 +272,35 @@ async def delete_bot_routine(
     return {"message": "Routine deleted"}
 
 
-@router.post("/{bot_id}/routines/{routine_id}/run", response_model=RunOut, status_code=202)
+@router.post("/{bot_id}/routines/{routine_id}/run", status_code=202)
 async def run_bot_routine(
-    bot_id: int, routine_id: int, user: dict = Depends(get_current_user)
+    bot_id: int,
+    routine_id: int,
+    force: bool = Query(False),
+    user: dict = Depends(get_current_user),
 ):
     await _resolve_bot(user["id"], bot_id)
     routine = await routine_service.get_routine(user["id"], routine_id)
     if routine is None or routine.bot_id != bot_id:
         raise HTTPException(status_code=404, detail="Routine not found")
-    run = await routine_service.run_routine_now(user["id"], routine_id)
-    if run is None:
+    result = await routine_service.run_routine_now(user["id"], routine_id, force=force)
+    if result is None:
         raise HTTPException(status_code=422, detail="Routine could not be run")
-    return run
+    return result
+
+
+@router.get("/{bot_id}/routines/{routine_id}/runs", response_model=list[AutomationRunOut])
+async def list_bot_routine_runs(
+    bot_id: int,
+    routine_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    user: dict = Depends(get_current_user),
+):
+    await _resolve_bot(user["id"], bot_id)
+    routine = await routine_service.get_routine(user["id"], routine_id)
+    if routine is None or routine.bot_id != bot_id:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    return await routine_service.list_routine_runs(user["id"], routine_id, limit)
 
 
 # ---------------------------------------------------------------------------

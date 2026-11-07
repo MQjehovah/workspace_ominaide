@@ -124,5 +124,17 @@ async def extract_and_store_entities(user_id: int, content: str, source_type: st
                     "last_seen": datetime.utcnow().isoformat(),
                 },
             )
+            if etype == "person":
+                try:
+                    from core.people import service as people_service
+
+                    await people_service.mention_person(
+                        user_id, name,
+                        source_type=source_type,
+                        source_id=source_id,
+                        title=title,
+                    )
+                except Exception as exc:
+                    log.warning("[entity] people index error: %s", exc)
     except Exception as e:
         log.warning(f"[entity] error: {e}")

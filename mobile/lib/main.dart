@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'services/bot_selection_service.dart';
+import 'services/share_intent_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/quick_capture_screen.dart';
 import 'theme/app_theme.dart';
 import 'widgets/app_lock_gate.dart';
 
@@ -12,6 +14,7 @@ final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await appTheme.load();
+  await ShareIntentService().init();
   ApiService().onUnauthorized = () {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _messengerKey.currentState?.showSnackBar(
@@ -86,6 +89,9 @@ class _SplashScreenState extends State<SplashScreen> {
       _pullRemoteAppearance();
     }
     if (!mounted) return;
+    final shared = ApiService().isLoggedIn
+        ? ShareIntentService().takePending()
+        : null;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -94,6 +100,19 @@ class _SplashScreenState extends State<SplashScreen> {
             : const LoginScreen(),
       ),
     );
+    if (shared != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => QuickCaptureScreen(
+              initialText: shared.text,
+              initialUrl: shared.url,
+              initialImagePath: shared.imagePath,
+            ),
+          ),
+        );
+      });
+    }
   }
 
   Future<void> _pullRemoteAppearance() async {
