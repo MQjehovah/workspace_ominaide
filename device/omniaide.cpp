@@ -465,6 +465,11 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
                 size_t copy = dlen < space ? dlen : space;
                 memcpy(pcmBuf + accLen, audioBuf, copy);
                 accLen += copy;
+                // 边收边播，但先攒够约 4s：网关的 TTS 是 2s 一块、
+                // 块间有 2-3s 间隔，小缓冲会断断续续。
+                if (accLen >= TTS_PREBUFFER_BYTES) {
+                    if (!flushPcm()) { finished = true; return false; }
+                }
             }
         } else if (!strcmp(t, "status")) {
             if (cb) return cb("status", doc["text"] | "", nullptr, 0, 0, ud);

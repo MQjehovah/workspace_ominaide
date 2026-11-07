@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     tts_format: str = "wav"
     # Some gateways (e.g. xzrobot) reject response_format entirely.
     tts_send_format: bool = False
+    # Optional streaming TTS endpoint (gateway path). Empty disables streaming
+    # and keeps the non-streaming /v1/audio/speech path.
+    # Example: https://ai.xzrobot.com/gateway/api/v1/audio/speech/stream
+    tts_stream_url: str = ""
     # Personal-assistant agent persona + conversation memory
     assistant_system_prompt: str = (
         "你是 OmniAide，一个私有化部署的个人 AI 助手，只服务于当前用户。"
