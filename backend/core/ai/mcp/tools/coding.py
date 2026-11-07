@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from core.ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
 from core.config.settings import settings
+from core.paths import projects_root
 
 
 def _ok(text: str) -> MCPCallResponse:
@@ -20,8 +21,8 @@ def _err(text: str) -> MCPCallResponse:
     return MCPCallResponse(isError=True, content=[MCPContent(text=text)])
 
 
-def _resolve_project(project: str) -> Path:
-    root = Path(settings.coding_workspace_root).expanduser().resolve()
+def _resolve_project(user_id: int, project: str) -> Path:
+    root = projects_root(user_id)
     path = Path(project).expanduser().resolve()
     if path != root and root not in path.parents:
         raise ValueError(f"项目不在工作区内：{project}")
@@ -41,7 +42,7 @@ async def delegate_coding(user_id: int, args: dict) -> MCPCallResponse:
     if not project or not instruction:
         return _err("project 和 instruction 必填")
     try:
-        _resolve_project(project)
+        _resolve_project(user_id, project)
     except ValueError as e:
         return _err(str(e))
 
@@ -76,7 +77,7 @@ async def delegate_coding(user_id: int, args: dict) -> MCPCallResponse:
 async def list_coding_projects(user_id: int, args: dict) -> MCPCallResponse:
     from core.coding.workspace import list_projects
 
-    projects = list_projects(settings.coding_workspace_root)
+    projects = list_projects(str(projects_root(user_id)))
     if not projects:
         return _ok("工作区内没有可用的项目。")
     lines = ["可用项目："]
@@ -188,7 +189,7 @@ TOOLS = [
                 "properties": {
                     "project": {
                         "type": "string",
-                        "description": "项目绝对路径，例如 /workspace/workspace_ominaide",
+                        "description": "项目绝对路径，位于当前用户的 projects 目录下",
                     },
                     "instruction": {
                         "type": "string",

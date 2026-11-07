@@ -6,6 +6,7 @@ import '../services/music_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import '../widgets/server_settings_dialog.dart';
+import 'dingtalk_bind_screen.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -19,6 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _serverUrl = '';
   int _cacheBytes = 0;
   bool _appLock = false;
+  String _dingtalkLabel = '检查中';
 
   @override
   void initState() {
@@ -26,6 +28,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _serverUrl = ApiService().baseUrl;
     _loadCacheSize();
     _loadAppLock();
+    _loadDingtalk();
+  }
+
+  Future<void> _loadDingtalk() async {
+    try {
+      final status = await ApiService().dingtalkStatus();
+      if (!mounted) return;
+      setState(() => _dingtalkLabel =
+          status['authenticated'] == true ? '已绑定' : '未绑定');
+    } catch (_) {
+      if (mounted) setState(() => _dingtalkLabel = '读取失败');
+    }
+  }
+
+  Future<void> _openDingtalk() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const DingtalkBindScreen()),
+    );
+    await _loadDingtalk();
   }
 
   Future<void> _loadAppLock() async {
@@ -143,6 +165,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Column(
                       children: [
                         _row(palette, '服务器', _serverUrl, onTap: _editServer),
+                        Divider(height: 18, color: palette.line),
+                        _row(palette, '钉钉', _dingtalkLabel,
+                            onTap: _openDingtalk),
                         Divider(height: 18, color: palette.line),
                         _row(palette, '音乐缓存', _fmtBytes(_cacheBytes),
                             onTap: _clearCache,

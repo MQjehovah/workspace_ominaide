@@ -4,13 +4,12 @@ TEMPLATES = [
     {
         "key": "dingtalk",
         "name": "钉钉",
-        "description": "通过本机 dws CLI 读取消息、日程、待办并发送消息。",
+        "description": "在「设置 → 钉钉」绑定本人账号后，通过 dws CLI 读取消息、日程、待办并发送消息。",
         "transport": "stdio",
         "command": "python",
         "args": ["-m", "mcp_servers.dingtalk"],
         "scope": "backend",
         "risk_default": "read",
-        "env_hints": ["DWS_CONFIG_DIR"],
     },
     {
         "key": "home-assistant",

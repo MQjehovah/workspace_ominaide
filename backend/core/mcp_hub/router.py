@@ -132,8 +132,20 @@ async def list_servers(user: dict = Depends(get_current_user)):
 @router.post("/servers")
 async def create_server(req: McpServerCreate, user: dict = Depends(get_current_user)):
     slug = _slugify(req.slug or req.name)
+    # Tool names are global. A shared "dingtalk" slug would mix users, so every
+    # DingTalk server is namespaced by owner.
+    if slug.startswith("dingtalk") or "钉钉" in (req.name or ""):
+        slug = f"dingtalk-{user['id']}"
     if req.transport not in ("stdio", "http"):
         raise HTTPException(status_code=422, detail="transport must be stdio or http")
+    # A stdio MCP can run any command inside the backend container, which would
+    # break per-user isolation. Only admins may register them; normal users use
+    # the built-in DingTalk binding or HTTP MCP servers.
+    if req.transport == "stdio" and not user.get("is_admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="普通用户不能创建 stdio MCP；请在设置中绑定钉钉，或使用 HTTP MCP",
+        )
     if req.transport == "stdio" and not req.command:
         raise HTTPException(status_code=422, detail="stdio server requires command")
     if req.transport == "http" and not req.url:

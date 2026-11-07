@@ -20,12 +20,17 @@ def _command(args: list[str]) -> list[str]:
     return [binary, *args]
 
 
-async def _execute(args: list[str], timeout: float) -> tuple[str, str, int]:
+async def _execute(
+    args: list[str],
+    timeout: float,
+    env: dict[str, str] | None = None,
+) -> tuple[str, str, int]:
     proc = await asyncio.create_subprocess_exec(
         *_command(args),
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env={**os.environ, **(env or {})} if env else None,
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -52,8 +57,17 @@ def _failure_message(stdout: str, stderr: str, returncode: int) -> str:
     return message[:1000]
 
 
-async def run_dws(args: list[str], timeout: float = 60.0) -> dict:
-    stdout, stderr, returncode = await _execute(args, timeout)
+async def run_dws(
+    args: list[str],
+    timeout: float = 60.0,
+    env: dict[str, str] | None = None,
+) -> dict:
+    """Run ``dws`` as the user described by ``env``.
+
+    Callers that act on a user's own DingTalk account MUST pass
+    ``core.paths.dingtalk_env(user_id)`` so config and token store stay isolated.
+    """
+    stdout, stderr, returncode = await _execute(args, timeout, env)
     if returncode != 0:
         raise DwSError(_failure_message(stdout, stderr, returncode))
     if not stdout:
@@ -64,9 +78,13 @@ async def run_dws(args: list[str], timeout: float = 60.0) -> dict:
         raise DwSError(f"dws 返回非 JSON: {stdout[:300]} ({e})")
 
 
-async def run_dws_text(args: list[str], timeout: float = 60.0) -> str:
+async def run_dws_text(
+    args: list[str],
+    timeout: float = 60.0,
+    env: dict[str, str] | None = None,
+) -> str:
     """Run a command whose output is human-readable text (help/schema)."""
-    stdout, stderr, returncode = await _execute(args, timeout)
+    stdout, stderr, returncode = await _execute(args, timeout, env)
     if returncode != 0:
         raise DwSError(_failure_message(stdout, stderr, returncode))
     return stdout

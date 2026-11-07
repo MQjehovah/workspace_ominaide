@@ -171,29 +171,42 @@ async def _sync_dingtalk() -> None:
         from core.mcp_hub.models import McpServer
         from sqlalchemy import select
 
+        from core.paths import dingtalk_env
+
         now = datetime.now()
         start = (now - timedelta(hours=_settings.dingtalk_sync_hours)).astimezone().replace(microsecond=0)
         start_iso = start.isoformat()
         end_iso = now.astimezone().replace(microsecond=0).isoformat()
 
-        payload = await run_dws(
-            ["chat", "+recent-conversations", "--start", start_iso, "--format", "json"],
-            timeout=120,
-        )
-        conversations = _unwrap(payload, "conversations")
-        if not conversations:
-            return
-
         async with async_session() as db:
             users = list((await db.execute(
                 select(McpServer.user_id).where(
-                    McpServer.slug == "dingtalk", McpServer.enabled == True  # noqa: E712
+                    McpServer.slug.like("dingtalk%"),
+                    McpServer.enabled == True,  # noqa: E712
                 )
             )).scalars().all())
-        user_ids = sorted(set(users)) or [1]
+        # No default fallback: a user without their own DingTalk config must not
+        # receive another user's messages.
+        user_ids = sorted({int(uid) for uid in users})
+        if not user_ids:
+            return
 
         day_key = now.strftime("%Y-%m-%d")
         for user_id in user_ids:
+            env = dingtalk_env(user_id)
+            try:
+                payload = await run_dws(
+                    ["chat", "+recent-conversations", "--start", start_iso, "--format", "json"],
+                    timeout=120,
+                    env=env,
+                )
+            except Exception as e:
+                print(f"[scheduler] dingtalk user {user_id} skipped: {e}")
+                continue
+            conversations = _unwrap(payload, "conversations")
+            if not conversations:
+                continue
+
             existing: set[tuple[str, str]] = set()
             async with async_session() as db:
                 rows = await db.execute(
@@ -227,6 +240,7 @@ async def _sync_dingtalk() -> None:
                             "--format", "json",
                         ],
                         timeout=180,
+                        env=env,
                     )
                 except Exception:
                     continue

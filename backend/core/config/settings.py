@@ -101,7 +101,13 @@ class Settings(BaseSettings):
     dingtalk_calendar_days_before: int = 7
     dingtalk_calendar_days_after: int = 90
     intelligence_layer_enabled: bool = True
-    coding_workspace_root: str = "/workspace"
+    # Every user gets an isolated runtime directory: <workspace_root>/<user_id>.
+    # projects/ holds coding projects, dingtalk/ holds that user's DWS config and
+    # token store. Keep workspace_root on the mounted data volume.
+    workspace_root: str = "/data/workspace"
+    # Legacy/test override. When set, projects use this directory directly
+    # instead of <workspace_root>/<user_id>/projects. Leave empty in production.
+    coding_workspace_root: str = ""
     coding_max_turns: int = 40
     coding_command_timeout_ms: int = 120000
     # One-shot delivery: after the agent finishes, verify -> branch -> commit -> push.

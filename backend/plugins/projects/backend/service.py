@@ -4,15 +4,15 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from core.config.settings import settings
 from core.coding.models import CodingRun
+from core.paths import ensure_user_workspace, projects_root
 from core.bots.models import BotRun
 from core.database.session import async_session
 from plugins.projects.backend.models import Project
 
 
-def _validate_path(value: str) -> str:
-    root = Path(settings.coding_workspace_root).expanduser().resolve()
+def _validate_path(user_id: int, value: str) -> str:
+    root = projects_root(user_id)
     path = Path(value).expanduser().resolve()
     if path != root and root not in path.parents:
         raise ValueError(f"项目不在工作区内：{value}")
@@ -51,9 +51,13 @@ async def create_project(user_id: int, data) -> Project:
         raise ValueError("项目名称不能为空")
     raw_path = (data.path or "").strip()
     if not raw_path:
-        root = Path(settings.coding_workspace_root).expanduser().resolve()
-        raw_path = str(root / name)
-    path = _validate_path(raw_path)
+        ensure_user_workspace(user_id)
+        root = projects_root(user_id)
+        root.mkdir(parents=True, exist_ok=True)
+        target = root / name
+        target.mkdir(parents=True, exist_ok=True)
+        raw_path = str(target)
+    path = _validate_path(user_id, raw_path)
 
     repo_url = (data.repo_url or "").strip() or None
     if data.is_git and not repo_url:
@@ -99,7 +103,7 @@ async def update_project(user_id: int, project_id: int, data) -> Project | None:
             return None
         fields = data.model_dump(exclude_unset=True)
         if "path" in fields and fields["path"]:
-            fields["path"] = _validate_path(fields["path"])
+            fields["path"] = _validate_path(user_id, fields["path"])
         for key, value in fields.items():
             setattr(project, key, value)
         if not project.is_git:
@@ -128,7 +132,7 @@ async def delete_project(user_id: int, project_id: int) -> bool:
             return False
 
         target = Path(project.path).expanduser().resolve()
-        root = Path(settings.coding_workspace_root).expanduser().resolve()
+        root = projects_root(user_id)
         if target == root or root not in target.parents:
             raise ValueError(f"拒绝删除工作区外的目录：{project.path}")
         if target.exists():

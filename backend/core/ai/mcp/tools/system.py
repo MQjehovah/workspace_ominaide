@@ -1,6 +1,6 @@
 """General shell access for the assistant.
 
-Unlike the coding sandbox (which is limited to /workspace), this tool is meant
+Unlike the coding sandbox (which is limited to the user's projects dir), this tool is meant
 for everyday server operations: inspecting processes, running ssh/curl, etc.
 It runs inside the backend container as the backend user (root in production)
 with a scrubbed environment, and every call is classified as ``exec`` so the
@@ -108,7 +108,7 @@ TOOLS = [
             description=(
                 "在服务器后端容器内执行 shell 命令（后端用户权限，可运行 ssh、curl、"
                 "进程/文件检查等）。命令需要用户审批。不要用它修改代码，改代码请用 "
-                "delegate_coding；Coding Agent 自己限制在 /workspace 内。"
+                "delegate_coding；Coding Agent 只限制在当前用户的项目目录内。"
             ),
             inputSchema={
                 "type": "object",

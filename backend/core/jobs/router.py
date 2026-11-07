@@ -59,11 +59,10 @@ async def list_jobs(
     user: dict = Depends(get_current_user),
 ):
     async with async_session() as db:
-        query = select(BackgroundJob).order_by(BackgroundJob.id.desc()).limit(limit)
-        if not user.get("is_admin"):
-            query = query.where(BackgroundJob.user_id == user["id"])
+        query = select(BackgroundJob).where(BackgroundJob.user_id == user["id"])
         if status:
             query = query.where(BackgroundJob.status == status)
+        query = query.order_by(BackgroundJob.id.desc()).limit(limit)
         rows = (await db.execute(query)).scalars().all()
     return {"items": [_out(job) for job in rows]}
 
@@ -72,9 +71,7 @@ async def list_jobs(
 async def retry_job(job_id: int, user: dict = Depends(get_current_user)):
     async with async_session() as db:
         job = await db.get(BackgroundJob, job_id)
-        if job is None or (
-            job.user_id != user["id"] and not user.get("is_admin")
-        ):
+        if job is None or job.user_id != user["id"]:
             raise HTTPException(404, detail="任务不存在")
         if job.status not in {"failed", "dead"}:
             raise HTTPException(409, detail="只有失败任务可以重试")
@@ -90,9 +87,7 @@ async def retry_job(job_id: int, user: dict = Depends(get_current_user)):
 async def cancel_job(job_id: int, user: dict = Depends(get_current_user)):
     async with async_session() as db:
         job = await db.get(BackgroundJob, job_id)
-        if job is None or (
-            job.user_id != user["id"] and not user.get("is_admin")
-        ):
+        if job is None or job.user_id != user["id"]:
             raise HTTPException(404, detail="任务不存在")
         if job.status in {"done", "dead"}:
             raise HTTPException(409, detail="任务已结束")

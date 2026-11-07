@@ -41,6 +41,15 @@ def _slugify(value: str) -> str:
     return slug[:64] or "mcp"
 
 
+def is_dingtalk_server(server: McpServer) -> bool:
+    """Detect a DingTalk stdio server regardless of its historical slug."""
+    if (server.slug or "").lower().startswith("dingtalk"):
+        return True
+    if "钉钉" in (server.name or ""):
+        return True
+    return any("mcp_servers.dingtalk" in str(arg) for arg in (server.args or []))
+
+
 def _infer_risk(tool_name: str, default: str) -> str:
     name = (tool_name or "").lower()
     if any(k in name for k in ("send", "post", "webhook", "publish")):
@@ -105,10 +114,18 @@ class McpHub:
             return HttpMcpConnection(server.url, _decrypt_json(server.headers_encrypted))
         if not server.command:
             raise McpError("stdio MCP 服务器缺少 command")
+        env = _decrypt_json(server.env_encrypted)
+        if is_dingtalk_server(server):
+            # Force the per-user DWS config + HOME even if an old global
+            # DWS_CONFIG_DIR was stored on the row.
+            from core.paths import dingtalk_env, ensure_user_workspace
+
+            ensure_user_workspace(server.user_id)
+            env.update(dingtalk_env(server.user_id))
         return StdioMcpConnection(
             server.command,
             list(server.args or []),
-            _decrypt_json(server.env_encrypted),
+            env,
         )
 
     async def connect_server(self, server_id: int, user_id: int | None = None) -> dict:

@@ -1789,4 +1789,27 @@ class ApiService {
     if (res.statusCode != 200) throw Exception(_extractError(res));
     return _asMapList(decodeJson(res));
   }
+
+  Future<Map<String, dynamic>> dingtalkStatus() async {
+    final res = await get('/dingtalk/status');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> startDingtalkLogin() async {
+    final res = await post('/dingtalk/login/start', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> dingtalkLoginStatus() async {
+    final res = await get('/dingtalk/login/status');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Future<void> dingtalkLogout() async {
+    final res = await post('/dingtalk/logout', const {});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
 }

@@ -132,6 +132,7 @@ async def update_schedule_event(user_id: int, args: dict) -> MCPCallResponse:
     if source == "dingtalk" and (start or payload_data.get("title") or payload_data.get("location")):
         if not external_id:
             return _err("该钉钉日程缺少 external_id，请先重新同步")
+        from core.paths import dingtalk_env
         from mcp_servers.dingtalk.dws_client import DwSError, run_dws
 
         cmd = ["calendar", "+update", "--event", external_id, "--format", "json", "--yes"]
@@ -145,7 +146,7 @@ async def update_schedule_event(user_id: int, args: dict) -> MCPCallResponse:
         if payload_data.get("location"):
             cmd += ["--location", payload_data["location"]]
         try:
-            await run_dws(cmd, timeout=120)
+            await run_dws(cmd, timeout=120, env=dingtalk_env(user_id))
         except DwSError as e:
             return _err(f"钉钉日程更新失败: {e}")
 
@@ -194,6 +195,7 @@ async def cancel_schedule_event(user_id: int, args: dict) -> MCPCallResponse:
         )
 
     if source == "dingtalk" and external_id:
+        from core.paths import dingtalk_env
         from mcp_servers.dingtalk.dws_client import DwSError, run_dws
 
         try:
@@ -201,6 +203,7 @@ async def cancel_schedule_event(user_id: int, args: dict) -> MCPCallResponse:
                 ["calendar", "+cancel-event", "--event", external_id,
                  "--format", "json", "--yes"],
                 timeout=120,
+                env=dingtalk_env(user_id),
             )
         except DwSError as e:
             return _err(f"钉钉日程取消失败: {e}")

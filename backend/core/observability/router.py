@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 
-from core.auth.dependencies import get_current_admin
+from core.auth.dependencies import get_current_user
 from core.database.session import async_session
 from core.observability.models import RequestTrace
 
@@ -23,7 +23,7 @@ def _percentile(values: list[int], fraction: float) -> int:
 @router.get("")
 async def metrics(
     hours: int = Query(24, ge=1, le=168),
-    user: dict = Depends(get_current_admin),
+    user: dict = Depends(get_current_user),
 ):
     since = datetime.now() - timedelta(hours=hours)
     async with async_session() as db:
@@ -33,7 +33,10 @@ async def metrics(
                     RequestTrace.kind,
                     RequestTrace.status,
                     RequestTrace.duration_ms,
-                ).where(RequestTrace.created_at >= since)
+                ).where(
+                    RequestTrace.created_at >= since,
+                    RequestTrace.user_id == user["id"],
+                )
             )
         ).all()
         slow = (
@@ -45,7 +48,10 @@ async def metrics(
                     RequestTrace.status,
                     RequestTrace.created_at,
                 )
-                .where(RequestTrace.created_at >= since)
+                .where(
+                    RequestTrace.created_at >= since,
+                    RequestTrace.user_id == user["id"],
+                )
                 .order_by(RequestTrace.duration_ms.desc())
                 .limit(20)
             )
@@ -53,7 +59,8 @@ async def metrics(
         total = (
             await db.execute(
                 select(func.count()).select_from(RequestTrace).where(
-                    RequestTrace.created_at >= since
+                    RequestTrace.created_at >= since,
+                    RequestTrace.user_id == user["id"],
                 )
             )
         ).scalar() or 0

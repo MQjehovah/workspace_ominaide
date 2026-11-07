@@ -155,36 +155,40 @@ async def sync_dingtalk_calendar(
     days_before: int = 7,
     days_after: int = 90,
 ) -> dict:
-    from core.config.settings import settings
     from core.mcp_hub.models import McpServer
+    from core.paths import dingtalk_env
     from mcp_servers.dingtalk.dws_client import run_dws
 
     if user_ids is None:
         async with async_session() as db:
             rows = list((await db.execute(
                 select(McpServer.user_id).where(
-                    McpServer.slug == "dingtalk",
+                    McpServer.slug.like("dingtalk%"),
                     McpServer.enabled == True,  # noqa: E712
                 )
             )).scalars().all())
-        user_ids = sorted(set(int(row) for row in rows)) or [1]
+        # Never fall back to user 1: unauthenticated users get no data at all.
+        user_ids = sorted({int(row) for row in rows})
 
     now = datetime.now().astimezone().replace(microsecond=0)
     start = (now - timedelta(days=max(0, days_before))).isoformat()
     end = (now + timedelta(days=max(1, days_after))).isoformat()
     counts = {"created": 0, "updated": 0, "skipped": 0, "users": len(user_ids)}
-    try:
-        payload = await run_dws(
-            ["calendar", "event", "list", "--start", start, "--end", end, "--format", "json"],
-            timeout=180,
-        )
-        events = _unwrap(payload, "events") or []
-    except Exception as e:
-        print(f"[schedule.sync] dingtalk calendar failed: {e}")
-        counts["error"] = str(e)[:300]
-        return counts
+    errors: list[str] = []
 
     for user_id in user_ids:
+        try:
+            payload = await run_dws(
+                ["calendar", "event", "list", "--start", start, "--end", end, "--format", "json"],
+                timeout=180,
+                env=dingtalk_env(user_id),
+            )
+            events = _unwrap(payload, "events") or []
+        except Exception as e:
+            print(f"[schedule.sync] dingtalk calendar user {user_id} failed: {e}")
+            errors.append(f"{user_id}: {str(e)[:200]}")
+            continue
+
         for raw in events:
             if not isinstance(raw, dict):
                 continue
@@ -194,6 +198,9 @@ async def sync_dingtalk_calendar(
             except Exception as e:
                 print(f"[schedule.sync] event {raw.get('id')} failed: {e}")
                 counts["skipped"] += 1
+
+    if errors:
+        counts["error"] = "; ".join(errors)[:300]
     if counts.get("created") or counts.get("updated"):
         print(f"[schedule.sync] dingtalk calendar: {counts}")
     return counts

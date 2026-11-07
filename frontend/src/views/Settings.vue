@@ -139,6 +139,52 @@
               </el-form-item>
             </el-form>
           </el-tab-pane>
+
+          <el-tab-pane label="钉钉" name="dingtalk">
+            <el-form label-width="120px" style="margin-top:12px;max-width:680px">
+              <el-form-item label="连接状态">
+                <el-tag :type="dingtalk.authenticated ? 'success' : 'info'">
+                  {{ dingtalk.authenticated ? '已绑定' : '未绑定' }}
+                </el-tag>
+                <span v-if="dingtalk.error" style="margin-left:10px;color:#f56c6c;font-size:12px">
+                  {{ dingtalk.error }}
+                </span>
+              </el-form-item>
+              <el-form-item label="我的目录">
+                <el-input :model-value="dingtalk.dingtalk_dir" disabled />
+              </el-form-item>
+              <el-form-item label="钉钉账号">
+                <div style="width:100%">
+                  <div v-if="dingtalkLogin && dingtalkLogin.status === 'pending'">
+                    <p style="margin:0 0 8px">
+                      请在钉钉中打开下面的链接，或输入授权码
+                      <strong style="font-size:16px;margin-left:6px">{{ dingtalkLogin.user_code }}</strong>
+                    </p>
+                    <el-link
+                      v-if="dingtalkLogin.verification_url"
+                      :href="dingtalkLogin.verification_url"
+                      target="_blank"
+                      type="primary"
+                    >
+                      {{ dingtalkLogin.verification_url }}
+                    </el-link>
+                    <p style="color:#909399;font-size:12px;margin:8px 0 0">
+                      等待授权中，完成后会自动刷新（{{ dingtalkLogin.expires_in }} 秒内有效）
+                    </p>
+                  </div>
+                  <div v-else>
+                    <el-button type="primary" :loading="dingtalkStarting" @click="startDingtalkLogin">
+                      {{ dingtalk.authenticated ? '重新绑定钉钉' : '绑定我的钉钉' }}
+                    </el-button>
+                    <el-button v-if="dingtalk.authenticated" @click="logoutDingtalk">解绑</el-button>
+                  </div>
+                </div>
+              </el-form-item>
+              <el-form-item label="当前账号">
+                <pre style="margin:0;max-height:220px;overflow:auto;font-size:12px">{{ dingtalkStatusText }}</pre>
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
         </el-tabs>
       </div>
     </div>
@@ -146,7 +192,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import client from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
@@ -230,6 +276,78 @@ function saveLlmConfig() {
   ElMessage.success('已保存')
 }
 
+const dingtalk = ref<any>({
+  configured: false,
+  authenticated: false,
+  status: {},
+  error: null,
+  dingtalk_dir: '',
+})
+const dingtalkLogin = ref<any>(null)
+const dingtalkStarting = ref(false)
+let dingtalkTimer: number | undefined
+
+const dingtalkStatusText = computed(() =>
+  JSON.stringify(dingtalk.value.status || {}, null, 2)
+)
+
+async function fetchDingtalkStatus() {
+  try {
+    const res = await client.get('/dingtalk/status')
+    dingtalk.value = res.data
+  } catch (e: any) {
+    dingtalk.value.error = e.response?.data?.detail || '无法读取钉钉状态'
+  }
+}
+
+async function pollDingtalkLogin() {
+  try {
+    const res = await client.get('/dingtalk/login/status')
+    dingtalkLogin.value = res.data
+    if (res.data.status === 'authorized') {
+      stopDingtalkPolling()
+      ElMessage.success('钉钉绑定成功')
+      await fetchDingtalkStatus()
+    } else if (res.data.status === 'failed') {
+      stopDingtalkPolling()
+      ElMessage.error(res.data.error || '钉钉绑定失败')
+    }
+  } catch { /* keep polling */ }
+}
+
+function stopDingtalkPolling() {
+  if (dingtalkTimer) {
+    window.clearInterval(dingtalkTimer)
+    dingtalkTimer = undefined
+  }
+}
+
+async function startDingtalkLogin() {
+  dingtalkStarting.value = true
+  try {
+    const res = await client.post('/dingtalk/login/start', {})
+    dingtalkLogin.value = res.data
+    stopDingtalkPolling()
+    dingtalkTimer = window.setInterval(pollDingtalkLogin, 2500)
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '启动钉钉登录失败')
+  } finally {
+    dingtalkStarting.value = false
+  }
+}
+
+async function logoutDingtalk() {
+  try {
+    await client.post('/dingtalk/logout', {})
+    dingtalkLogin.value = null
+    stopDingtalkPolling()
+    ElMessage.success('已解绑钉钉')
+    await fetchDingtalkStatus()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '解绑失败')
+  }
+}
+
 async function checkHealth() {
   try {
     const res = await client.get('/health')
@@ -304,5 +422,10 @@ onMounted(async () => {
   fetchProfile()
   checkHealth()
   loadLlmConfig()
+  fetchDingtalkStatus()
+})
+
+onUnmounted(() => {
+  stopDingtalkPolling()
 })
 </script>

@@ -67,26 +67,25 @@ GET    /api/mcp/templates
 
 ### 容器内登录 dws
 
-Dockerfile 已安装 Node + `dingtalk-workspace-cli@1.0.62`，并设置：
+Dockerfile 已安装 Node + `dingtalk-workspace-cli@1.0.62`。DingTalk 配置和 token 属于每个用户自己的运行态数据：
 
 ```
-DWS_CONFIG_DIR=/config/dws
+/data/workspace/<user_id>/dingtalk/.dws    # DWS_CONFIG_DIR
+/data/workspace/<user_id>/dingtalk/home    # HOME，token 在 ~/.local/share/dws-cli
 ```
 
-生产环境使用两个标准挂载点：
+对应宿主机 `/data/docker/omniaide/data/workspace/<user_id>/dingtalk`。每次调用 `dws` 都必须注入该用户的环境（`core.paths.dingtalk_env(user_id)`）；不再有全局 `DWS_CONFIG_DIR`，也不会在 `/config` 下保存 token。
 
-- `/data/docker/omniaide/data` → `/data`：workspace、skills、配件数据
-- `/data/docker/omniaide/config` → `/config`：DWS 配置、DWS token store、SSH 部署密钥
+绑定入口：Web「设置 → 钉钉」或移动端「设置 → 钉钉」，后端 API 为：
 
-DWS CLI 的加密 token 存在 `~/.local/share/dws-cli`（不在 `DWS_CONFIG_DIR` 内），镜像中已把该目录软链到 `/config/dws-cli`，所以容器重建后登录态不会丢。首次登录：
-
-```bash
-docker compose exec backend dws auth login --device --recommend
-# 或生产（docker run）
-docker exec -it omniaide-backend dws auth login --device --recommend
+```
+GET  /api/dingtalk/status
+POST /api/dingtalk/login/start
+GET  /api/dingtalk/login/status
+POST /api/dingtalk/logout
 ```
 
-手机钉钉确认即可。登录态持久化，token 自动刷新；失效时在「MCP 管理」看到连接错误。
+首次绑定使用设备流，页面展示授权码和链接；登录态持久化，token 自动刷新。
 
 ## 风险与权限
 

@@ -14,6 +14,7 @@ from core.coding import delivery, workspace
 from core.coding.context import build_project_context
 from core.coding.prompts import TOOLS, coding_system_prompt
 from core.config.settings import settings
+from core.paths import projects_root
 
 log = logging.getLogger("uvicorn")
 MAX_TOOL_RESULT_CHARS = 20_000
@@ -80,8 +81,8 @@ def _delivery_line(summary: dict | None) -> str:
     return "交付：" + "，".join(parts) if parts else ""
 
 
-def _resolve_project(project: str) -> Path:
-    root = Path(settings.coding_workspace_root).expanduser().resolve()
+def _resolve_project(user_id: int, project: str) -> Path:
+    root = projects_root(user_id)
     path = Path(project).expanduser().resolve()
     if path != root and root not in path.parents:
         raise ValueError(f"项目不在工作区内：{project}")
@@ -93,7 +94,7 @@ def _resolve_project(project: str) -> Path:
 async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
     """Execute one coding run and return ``{status, output, error}``."""
     try:
-        project = _resolve_project(coding_run.project_path or "")
+        project = _resolve_project(run.user_id, coding_run.project_path or "")
     except Exception as e:
         return {"status": "failed", "output": None, "error": str(e)}
 

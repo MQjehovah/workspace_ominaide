@@ -13,18 +13,15 @@ RUN npm config set registry https://registry.npmmirror.com && \
     npm install -g dingtalk-workspace-cli@1.0.62
 
 # Two standard mounts:
-#   /data   - mutable data (workspace, skills, uploads, desktop plugins)
-#   /config - credentials/config (DWS config + token store, SSH key)
-ENV DWS_CONFIG_DIR=/config/dws \
+#   /data   - mutable per-user data (workspace, skills, uploads, desktop plugins)
+#   /config - server-level credentials (SSH key)
+# DingTalk config/tokens are per-user under /data/workspace/<uid>/dingtalk, so
+# there is no global DWS_CONFIG_DIR anymore.
+ENV WORKSPACE_ROOT=/data/workspace \
     SKILLS_DIR=/data/skills \
-    CODING_WORKSPACE_ROOT=/data/workspace \
     CODING_SSH_KEY_PATH=/config/ssh/id_rsa \
     DESKTOP_PLUGINS_DIR=/data/desktop_plugins
-# The DWS CLI keeps its encrypted token outside DWS_CONFIG_DIR, under
-# ~/.local/share/dws-cli. Point it into /config so login survives recreation.
-RUN mkdir -p /data/skills /data/workspace /data/desktop_plugins \
-    /config/dws /config/ssh /root/.local/share && \
-    ln -sfn /config/dws-cli /root/.local/share/dws-cli
+RUN mkdir -p /data/skills /data/workspace /data/desktop_plugins /config/ssh /root/.local/share
 
 COPY requirements.txt .
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \

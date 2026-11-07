@@ -861,7 +861,7 @@ TOOLS = [
         mail_send,
     ),
     (
-        MCPTool(name="project_create", description="添加一个代码项目。路径留空时默认 /workspace/<名称>；Git 项目必须提供仓库地址。",
+        MCPTool(name="project_create", description="添加一个代码项目。路径留空时默认当前用户的 projects/<名称>；Git 项目必须提供仓库地址。",
                 inputSchema={"type": "object", "properties": {
                     "name": {"type": "string"},
                     "path": {"type": "string"},

@@ -138,6 +138,9 @@ app.add_middleware(TraceMiddleware)
 from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)
 
+from core.dingtalk.router import router as dingtalk_router
+app.include_router(dingtalk_router)
+
 from core.wschannel import router as host_channel_router
 app.include_router(host_channel_router)
 
