@@ -28,6 +28,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     // it once its event channel is listening.
     if let url = connectionOptions.urlContexts.first?.url,
        SwiftReceiveSharingIntentPlugin.instance.hasMatchingSchemePrefix(url: url) {
+      NSLog("[share] cold start url=%@", url.absoluteString)
       AppDelegate.pendingShareUrl = url
     }
   }
@@ -35,6 +36,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
     guard let url = URLContexts.first?.url else { return }
     if SwiftReceiveSharingIntentPlugin.instance.hasMatchingSchemePrefix(url: url) {
+      NSLog("[share] warm open url=%@", url.absoluteString)
       // App is already running: Flutter's listener is attached, deliver now.
       _ = SwiftReceiveSharingIntentPlugin.instance.application(
         UIApplication.shared, open: url)

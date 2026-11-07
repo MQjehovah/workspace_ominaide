@@ -61,20 +61,48 @@ import Vision
       binaryMessenger: controller.binaryMessenger
     )
     channel.setMethodCallHandler { call, result in
-      guard call.method == "replayPendingUrl" else {
-        result(FlutterMethodNotImplemented)
-        return
-      }
-      guard let url = AppDelegate.pendingShareUrl else {
-        result(false)
-        return
-      }
-      AppDelegate.pendingShareUrl = nil
-      result(
-        SwiftReceiveSharingIntentPlugin.instance.application(
+      switch call.method {
+      case "replayPendingUrl":
+        guard let url = AppDelegate.pendingShareUrl else {
+          result(false)
+          return
+        }
+        AppDelegate.pendingShareUrl = nil
+        let handled = SwiftReceiveSharingIntentPlugin.instance.application(
           UIApplication.shared, open: url)
-      )
+        NSLog("[share] replay url=%@ handled=%d", url.absoluteString, handled ? 1 : 0)
+        result(handled)
+      case "takePendingShareJson":
+        result(AppDelegate.pendingShareJson())
+      default:
+        result(FlutterMethodNotImplemented)
+      }
     }
+  }
+
+  /// Fallback for the cold-start race where the share URL is replayed before
+  /// the Dart event channel is listening: hand back the raw shared payload.
+  private static func pendingShareJson() -> String? {
+    let groupId = Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as? String
+      ?? "group.\(Bundle.main.bundleIdentifier!)"
+    guard let defaults = UserDefaults(suiteName: groupId),
+          let data = defaults.data(forKey: "ShareKey"),
+          let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+    else { return nil }
+
+    let normalized: [[String: Any]] = items.map { item in
+      var copy = item
+      for key in ["path", "thumbnail"] {
+        if let value = copy[key] as? String, value.hasPrefix("file://") {
+          copy[key] = value.replacingOccurrences(of: "file://", with: "")
+        }
+      }
+      return copy
+    }
+    guard let out = try? JSONSerialization.data(withJSONObject: normalized) else {
+      return nil
+    }
+    return String(data: out, encoding: .utf8)
   }
 
   private func setupOcrChannel() {

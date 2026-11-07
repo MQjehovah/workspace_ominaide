@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
@@ -54,11 +56,25 @@ class ShareIntentService {
       final replay = Completer<void>();
       _replay = replay;
       final replayed = await _channel.invokeMethod<bool>('replayPendingUrl');
+      debugPrint('[share] replayPendingUrl -> $replayed');
       if (replayed == true) {
         await replay.future.timeout(
-          const Duration(seconds: 3),
+          const Duration(milliseconds: 1500),
           onTimeout: () {},
         );
+        if (!replay.isCompleted) {
+          // The event channel was not attached in time; read the payload
+          // written by the share extension directly.
+          final raw = await _channel.invokeMethod<String>('takePendingShareJson');
+          if (raw != null && raw.isNotEmpty) {
+            final list = (jsonDecode(raw) as List)
+                .map((item) => SharedMediaFile.fromMap(
+                      Map<String, dynamic>.from(item as Map),
+                    ))
+                .toList();
+            _handle(list);
+          }
+        }
       }
     } catch (_) {
       // Platform not configured (e.g. iOS share extension not installed).
@@ -86,6 +102,7 @@ class ShareIntentService {
       }
     }
     final capture = SharedCapture(text: text, url: url, imagePath: image);
+    debugPrint('[share] captured ${files.length} item(s) url=${url != null} text=${text != null} image=${image != null}');
     _pending = capture;
     _replay?.complete();
     if (_ready) {
