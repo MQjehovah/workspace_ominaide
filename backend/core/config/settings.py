@@ -48,11 +48,6 @@ class Settings(BaseSettings):
     tts_format: str = "wav"
     # Some gateways (e.g. xzrobot) reject response_format entirely.
     tts_send_format: bool = False
-    # "edge":  edge-tts (Microsoft voices, much lower latency, no API key).
-    # "zhipu": OpenAI-compatible TTS gateway above.
-    # The voice-stream pipeline falls back to the other path on failure.
-    tts_provider: str = "edge"
-    tts_edge_voice: str = "zh-CN-XiaoxiaoNeural"
     # Personal-assistant agent persona + conversation memory
     assistant_system_prompt: str = (
         "你是 OmniAide，一个私有化部署的个人 AI 助手，只服务于当前用户。"

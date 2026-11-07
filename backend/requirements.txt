@@ -28,6 +28,3 @@ python-pptx==0.6.23
 
 # Agent Skills (SKILL.md frontmatter)
 PyYAML==6.0.3
-# Low-latency TTS for device voice streaming (falls back to the gateway)
-edge-tts==7.3.1
-miniaudio==1.71

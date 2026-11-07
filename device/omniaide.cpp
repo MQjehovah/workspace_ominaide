@@ -465,11 +465,6 @@ bool OmniAide::voiceAskStream(const uint8_t* pcm, size_t pcmLen, uint32_t sample
                 size_t copy = dlen < space ? dlen : space;
                 memcpy(pcmBuf + accLen, audioBuf, copy);
                 accLen += copy;
-                // 边收边播：约 0.25s（24k/16bit ≈ 12KB）就交给播放层，
-                // 不再等整段回复下载完才出声。
-                if (accLen >= 12000) {
-                    if (!flushPcm()) { finished = true; return false; }
-                }
             }
         } else if (!strcmp(t, "status")) {
             if (cb) return cb("status", doc["text"] | "", nullptr, 0, 0, ud);
