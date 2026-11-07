@@ -458,7 +458,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                 const SizedBox(height: 6),
                 Text(
                   _briefSummary,
-                  maxLines: 5,
+                  maxLines: 4,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11.5,
