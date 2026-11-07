@@ -283,6 +283,24 @@ async def test_dingtalk_unread_is_cached(monkeypatch):
     collectors._DINGTALK_UNREAD_CACHE.clear()
 
 
+async def test_workbench_suggestions_from_user_context(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "suggest")
+
+    from core.workbench import suggestions as workbench
+
+    workbench._CACHE.clear()
+    monkeypatch.setattr(workbench.settings, "llm_api_key", "")
+
+    r = await client.get("/api/inbox/suggestions", headers=auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["suggestions"]) == 3
+    assert all(isinstance(item, str) and item for item in body["suggestions"])
+    assert body["source"] == "fallback"
+    assert body["expires_at"]
+
+
 async def test_draft_reply_from_mail(client):
     token, user_id = await _new_user(client)
     ids = await _seed_sources(user_id, "reply")

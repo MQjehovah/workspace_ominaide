@@ -19,3 +19,13 @@ async def groups(
     from core.cos.service import triage
 
     return await triage(user["id"], days)
+
+
+@router.get("/suggestions")
+async def suggestions(
+    refresh: bool = Query(False),
+    user: dict = Depends(get_current_user),
+):
+    from core.workbench.suggestions import workbench_suggestions
+
+    return await workbench_suggestions(user["id"], refresh=refresh)
