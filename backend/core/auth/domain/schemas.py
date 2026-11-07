@@ -73,6 +73,7 @@ class UserResponse(BaseModel):
     username: str
     email: str
     avatar_url: str | None = None
+    is_admin: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -81,6 +82,7 @@ class AdminUserResponse(BaseModel):
     id: int
     username: str
     email: str
+    is_admin: bool = False
     is_active: bool | None = None
     created_at: datetime | None = None
 

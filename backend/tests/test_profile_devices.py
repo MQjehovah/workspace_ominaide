@@ -35,6 +35,13 @@ async def test_profile_endpoint_returns_200(client):
     assert "name" in body
 
 
+async def test_me_exposes_admin_flag(client):
+    token = await _new_user(client)
+    r = await client.get("/api/auth/me", headers=auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["is_admin"] is False
+
+
 async def test_vibecoding_devices_endpoint_lists_empty_when_offline(client):
     token = await _new_user(client)
     r = await client.get("/api/vibecoding/devices", headers=auth(token))
