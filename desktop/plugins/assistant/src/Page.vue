@@ -324,15 +324,22 @@ function loadConfig() {
     const raw = localStorage.getItem('ai_chat_config')
     if (raw) {
       const c = JSON.parse(raw)
-      cfg.value = { mode: 'backend', apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', notify: true, temperature: 0.7, maxTurns: 20, maxTokens: 0, ...c }
-      cfgMode.value = cfg.value.mode
-      cfgKey.value = cfg.value.apiKey
+      cfg.value = {
+        mode: 'backend',
+        apiKey: '',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-4o-mini',
+        notify: c.notify !== false,
+      }
+      cfgMode.value = 'backend'
+      cfgKey.value = ''
       cfgUrl.value = cfg.value.baseUrl
       cfgModel.value = cfg.value.model
       cfgNotify.value = cfg.value.notify
-      cfgTemp.value = cfg.value.temperature ?? 0.7
-      cfgMaxTurns.value = cfg.value.maxTurns ?? 20
-      cfgMaxTokens.value = cfg.value.maxTokens ?? 0
+      cfgTemp.value = 0.7
+      cfgMaxTurns.value = 60
+      cfgMaxTokens.value = 0
+      try { localStorage.setItem('ai_chat_config', JSON.stringify(cfg.value)) } catch { /* ignore */ }
     }
   } catch { /* ignore */ }
 }
@@ -659,6 +666,7 @@ function handleEvent(m: Msg, data: any) {
 
 async function streamMessage(message: string, history: { role: string; content: string }[], images: string[], m: Msg): Promise<void> {
   const c = cfg.value
+  c.mode = 'backend'
   if (c.mode === 'backend') {
     const su = await serverUrl()
     const tk = await getToken()
@@ -735,6 +743,7 @@ async function streamMessage(message: string, history: { role: string; content: 
 }
 
 async function send() {
+  cfg.value.mode = 'backend'
   const text = input.value.trim()
   const hasAtt = attachments.value.length > 0
   if ((!text && !hasAtt) || loading.value) return
@@ -765,11 +774,7 @@ async function send() {
   try {
     const history = s.messages.slice(0, -1).filter(m => m.role === 'user' || (m.role === 'assistant' && m.text))
       .map(m => ({ role: m.role, content: m.text }))
-    if (cfg.value.mode === 'desktop') {
-      await sendDesktop(message, history, images, asst)
-    } else {
-      await streamMessage(message, history, images, asst)
-    }
+    await streamMessage(message, history, images, asst)
   } catch (e: any) {
     asst.error = e?.name === 'AbortError' ? '已停止生成' : `请求失败: ${e?.message || e}`
   } finally {
@@ -1453,15 +1458,13 @@ function openSettings() {
 }
 
 function applySettings() {
+  cfgMode.value = 'backend'
   cfg.value = {
-    mode: cfgMode.value as 'backend' | 'direct' | 'desktop',
-    apiKey: cfgKey.value,
+    mode: 'backend',
+    apiKey: '',
     baseUrl: cfgUrl.value.replace(/\/+$/, ''),
     model: cfgModel.value,
     notify: cfgNotify.value,
-    temperature: cfgMode.value === 'desktop' ? cfgTemp.value : undefined,
-    maxTurns: cfgMode.value === 'desktop' ? cfgMaxTurns.value : undefined,
-    maxTokens: cfgMode.value === 'desktop' ? cfgMaxTokens.value : undefined,
   }
   try { localStorage.setItem('ai_chat_config', JSON.stringify(cfg.value)) } catch { /* ignore */ }
   settingsOpen.value = false
@@ -1848,43 +1851,15 @@ const suggestions = [
         <div class="settings-panel">
           <div class="settings-hd">设置</div>
           <div class="field">
-            <label>模式</label>
-            <select v-model="cfgMode" class="s-input">
-              <option value="backend">后端代理</option>
-              <option value="direct">前端直连</option>
-              <option value="desktop">桌面 Agent</option>
-            </select>
+            <label>执行方式</label>
+            <div class="s-input" style="display:flex;align-items:center;color:var(--text-dim,#888)">
+              服务端 Bot · 工具与审批统一在服务端执行
+            </div>
           </div>
-          <template v-if="cfgMode === 'direct' || cfgMode === 'desktop'">
-            <div class="field">
-              <label>API Key</label>
-              <input v-model="cfgKey" type="password" class="s-input" placeholder="sk-..." />
-            </div>
-            <div class="field">
-              <label>Base URL</label>
-              <input v-model="cfgUrl" class="s-input" placeholder="https://api.openai.com/v1" />
-            </div>
-            <div class="field">
-              <label>模型</label>
-              <input v-model="cfgModel" class="s-input" placeholder="gpt-4o-mini" />
-            </div>
-          </template>
-          <template v-if="cfgMode === 'desktop'">
-            <div class="field">
-              <label>温度 (Temperature)</label>
-              <input v-model.number="cfgTemp" type="number" min="0" max="2" step="0.1" class="s-input" />
-            </div>
-            <div class="field">
-              <label>最大工具轮次</label>
-              <input v-model.number="cfgMaxTurns" type="number" min="1" max="50" step="1" class="s-input" />
-            </div>
-            <div class="field">
-              <label>最大输出 Tokens (0 = 不限制)</label>
-              <input v-model.number="cfgMaxTokens" type="number" min="0" step="256" class="s-input" />
-            </div>
-            <button class="btn-ghost" style="width:100%" @click="loadMcp(); openAgentSettings('mcp')">查看可用工具 (MCP + 本地)</button>
-          </template>
-          <p class="settings-note">{{ cfgMode === 'desktop' ? '桌面 Agent 在本机直连 LLM,自动加载内置工具与已连接的 MCP 服务器。确保模型支持工具调用(function calling)。' : '后端代理模式下,模型由服务端配置,不加载本机工具;直连模式仅在本机保存配置,无工具调用。' }}</p>
+          <p class="settings-note">
+            桌面端只负责界面和本地执行通道。模型、记忆、工具、审批、运行记录都在服务端；
+            需要本地文件/命令时，服务端 Bot 会通过 /ws/host 调用本机 local_* 工具。
+          </p>
           <div class="field">
             <label class="switch-label">
               <input v-model="cfgNotify" type="checkbox" class="switch" />
@@ -1892,7 +1867,6 @@ const suggestions = [
             </label>
           </div>
           <div class="settings-actions">
-            <button class="btn-ghost" @click="openAgentSettings('mcp')">🧩 MCP / 技能</button>
             <button class="btn-ghost" @click="settingsOpen = false">取消</button>
             <button class="btn-primary" @click="applySettings">应用</button>
           </div>
