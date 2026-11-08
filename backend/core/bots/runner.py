@@ -321,7 +321,7 @@ async def _stream_completion(
                     raw_calls[i]["id"] += tc.id
                 if tc.function:
                     if tc.function.name:
-                        raw_calls[i]["function"]["name"] += tc.function.name
+                        raw_calls[i]["function"]["name"] = tc.function.name
                     if tc.function.arguments:
                         raw_calls[i]["function"]["arguments"] += tc.function.arguments
 

@@ -140,7 +140,7 @@ async def run_agent_stream(
                         tool_calls[i]["id"] += tc.id
                     if tc.function:
                         if tc.function.name:
-                            tool_calls[i]["function"]["name"] += tc.function.name
+                            tool_calls[i]["function"]["name"] = tc.function.name
                         if tc.function.arguments:
                             tool_calls[i]["function"]["arguments"] += tc.function.arguments
 
