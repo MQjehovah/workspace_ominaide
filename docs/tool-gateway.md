@@ -16,7 +16,9 @@ Bot 每次运行时的工具列表：
 pinned_tools
   ├─ tool_search / tool_call
   ├─ save_memory / send_notification / web_search / fetch_url
-  ├─ skill_search / skill_call
+  └─ skill_search / skill_call
+
+本地机器在线时额外注入（source=local，不属于 builtin）：
   └─ local_shell / local_shell_start / local_shell_wait / local_file
 
 其余工具：插件工具、服务端 MCP、本地 MCP、业务工具
@@ -84,7 +86,15 @@ local:m1/browser/* -> exec     -> ask
 
 ## 本地工具
 
-本地工具不再逐个常驻。文件操作合并为一个入口：
+`local_*` 不是 builtin 工具，而是桌面端节点注入的工具：
+
+- `source = "local"`
+- 不进入默认 `pinned_tools`
+- 桌面端在线时才出现在该用户的工具列表里
+- 桌面端离线时自动消失
+- 其他用户不会因为别人的机器在线而看到它们
+
+文件操作合并为一个入口：
 
 ```text
 local_file(op=list|read|write|grep, path=..., ...)

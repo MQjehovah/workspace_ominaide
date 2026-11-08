@@ -795,3 +795,7 @@ TOOLS = [
         local_file,
     ),
 ]
+
+# Local tools are injected by the desktop node, not builtin tools.
+for _tool, _handler in TOOLS:
+    _tool.source = "local"

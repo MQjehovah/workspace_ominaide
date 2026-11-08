@@ -55,7 +55,7 @@ async def run_agent(
     client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
     all_tools = tool_registry.get_tools(user_id=user_id)
     openai_tools = _to_openai_tools(
-        select_exposed_tools(all_tools, allowed=tools_filter)
+        select_exposed_tools(all_tools, allowed=tools_filter, user_id=user_id)
     )
 
     for turn in range(max_turns):
@@ -99,7 +99,7 @@ async def run_agent_stream(
     client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
     all_tools = tool_registry.get_tools(user_id=user_id)
     openai_tools = _to_openai_tools(
-        select_exposed_tools(all_tools, allowed=tools_filter)
+        select_exposed_tools(all_tools, allowed=tools_filter, user_id=user_id)
     )
 
     total_chars = 0

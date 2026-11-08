@@ -15,6 +15,7 @@ from core.bots import policy
 
 
 class DummyBot:
+    user_id = 1
     allowed_tools = None
     pinned_tools = None
 
@@ -134,20 +135,35 @@ async def test_local_file_dispatches_by_op(monkeypatch):
         assert calls[-1] == expected
 
 
-def test_exposure_keeps_only_pinned_tools():
+def test_exposure_keeps_only_pinned_tools(monkeypatch):
+    from core.ai.mcp import gateway
+
     tools = [
         _fake_tool(name)
-        for name in list(DEFAULT_PINNED_TOOLS) + ["some_plugin_tool"]
+        for name in list(DEFAULT_PINNED_TOOLS)
+        + ["some_plugin_tool", "local_shell", "local_file"]
     ]
+    for tool in tools:
+        if tool.name.startswith("local_"):
+            tool.source = "local"
+
+    monkeypatch.setattr(gateway, "_online_machine_ids", lambda uid: [])
     exposed = {t.name for t in select_exposed_tools(tools, DummyBot())}
     assert "tool_search" in exposed
     assert "tool_call" in exposed
-    assert "local_shell" in exposed
-    assert "local_file" in exposed
+    assert "local_shell" not in exposed
+    assert "local_file" not in exposed
     assert "local_read_file" not in exposed
     assert "local_list_dir" not in exposed
     assert "skill_search" in exposed
     assert "skill_call" in exposed
+    assert "some_plugin_tool" not in exposed
+
+    # Local tools are injected only while a desktop machine is online.
+    monkeypatch.setattr(gateway, "_online_machine_ids", lambda uid: ["machine-a"])
+    exposed = {t.name for t in select_exposed_tools(tools, DummyBot())}
+    assert "local_shell" in exposed
+    assert "local_file" in exposed
     assert "some_plugin_tool" not in exposed
 
     class PinnedBot(DummyBot):
@@ -168,6 +184,13 @@ def test_exposure_respects_allowed_tools():
 
     exposed = {t.name for t in select_exposed_tools(tools, AllowedBot())}
     assert exposed == {"tool_search", "tool_call", "some_plugin_tool"}
+
+
+def test_local_tools_are_local_source():
+    from core.ai.mcp.tools import local
+
+    assert local.TOOLS
+    assert all(tool.source == "local" for tool, _ in local.TOOLS)
 
 
 def test_display_target_unwraps_gateway_call():

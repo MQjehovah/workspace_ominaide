@@ -48,6 +48,11 @@ DEFAULT_PINNED_TOOLS = {
     "fetch_url",
     "skill_search",
     "skill_call",
+}
+
+# Injected only while a local machine is online. They are source="local",
+# not builtin, and disappear from the tool list when the desktop disconnects.
+LOCAL_INJECTED_TOOLS = {
     "local_shell",
     "local_shell_start",
     "local_shell_wait",
@@ -58,6 +63,7 @@ GATEWAY_INSTRUCTION = (
     "可用工具很多，未直接列出的能力必须先调用 tool_search 检索，再用 tool_call 调用。"
     "不要臆造工具名或参数。本地机器或本地 MCP 工具使用 scope=local 或 scope=all。"
     "技能先用 skill_search 检索，再用 skill_call 调用。"
+    "本地机器在线时会自动注入 local_* 工具；离线时不会出现。"
     "tool_call 的审批按底层真实工具执行。"
 )
 
@@ -95,8 +101,23 @@ async def _load_bot(user_id: int):
     return bot
 
 
-def select_exposed_tools(tools: list[MCPTool], bot=None, allowed=None) -> list[MCPTool]:
+def _online_machine_ids(user_id: int | None) -> list[str]:
+    if not user_id:
+        return []
+    from core.wschannel.hub import host_channel
+
+    return host_channel.machine_ids(user_id)
+
+
+def select_exposed_tools(
+    tools: list[MCPTool],
+    bot=None,
+    allowed=None,
+    user_id: int | None = None,
+) -> list[MCPTool]:
     """Return the small set of tools sent to the LLM."""
+    if user_id is None and bot is not None:
+        user_id = getattr(bot, "user_id", None)
     if allowed is None and bot is not None:
         allowed = getattr(bot, "allowed_tools", None)
     if allowed is not None:
@@ -110,6 +131,16 @@ def select_exposed_tools(tools: list[MCPTool], bot=None, allowed=None) -> list[M
         # Bots with an explicit allowlist keep those tools directly exposed.
         pinned = allowed if allowed is not None else DEFAULT_PINNED_TOOLS
     wanted = set(pinned) | GATEWAY_TOOLS
+
+    # Local machine tools are injected by the desktop node, not builtin.
+    if _online_machine_ids(user_id):
+        wanted |= {
+            t.name
+            for t in tools
+            if t.source == "local" and t.name in LOCAL_INJECTED_TOOLS
+        }
+    else:
+        tools = [t for t in tools if t.source != "local"]
     return [t for t in tools if t.name in wanted]
 
 
@@ -212,6 +243,12 @@ def search_server_tools(
         tools = [t for t in tools if t.name in set(allowed) | GATEWAY_TOOLS]
     if source:
         tools = [t for t in tools if t.source == source]
+        if source == "local" and not _online_machine_ids(user_id):
+            tools = []
+    else:
+        # Local machine tools are injected dynamically; don't duplicate them
+        # in the server catalog.
+        tools = [t for t in tools if t.source != "local"]
     scored: list[tuple[int, MCPTool]] = []
     for tool in tools:
         if tool.name in HIDDEN_FROM_SEARCH:
@@ -360,6 +397,13 @@ async def tool_search(user_id: int, args: dict) -> MCPCallResponse:
             user_id, query, limit=limit, machine_id=machine_id
         )
         items.extend(local_items)
+        # Other local tools (machine list, job cancel) are not injected by
+        # default, so keep them discoverable while a machine is online.
+        for item in search_server_tools(
+            user_id, query, source="local", limit=limit, bot=bot
+        ):
+            if item["name"] not in LOCAL_INJECTED_TOOLS:
+                items.append(item)
 
     items = items[:limit]
     payload: dict = {"query": query, "scope": scope, "tools": items}
