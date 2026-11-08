@@ -52,6 +52,7 @@ void main() {
         'notes',
         'sources',
         'music',
+        'device',
         'machine',
         'lab',
       ]),

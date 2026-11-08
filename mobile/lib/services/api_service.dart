@@ -395,7 +395,8 @@ class ApiService {
       );
       if (res.statusCode != 200) return [];
       final data = decodeJson(res);
-      return (data['devices'] as List?) ?? [];
+      if (data is List) return data;
+      return (data['machines'] as List?) ?? [];
     } catch (_) {
       return [];
     }
@@ -1557,6 +1558,35 @@ class ApiService {
 
   Future<void> updateProfile(Map<String, dynamic> data) async {
     final res = await put('/auth/profile', data);
+    if (res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+  }
+
+  // -- SmartAssistant device (ESP32) --
+
+  Future<Map<String, dynamic>> deviceFirmware() async {
+    final res = await get('/device/firmware/latest');
+    if (res.statusCode != 200) return {};
+    return _asMap(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>> deviceGestures() async {
+    final res = await get('/device/gestures');
+    if (res.statusCode != 200) return {};
+    return _asMap(decodeJson(res));
+  }
+
+  Future<void> pushToDevice({
+    required String title,
+    String body = '',
+    String kind = 'notification',
+  }) async {
+    final res = await post('/device/push', {
+      'title': title,
+      'body': body,
+      'kind': kind,
+    });
     if (res.statusCode != 200) {
       throw Exception(_extractError(res));
     }
