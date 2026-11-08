@@ -8,95 +8,24 @@ Map<String, dynamic> _map(dynamic value) {
   return const {};
 }
 
-class BriefItem {
-  final String title;
-  final String summary;
-  final String source;
-  final String link;
-  final int? sourceId;
-  final DateTime? time;
-
-  const BriefItem({
-    required this.title,
-    this.summary = '',
-    this.source = '',
-    this.link = '',
-    this.sourceId,
-    this.time,
-  });
-
-  factory BriefItem.fromJson(Map<String, dynamic> json) {
-    return BriefItem(
-      title: _str(json['title']),
-      summary: _str(json['summary']),
-      source: _str(json['source']),
-      link: _str(json['link']),
-      sourceId: json['source_id'] is int ? json['source_id'] as int : null,
-      time: DateTime.tryParse(_str(json['time'])),
-    );
-  }
-}
-
-class BriefSection {
-  final String key;
-  final String title;
-  final List<BriefItem> items;
-
-  const BriefSection({
-    required this.key,
-    required this.title,
-    this.items = const [],
-  });
-
-  factory BriefSection.fromJson(Map<String, dynamic> json) {
-    return BriefSection(
-      key: _str(json['key']),
-      title: _str(json['title']),
-      items: _list(json['items'])
-          .whereType<Map>()
-          .map((e) => BriefItem.fromJson(_map(e)))
-          .toList(),
-    );
-  }
-}
-
 class DailyBrief {
   final String day;
   final String summary;
-  final List<String> focus;
-  final List<BriefSection> sections;
-  final Map<String, dynamic> stats;
-  final String dingtalkStatus;
+  final List<String> prompts;
 
   const DailyBrief({
     required this.day,
     required this.summary,
-    this.focus = const [],
-    this.sections = const [],
-    this.stats = const {},
-    this.dingtalkStatus = '',
+    this.prompts = const [],
   });
 
   factory DailyBrief.fromJson(Map<String, dynamic> json) {
-    final sources = _map(json['sources']);
     return DailyBrief(
       day: _str(json['day']),
       summary: _str(json['summary']),
-      focus: _list(json['focus']).map(_str).where((e) => e.isNotEmpty).toList(),
-      sections: _list(json['sections'])
-          .whereType<Map>()
-          .map((e) => BriefSection.fromJson(_map(e)))
-          .toList(),
-      stats: _map(json['stats']),
-      dingtalkStatus: _str(sources['dingtalk']),
+      prompts:
+          _list(json['prompts']).map(_str).where((e) => e.isNotEmpty).toList(),
     );
-  }
-
-  BriefSection? section(String key) {
-    for (final section in sections) {
-      if (section.key == key) return section;
-    }
-    return null;
   }
 }
 

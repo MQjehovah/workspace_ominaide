@@ -13,6 +13,7 @@ class ActivitySuggestion(Base):
     reason = Column(String(500), nullable=True)
     confidence = Column(Float, default=0.5)
     source_event_ids = Column(JSON, nullable=True)
+    proposed_action = Column(JSON, nullable=True)
     status = Column(String(20), default="new", nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
     expires_at = Column(DateTime, nullable=True)

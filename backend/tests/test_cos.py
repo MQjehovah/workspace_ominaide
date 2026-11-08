@@ -100,7 +100,7 @@ async def test_triage_aggregates_user_sources_only(client):
     assert body["counts"]["total"] >= 4
 
 
-async def test_daily_brief_has_sections_and_summary(client):
+async def test_daily_brief_has_summary_and_prompts(client):
     token, user_id = await _new_user(client)
     await _seed_sources(user_id, "brief")
 
@@ -112,9 +112,30 @@ async def test_daily_brief_has_sections_and_summary(client):
     assert r.status_code == 200, r.text
     body = r.json()["output"]
     assert body["summary"]
-    keys = {s["key"] for s in body["sections"]}
-    assert {"schedule", "todos", "mail", "news"} <= keys
-    assert body["stats"]["schedule_count"] >= 1
+    assert isinstance(body["prompts"], list)
+    assert body["prompts"]
+    assert "sections" not in body
+    assert "stats" not in body
+
+
+async def test_workbench_prompts_reuse_daily_brief(client):
+    token, user_id = await _new_user(client)
+    await _seed_sources(user_id, "briefprompts")
+
+    r = await client.post(
+        "/api/skills/daily-brief/run",
+        json={"input": {}},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    prompts = r.json()["output"]["prompts"]
+    assert prompts
+
+    r = await client.get("/api/inbox/suggestions", headers=auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["source"] == "brief"
+    assert body["suggestions"] == prompts
 
 
 async def test_meeting_prep_collects_context(client):
@@ -354,11 +375,6 @@ async def test_workbench_suggestions_from_user_context(client, monkeypatch):
     token, user_id = await _new_user(client)
     await _seed_sources(user_id, "suggest")
 
-    from core.workbench import suggestions as workbench
-
-    workbench._CACHE.clear()
-    monkeypatch.setattr(workbench.settings, "llm_api_key", "")
-
     r = await client.get("/api/inbox/suggestions", headers=auth(token))
     assert r.status_code == 200, r.text
     body = r.json()
@@ -371,11 +387,6 @@ async def test_workbench_suggestions_from_user_context(client, monkeypatch):
 async def test_workbench_summary_aggregates_sections(client, monkeypatch):
     token, user_id = await _new_user(client)
     await _seed_sources(user_id, "summary")
-
-    from core.workbench import suggestions as workbench
-
-    workbench._CACHE.clear()
-    monkeypatch.setattr(workbench.settings, "llm_api_key", "")
 
     r = await client.get("/api/workbench/summary", headers=auth(token))
     assert r.status_code == 200, r.text

@@ -135,57 +135,50 @@ async def daily_brief(
     bot=None,
     extra_system: str | None = None,
 ) -> dict:
+    """Generate today's short brief plus workbench quick prompts."""
+    from core.cos.context import build_context
+
     day = day or date.today()
-    start, end = _day_bounds(day)
     now = datetime.now()
     is_today = day == date.today()
+    context = await build_context(
+        user_id,
+        now=now,
+        day=datetime.combine(day, datetime.min.time()),
+        horizon_hours=24,
+    )
 
-    events = await collectors.schedule_items(user_id, start=start, end=end, limit=20)
-    if is_today:
-        todos = await collectors.todo_items(user_id, limit=20)
-        mail = await collectors.mail_items(
-            user_id, since=now - timedelta(days=2), limit=8, unread_only=True,
-        )
-        news = await collectors.source_items(user_id, since=now - timedelta(hours=36), limit=5)
-        dingtalk, dingtalk_status = await collectors.dingtalk_items(user_id, limit=8)
-    else:
-        todos = await collectors.todo_items(
-            user_id, limit=20, due_after=start, due_before=end,
-        )
-        mail = await collectors.mail_items(
-            user_id, since=start, until=end, limit=8,
-        )
-        news = await collectors.source_items(
-            user_id, since=start, until=end, limit=5,
-        )
-        dingtalk, dingtalk_status = [], "skipped"
-
+    events = context["events"]
+    todos = context["todos"]
     due_today = [
         t for t in todos
         if t["meta"].get("due")
         and _parse_dt(t["meta"]["due"])
-        and (is_today and _parse_dt(t["meta"]["due"]) < end
-             or not is_today and start <= _parse_dt(t["meta"]["due"]) < end)
+        and (is_today and _parse_dt(t["meta"]["due"]) < now.replace(hour=23, minute=59, second=59)
+             or not is_today and _parse_dt(t["meta"]["due"]) >= datetime.combine(day, datetime.min.time())
+             and _parse_dt(t["meta"]["due"]) < datetime.combine(day, datetime.min.time()) + timedelta(days=1))
     ]
     overdue = [
         t for t in todos
         if t["meta"].get("due") and _parse_dt(t["meta"]["due"]) and _parse_dt(t["meta"]["due"]) < now
     ]
 
-    memory_lines: list[str] = []
-    try:
-        from core.memory_service import list_records
-
-        records = await list_records(user_id, "", 6)
-        memory_lines = [r.content for r in records[:5]]
-    except Exception:
-        pass
+    mail = context["unread_mail"]
+    news = context["news"]
+    dingtalk = context["dingtalk"]
+    memory_lines = context["memory"]
 
     summary = _fallback_brief_summary(day, events, due_today, overdue, mail, news, dingtalk)
+    prompts = _fallback_prompts(
+        events, overdue, due_today, mail, dingtalk, news,
+        context["recent_notes"], context["recent_files"], context["recent_projects"],
+    )
+
     enriched = await _llm_json(
-        "基于当天数据写 2-4 句中文晨报，"
-        "先讲最重要的冲突或截止，再讲日程与需要回复的人，不编造数据。"
-        '只返回 JSON: {"summary": "...", "focus": ["今天最该做的 1-3 件事"]}。',
+        "根据当天数据写 2-4 句中文简报，先讲最重要的冲突或截止，再讲日程与需要回复的人，不编造数据。"
+        "同时给出 3 个工作台快捷建议。"
+        '只返回 JSON: {"summary": "...", "prompts": ["...", "...", "..."]}。'
+        "prompts 每条 6-14 个中文字符，动词开头、可直接执行，不要编号或解释。",
         json.dumps({
             "day": day.isoformat(),
             "events": events,
@@ -195,43 +188,31 @@ async def daily_brief(
             "news": news,
             "dingtalk": dingtalk,
             "memory": memory_lines,
-        }, ensure_ascii=False),
+            "recent_notes": context["recent_notes"],
+            "recent_files": context["recent_files"],
+            "recent_projects": context["recent_projects"],
+        }, ensure_ascii=False, default=str),
         bot=bot,
         extra_system=extra_system,
     )
-    focus: list[str] = []
-    if enriched and isinstance(enriched.get("summary"), str) and enriched["summary"].strip():
-        summary = enriched["summary"].strip()
-        focus = [str(x) for x in (enriched.get("focus") or []) if str(x).strip()]
-    if not focus:
-        focus = _fallback_focus(events, overdue, due_today, mail, dingtalk)
+    if enriched:
+        if isinstance(enriched.get("summary"), str) and enriched["summary"].strip():
+            summary = enriched["summary"].strip()
+        candidates = enriched.get("prompts")
+        if isinstance(candidates, list):
+            clean = []
+            for value in candidates:
+                text = " ".join(str(value or "").split())[:24]
+                if text and text not in clean:
+                    clean.append(text)
+            if clean:
+                prompts = clean[:3]
 
-    sections = [
-        {"key": "schedule", "title": "今日日程", "items": events},
-        {"key": "todos", "title": "待办与截止", "items": due_today or todos[:8]},
-        {"key": "mail", "title": "需要处理的邮件", "items": mail},
-        {"key": "dingtalk", "title": "钉钉未读", "items": dingtalk},
-        {"key": "news", "title": "值得一看", "items": news},
-        {"key": "memory", "title": "长期记忆提醒", "items": [
-            {"id": f"memory:{i}", "title": line, "source": "memory", "summary": ""}
-            for i, line in enumerate(memory_lines)
-        ]},
-    ]
     return {
         "day": day.isoformat(),
         "generated_at": datetime.now().isoformat(),
         "summary": summary,
-        "focus": focus,
-        "sections": sections,
-        "sources": {"dingtalk": dingtalk_status},
-        "stats": {
-            "schedule_count": len(events),
-            "todo_due_count": len(due_today),
-            "todo_overdue_count": len(overdue),
-            "mail_count": len(mail),
-            "news_count": len(news),
-            "dingtalk_count": len(dingtalk),
-        },
+        "prompts": prompts[:3],
     }
 
 
@@ -257,22 +238,35 @@ def _fallback_brief_summary(
     return "；".join(bits) + "。"
 
 
-def _fallback_focus(
+
+
+def _fallback_prompts(
     events: list[dict], overdue: list[dict], due_today: list[dict],
-    mail: list[dict], dingtalk: list[dict],
+    mail: list[dict], dingtalk: list[dict], news: list[dict],
+    notes: list[dict], files: list[dict], projects: list[dict],
 ) -> list[str]:
-    focus: list[str] = []
+    prompts: list[str] = []
     if overdue:
-        focus.append(f"处理逾期事项：{overdue[0]['title']}")
+        prompts.append(f"处理逾期事项：{overdue[0]['title']}")
     if events:
-        focus.append(f"准备 {events[0]['title']}")
+        prompts.append(f"准备 {events[0]['title']}")
     if mail:
-        focus.append(f"回复 {mail[0].get('from') or '重要邮件'}：{mail[0]['title']}")
+        prompts.append(f"回复 {mail[0].get('from') or '重要邮件'}：{mail[0]['title']}")
     if dingtalk:
-        focus.append(f"查看钉钉未读：{dingtalk[0]['title']}")
-    if not focus and due_today:
-        focus.append(f"推进今天到期的待办：{due_today[0]['title']}")
-    return focus[:3]
+        prompts.append(f"查看钉钉未读：{dingtalk[0]['title']}")
+    if news:
+        prompts.append("看看今天的资讯")
+    if notes:
+        prompts.append(f"继续编辑「{str(notes[0].get('title') or '')[:10]}」")
+    if files:
+        prompts.append("整理最近文件")
+    if projects:
+        prompts.append(f"推进项目「{str(projects[0].get('name') or '')[:8]}」")
+    if not prompts and due_today:
+        prompts.append(f"推进今天到期的待办：{due_today[0]['title']}")
+    return prompts[:3]
+
+
 
 
 async def meeting_prep(

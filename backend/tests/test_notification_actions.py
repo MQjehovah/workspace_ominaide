@@ -116,7 +116,7 @@ async def test_notification_actions_are_user_scoped(client):
 
 
 async def test_todo_deadline_creates_actionable_reminder_once(client):
-    from core.ai.scheduler import _check_reminders
+    from plugins.todo.backend.reminders import check_todo_reminders
     from core.database.session import async_session
     from plugins.notifications.backend.models import Notification
     from sqlalchemy import select
@@ -125,7 +125,7 @@ async def test_todo_deadline_creates_actionable_reminder_once(client):
     due = datetime.now() + timedelta(minutes=10)
     todo_id = await _create_todo(client, token, "交房租", due)
 
-    await _check_reminders()
+    await check_todo_reminders()
     async with async_session() as db:
         rows = list((await db.execute(
             select(Notification).where(
@@ -138,7 +138,7 @@ async def test_todo_deadline_creates_actionable_reminder_once(client):
     assert any(a.get("kind") == "complete_todo" for a in rows[0].actions)
 
     # Reminded todos are not reminded again.
-    await _check_reminders()
+    await check_todo_reminders()
     async with async_session() as db:
         count = len(list((await db.execute(
             select(Notification).where(

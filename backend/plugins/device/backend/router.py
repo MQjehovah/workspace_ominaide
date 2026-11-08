@@ -198,8 +198,8 @@ async def trigger_briefing(
     user: dict = Depends(get_current_user),
 ):
     """Manual trigger for testing the proactive morning brief."""
-    from core.ai.scheduler import _send_briefing
-    asyncio.create_task(_send_briefing(user["id"]))
+    from core.skills.brief_cache import send_briefing
+    asyncio.create_task(send_briefing(user["id"]))
     return {"ok": True, "detail": "briefing task started"}
 
 

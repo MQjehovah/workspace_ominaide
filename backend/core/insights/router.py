@@ -26,3 +26,13 @@ async def dismiss(suggestion_id: int, user: dict = Depends(get_current_user)):
     if not await service.set_status(user["id"], suggestion_id, "dismissed"):
         raise HTTPException(404, detail="Suggestion not found")
     return {"status": "dismissed"}
+
+
+@router.post("/suggestions/{suggestion_id}/execute")
+async def execute(suggestion_id: int, user: dict = Depends(get_current_user)):
+    result = await service.execute_suggestion(user["id"], suggestion_id)
+    if result is None:
+        raise HTTPException(404, detail="Suggestion not found")
+    if result.get("status") == "no_action":
+        raise HTTPException(400, detail="Suggestion has no executable action")
+    return result

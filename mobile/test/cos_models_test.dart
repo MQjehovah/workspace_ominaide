@@ -7,33 +7,17 @@ void main() {
     final brief = DailyBrief.fromJson({
       'day': '2026-11-06',
       'summary': '先过预算评审，再回复客户。',
-      'focus': ['预算评审', '回复客户'],
-      'sections': [
-        {
-          'key': 'schedule',
-          'title': '今日日程',
-          'items': [
-            {'title': '预算评审', 'summary': '会议室 A', 'source': 'schedule'},
-          ],
-        },
-      ],
-      'sources': {'dingtalk': 'ok'},
-      'stats': {'schedule_count': 1},
+      'prompts': ['准备预算评审', '回复客户'],
     });
 
     expect(brief.summary, '先过预算评审，再回复客户。');
-    expect(brief.focus, ['预算评审', '回复客户']);
-    expect(brief.section('schedule')!.items.single.title, '预算评审');
-    expect(brief.dingtalkStatus, 'ok');
-    expect(brief.stats['schedule_count'], 1);
+    expect(brief.prompts, ['准备预算评审', '回复客户']);
   });
 
   test('missing brief fields do not throw', () {
     final brief = DailyBrief.fromJson({});
     expect(brief.summary, '');
-    expect(brief.focus, isEmpty);
-    expect(brief.sections, isEmpty);
-    expect(brief.section('missing'), isNull);
+    expect(brief.prompts, isEmpty);
   });
 
   test('parses triage groups and counts by source', () {

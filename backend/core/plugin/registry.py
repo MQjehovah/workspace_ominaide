@@ -22,6 +22,7 @@ async def discover_plugins(app: FastAPI):
         PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
         return
 
+    discovered: list[tuple[str, Path, bool]] = []
     async with async_session() as db:
         for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
             if not plugin_dir.is_dir():
@@ -58,17 +59,22 @@ async def discover_plugins(app: FastAPI):
                 record.icon = manifest.get("icon", "") or record.icon
                 record.manifest = manifest
 
-            if record.enabled:
-                await _register_plugin_routes(app, plugin_id, plugin_dir)
-                _register_plugin_tools(manifest, plugin_id)
-                _register_plugin_jobs(plugin_id, plugin_dir)
-                await _run_plugin_lifecycle(plugin_id, plugin_dir, "startup")
-            else:
-                from core.scheduler import scheduler
-
-                scheduler.unregister_owner(plugin_id)
-
+            discovered.append((plugin_id, plugin_dir, bool(record.enabled)))
         await db.commit()
+
+    # Run hooks outside the registry session so plugin startup can safely
+    # enqueue jobs or open its own database sessions (SQLite included).
+    for plugin_id, plugin_dir, enabled in discovered:
+        if not enabled:
+            from core.scheduler import scheduler
+
+            scheduler.unregister_owner(plugin_id)
+            continue
+        manifest = _load_manifest(plugin_dir) or {}
+        await _register_plugin_routes(app, plugin_id, plugin_dir)
+        _register_plugin_tools(manifest, plugin_id)
+        _register_plugin_jobs(plugin_id, plugin_dir)
+        await _run_plugin_lifecycle(plugin_id, plugin_dir, "startup")
 
 
 def _load_manifest(plugin_dir: Path) -> dict | None:

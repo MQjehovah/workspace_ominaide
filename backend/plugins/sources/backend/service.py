@@ -6,7 +6,7 @@ import feedparser
 import httpx
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core.ai.indexer import index_content
 from plugins.sources.backend.models import ContentItem, ContentSource
@@ -244,3 +244,33 @@ async def fetch_source_content(db: AsyncSession, source: ContentSource) -> int:
     except Exception as ex:
         log.warning(f"[sources] fetch error {source.url}: {ex}")
         raise
+
+
+async def refresh_due_sources(interval_seconds: int) -> dict:
+    """Refresh sources whose last fetch is older than the interval."""
+    from core.database.session import async_session
+
+    cutoff = datetime.utcnow() - timedelta(seconds=max(60, int(interval_seconds)))
+    async with async_session() as db:
+        ids = list((await db.execute(
+            select(ContentSource.id).where(
+                or_(
+                    ContentSource.last_fetch == None,  # noqa: E711
+                    ContentSource.last_fetch < cutoff,
+                )
+            )
+        )).scalars().all())
+
+    total = 0
+    for source_id in ids:
+        async with async_session() as db:
+            source = await db.get(ContentSource, source_id)
+            if source is None:
+                continue
+            try:
+                total += await fetch_source_content(db, source)
+                await db.commit()
+            except Exception as exc:
+                await db.rollback()
+                log.warning("[sources] refresh %s failed: %s", source_id, exc)
+    return {"sources": len(ids), "new": total}

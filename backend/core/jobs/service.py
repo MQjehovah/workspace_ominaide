@@ -16,7 +16,7 @@ from core.logging import get_logger
 
 Handler = Callable[[BackgroundJob], Awaitable[None]]
 _handlers: dict[str, Handler] = {}
-_worker_task: asyncio.Task | None = None
+_worker_tasks: list[asyncio.Task] = []
 log = get_logger(__name__)
 
 
@@ -177,19 +177,52 @@ async def worker_loop() -> None:
             await asyncio.sleep(5)
 
 
+def start_workers(count: int | None = None) -> list[asyncio.Task]:
+    """Start concurrent job workers.
+
+    Async DB/HTTP handlers stay on the event loop; blocking calls inside a
+    handler use ``asyncio.to_thread`` internally. SQLite is kept to one worker
+    so tests do not hit write-lock contention.
+    """
+    global _worker_tasks
+    if any(not task.done() for task in _worker_tasks):
+        return _worker_tasks
+
+    from core.config.settings import settings
+
+    workers = int(settings.jobs_workers if count is None else count)
+    if workers <= 0:
+        log.info("[jobs] background workers disabled")
+        _worker_tasks = []
+        return _worker_tasks
+    if "sqlite" in (getattr(settings, "database_url", "") or ""):
+        workers = min(workers, 1)
+    workers = max(1, min(workers, 16))
+    _worker_tasks = [
+        asyncio.create_task(worker_loop(), name=f"jobs-worker-{i + 1}")
+        for i in range(workers)
+    ]
+    log.info(f"[jobs] started {workers} worker(s)")
+    return _worker_tasks
+
+
 def start_worker() -> asyncio.Task:
-    global _worker_task
-    if _worker_task is None or _worker_task.done():
-        _worker_task = asyncio.create_task(worker_loop())
-    return _worker_task
+    """Backward-compatible single-worker entry point."""
+    return start_workers()[0]
+
+
+async def stop_workers() -> None:
+    global _worker_tasks
+    tasks = list(_worker_tasks)
+    _worker_tasks = []
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 async def stop_worker() -> None:
-    global _worker_task
-    if _worker_task is not None:
-        _worker_task.cancel()
-        try:
-            await _worker_task
-        except asyncio.CancelledError:
-            pass
-        _worker_task = None
+    await stop_workers()

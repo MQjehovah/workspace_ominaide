@@ -115,6 +115,10 @@ async def ensure_schema_migrations():
                 result.append("mcp_servers_owner_plugin")
             if "expose_tools" not in cols:
                 result.append("mcp_servers_expose_tools")
+        if "activity_suggestions" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("activity_suggestions")}
+            if "proposed_action" not in cols:
+                result.append("activity_suggestions_proposed_action")
 
         if "projects" in table_names:
             cols = {c["name"] for c in inspector.get_columns("projects")}
@@ -189,6 +193,8 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN owner_plugin VARCHAR(64) NULL"))
             elif table == "mcp_servers_expose_tools":
                 await conn.execute(text(f"ALTER TABLE mcp_servers ADD COLUMN expose_tools BOOLEAN DEFAULT {bool_true}"))
+            elif table == "activity_suggestions_proposed_action":
+                await conn.execute(text("ALTER TABLE activity_suggestions ADD COLUMN proposed_action JSON NULL"))
             elif table == "bot_routines_spec":
                 await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN spec JSON NULL"))
             elif table == "bot_routines_spec_version":

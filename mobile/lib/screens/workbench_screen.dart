@@ -238,9 +238,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       unawaited(LocalCacheService().writeJson('workbench.brief', {
         'day': brief.day,
         'summary': brief.summary,
-        'focus': brief.focus,
-        'stats': brief.stats,
-        'sources': {'dingtalk': brief.dingtalkStatus},
+        'prompts': brief.prompts,
       }));
     }
   }
@@ -249,19 +247,26 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     final id = item['id'];
     if (id is! int) return;
     try {
-      await ApiService().createTodoItem({
-        'title': (item['title'] ?? '处理活动建议').toString(),
-        'description': (item['reason'] ?? '').toString(),
-        'priority': 1,
-      });
-      await ApiService().acceptActivitySuggestion(id);
+      final action = item['proposed_action'];
+      final hasAction = action is Map && action['type'] == 'create_todo';
+      if (hasAction) {
+        final ok = await ApiService().executeActivitySuggestion(id);
+        if (!ok) throw Exception('执行失败');
+      } else {
+        await ApiService().createTodoItem({
+          'title': (item['title'] ?? '处理活动建议').toString(),
+          'description': (item['reason'] ?? '').toString(),
+          'priority': 1,
+        });
+        await ApiService().acceptActivitySuggestion(id);
+      }
       if (!mounted) return;
       setState(() {
         _activitySuggestions =
             _activitySuggestions.where((e) => e['id'] != id).toList();
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已创建待办')),
+        const SnackBar(content: Text('已处理建议')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -930,7 +935,13 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 6),
                             textStyle: const TextStyle(fontSize: 10.5),
                           ),
-                          child: const Text('建待办'),
+                          child: Text(
+                            item['proposed_action'] is Map &&
+                                    item['proposed_action']['type'] ==
+                                        'create_todo'
+                                ? '执行'
+                                : '建待办',
+                          ),
                         ),
                         TextButton(
                           onPressed: () => _dismissActivitySuggestion(item),

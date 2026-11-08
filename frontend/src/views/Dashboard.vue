@@ -130,7 +130,9 @@
                   <div v-if="s.reason" class="suggestion-reason">{{ s.reason }}</div>
                 </div>
                 <div class="suggestion-actions">
-                  <el-button link type="primary" size="small" @click="acceptSuggestion(s)">建待办</el-button>
+                  <el-button link type="primary" size="small" @click="acceptSuggestion(s)">
+                    {{ s.proposed_action?.type === 'create_todo' ? '执行' : '建待办' }}
+                  </el-button>
                   <el-button link size="small" @click="dismissSuggestion(s)">忽略</el-button>
                 </div>
               </div>
@@ -337,12 +339,16 @@ async function toggleTodo(t: any) {
 
 async function acceptSuggestion(s: any) {
   try {
-    await client.post('/plugins/todo/items', {
-      title: s.title || '处理活动建议',
-      description: s.reason || '',
-      priority: 1,
-    })
-    await client.post(`/insights/suggestions/${s.id}/accept`)
+    if (s.proposed_action?.type === 'create_todo') {
+      await client.post(`/insights/suggestions/${s.id}/execute`)
+    } else {
+      await client.post('/plugins/todo/items', {
+        title: s.title || '处理活动建议',
+        description: s.reason || '',
+        priority: 1,
+      })
+      await client.post(`/insights/suggestions/${s.id}/accept`)
+    }
     activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
   } catch { }
 }

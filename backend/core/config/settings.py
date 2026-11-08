@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     sources_refresh_interval_seconds: int = 1800
     # RSSHub base URL used by providers such as GitHub Trending.
     rsshub_base_url: str = ""
+    # Background job executor: number of concurrent async workers.
+    jobs_workers: int = 4
     data_layer_enabled: bool = True
     memory_layer_enabled: bool = True
     # Runtime data. Production mounts one host directory at /data/omniaide and

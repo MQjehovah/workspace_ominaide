@@ -17,7 +17,7 @@ JOBS = [
         key="dingtalk.sync_calendar",
         owner="dingtalk",
         handler=sync_calendar,
-        interval_seconds=15 * 60,
+        interval_seconds=60 * 60,
         timeout_seconds=600,
         run_on_start=True,
     ),

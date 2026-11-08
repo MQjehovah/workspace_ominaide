@@ -118,7 +118,7 @@ class _BriefScreenState extends State<BriefScreen> {
                   Icon(Icons.auto_awesome, size: 15, color: palette.primary),
                   const SizedBox(width: 5),
                   Text(
-                    '今日焦点',
+                    '今日简报',
                     style: TextStyle(
                       fontSize: 10,
                       letterSpacing: 1,
@@ -137,97 +137,10 @@ class _BriefScreenState extends State<BriefScreen> {
                   color: palette.ink,
                 ),
               ),
-              if (brief.focus.isNotEmpty) ...[
-                const SizedBox(height: 9),
-                Wrap(
-                  spacing: 5,
-                  runSpacing: 5,
-                  children: [
-                    for (final item in brief.focus)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: palette.card,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: palette.line),
-                        ),
-                        child: Text(
-                          item,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: palette.primary,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
             ],
           ),
         ),
-        const SizedBox(height: 10),
-        for (final section in brief.sections)
-          if (section.items.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          section.title,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: palette.ink,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '${section.items.length}',
-                          style: TextStyle(fontSize: 10, color: palette.muted),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    for (final item in section.items)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.title,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: palette.ink,
-                              ),
-                            ),
-                            if (item.summary.isNotEmpty)
-                              Text(
-                                item.summary,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  height: 1.5,
-                                  color: palette.muted,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
+
       ],
     );
   }

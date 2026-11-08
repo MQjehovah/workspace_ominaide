@@ -61,18 +61,25 @@ GET    /api/mcp/templates
 McpHub。原始 `mcp:dingtalk-*__*` 工具不会进入全局工具表，也不会出现在用户的
 MCP 管理页；只有插件 curated 的 `dingtalk_*` 工具对 Bot 可见。
 
-核心保持通用能力：MCP Hub、定时任务、活动建议提取。钉钉插件自己负责账号、
+核心保持通用能力：MCP Hub、定时任务、活动分析。钉钉插件自己负责账号、
 登录、消息同步、日程同步和会话查看；日程通过通用事件
 `calendar.external.upsert` / `calendar.external.delete` 交给 schedule 插件。
 
-插件注册的周期任务：
+周期任务：
 
 | 任务 | 周期 | 说明 |
 | --- | --- | --- |
-| `dingtalk.sync_calendar` | 15 分钟 | 拉取日程并发布外部日历事件 |
+| `dingtalk.sync_calendar` | 1 小时 | 拉取日程并发布外部日历事件 |
 | `dingtalk.sync_chat` | 24 小时 | 同步会话并发布 `dingtalk.conversation` 活动 |
-| `schedule.sync_external_calendar` | 5 分钟 | schedule 消费外部日历事件 |
-| `core.insights.extract` | 10 分钟 | 批量提取活动建议（唯一的 LLM 环节） |
+| `schedule.reminders` | 1 分钟 | 日程提醒 |
+| `todo.reminders` | 1 分钟 | 待办到期提醒 |
+| `mail.sync_due` | 5 分钟 | IMAP 增量同步 |
+| `sources.refresh_due` | 30 分钟 | 资讯源刷新 |
+| `core.daily_brief` | 1 小时 | 每个用户生成简报摘要和工作台快捷建议 |
+| `core.activity_analysis` | 1 小时 | 每个用户生成可执行活动建议 |
+| `schedule.external.apply` | 事件驱动 | 消费外部日历事件，失败自动重试 |
+
+外部日历消费不再使用周期轮询；schedule 插件在启动时订阅事件，并执行一次最近 7 天的回填。
 
 ### 容器内登录 dws
 

@@ -20,7 +20,6 @@ async def lifespan(app: FastAPI):
     from core.ai.mcp.tools.register_ai import register_ai_tools
     from core.events.bus import worker_loop
     from core.events.workers import register_workers
-    from core.ai.scheduler import scheduler_loop
     from core.database.session import engine
     from core.database.base import Base
 
@@ -77,14 +76,14 @@ async def lifespan(app: FastAPI):
     from core.captures.service import register_capture_handlers
     register_capture_handlers()
     from core.scheduler import scheduler as periodic_scheduler
-    from core.jobs.service import start_worker as start_jobs_worker
-    jobs_task = start_jobs_worker()
-    scheduler_task = asyncio.create_task(scheduler_loop())
+    from core.jobs.service import start_workers as start_jobs_workers
+    start_jobs_workers()
     await ensure_buckets()
     await discover_plugins(app)
     from core.insights.jobs import JOBS as INSIGHT_JOBS
+    from core.skills.jobs import JOBS as BRIEF_JOBS
 
-    for job in INSIGHT_JOBS:
+    for job in [*BRIEF_JOBS, *INSIGHT_JOBS]:
         periodic_scheduler.register(job)
     periodic_scheduler.start()
     register_core_tools()
@@ -107,18 +106,14 @@ async def lifespan(app: FastAPI):
     await mcp_hub.shutdown()
     warm_task.cancel()
     routine_task.cancel()
-    scheduler_task.cancel()
     worker_task.cancel()
-    jobs_task.cancel()
+    from core.jobs.service import stop_workers
+    await stop_workers()
     try: await warm_task
     except asyncio.CancelledError: pass
     try: await routine_task
     except asyncio.CancelledError: pass
-    try: await scheduler_task
-    except asyncio.CancelledError: pass
     try: await worker_task
-    except asyncio.CancelledError: pass
-    try: await jobs_task
     except asyncio.CancelledError: pass
     from core.database.redis import close_redis
     await close_redis()

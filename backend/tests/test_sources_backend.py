@@ -130,7 +130,7 @@ async def test_sources_digest_api_is_scoped(client):
 
 
 async def test_scheduled_source_refresh_calls_fetch_for_stale_sources(client, monkeypatch):
-    from core.ai import scheduler
+    from plugins.sources.backend.jobs import refresh_due_sources_job
     from core.database.session import async_session
     from plugins.sources.backend.models import ContentSource
     from plugins.sources.backend import service as sources_service
@@ -150,5 +150,5 @@ async def test_scheduled_source_refresh_calls_fetch_for_stale_sources(client, mo
         return 1
 
     monkeypatch.setattr(sources_service, "fetch_source_content", fake_fetch)
-    await scheduler._refresh_sources()
+    await refresh_due_sources_job()
     assert source_id in called

@@ -1482,6 +1482,11 @@ class ApiService {
     return res.statusCode == 200;
   }
 
+  Future<bool> executeActivitySuggestion(int id) async {
+    final res = await post('/insights/suggestions/$id/execute', const {});
+    return res.statusCode == 200;
+  }
+
   // -- Agent tasks --
   Future<List<Map<String, dynamic>>> listAgentTasks({int limit = 50}) async {
     final res = await get('/agent/tasks?limit=$limit');
