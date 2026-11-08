@@ -127,7 +127,6 @@ const currentBotId = ref<number | null>(null)
 const BOT_KEY = 'assistant_bot_id'
 const approvals = ref<any[]>([])
 let approvalTimer: any = null
-let cloudSyncTimer: any = null
 const cfgMode = ref('backend')
 const cfgKey = ref('')
 const cfgUrl = ref('https://api.openai.com/v1')
@@ -440,6 +439,19 @@ async function loadCloudMessages(session: Session | null, force = false): Promis
       if (first?.text) session.title = first.text.replace(/\s+/g, ' ').trim().slice(0, 24) || session.title
     }
   } catch { /* offline */ }
+}
+
+const cloudSyncing = ref(false)
+
+async function manualSync() {
+  if (cloudSyncing.value) return
+  cloudSyncing.value = true
+  try {
+    await loadCloudSessions(true)
+    showToast('会话已同步')
+  } finally {
+    cloudSyncing.value = false
+  }
 }
 
 async function loadCloudSessions(initial = false): Promise<void> {
@@ -1653,14 +1665,6 @@ function applySettings() {
 }
 
 // ---------------- lifecycle ----------------
-function onCloudFocus() {
-  loadCloudSessions().catch(() => {})
-}
-
-function onCloudVisibility() {
-  if (document.visibilityState === 'visible') loadCloudSessions().catch(() => {})
-}
-
 onMounted(async () => {
   loadConfig()
   loadSessions()
@@ -1668,9 +1672,6 @@ onMounted(async () => {
   await loadCloudSessions(true)
   loadApprovals()
   approvalTimer = setInterval(loadApprovals, 10000)
-  cloudSyncTimer = setInterval(() => { loadCloudSessions() }, 30000)
-  window.addEventListener('focus', onCloudFocus)
-  document.addEventListener('visibilitychange', onCloudVisibility)
   if (!current.value) newSession()
   try {
     const mqAgent = (window as any).mqbox?.agent
@@ -1696,9 +1697,6 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKey)
   clearInterval(approvalTimer)
-  clearInterval(cloudSyncTimer)
-  window.removeEventListener('focus', onCloudFocus)
-  document.removeEventListener('visibilitychange', onCloudVisibility)
   renderTimers.forEach(t => clearTimeout(t))
   clearTimeout(persistTimer)
   clearTimeout(toastTimer)
@@ -1757,7 +1755,10 @@ const suggestions = [
         <div v-if="filteredSessions.length === 0" class="session-empty">{{ sessions.length ? '没有匹配的任务' : '暂无会话' }}</div>
       </div>
       <div class="sidebar-foot">
-        <span class="sync-state"><span class="sync-dot"></span> 会话自动同步</span>
+        <button class="sync-btn" :disabled="cloudSyncing" @click="manualSync">
+          <span class="sync-icon" :class="{ spinning: cloudSyncing }">↻</span>
+          {{ cloudSyncing ? '同步中…' : '同步会话' }}
+        </button>
       </div>
     </aside>
 
@@ -2405,8 +2406,22 @@ const suggestions = [
   padding: 12px 14px;
   border-top: 1px solid var(--border);
 }
-.sync-state { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); }
-.sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+.sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--dim);
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.sync-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.sync-btn:disabled { opacity: .6; cursor: default; }
+.sync-icon { display: inline-block; font-size: 13px; }
+.sync-icon.spinning { animation: spin 1s linear infinite; }
 .model-badge {
   font-size: 11px;
   color: var(--accent2);
