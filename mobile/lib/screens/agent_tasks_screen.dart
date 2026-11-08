@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import '../widgets/loading_state.dart';
+import 'agent_run_screen.dart';
 
 /// Mobile view of the persistent Agent task API (backed by BotRun).
 class AgentTasksScreen extends StatefulWidget {
@@ -96,83 +97,16 @@ class _AgentTasksScreenState extends State<AgentTasksScreen> {
   Future<void> _open(Map<String, dynamic> task) async {
     final id = (task['id'] as num?)?.toInt();
     if (id == null) return;
-    final detail = await ApiService().getAgentTask(id);
-    if (!mounted) return;
-    final palette = AppPalette.of(context);
-    final steps = (detail['steps'] as List? ?? const []);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: palette.card,
-      builder: (context) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.7,
-          maxChildSize: 0.92,
-          builder: (context, scrollController) => ListView(
-            controller: scrollController,
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-            children: [
-              Text(
-                (detail['input'] ?? 'Agent 任务').toString(),
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: palette.ink,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  _statusChip(palette, (detail['status'] ?? '').toString()),
-                  const SizedBox(width: 8),
-                  Text(
-                    (detail['created_at'] ?? '')
-                        .toString()
-                        .replaceFirst('T', ' '),
-                    style: TextStyle(fontSize: 10, color: palette.muted),
-                  ),
-                ],
-              ),
-              if ((detail['error'] ?? '').toString().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  detail['error'].toString(),
-                  style: TextStyle(fontSize: 11, color: palette.accent),
-                ),
-              ],
-              const SizedBox(height: 14),
-              if (steps.isEmpty)
-                Text(
-                  '还没有执行步骤',
-                  style: TextStyle(fontSize: 12, color: palette.muted),
-                )
-              else
-                for (final raw in steps)
-                  if (raw is Map)
-                    _StepTile(
-                      step: raw.map((k, v) => MapEntry(k.toString(), v)),
-                      palette: palette,
-                    ),
-              if (!['done', 'failed', 'cancelled'].contains(detail['status']))
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      await ApiService().cancelAgentTask(id);
-                      if (context.mounted) Navigator.pop(context);
-                      await _load();
-                    },
-                    icon: const Icon(Icons.stop_rounded, size: 17),
-                    label: const Text('取消任务'),
-                  ),
-                ),
-            ],
-          ),
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AgentRunScreen(
+          runId: id,
+          title: (task['input'] ?? 'Agent 任务').toString(),
         ),
       ),
     );
+    if (mounted) await _load();
   }
 
   Widget _statusChip(AppPalette palette, String status) {

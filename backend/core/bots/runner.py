@@ -383,10 +383,13 @@ async def _execute_tool_calls(
             await _notify_approval(run, approval, reason)
             return "waiting", seq
 
+        step_id = await _add_step(
+            run.id, seq, "tool", name, tc["arguments"], "", "running"
+        )
         text, is_err = await _call_tool(run, name, tc["arguments"])
         messages.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
-        await _add_step(
-            run.id, seq, "tool", name, tc["arguments"], text, "error" if is_err else "ok"
+        await _update_step(
+            step_id, result=text, status="error" if is_err else "ok"
         )
         seq += 1
 
@@ -408,11 +411,13 @@ async def _resume_pending(
 
     tc = tool_calls[idx]
     if approval is not None and approval.status == "approved":
+        step_id = await _add_step(
+            run.id, seq, "tool", tc["name"], tc["arguments"], "", "running"
+        )
         text, is_err = await _call_tool(run, tc["name"], tc["arguments"])
         messages.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
-        await _add_step(
-            run.id, seq, "tool", tc["name"], tc["arguments"], text,
-            "error" if is_err else "ok",
+        await _update_step(
+            step_id, result=text, status="error" if is_err else "ok"
         )
     else:
         reason = (approval.reason if approval is not None else "") or "用户拒绝"
@@ -576,19 +581,36 @@ async def _add_step(
     arguments: dict | None,
     result: str | None,
     status: str,
+) -> int:
+    async with async_session() as db:
+        row = BotRunStep(
+            run_id=run_id,
+            seq=seq,
+            type=type_,
+            tool_name=tool_name,
+            arguments=arguments,
+            result=(result or "")[:MAX_TOOL_OUTPUT],
+            status=status,
+        )
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return row.id
+
+
+async def _update_step(
+    step_id: int,
+    *,
+    result: str | None = None,
+    status: str = "ok",
 ) -> None:
     async with async_session() as db:
-        db.add(
-            BotRunStep(
-                run_id=run_id,
-                seq=seq,
-                type=type_,
-                tool_name=tool_name,
-                arguments=arguments,
-                result=(result or "")[:MAX_TOOL_OUTPUT],
-                status=status,
-            )
-        )
+        row = await db.get(BotRunStep, step_id)
+        if row is None:
+            return
+        if result is not None:
+            row.result = result[:MAX_TOOL_OUTPUT]
+        row.status = status
         await db.commit()
 
 
@@ -798,9 +820,18 @@ async def cancel_run(user_id: int, run_id: int) -> bool:
 
 
 async def stream_run(run_id: int, user_id: int):
-    """Poll the persisted run and yield SSE frames."""
-    sent = 0
-    last_step = 0
+    """Poll the persisted run and yield SSE frames.
+
+    SSE is intentionally stateless: the frontend can reconnect with the same
+    run id and receive the current steps plus any new output. Step updates
+    (``running`` -> ``ok``) are emitted by comparing the persisted snapshot.
+    """
+    seen_steps: dict[int, tuple] = {}
+    sent_partial = 0
+    sent_output = 0
+    last_status = ""
+    last_approval = ""
+    last_ping = 0.0
     started = False
     deadline = time.time() + max(60, settings.bot_run_timeout_seconds) + 60
 
@@ -818,7 +849,7 @@ async def stream_run(run_id: int, user_id: int):
                 (
                     await db.execute(
                         select(BotRunStep)
-                        .where(BotRunStep.run_id == run_id, BotRunStep.id > last_step)
+                        .where(BotRunStep.run_id == run_id)
                         .order_by(BotRunStep.id.asc())
                     )
                 ).scalars().all()
@@ -827,6 +858,17 @@ async def stream_run(run_id: int, user_id: int):
                 await db.execute(
                     select(BotApproval.id)
                     .where(BotApproval.run_id == run_id)
+                    .order_by(BotApproval.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            pending_approval = (
+                await db.execute(
+                    select(BotApproval)
+                    .where(
+                        BotApproval.run_id == run_id,
+                        BotApproval.status == "pending",
+                    )
                     .order_by(BotApproval.id.desc())
                     .limit(1)
                 )
@@ -840,32 +882,65 @@ async def stream_run(run_id: int, user_id: int):
                     "run_id": run.id,
                     "bot_id": run.bot_id,
                     "status": run.status,
+                    "trigger": run.trigger,
+                    "created_at": run.created_at.isoformat() if run.created_at else None,
                 }
             )
+            last_status = run.status
+        elif run.status != last_status:
+            last_status = run.status
+            yield _sse({"type": "run_status", "status": run.status})
 
         for s in steps:
-            last_step = s.id
+            signature = (
+                s.status,
+                s.result or "",
+                s.arguments or {},
+                s.tool_name,
+                s.updated_at.isoformat() if getattr(s, "updated_at", None) else None,
+            )
+            if seen_steps.get(s.id) == signature:
+                continue
+            seen_steps[s.id] = signature
             payload = {
-                "type": "approval_required" if s.type == "approval" else "tool_result",
+                "type": "step",
                 "step_id": s.id,
+                "seq": s.seq,
+                "step_type": s.type,
                 "tool": s.tool_name,
                 "arguments": s.arguments,
                 "content": s.result,
                 "status": s.status,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
             }
-            if s.type == "approval":
+            if s.type == "approval" and s.status == "pending" and latest_approval_id:
                 payload["approval_id"] = latest_approval_id
             yield _sse(payload)
 
-        if run.partial and len(run.partial) > sent:
-            delta = run.partial[sent:]
-            sent = len(run.partial)
+        if run.partial and len(run.partial) > sent_partial:
+            delta = run.partial[sent_partial:]
+            sent_partial = len(run.partial)
             yield _sse({"type": "token", "content": delta})
 
+        if pending_approval is not None:
+            signature = f"{pending_approval.id}:{pending_approval.status}"
+            if signature != last_approval:
+                last_approval = signature
+                yield _sse({
+                    "type": "approval",
+                    "approval_id": pending_approval.id,
+                    "run_id": run.id,
+                    "tool": pending_approval.tool_name,
+                    "arguments": pending_approval.arguments,
+                    "risk": pending_approval.risk_level,
+                    "reason": pending_approval.reason,
+                    "status": pending_approval.status,
+                })
+
         if run.status in TERMINAL:
-            if run.output and len(run.output) > sent:
-                delta = run.output[sent:]
-                sent = len(run.output)
+            if run.output and len(run.output) > sent_output:
+                delta = run.output[sent_output:]
+                sent_output = len(run.output)
                 yield _sse({"type": "token", "content": delta})
             yield _sse(
                 {
@@ -877,7 +952,12 @@ async def stream_run(run_id: int, user_id: int):
             )
             return
 
-        if time.time() > deadline:
+        now = time.time()
+        if now - last_ping > 15:
+            last_ping = now
+            yield _sse({"type": "ping", "ts": int(now)})
+
+        if now > deadline:
             yield _sse({"type": "error", "content": "stream timeout"})
             return
 

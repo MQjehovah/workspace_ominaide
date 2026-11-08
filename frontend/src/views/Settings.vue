@@ -140,6 +140,41 @@
             </el-form>
           </el-tab-pane>
 
+          <el-tab-pane label="连接器" name="connectors">
+            <div style="margin-top:12px;max-width:720px">
+              <div v-for="p in connectors" :key="p.key" class="connector-card">
+                <div class="connector-head">
+                  <div>
+                    <strong>{{ p.name }}</strong>
+                    <el-tag size="small" :type="p.configured ? 'success' : 'info'" style="margin-left:8px">
+                      {{ p.configured ? '已配置' : '未配置' }}
+                    </el-tag>
+                  </div>
+                  <el-button
+                    v-if="p.configured"
+                    size="small"
+                    type="primary"
+                    :loading="connectorLoading"
+                    @click="connectProvider(p.key)"
+                  >
+                    连接账号
+                  </el-button>
+                </div>
+                <div class="muted">{{ p.description }}</div>
+                <div v-if="!p.configured" class="connector-hint">
+                  服务端需要配置 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET。
+                </div>
+                <div v-else-if="p.accounts.length" class="connector-accounts">
+                  <div v-for="a in p.accounts" :key="a.id" class="connector-account">
+                    <span>{{ a.email || a.name || a.account_id }}</span>
+                    <el-button size="small" text type="danger" @click="disconnectConnector(a.id)">断开</el-button>
+                  </div>
+                </div>
+                <div v-else-if="p.configured" class="connector-hint">还没有连接账号。</div>
+              </div>
+            </div>
+          </el-tab-pane>
+
           <el-tab-pane label="钉钉" name="dingtalk">
             <el-form label-width="120px" style="margin-top:12px;max-width:680px">
               <el-form-item label="连接状态">
@@ -348,6 +383,42 @@ async function logoutDingtalk() {
   }
 }
 
+const connectors = ref<any[]>([])
+const connectorLoading = ref(false)
+
+async function fetchConnectors() {
+  try {
+    const res = await client.get('/connectors')
+    connectors.value = res.data?.providers || []
+  } catch {
+    connectors.value = []
+  }
+}
+
+async function connectProvider(provider: string) {
+  connectorLoading.value = true
+  try {
+    const res = await client.post('/connectors/oauth/start', { provider })
+    const url = res.data?.auth_url
+    if (!url) throw new Error('未拿到授权地址')
+    window.location.href = url
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || e.message || '连接失败')
+  } finally {
+    connectorLoading.value = false
+  }
+}
+
+async function disconnectConnector(id: number) {
+  try {
+    await client.delete(`/connectors/${id}`)
+    ElMessage.success('已断开连接')
+    await fetchConnectors()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '断开失败')
+  }
+}
+
 async function checkHealth() {
   try {
     const res = await client.get('/health')
@@ -423,6 +494,19 @@ onMounted(async () => {
   checkHealth()
   loadLlmConfig()
   fetchDingtalkStatus()
+  await fetchConnectors()
+  const params = new URLSearchParams(window.location.search)
+  const tab = params.get('tab')
+  if (tab) activeTab.value = tab
+  const connector = params.get('connector')
+  if (connector) {
+    if (params.get('status') === 'ok') {
+      ElMessage.success(`${connector} 连接成功`)
+    } else if (params.get('status') === 'error') {
+      ElMessage.error(params.get('message') || '连接失败')
+    }
+    window.history.replaceState({}, '', window.location.pathname)
+  }
 })
 
 onUnmounted(() => {

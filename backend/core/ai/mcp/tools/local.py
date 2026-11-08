@@ -109,6 +109,100 @@ async def local_shell(user_id: int, args: dict) -> MCPCallResponse:
     return _ok("\n".join(lines))
 
 
+async def local_shell_start(user_id: int, args: dict) -> MCPCallResponse:
+    if not settings.local_shell_enabled:
+        return _err("本地 shell 工具已被禁用")
+    command = str(args.get("command") or "").strip()
+    if not command:
+        return _err("command 必填")
+    try:
+        timeout = int(args.get("timeout_seconds") or settings.local_shell_timeout_seconds)
+    except (TypeError, ValueError):
+        timeout = settings.local_shell_timeout_seconds
+    timeout = min(max(timeout, 1), 3600)
+    try:
+        machine_id = _resolve_machine(user_id, args)
+        job = await local_tools.start_job(
+            user_id,
+            machine_id,
+            command,
+            cwd=str(args.get("cwd") or "").strip() or None,
+            timeout_seconds=timeout,
+        )
+    except local_tools.LocalMachineError as exc:
+        return _err(str(exc))
+
+    machine_name = local_tools.host_channel.machine_name(machine_id)
+    return _ok(
+        f"已在本地机器启动任务。\n"
+        f"job_id：{job.job_id}\n"
+        f"机器：{machine_name} ({machine_id})\n"
+        f"目录：{job.cwd or '~'}\n"
+        f"用 local_shell_wait(job_id=\"{job.job_id}\") 读取输出，"
+        f"用 local_shell_cancel 取消。"
+    )
+
+
+async def local_shell_wait(user_id: int, args: dict) -> MCPCallResponse:
+    job_id = str(args.get("job_id") or "").strip()
+    if not job_id:
+        return _err("job_id 必填")
+    try:
+        cursor = int(args.get("cursor") or 0)
+    except (TypeError, ValueError):
+        cursor = 0
+    try:
+        wait_seconds = int(args.get("wait_seconds") or 20)
+    except (TypeError, ValueError):
+        wait_seconds = 20
+
+    try:
+        job, events, next_cursor = await local_tools.wait_job(
+            user_id,
+            job_id,
+            cursor=cursor,
+            wait_seconds=wait_seconds,
+        )
+    except local_tools.LocalMachineError as exc:
+        return _err(str(exc))
+
+    stdout = "".join(text for stream, text in events if stream == "stdout")
+    stderr = "".join(text for stream, text in events if stream == "stderr")
+    machine_name = local_tools.host_channel.machine_name(job.machine_id)
+    lines = [
+        f"job_id：{job.job_id}",
+        f"机器：{machine_name} ({job.machine_id})",
+        f"状态：{job.status}",
+    ]
+    if job.status in ("done", "cancelled"):
+        lines.append(
+            f"退出码：{job.exit_code}"
+            + ("（超时）" if job.timed_out else "")
+            + ("（已取消）" if job.cancelled else "")
+        )
+    if stdout:
+        lines.append(f"\nstdout:\n{stdout}")
+    if stderr:
+        lines.append(f"\nstderr:\n{stderr}")
+    if not stdout and not stderr:
+        lines.append("（暂无新输出）")
+    lines.append(f"\nnext_cursor：{next_cursor}")
+    if job.truncated:
+        lines.append("（输出已截断）")
+    return _ok("\n".join(lines))
+
+
+async def local_shell_cancel(user_id: int, args: dict) -> MCPCallResponse:
+    job_id = str(args.get("job_id") or "").strip()
+    if not job_id:
+        return _err("job_id 必填")
+    try:
+        job = await local_tools.cancel_job(user_id, job_id)
+    except local_tools.LocalMachineError as exc:
+        return _err(str(exc))
+    return _ok(f"已请求取消 {job_id}，当前状态：{job.status}")
+
+
 async def local_list_dir(user_id: int, args: dict) -> MCPCallResponse:
     path = str(args.get("path") or "").strip()
     if not path:
@@ -303,6 +397,70 @@ TOOLS = [
             },
         ),
         local_shell,
+    ),
+    (
+        MCPTool(
+            name="local_shell_start",
+            description=(
+                "在本地机器上启动一个长命令并立即返回 job_id。适合构建、测试、下载、"
+                "长时间脚本。之后用 local_shell_wait 读取输出，用 local_shell_cancel 取消。"
+                "启动前桌面端会审批一次。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "要执行的 shell 命令"},
+                    "cwd": {"type": "string", "description": "执行目录，默认用户主目录"},
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "超时秒数，默认 600，最大 3600",
+                    },
+                    "machine_id": {"type": "string", "description": "本地机器 ID"},
+                    "machine": {"type": "string", "description": "本地机器名称"},
+                },
+                "required": ["command"],
+            },
+        ),
+        local_shell_start,
+    ),
+    (
+        MCPTool(
+            name="local_shell_wait",
+            description=(
+                "读取 local_shell_start 任务的增量输出。传回上一次的 next_cursor，"
+                "最多等待 wait_seconds 秒。任务完成时返回退出码。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "local_shell_start 返回的 job_id"},
+                    "cursor": {
+                        "type": "integer",
+                        "description": "上次返回的 next_cursor，默认 0",
+                    },
+                    "wait_seconds": {
+                        "type": "integer",
+                        "description": "等待秒数，默认 20，最大 60",
+                    },
+                },
+                "required": ["job_id"],
+            },
+        ),
+        local_shell_wait,
+    ),
+    (
+        MCPTool(
+            name="local_shell_cancel",
+            description="取消 local_shell_start 启动的本地任务，会杀掉进程组。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "任务 ID"},
+                },
+                "required": ["job_id"],
+            },
+        ),
+        local_shell_cancel,
     ),
     (
         MCPTool(

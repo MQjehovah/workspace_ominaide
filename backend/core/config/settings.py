@@ -174,6 +174,13 @@ class Settings(BaseSettings):
     local_shell_enabled: bool = True
     local_shell_timeout_seconds: int = 600
     local_shell_max_output_chars: int = 30_000
+    # OAuth connectors. The redirect base is the public backend API prefix,
+    # e.g. https://mqgeek.com/ominaide/api; leave empty to derive it from the
+    # request (works when Uvicorn trusts the reverse proxy headers).
+    app_base_url: str = "https://mqgeek.com/ominaide"
+    oauth_redirect_base: str = "https://mqgeek.com/ominaide/api"
+    google_client_id: str = ""
+    google_client_secret: str = ""
     cors_origins: str = '["*","http://localhost:3000","http://localhost:5173","http://localhost:5000","http://localhost:8080","app://."]'
     webrtc_ice_servers: str = '[{"urls":"stun:mqgeek.com:3478"},{"urls":"turn:mqgeek.com:3478","username":"guest","credential":"guest"},{"urls":"turn:mqgeek.com:3478?transport=tcp","username":"guest","credential":"guest"}]'
 

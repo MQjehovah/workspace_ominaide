@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI):
     import core.ai.insight_models  # noqa
     import core.mcp_hub.models  # noqa
     import core.wschannel.models  # noqa
+    import core.connectors.models  # noqa
     import core.memory_models  # noqa
     import plugins.sources.backend.models  # noqa
     import core.objects.models  # noqa
@@ -189,6 +190,9 @@ app.include_router(marketplace_router)
 from core.ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)
 
+from core.connectors.router import router as connectors_router
+app.include_router(connectors_router)
+
 from core.mcp_hub.router import router as mcp_hub_router
 app.include_router(mcp_hub_router)
 
@@ -225,9 +229,6 @@ app.include_router(context_router)
 
 from core.agent.router import router as agent_router
 app.include_router(agent_router)
-
-from core.connectors.router import router as connectors_router
-app.include_router(connectors_router)
 
 from core.meetings.router import router as meetings_router
 app.include_router(meetings_router)

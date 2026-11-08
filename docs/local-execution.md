@@ -11,7 +11,10 @@ Bot 默认在服务端执行所有工具。Local tools 让 Bot 把单次操作�
 | 工具 | 说明 |
 |---|---|
 | `list_local_machines` | 列出当前在线的本地机器，返回 `machine_id` 和主机名 |
-| `local_shell` | 在本地机器执行 shell 命令 |
+| `local_shell` | 在本地机器执行短命令 |
+| `local_shell_start` | 启动长命令，立即返回 `job_id` |
+| `local_shell_wait` | 读取长命令增量输出 |
+| `local_shell_cancel` | 取消长命令并杀掉进程组 |
 | `local_list_dir` | 列出本地目录 |
 | `local_read_file` | 读取本地文本文件 |
 | `local_write_file` | 创建或覆盖本地文本文件 |
@@ -39,6 +42,26 @@ Bot 默认在服务端执行所有工具。Local tools 让 Bot 把单次操作�
 
 本地文件采用**就地读写**，不会默认复制到服务端 workspace，也不会进入
 OmniAide 文件库。
+
+### 异步 shell
+
+长任务不要让 Bot 一直阻塞：
+
+```text
+local_shell_start(command="npm run build", cwd="~/projects/foo")
+  → job_id=...
+
+local_shell_wait(job_id="...", cursor=0, wait_seconds=20)
+  → 新增 stdout/stderr + next_cursor + 状态
+
+local_shell_wait(job_id="...", cursor=<next_cursor>)
+  → 继续读取
+
+local_shell_cancel(job_id="...")
+  → 取消
+```
+
+输出有上限，任务完成后保留约 1 小时。
 
 ### shell 示例
 

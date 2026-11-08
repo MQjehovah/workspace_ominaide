@@ -1516,6 +1516,65 @@ class ApiService {
     if (res.statusCode != 200) throw Exception(_extractError(res));
   }
 
+  Future<Map<String, dynamic>> getAgentTaskDetail(int id) async {
+    final res = await get('/runs/$id');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMap(decodeJson(res));
+  }
+
+  Stream<Map<String, dynamic>> streamAgentRun(int id) async* {
+    final request =
+        http.Request('GET', Uri.parse('$_baseUrl/api/runs/$id/stream'));
+    final response = await _http.send(request, timeout: const Duration(seconds: 30));
+    if (response.statusCode != 200) {
+      final body = await response.stream.bytesToString();
+      throw Exception(body.isEmpty ? '运行流连接失败' : body);
+    }
+    final lines = response.stream
+        .timeout(const Duration(seconds: 120))
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    await for (final line in lines) {
+      final text = line.trim();
+      if (!text.startsWith('data: ')) continue;
+      final payload = text.substring(6).trim();
+      if (payload.isEmpty) continue;
+      try {
+        final decoded = jsonDecode(payload);
+        if (decoded is Map) {
+          yield decoded.map((k, v) => MapEntry(k.toString(), v));
+        }
+      } catch (_) {
+        // Ignore malformed SSE frames.
+      }
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> pendingApprovals() async {
+    final res = await get('/approvals?status=pending');
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    if (data is! List) return [];
+    return data
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<void> decideApproval(
+    int id, {
+    required bool approved,
+    bool remember = false,
+    String? reason,
+  }) async {
+    final res = await post('/approvals/$id/decision', {
+      'approved': approved,
+      'remember': remember,
+      if (reason != null) 'reason': reason,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
   Future<Map<String, dynamic>> buildContext(String query) async {
     final res =
         await get('/context/build?q=${Uri.encodeQueryComponent(query)}');

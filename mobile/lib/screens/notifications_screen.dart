@@ -9,6 +9,7 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _approvals = [];
   bool _loading = true;
 
   @override
@@ -20,12 +21,42 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final items = await ApiService().listNotifications();
+      final results = await Future.wait([
+        ApiService().listNotifications(),
+        ApiService().pendingApprovals(),
+      ]);
       if (!mounted) return;
-      setState(() { _items = items; _loading = false; });
+      setState(() {
+        _items = results[0];
+        _approvals = results[1];
+        _loading = false;
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _items = []; _loading = false; });
+      setState(() { _items = []; _approvals = []; _loading = false; });
+    }
+  }
+
+  Future<void> _decideApproval(
+    Map<String, dynamic> approval, {
+    required bool approved,
+    bool remember = false,
+  }) async {
+    final id = (approval['id'] as num?)?.toInt();
+    if (id == null) return;
+    try {
+      await ApiService().decideApproval(
+        id,
+        approved: approved,
+        remember: remember,
+      );
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('审批失败：${e.toString().replaceFirst('Exception: ', '')}')),
+      );
     }
   }
 
@@ -78,6 +109,75 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await _load();
   }
 
+  Widget _approvalCard(Map<String, dynamic> approval) {
+    final tool = (approval['tool_name'] ?? '工具').toString();
+    final reason = (approval['reason'] ?? '').toString();
+    final risk = (approval['risk_level'] ?? '').toString();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.lock_outline, size: 16, color: Colors.orange),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    tool,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (risk.isNotEmpty)
+                  Text(
+                    risk,
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+              ],
+            ),
+            if (reason.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(reason, style: const TextStyle(fontSize: 12)),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () =>
+                        _decideApproval(approval, approved: true),
+                    child: const Text('允许'),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _decideApproval(
+                      approval,
+                      approved: true,
+                      remember: true,
+                    ),
+                    child: const Text('总是允许'),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        _decideApproval(approval, approved: false),
+                    child: const Text('拒绝'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -87,27 +187,54 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _items.isEmpty
+          : (_items.isEmpty && _approvals.isEmpty)
               ? const Center(child: Text('暂无通知'))
               : RefreshIndicator(
                   onRefresh: _load,
-                  child: ListView.builder(
+                  child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: _items.length,
-                    itemBuilder: (c, i) {
-                      final n = _items[i];
-                      final unread = n['read'] == false;
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          leading: Icon(unread ? Icons.notifications_active : Icons.notifications, color: unread ? Colors.blue : Colors.grey),
-                          title: Text(n['title'] ?? '通知', style: TextStyle(fontWeight: unread ? FontWeight.bold : FontWeight.normal)),
-                          subtitle: Text(n['body'] ?? ''),
-                          isThreeLine: (n['body'] ?? '').toString().length > 40,
-                          onTap: () => _open(n),
+                    children: [
+                      if (_approvals.isNotEmpty) ...[
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 6, left: 2),
+                          child: Text(
+                            '待审批',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
-                      );
-                    },
+                        for (final a in _approvals) _approvalCard(a),
+                        const SizedBox(height: 10),
+                      ],
+                      for (final n in _items)
+                        Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: Icon(
+                              n['read'] == false
+                                  ? Icons.notifications_active
+                                  : Icons.notifications,
+                              color: n['read'] == false
+                                  ? Colors.blue
+                                  : Colors.grey,
+                            ),
+                            title: Text(
+                              n['title'] ?? '通知',
+                              style: TextStyle(
+                                fontWeight: n['read'] == false
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            subtitle: Text(n['body'] ?? ''),
+                            isThreeLine:
+                                (n['body'] ?? '').toString().length > 40,
+                            onTap: () => _open(n),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
     );

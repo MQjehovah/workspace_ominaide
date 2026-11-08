@@ -189,3 +189,71 @@ async def test_local_file_tools_roundtrip(monkeypatch):
     )
     assert not response.isError, _text(response)
     assert "src/a.ts:3: const a = 1" in _text(response)
+
+
+async def test_local_shell_async_job(monkeypatch):
+    calls: list[tuple] = []
+
+    async def fake_call(user_id, machine_id, tool, args, **kwargs):
+        calls.append((tool, args))
+        return {"ok": True, "result": {"cwd": "/tmp", "pid": 123}}
+
+    monkeypatch.setattr(local_tools, "call_local", fake_call)
+    local_tools._jobs.clear()
+
+    job = await local_tools.start_job(1, "dev-a", "echo hi")
+    assert job.status == "running"
+
+    await local_tools._handle_message(
+        1,
+        "dev-a",
+        {
+            "type": "job_event",
+            "job_id": job.job_id,
+            "stream": "stdout",
+            "chunk": "hi\n",
+        },
+        None,
+    )
+    await local_tools._handle_message(
+        1,
+        "dev-a",
+        {
+            "type": "job_done",
+            "job_id": job.job_id,
+            "exit_code": 0,
+            "timed_out": False,
+            "cancelled": False,
+        },
+        None,
+    )
+
+    current, events, cursor = await local_tools.wait_job(
+        1, job.job_id, cursor=0, wait_seconds=1
+    )
+    assert current.status == "done"
+    assert current.exit_code == 0
+    assert events == [("stdout", "hi\n")]
+
+    _, no_events, next_cursor = await local_tools.wait_job(
+        1, job.job_id, cursor=cursor, wait_seconds=1
+    )
+    assert no_events == []
+    assert next_cursor == cursor
+
+
+async def test_local_shell_cancel_sends_desktop_call(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_call(user_id, machine_id, tool, args, **kwargs):
+        calls.append(tool)
+        if tool == "shell_cancel":
+            return {"ok": True, "result": {"cancelled": True}}
+        return {"ok": True, "result": {"cwd": "/tmp"}}
+
+    monkeypatch.setattr(local_tools, "call_local", fake_call)
+    local_tools._jobs.clear()
+
+    job = await local_tools.start_job(1, "dev-a", "sleep 100")
+    await local_tools.cancel_job(1, job.job_id)
+    assert calls == ["shell_start", "shell_cancel"]

@@ -35,6 +35,20 @@ type LocalShellResult = {
   duration_ms: number
 }
 
+type ShellJob = {
+  id: string
+  child: ReturnType<typeof spawn>
+  cwd: string
+  started: number
+  seq: number
+  timedOut: boolean
+  cancelled: boolean
+  finished: boolean
+  timer: ReturnType<typeof setTimeout>
+}
+
+const shellJobs = new Map<string, ShellJob>()
+
 let approvalChain: Promise<void> = Promise.resolve()
 
 function expandHome(value: string): string {
@@ -155,8 +169,96 @@ async function runShell(args: LocalArgs): Promise<LocalShellResult> {
   })
 }
 
-async function listDir(args: LocalArgs) {
-  const path = resolveLocalPath(args.path)
+async function startShellJob(args: LocalArgs): Promise<Record<string, unknown>> {
+  const jobId = String(args.job_id || '').trim()
+  if (!jobId) throw new Error('job_id 不能为空')
+  if (shellJobs.has(jobId)) throw new Error(`job ${jobId} 已存在`)
+  const command = String(args.command || '').trim()
+  if (!command) throw new Error('command 不能为空')
+  const cwd = resolveCwd(args.cwd)
+  const timeout = Math.min(
+    Math.max(Number(args.timeout_seconds) || DEFAULT_TIMEOUT, 1),
+    3600,
+  )
+  const spec = shellSpec(command)
+  const child = spawn(spec.file, spec.args, {
+    cwd,
+    env: process.env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
+
+  const job: ShellJob = {
+    id: jobId,
+    child,
+    cwd,
+    started: Date.now(),
+    seq: 0,
+    timedOut: false,
+    cancelled: false,
+    finished: false,
+    timer: setTimeout(() => {
+      job.timedOut = true
+      killTree(child)
+    }, timeout * 1000),
+  }
+  shellJobs.set(jobId, job)
+
+  const emitChunk = (stream: 'stdout' | 'stderr', chunk: Buffer) => {
+    if (job.finished || chunk.length === 0) return
+    channelSend('local-tools', {
+      type: 'job_event',
+      job_id: jobId,
+      stream,
+      seq: job.seq++,
+      chunk: chunk.toString('utf8'),
+    })
+  }
+
+  child.stdout?.on('data', (chunk: Buffer) => emitChunk('stdout', chunk))
+  child.stderr?.on('data', (chunk: Buffer) => emitChunk('stderr', chunk))
+
+  const finish = (code: number | null, error?: string) => {
+    if (job.finished) return
+    job.finished = true
+    clearTimeout(job.timer)
+    channelSend('local-tools', {
+      type: 'job_done',
+      job_id: jobId,
+      exit_code: code,
+      timed_out: job.timedOut,
+      cancelled: job.cancelled,
+      duration_ms: Date.now() - job.started,
+      error: error || null,
+    })
+    setTimeout(() => shellJobs.delete(jobId), 10 * 60 * 1000)
+  }
+
+  child.on('error', (err) => finish(null, err.message))
+  child.on('close', (code) => finish(code))
+
+  return {
+    job_id: jobId,
+    pid: child.pid,
+    cwd,
+    started_at: new Date(job.started).toISOString(),
+  }
+}
+
+async function cancelShellJob(args: LocalArgs): Promise<Record<string, unknown>> {
+  const jobId = String(args.job_id || '').trim()
+  if (!jobId) throw new Error('job_id 不能为空')
+  const job = shellJobs.get(jobId)
+  if (!job) throw new Error(`找不到本地任务 ${jobId}`)
+  if (!job.finished) {
+    job.cancelled = true
+    killTree(job.child)
+  }
+  return { job_id: jobId, cancelled: true }
+}
+
+async function listDir(args: LocalArgs) {  const path = resolveLocalPath(args.path)
   const stat = await fsp.stat(path)
   if (!stat.isDirectory()) throw new Error(`不是目录：${path}`)
 
@@ -348,7 +450,7 @@ async function setAlwaysAllow(): Promise<void> {
 
 function approvalDetail(tool: string, args: LocalArgs): string {
   const lines = [`本地机器：${hostname()}`]
-  if (tool === 'shell') {
+  if (tool === 'shell' || tool === 'shell_start') {
     const cwd = args.cwd ? resolveLocalPath(String(args.cwd)) : homedir()
     const command = String(args.command || '')
     lines.push(`目录：${cwd}`, '', '命令：')
@@ -421,6 +523,10 @@ async function runTool(tool: string, args: LocalArgs): Promise<unknown> {
   switch (tool) {
     case 'shell':
       return await runShell(args)
+    case 'shell_start':
+      return await startShellJob(args)
+    case 'shell_cancel':
+      return await cancelShellJob(args)
     case 'list_dir':
       return await listDir(args)
     case 'read_file':
@@ -447,7 +553,9 @@ export async function handleLocalToolMessage(msg: any): Promise<void> {
     msg?.args && typeof msg.args === 'object' ? msg.args : {}
 
   try {
-    await ensureApproved(tool, args)
+    if (tool !== 'shell_cancel') {
+      await ensureApproved(tool, args)
+    }
     const result = await runTool(tool, args)
     channelSend('local-tools', {
       type: 'result',
