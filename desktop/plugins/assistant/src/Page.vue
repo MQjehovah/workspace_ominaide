@@ -78,7 +78,7 @@ const paletteIdx = ref(0)
 const toastMsg = ref('')
 const listening = ref(false)
 const composing = ref(false)
-const expandedToolMsg = ref<number | null>(null)
+const toolPanelOverride = ref<Record<number, boolean>>({})
 const detailOpen = ref(false)
 const detailTab = ref<'process' | 'history' | 'skills' | 'deliverables'>('process')
 const statusFilter = ref<'all' | 'running' | 'done' | 'error'>('all')
@@ -726,7 +726,7 @@ function ensureSession(): Session {
 }
 
 function newSession() {
-  expandedToolMsg.value = null
+  toolPanelOverride.value = {}
   const s = createSession()
   sessions.value.unshift(s)
   currentId.value = s.id
@@ -738,7 +738,7 @@ function newSession() {
 
 async function switchSession(id: string) {
   if (id === currentId.value) return
-  expandedToolMsg.value = null
+  toolPanelOverride.value = {}
   currentId.value = id
   input.value = ''
   await loadCloudMessages(current.value, true)
@@ -826,6 +826,7 @@ function flushIntermediateText(m: Msg) {
 function startStep(m: Msg, name: string, args: any) {
   flushIntermediateText(m)
   const step: Step = { id: stepSeq++, name, args, result: '', status: 'running', collapsed: false }
+  toolPanelOverride.value[m.id] = true
   m.steps.push(step)
   m.timeline.push({ kind: 'tool', stepId: step.id })
   m.reasoningSeparated = false
@@ -857,17 +858,23 @@ function upsertServerStep(m: Msg, data: any): Step | null {
       args: data.arguments || {},
       result: data.content || '',
       status,
-      collapsed: false,
+      collapsed: status !== 'running',
     }
     m.steps.push(st)
     m.timeline.push({ kind: 'tool', stepId: sid })
     if (sid >= stepSeq) stepSeq = sid + 1
   } else {
+    const wasRunning = st.status === 'running'
     if (data.tool) st.name = data.tool
     if (data.arguments !== undefined) st.args = data.arguments
     if (data.content !== undefined) st.result = data.content || ''
     st.status = status
+    if (wasRunning && status !== 'running' && !m.steps.some(x => x.status === 'running')) {
+      st.collapsed = true
+      toolPanelOverride.value[m.id] = false
+    }
   }
+  if (status === 'running') toolPanelOverride.value[m.id] = true
   return st
 }
 
@@ -1823,8 +1830,17 @@ function copyToolText(value: any) {
   )
 }
 
-function toggleToolDetails(m: Msg) {
-  expandedToolMsg.value = expandedToolMsg.value === m.id ? null : m.id
+function toolPanelOpen(m: Msg): boolean {
+  const override = toolPanelOverride.value[m.id]
+  return override === undefined ? !!runningStep(m) : override
+}
+
+function toggleToolPanel(m: Msg) {
+  toolPanelOverride.value[m.id] = !toolPanelOpen(m)
+}
+
+function toggleStep(step: Step) {
+  step.collapsed = !step.collapsed
 }
 
 function prettyJson(args: any): string {
@@ -1933,54 +1949,64 @@ const suggestions = [
             </template>
             <template v-else>
               <div class="asst-bubble" :class="{ running: m.pending }">
-                <div v-for="(tl, tli) in visibleTimeline(m)" :key="tli" class="tl-wrap">
-                  <div v-if="tl.kind === 'reasoning'" class="reasoning" :class="{ open: m.reasoningOpen }">
-                    <button class="reasoning-hd" @click="m.reasoningOpen = !m.reasoningOpen">
-                      <span class="chev">{{ m.reasoningOpen ? '▾' : '▸' }}</span>
-                      <span class="reasoning-title">思考过程</span>
-                    </button>
-                    <div v-if="m.reasoningOpen" class="reasoning-body">{{ tl.text }}</div>
-                  </div>
-                  <div v-else-if="tl.kind === 'text'" class="tl-text">{{ tl.text }}</div>
-                </div>
-
-                <div v-if="m.steps.length" class="tool-block">
-                  <button type="button" class="tool-status" :class="{ running: !!runningStep(m), error: lastStepError(m) }" @click.stop="toggleToolDetails(m)">
-                    <span class="tool-status-ic">{{ toolIcon((runningStep(m) || currentStep(m))?.name || '') }}</span>
-                    <span class="tool-status-name">{{ runningStep(m)?.name || `${m.steps.length} 个工具调用` }}</span>
-                    <span v-if="runningStep(m)" class="tool-status-state">执行中</span>
-                    <span v-else class="tool-status-check" :class="{ err: lastStepError(m) }">{{ lastStepError(m) ? '✕' : '✓' }}</span>
-                    <span class="tool-status-chevron">{{ expandedToolMsg === m.id ? '⌄' : '›' }}</span>
+              <div v-for="(tl, tli) in visibleTimeline(m)" :key="tli" class="tl-wrap">
+                <div v-if="tl.kind === 'reasoning'" class="reasoning" :class="{ open: m.reasoningOpen }">
+                  <button class="reasoning-hd" @click="m.reasoningOpen = !m.reasoningOpen">
+                    <span class="chev">{{ m.reasoningOpen ? '▾' : '▸' }}</span>
+                    <span class="reasoning-title">思考过程</span>
                   </button>
-                  <div v-if="expandedToolMsg === m.id && currentStep(m)" class="tool-details" @click.stop>
-                    <div class="tool-details-row">
-                      <div class="tool-details-row-hd">
-                        <span class="tool-details-label">参数</span>
-                        <button class="tool-details-copy" @click.stop="copyToolText(currentStep(m)!.args)">复制</button>
+                  <div v-if="m.reasoningOpen" class="reasoning-body">{{ tl.text }}</div>
+                </div>
+                <div v-else-if="tl.kind === 'text'" class="tl-text">{{ tl.text }}</div>
+              </div>
+
+              <div v-if="m.steps.length" class="tool-panel" :class="{ running: !!runningStep(m), error: lastStepError(m) }">
+                <button type="button" class="tool-panel-hd" @click="toggleToolPanel(m)">
+                  <span class="tool-panel-icon" :class="{ spinning: !!runningStep(m) }">{{ runningStep(m) ? '◌' : toolIcon(currentStep(m)?.name || '') }}</span>
+                  <span class="tool-panel-title">{{ runningStep(m) ? `正在调用 · ${runningStep(m)!.name}` : `${m.steps.length} 个工具调用` }}</span>
+                  <span class="tool-panel-badge" :class="{ running: !!runningStep(m), err: lastStepError(m) }">
+                    {{ runningStep(m) ? '执行中' : lastStepError(m) ? '有失败' : '已完成' }}
+                  </span>
+                  <span class="tool-panel-chevron" :class="{ open: toolPanelOpen(m) }">›</span>
+                </button>
+                <div v-if="toolPanelOpen(m)" class="tool-panel-body">
+                  <div v-for="step in m.steps" :key="step.id" class="tool-row" :class="step.status">
+                    <button type="button" class="tool-row-hd" @click="toggleStep(step)">
+                      <span class="tool-row-icon">{{ stepIcon(step) }}</span>
+                      <span class="tool-row-name">{{ step.name }}</span>
+                      <span class="tool-row-status" :class="step.status">{{ step.status === 'running' ? '执行中' : step.status === 'error' ? '失败' : '完成' }}</span>
+                      <span class="tool-row-chevron" :class="{ open: !step.collapsed }">›</span>
+                    </button>
+                    <div v-if="!step.collapsed" class="tool-row-body">
+                      <div class="tool-row-sec">
+                        <div class="tool-row-sec-hd">
+                          <span>参数</span>
+                          <button @click.stop="copyToolText(step.args)">复制</button>
+                        </div>
+                        <pre class="tool-row-pre">{{ prettyJson(step.args) }}</pre>
                       </div>
-                      <pre class="tool-details-pre">{{ prettyJson(currentStep(m)!.args) }}</pre>
-                    </div>
-                    <div v-if="currentStep(m)!.result" class="tool-details-row">
-                      <div class="tool-details-row-hd">
-                        <span class="tool-details-label">结果</span>
-                        <button class="tool-details-copy" @click.stop="copyToolText(currentStep(m)!.result)">复制</button>
+                      <div v-if="step.result" class="tool-row-sec">
+                        <div class="tool-row-sec-hd">
+                          <span>结果</span>
+                          <button @click.stop="copyToolText(step.result)">复制</button>
+                        </div>
+                        <pre class="tool-row-pre" :class="{ err: step.status === 'error' }">{{ step.result }}</pre>
                       </div>
-                      <pre class="tool-details-pre" :class="{ err: currentStep(m)!.status === 'error' }">{{ currentStep(m)!.result }}</pre>
+                      <div v-else-if="step.status === 'running'" class="tool-row-running">
+                        <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
+                        工具正在执行…
+                      </div>
                     </div>
-                    <div v-else-if="currentStep(m)!.status === 'running'" class="tool-details-running">
-                      <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
-                      工具正在执行…
-                    </div>
-                    <div v-if="m.steps.length > 1" class="tool-details-foot">共 {{ m.steps.length }} 个工具调用，当前显示最新一条</div>
                   </div>
                 </div>
+              </div>
 
-                <div v-if="m.pending && !m.text && !m.steps.length" class="pending">
-                  <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
-                  <span class="pending-text">思考中…</span>
-                </div>
-                <div v-if="m.error" class="error-bubble">{{ m.error }}</div>
-                <div v-if="m.text" class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
+              <div v-if="m.pending && !m.text && !m.steps.length" class="pending">
+                <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
+                <span class="pending-text">思考中…</span>
+              </div>
+              <div v-if="m.error" class="error-bubble">{{ m.error }}</div>
+              <div v-if="m.text" class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
               </div>
               <div v-if="m.usage" class="msg-usage">{{ formatUsage(m) }}</div>
               <div class="msg-actions">
@@ -3438,49 +3464,78 @@ const suggestions = [
 .step-result.err { color: var(--red); }
 
 /* pending */
-.tool-status {
-  display: flex;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 4px;
-  padding: 6px 10px;
+.tool-panel {
+  max-width: min(780px, 92%);
+  margin: 0 0 10px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 12px;
   background: var(--bg2);
+  overflow: hidden;
+}
+.tool-panel.running { border-color: rgba(251, 191, 36, .28); }
+.tool-panel.error { border-color: rgba(244, 104, 109, .28); }
+.tool-panel-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.tool-panel-hd:hover { background: var(--bg3); }
+.tool-panel-icon { width: 16px; text-align: center; flex-shrink: 0; font-size: 13px; color: var(--accent2); }
+.tool-panel-icon.spinning { color: var(--amber); animation: spin 1s linear infinite; display: inline-block; }
+.tool-panel-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; }
+.tool-panel-badge { flex-shrink: 0; font-size: 10px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(47, 214, 165, .1); border: 1px solid rgba(47, 214, 165, .25); }
+.tool-panel-badge.running { color: var(--amber); background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .28); }
+.tool-panel-badge.err { color: var(--red); background: rgba(244, 104, 109, .1); border-color: rgba(244, 104, 109, .28); }
+.tool-panel-chevron { flex-shrink: 0; color: var(--dim); font-size: 14px; transition: transform .15s ease; }
+.tool-panel-chevron.open { transform: rotate(90deg); }
+.tool-panel-body { border-top: 1px solid var(--border); padding: 4px 6px 6px; max-height: 360px; overflow-y: auto; }
+.tool-row { border-radius: 8px; margin: 2px 0; }
+.tool-row.running { background: rgba(251, 191, 36, .04); }
+.tool-row.error { background: rgba(244, 104, 109, .04); }
+.tool-row-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
   color: var(--dim);
   font: inherit;
   font-size: 11.5px;
   cursor: pointer;
   text-align: left;
-  transition: border-color .12s ease, color .12s ease, background .12s ease;
+  border-radius: 8px;
 }
-.tool-status:hover { border-color: var(--accent); color: var(--text); background: var(--bg3); }
-.tool-status.running { border-color: rgba(251, 191, 36, .3); }
-.tool-status.error { border-color: rgba(244, 104, 109, .3); }
-.tool-status-ic { flex-shrink: 0; font-size: 12px; width: 15px; text-align: center; }
-.tool-status-name { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; color: var(--text); }
-.tool-status-state { flex-shrink: 0; color: var(--amber); font-size: 10.5px; }
-.tool-status-check { flex-shrink: 0; color: var(--green); font-size: 11px; font-weight: 700; }
-.tool-status-check.err { color: var(--red); }
-.tool-status-chevron { flex-shrink: 0; color: var(--accent2); font-size: 14px; }
-
-.tool-details {
-  margin: 8px 0 2px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-.tool-details-row { margin-bottom: 8px; }
-.tool-details-row-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.tool-details-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
-.tool-details-copy { border: none; background: transparent; color: var(--accent2); font-size: 10.5px; cursor: pointer; padding: 1px 4px; border-radius: 4px; }
-.tool-details-copy:hover { background: var(--bg4); }
-.tool-details-pre { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; line-height: 1.55; color: #b7c1d4; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto; }
-.tool-details-pre.err { color: var(--red); }
-.tool-details-running { display: flex; align-items: center; gap: 6px; padding: 6px 0 2px; font-size: 11.5px; color: var(--dim); }
-.tool-details-foot { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--dim); }
+.tool-row-hd:hover { background: var(--bg3); }
+.tool-row-icon { width: 14px; text-align: center; flex-shrink: 0; font-size: 12px; }
+.tool-row.running .tool-row-icon { color: var(--amber); animation: spin 1s linear infinite; display: inline-block; }
+.tool-row.done .tool-row-icon { color: var(--green); }
+.tool-row.error .tool-row-icon { color: var(--red); }
+.tool-row-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; color: var(--text); }
+.tool-row-status { flex-shrink: 0; font-size: 10px; color: var(--dim); }
+.tool-row-status.running { color: var(--amber); }
+.tool-row-status.done { color: var(--green); }
+.tool-row-status.error { color: var(--red); }
+.tool-row-chevron { flex-shrink: 0; color: var(--dim); font-size: 13px; transition: transform .15s ease; }
+.tool-row-chevron.open { transform: rotate(90deg); }
+.tool-row-body { padding: 2px 8px 8px 30px; }
+.tool-row-sec { margin-bottom: 6px; }
+.tool-row-sec-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
+.tool-row-sec-hd button { border: none; background: transparent; color: var(--accent2); font-size: 10.5px; cursor: pointer; padding: 1px 4px; border-radius: 4px; }
+.tool-row-sec-hd button:hover { background: var(--bg4); }
+.tool-row-pre { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; line-height: 1.55; color: #b7c1d4; white-space: pre-wrap; word-break: break-word; max-height: 160px; overflow: auto; }
+.tool-row-pre.err { color: var(--red); }
+.tool-row-running { display: flex; align-items: center; gap: 6px; padding: 4px 0 2px; font-size: 11px; color: var(--dim); }
 
 .pending {
   display: inline-flex;
