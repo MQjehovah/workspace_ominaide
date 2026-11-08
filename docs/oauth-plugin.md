@@ -1,6 +1,6 @@
-# OAuth 连接器
+# 外部授权插件（OAuth）
 
-连接器让 Bot 在用户授权后访问外部服务。当前实现 Google（Gmail / Calendar /
+外部授权插件让 Bot 在用户授权后访问外部服务。当前实现 Google（Gmail / Calendar /
 Drive），框架可以继续添加 Slack、Notion、Microsoft 等。
 
 ## 服务端配置
@@ -17,7 +17,7 @@ OAUTH_REDIRECT_BASE=https://mqgeek.com/ominaide/api
 Google Cloud Console 的 OAuth 客户端需要配置回调地址：
 
 ```text
-https://mqgeek.com/ominaide/api/connectors/oauth/callback
+https://mqgeek.com/ominaide/api/oauth/callback
 ```
 
 测试模式下只有添加为 Test user 的 Google 账号可以授权，refresh token 可能 7 天过期；
@@ -25,20 +25,21 @@ https://mqgeek.com/ominaide/api/connectors/oauth/callback
 
 ## 使用
 
-1. Web → 设置 → 连接器
+1. Web → 设置 → 外部授权插件
 2. 点「连接账号」
 3. 在 Google 授权页同意
 4. 回调后回到设置页
 
 账号 token 使用 `core.crypto` 加密存储，不会通过 API 返回明文。
+插件代码位于 `backend/plugins/oauth/`，由插件注册器自动挂载。
 
 ## API
 
 ```text
-GET    /api/connectors
-POST   /api/connectors/oauth/start      { "provider": "google" }
-GET    /api/connectors/oauth/callback
-DELETE /api/connectors/{account_id}
+GET    /api/oauth
+POST   /api/oauth/start                 { "provider": "google" }
+GET    /api/oauth/callback
+DELETE /api/oauth/{account_id}
 ```
 
 ## 工具

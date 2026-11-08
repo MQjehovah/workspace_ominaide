@@ -10,7 +10,7 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from core.config.settings import settings
-from core.connectors.providers import get_provider
+from plugins.oauth.backend.providers import get_provider
 
 
 class GoogleError(RuntimeError):

@@ -1,4 +1,4 @@
-"""OAuth connector framework: account storage and Google tool gating."""
+"""External authorization plugin: account storage and Google tool gating."""
 
 import random
 import string
@@ -27,28 +27,28 @@ async def _new_user(client):
     return r.json()["access_token"], user_id
 
 
-async def test_connector_providers_and_config_gate(client):
+async def test_oauth_providers_and_config_gate(client):
     token, _ = await _new_user(client)
 
-    r = await client.get("/api/connectors", headers=auth(token))
+    r = await client.get("/api/oauth", headers=auth(token))
     assert r.status_code == 200, r.text
     providers = {item["key"]: item for item in r.json()["providers"]}
     assert "google" in providers
     assert providers["google"]["configured"] is False
 
     r = await client.post(
-        "/api/connectors/oauth/start",
+        "/api/oauth/start",
         json={"provider": "google"},
         headers=auth(token),
     )
     assert r.status_code == 400, r.text
 
 
-async def test_connector_account_store_and_disconnect(client):
+async def test_oauth_account_store_and_disconnect(client):
     token, user_id = await _new_user(client)
     from datetime import datetime, timedelta
 
-    from core.connectors import service
+    from plugins.oauth.backend import service
 
     row = await service.save_account(
         user_id,
@@ -63,18 +63,18 @@ async def test_connector_account_store_and_disconnect(client):
     )
     assert row.id
 
-    r = await client.get("/api/connectors", headers=auth(token))
+    r = await client.get("/api/oauth", headers=auth(token))
     providers = {item["key"]: item for item in r.json()["providers"]}
     accounts = providers["google"]["accounts"]
     assert accounts and accounts[0]["email"] == "me@example.com"
     assert "access" not in str(accounts)
 
     r = await client.delete(
-        f"/api/connectors/{row.id}", headers=auth(token)
+        f"/api/oauth/{row.id}", headers=auth(token)
     )
     assert r.status_code == 200, r.text
 
-    r = await client.get("/api/connectors", headers=auth(token))
+    r = await client.get("/api/oauth", headers=auth(token))
     assert r.json()["providers"][0]["accounts"] == []
 
 

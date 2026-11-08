@@ -140,7 +140,7 @@
             </el-form>
           </el-tab-pane>
 
-          <el-tab-pane label="连接器" name="connectors">
+          <el-tab-pane label="外部授权插件" name="connectors">
             <div style="margin-top:12px;max-width:720px">
               <div v-for="p in connectors" :key="p.key" class="connector-card">
                 <div class="connector-head">
@@ -388,7 +388,7 @@ const connectorLoading = ref(false)
 
 async function fetchConnectors() {
   try {
-    const res = await client.get('/connectors')
+    const res = await client.get('/oauth')
     connectors.value = res.data?.providers || []
   } catch {
     connectors.value = []
@@ -398,7 +398,7 @@ async function fetchConnectors() {
 async function connectProvider(provider: string) {
   connectorLoading.value = true
   try {
-    const res = await client.post('/connectors/oauth/start', { provider })
+    const res = await client.post('/oauth/start', { provider })
     const url = res.data?.auth_url
     if (!url) throw new Error('未拿到授权地址')
     window.location.href = url
@@ -411,7 +411,7 @@ async function connectProvider(provider: string) {
 
 async function disconnectConnector(id: number) {
   try {
-    await client.delete(`/connectors/${id}`)
+    await client.delete(`/oauth/${id}`)
     ElMessage.success('已断开连接')
     await fetchConnectors()
   } catch (e: any) {

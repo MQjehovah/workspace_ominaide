@@ -13,14 +13,14 @@ from sqlalchemy import (
 from core.database.base import Base
 
 
-class ConnectorAccount(Base):
-    """One OAuth account connected to an external provider."""
+class OAuthAccount(Base):
+    """One external account authorized through an OAuth plugin."""
 
-    __tablename__ = "connector_accounts"
+    __tablename__ = "oauth_accounts"
     __table_args__ = (
         UniqueConstraint(
             "user_id", "provider", "account_id",
-            name="uq_connector_user_provider_account",
+            name="uq_oauth_user_provider_account",
         ),
     )
 

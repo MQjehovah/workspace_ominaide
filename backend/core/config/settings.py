@@ -174,7 +174,7 @@ class Settings(BaseSettings):
     local_shell_enabled: bool = True
     local_shell_timeout_seconds: int = 600
     local_shell_max_output_chars: int = 30_000
-    # OAuth connectors. The redirect base is the public backend API prefix,
+    # OAuth plugin. The redirect base is the public backend API prefix,
     # e.g. https://mqgeek.com/ominaide/api; leave empty to derive it from the
     # request (works when Uvicorn trusts the reverse proxy headers).
     app_base_url: str = "https://mqgeek.com/ominaide"

@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
     import core.ai.insight_models  # noqa
     import core.mcp_hub.models  # noqa
     import core.wschannel.models  # noqa
-    import core.connectors.models  # noqa
+    import plugins.oauth.backend.models  # noqa
     import core.memory_models  # noqa
     import plugins.sources.backend.models  # noqa
     import core.objects.models  # noqa

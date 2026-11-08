@@ -26,6 +26,11 @@ async def ensure_schema_migrations():
             await conn.execute(text("ALTER TABLE rss_entries RENAME TO content_items"))
             table_names.discard("rss_entries")
             table_names.add("content_items")
+        if "connector_accounts" in table_names and "oauth_accounts" not in table_names:
+            # OAuth accounts moved from core connectors to the oauth plugin.
+            await conn.execute(text("ALTER TABLE connector_accounts RENAME TO oauth_accounts"))
+            table_names.discard("connector_accounts")
+            table_names.add("oauth_accounts")
         if "plugin_registry" in table_names:
             await conn.execute(text(
                 "UPDATE plugin_registry SET name = 'sources', title = '资讯' "

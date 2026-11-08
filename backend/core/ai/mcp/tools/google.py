@@ -1,11 +1,11 @@
-"""Google connector tools (Gmail, Calendar, Drive)."""
+"""Google external authorization plugin tools (Gmail, Calendar, Drive)."""
 
 from __future__ import annotations
 
 import mimetypes
 
 from core.ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
-from core.connectors import service
+from plugins.oauth.backend import service
 
 
 def _ok(text: str) -> MCPCallResponse:
@@ -31,7 +31,7 @@ async def google_gmail_search(user_id: int, args: dict) -> MCPCallResponse:
         return _err("query 必填")
     try:
         token, _ = await _token(user_id, args)
-        from core.connectors import google
+        from plugins.oauth.backend import google
 
         rows = await google.gmail_search(
             token, query, int(args.get("limit") or 10)
@@ -53,7 +53,7 @@ async def google_gmail_read(user_id: int, args: dict) -> MCPCallResponse:
         return _err("message_id 必填")
     try:
         token, _ = await _token(user_id, args)
-        from core.connectors import google
+        from plugins.oauth.backend import google
 
         message = await google.gmail_read(token, message_id)
     except Exception as exc:
@@ -75,7 +75,7 @@ async def google_gmail_send(user_id: int, args: dict) -> MCPCallResponse:
         return _err("to 和 subject 必填")
     try:
         token, _ = await _token(user_id, args)
-        from core.connectors import google
+        from plugins.oauth.backend import google
 
         result = await google.gmail_send(
             token,
@@ -92,7 +92,7 @@ async def google_gmail_send(user_id: int, args: dict) -> MCPCallResponse:
 async def google_calendar_list(user_id: int, args: dict) -> MCPCallResponse:
     try:
         token, _ = await _token(user_id, args)
-        from core.connectors import google
+        from plugins.oauth.backend import google
 
         rows = await google.calendar_list(
             token,
@@ -120,7 +120,7 @@ async def google_calendar_create(user_id: int, args: dict) -> MCPCallResponse:
         return _err("summary、start、end 必填（ISO 时间）")
     try:
         token, _ = await _token(user_id, args)
-        from core.connectors import google
+        from plugins.oauth.backend import google
 
         row = await google.calendar_create(
             token,
@@ -139,7 +139,7 @@ async def google_drive_search(user_id: int, args: dict) -> MCPCallResponse:
     query = str(args.get("query") or "").strip()
     try:
         token, _ = await _token(user_id, args)
-        from core.connectors import google
+        from plugins.oauth.backend import google
 
         rows = await google.drive_search(
             token, query, int(args.get("limit") or 10)
@@ -161,7 +161,7 @@ async def google_drive_read(user_id: int, args: dict) -> MCPCallResponse:
         return _err("file_id 必填")
     try:
         token, _ = await _token(user_id, args)
-        from core.connectors import google
+        from plugins.oauth.backend import google
 
         data = await google.drive_read(token, file_id)
     except Exception as exc:
@@ -203,7 +203,7 @@ async def google_drive_upload(user_id: int, args: dict) -> MCPCallResponse:
             raw = str(content).encode("utf-8")
             mime = str(args.get("mime_type") or "text/plain").strip()
         token, _ = await _token(user_id, args)
-        from core.connectors import google
+        from plugins.oauth.backend import google
 
         row = await google.drive_upload(
             token, name=name, content=raw, mime_type=mime

@@ -1,0 +1,13 @@
+{
+  "id": "oauth",
+  "name": "oauth",
+  "version": "1.0.0",
+  "title": "外部授权插件",
+  "description": "通过 OAuth 授权接入外部服务，例如 Gmail、Google Calendar 和 Google Drive",
+  "icon": "Key",
+  "permissions": [],
+  "routes": {
+    "settings": "/settings?tab=connectors"
+  },
+  "tools": []
+}
