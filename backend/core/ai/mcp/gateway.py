@@ -178,12 +178,15 @@ def _query_variants(query: str) -> list[str]:
 def _score_term(term: str, tool: MCPTool) -> int:
     name = tool.name.lower()
     desc = (tool.description or "").lower()
+    source = (tool.source or "").lower()
+    server = (tool.server or "").lower()
+    searchable = f"{name} {desc} {source} {server}"
     score = 0
     if term == name:
         score += 1000
     elif term in name:
         score += 600
-    if term in desc:
+    if term in searchable:
         score += 200
     for token in re.split(r"[\s,;，；/]+", term):
         if not token:
@@ -192,7 +195,7 @@ def _score_term(term: str, tool: MCPTool) -> int:
             score += 300
         elif token in name:
             score += 120
-        if token in desc:
+        if token in searchable:
             score += 40
     return score
 
