@@ -93,7 +93,19 @@ def _get_job(user_id: int, job_id: str) -> LocalJob:
 
 def register_channel() -> None:
     """Register the inbound result handler (idempotent)."""
-    host_channel.register(CHANNEL, _handle_message)
+    host_channel.register(CHANNEL, _handle_message, on_disconnect=_on_machine_disconnect)
+
+
+async def _on_machine_disconnect(user_id: int, machine_id: str) -> None:
+    for job in _jobs.values():
+        if (
+            job.user_id == user_id
+            and job.machine_id == machine_id
+            and job.running
+        ):
+            job.status = "failed"
+            job.finished_at = time.monotonic()
+            job.event.set()
 
 
 async def _handle_message(user_id: int, machine_id: str, payload: dict, ws) -> None:
