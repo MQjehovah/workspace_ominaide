@@ -1802,6 +1802,29 @@ function currentStep(m: Msg): Step | undefined {
   return runningStep(m) || [...m.steps].reverse().find(s => s.status !== 'running')
 }
 
+function lastStepError(m: Msg): boolean {
+  const st = currentStep(m)
+  return !!st && st.status === 'error'
+}
+
+function toolIcon(name: string): string {
+  const n = (name || '').toLowerCase()
+  if (/shell|terminal|run_/.test(n)) return '⌨'
+  if (/file|read|write|grep|list_dir/.test(n)) return '📄'
+  if (/search|find/.test(n)) return '🔎'
+  if (/mcp|server/.test(n)) return '🔌'
+  if (/web|fetch|url/.test(n)) return '🌐'
+  return '🛠'
+}
+
+function copyToolText(value: any) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  navigator.clipboard.writeText(text || '').then(
+    () => showToast('已复制'),
+    () => showToast('复制失败'),
+  )
+}
+
 const toolPopoverMsg = computed(() => {
   const msgId = toolPopover.value?.msgId
   if (!msgId) return null
@@ -1831,7 +1854,7 @@ function toggleToolPopover(m: Msg, e: MouseEvent) {
 function onDocClickTool(e: MouseEvent) {
   if (!toolPopover.value) return
   const el = e.target as HTMLElement
-  if (el.closest('.tool-summary') || el.closest('.tool-popover')) return
+  if (el.closest('.tool-status') || el.closest('.tool-popover')) return
   toolPopover.value = null
 }
 
@@ -1971,12 +1994,12 @@ const suggestions = [
                 </div>
               </div>
 
-              <button v-if="m.steps.length" type="button" class="tool-summary" @click.stop="toggleToolPopover(m, $event)">
-                <span class="tool-summary-dot" :class="{ running: !!runningStep(m) }"></span>
-                <span class="tool-summary-text">
-                  {{ runningStep(m) ? `执行中 · ${runningStep(m)!.name}` : `${m.steps.length} 个工具调用` }}
-                </span>
-                <span class="tool-summary-link">详情</span>
+              <button v-if="m.steps.length" type="button" class="tool-status" :class="{ running: !!runningStep(m), error: lastStepError(m) }" @click.stop="toggleToolPopover(m, $event)">
+                <span class="tool-status-ic">{{ toolIcon((runningStep(m) || currentStep(m))?.name || '') }}</span>
+                <span class="tool-status-name">{{ runningStep(m)?.name || `${m.steps.length} 个工具调用` }}</span>
+                <span v-if="runningStep(m)" class="tool-status-state">执行中</span>
+                <span v-else class="tool-status-check" :class="{ err: lastStepError(m) }">{{ lastStepError(m) ? '✕' : '✓' }}</span>
+                <span class="tool-status-chevron">›</span>
               </button>
               <div v-if="m.pending && !m.text && m.timeline.length === 0" class="pending">
                 <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
@@ -2057,6 +2080,7 @@ const suggestions = [
 
     <div v-if="toolPopover && toolPopoverStep" class="tool-popover" :style="{ left: toolPopover.x + 'px', top: toolPopover.y + 'px' }" @click.stop>
       <div class="tool-popover-hd">
+        <span class="tool-popover-ic">{{ toolIcon(toolPopoverStep.name) }}</span>
         <span class="tool-popover-name">{{ toolPopoverStep.name }}</span>
         <span class="tool-popover-status" :class="toolPopoverStep.status">
           {{ toolPopoverStep.status === 'running' ? '执行中' : toolPopoverStep.status === 'error' ? '失败' : '完成' }}
@@ -2064,11 +2088,17 @@ const suggestions = [
         <button class="tool-popover-close" @click="toolPopover = null">×</button>
       </div>
       <div class="tool-popover-row">
-        <span class="tool-popover-label">参数</span>
+        <div class="tool-popover-row-hd">
+          <span class="tool-popover-label">参数</span>
+          <button class="tool-popover-copy" @click.stop="copyToolText(toolPopoverStep.args)">复制</button>
+        </div>
         <pre class="tool-popover-pre">{{ prettyJson(toolPopoverStep.args) }}</pre>
       </div>
       <div v-if="toolPopoverStep.result" class="tool-popover-row">
-        <span class="tool-popover-label">结果</span>
+        <div class="tool-popover-row-hd">
+          <span class="tool-popover-label">结果</span>
+          <button class="tool-popover-copy" @click.stop="copyToolText(toolPopoverStep.result)">复制</button>
+        </div>
         <pre class="tool-popover-pre" :class="{ err: toolPopoverStep.status === 'error' }">{{ toolPopoverStep.result }}</pre>
       </div>
       <div v-else-if="toolPopoverStep.status === 'running'" class="tool-popover-running">
@@ -3465,11 +3495,11 @@ const suggestions = [
 .step-result.err { color: var(--red); }
 
 /* pending */
-.tool-summary {
+.tool-status {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  max-width: min(100%, 520px);
+  max-width: min(100%, 560px);
   margin: 2px 0 10px;
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -3480,13 +3510,17 @@ const suggestions = [
   font-size: 11.5px;
   cursor: pointer;
   text-align: left;
-  transition: border-color .12s ease, color .12s ease;
+  transition: border-color .12s ease, color .12s ease, background .12s ease;
 }
-.tool-summary:hover { border-color: var(--accent); color: var(--text); }
-.tool-summary-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
-.tool-summary-dot.running { background: var(--amber); box-shadow: 0 0 8px var(--amber); animation: pulse 1.2s infinite; }
-.tool-summary-text { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tool-summary-link { color: var(--accent2); flex-shrink: 0; }
+.tool-status:hover { border-color: var(--accent); color: var(--text); background: var(--bg3); }
+.tool-status.running { border-color: rgba(251, 191, 36, .3); }
+.tool-status.error { border-color: rgba(244, 104, 109, .3); }
+.tool-status-ic { flex-shrink: 0; font-size: 12px; width: 15px; text-align: center; }
+.tool-status-name { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; color: var(--text); }
+.tool-status-state { flex-shrink: 0; color: var(--amber); font-size: 10.5px; }
+.tool-status-check { flex-shrink: 0; color: var(--green); font-size: 11px; font-weight: 700; }
+.tool-status-check.err { color: var(--red); }
+.tool-status-chevron { flex-shrink: 0; color: var(--accent2); font-size: 14px; }
 
 .tool-popover {
   position: fixed;
@@ -3501,6 +3535,7 @@ const suggestions = [
   box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
 }
 .tool-popover-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tool-popover-ic { flex-shrink: 0; font-size: 13px; width: 16px; text-align: center; }
 .tool-popover-name { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; color: var(--text); font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-popover-status { flex-shrink: 0; font-size: 10.5px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(47, 214, 165, .1); border: 1px solid rgba(47, 214, 165, .25); }
 .tool-popover-status.running { color: var(--amber); background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .28); }
@@ -3508,7 +3543,10 @@ const suggestions = [
 .tool-popover-close { width: 24px; height: 24px; border: none; border-radius: 7px; background: transparent; color: var(--dim); font-size: 16px; cursor: pointer; flex-shrink: 0; }
 .tool-popover-close:hover { background: var(--bg4); color: var(--text); }
 .tool-popover-row { margin-bottom: 8px; }
-.tool-popover-label { display: block; font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.tool-popover-row-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.tool-popover-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
+.tool-popover-copy { border: none; background: transparent; color: var(--accent2); font-size: 10.5px; cursor: pointer; padding: 1px 4px; border-radius: 4px; }
+.tool-popover-copy:hover { background: var(--bg4); }
 .tool-popover-pre { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; line-height: 1.55; color: #b7c1d4; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; }
 .tool-popover-pre.err { color: var(--red); }
 .tool-popover-running { display: flex; align-items: center; gap: 6px; padding: 6px 0 2px; font-size: 11.5px; color: var(--dim); }
