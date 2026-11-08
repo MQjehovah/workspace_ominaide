@@ -830,10 +830,60 @@ function finishStep(m: Msg, name: string, result: string, isError: boolean) {
   scrollBottom()
 }
 
+function upsertServerStep(m: Msg, data: any): Step | null {
+  const sid = Number(data.step_id || 0)
+  if (!sid) return null
+  const raw = String(data.status || 'running')
+  const status: Step['status'] =
+    raw === 'running' || raw === 'pending' ? 'running'
+    : raw === 'error' || raw === 'denied' ? 'error'
+    : 'done'
+  let st = m.steps.find(x => x.id === sid)
+  if (!st) {
+    st = {
+      id: sid,
+      name: data.tool || (data.step_type === 'approval' ? '审批' : '步骤'),
+      args: data.arguments || {},
+      result: data.content || '',
+      status,
+      collapsed: false,
+    }
+    m.steps.push(st)
+    m.timeline.push({ kind: 'tool', stepId: sid })
+    if (sid >= stepSeq) stepSeq = sid + 1
+  } else {
+    if (data.tool) st.name = data.tool
+    if (data.arguments !== undefined) st.args = data.arguments
+    if (data.content !== undefined) st.result = data.content || ''
+    st.status = status
+  }
+  return st
+}
+
 function handleEvent(m: Msg, data: any) {
   switch (data.type) {
     case 'token': appendToken(m, data.content || ''); stage.value = '正在生成回复'; break
     case 'reasoning': appendReasoning(m, data.content || ''); stage.value = '正在思考分析'; break
+    case 'run_started': stage.value = '开始执行'; break
+    case 'run_status':
+      if (data.status === 'waiting_approval') stage.value = '等待审批'
+      else if (data.status === 'running') stage.value = '执行中'
+      else if (data.status === 'failed') stage.value = '运行失败'
+      else stage.value = ''
+      break
+    case 'step': {
+      const st = upsertServerStep(m, data)
+      if (st) {
+        stage.value = st.status === 'running' ? `执行中 · ${st.name}` : `已完成 · ${st.name}`
+      }
+      scrollBottom()
+      break
+    }
+    case 'approval':
+      stage.value = `等待审批 · ${data.tool || '工具'}`
+      loadApprovals()
+      break
+    case 'ping': break
     case 'tool_call': startStep(m, data.name, data.arguments); stage.value = `正在执行 · ${data.name}`; break
     case 'tool_result': {
       const name = data.tool || data.name || '工具'
