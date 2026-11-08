@@ -34,7 +34,7 @@ export async function syncSettingsOnce(): Promise<Record<string, { from: any; to
     const cfg = await getConfig()
     const meta: Record<string, string> = { ...(cfg.syncMeta || {}) }
     const lastValues: Record<string, any> = { ...(cfg.syncValues || {}) }
-    const deviceId = cfg.hostDeviceId || 'desktop'
+    const machineId = cfg.hostMachineId || 'desktop'
 
     for (const key of KEYS) {
       const localValue = cfg[key]
@@ -57,7 +57,7 @@ export async function syncSettingsOnce(): Promise<Record<string, { from: any; to
       if (localDirty) {
         await api('put', `/sync/settings/${NAMESPACE}/${key}`, {
           value: localValue,
-          device_id: deviceId,
+          device_id: machineId,
         })
         meta[key] = new Date().toISOString()
         lastValues[key] = localValue
@@ -74,7 +74,7 @@ export async function syncSettingsOnce(): Promise<Record<string, { from: any; to
       } else if (!r && localValue !== undefined) {
         await api('put', `/sync/settings/${NAMESPACE}/${key}`, {
           value: localValue,
-          device_id: deviceId,
+          device_id: machineId,
         })
         meta[key] = new Date().toISOString()
         lastValues[key] = localValue

@@ -112,9 +112,9 @@ List<SpaceGroupSpec> buildSpaceCatalog({
       title: '更多',
       items: [
         const SpaceItemSpec(
-          key: 'device',
-          label: '设备',
-          icon: Icons.devices_other_outlined,
+          key: 'machine',
+          label: '本地机器',
+          icon: Icons.computer_outlined,
           color: green,
         ),
         const SpaceItemSpec(

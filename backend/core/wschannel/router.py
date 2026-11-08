@@ -6,21 +6,21 @@ from core.wschannel.hub import host_channel
 router = APIRouter(tags=["wschannel"])
 
 
-@router.get("/api/vibecoding/devices")
-async def list_vibecoding_devices(user: dict = Depends(get_current_user)):
-    """Connected desktop hosts for the current user.
+@router.get("/api/vibecoding/machines")
+async def list_vibecoding_machines(user: dict = Depends(get_current_user)):
+    """Connected desktop machines for the current user.
 
-    The Hub only knows live WebSocket hosts; after a backend restart the
+    The Hub only knows live WebSocket machines; after a backend restart the
     desktop reconnects and repopulates this list.
     """
     return [
         {
-            "device_id": device_id,
-            "name": host_channel.device_name(device_id),
+            "machine_id": machine_id,
+            "name": host_channel.machine_name(machine_id),
             "platform": "desktop",
             "status": "online",
         }
-        for device_id in host_channel.device_ids(user["id"])
+        for machine_id in host_channel.machine_ids(user["id"])
     ]
 
 
@@ -28,8 +28,8 @@ async def list_vibecoding_devices(user: dict = Depends(get_current_user)):
 async def host_channel_ws(websocket: WebSocket):
     """The single multiplexed channel for every client.
 
-    role=desktop (default): an OmniAide desktop host; requires device_id and
-      registers as that user's execution device.
+    role=desktop (default): an OmniAide desktop machine; requires machine_id and
+      registers as that user's local machine.
     role=viewer: a thin client (mobile etc.); receives channel broadcasts and
       may send channel-tagged commands.
     """
@@ -59,13 +59,13 @@ async def host_channel_ws(websocket: WebSocket):
             host_channel.disconnect_viewer(user_id, websocket)
         return
 
-    device_id = websocket.query_params.get("device_id") or ""
-    if not device_id:
+    machine_id = websocket.query_params.get("machine_id") or ""
+    if not machine_id:
         await websocket.close(code=4003)
         return
-    name = websocket.query_params.get("device_name") or device_id
+    name = websocket.query_params.get("machine_name") or machine_id
     await websocket.accept()
-    await host_channel.connect_host(user_id, device_id, name, websocket)
+    await host_channel.connect_machine(user_id, machine_id, name, websocket)
     try:
         while True:
             msg = await websocket.receive_json()
@@ -74,8 +74,8 @@ async def host_channel_ws(websocket: WebSocket):
             if msg.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
                 continue
-            await host_channel.handle_message(user_id, device_id, msg, websocket)
+            await host_channel.handle_message(user_id, machine_id, msg, websocket)
     except WebSocketDisconnect:
         pass
     finally:
-        await host_channel.disconnect_host(user_id, device_id)
+        await host_channel.disconnect_machine(user_id, machine_id)

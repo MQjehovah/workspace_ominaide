@@ -10,7 +10,7 @@ class HostChannelHub:
     """The single multiplexed WebSocket channel for all clients.
 
     Two connection roles on `/ws/host`:
-    - hosts (role=desktop): an OmniAide desktop device with a stable device_id.
+    - machines (role=desktop): an OmniAide desktop machine with a stable machine_id.
       Send channel-tagged messages upstream; receive channel-routed messages
       for the desktop plugin that subscribed to that channel.
     - viewers (role=viewer): thin clients (mobile etc.) that receive
@@ -21,9 +21,9 @@ class HostChannelHub:
     """
 
     def __init__(self):
-        self.hosts: dict[int, dict[str, WebSocket]] = {}
+        self.machines: dict[int, dict[str, WebSocket]] = {}
         self.viewers: dict[int, set] = {}
-        self.device_names: dict[str, str] = {}
+        self.machine_names: dict[str, str] = {}
         self._handlers: dict[str, Callable] = {}
         self._connect_hooks: dict[str, list] = {}
         self._disconnect_hooks: dict[str, list] = {}
@@ -43,27 +43,27 @@ class HostChannelHub:
 
     # -- host (desktop) connections ----------------------------------------
 
-    async def connect_host(self, user_id: int, device_id: str, name: str, ws: WebSocket):
-        self.hosts.setdefault(user_id, {})[device_id] = ws
-        self.device_names[device_id] = name or device_id
+    async def connect_machine(self, user_id: int, machine_id: str, name: str, ws: WebSocket):
+        self.machines.setdefault(user_id, {})[machine_id] = ws
+        self.machine_names[machine_id] = name or machine_id
         for hooks in self._connect_hooks.values():
             for hook in hooks:
                 try:
-                    await hook(user_id, device_id)
+                    await hook(user_id, machine_id)
                 except Exception:
                     log.exception("[wschannel] connect hook error")
 
-    async def disconnect_host(self, user_id: int, device_id: str):
-        conns = self.hosts.get(user_id)
+    async def disconnect_machine(self, user_id: int, machine_id: str):
+        conns = self.machines.get(user_id)
         if conns is not None:
-            conns.pop(device_id, None)
+            conns.pop(machine_id, None)
             if not conns:
-                self.hosts.pop(user_id, None)
-        self.device_names.pop(device_id, None)
+                self.machines.pop(user_id, None)
+        self.machine_names.pop(machine_id, None)
         for hooks in self._disconnect_hooks.values():
             for hook in hooks:
                 try:
-                    await hook(user_id, device_id)
+                    await hook(user_id, machine_id)
                 except Exception:
                     log.exception("[wschannel] disconnect hook error")
 
@@ -87,11 +87,11 @@ class HostChannelHub:
 
     # -- connectivity queries -------------------------------------------------
 
-    def device_ids(self, user_id: int) -> list:
-        return list((self.hosts.get(user_id) or {}).keys())
+    def machine_ids(self, user_id: int) -> list:
+        return list((self.machines.get(user_id) or {}).keys())
 
-    def device_name(self, device_id: str) -> str:
-        return self.device_names.get(device_id, device_id)
+    def machine_name(self, machine_id: str) -> str:
+        return self.machine_names.get(machine_id, machine_id)
 
     # -- sends (all outbound messages are channel-wrapped) ---------------------
 
@@ -102,22 +102,22 @@ class HostChannelHub:
         except Exception:
             return False
 
-    async def send_to_host(self, user_id: int, device_id: str, channel: str, data: dict) -> bool:
-        ws = (self.hosts.get(user_id) or {}).get(device_id)
+    async def send_to_machine(self, user_id: int, machine_id: str, channel: str, data: dict) -> bool:
+        ws = (self.machines.get(user_id) or {}).get(machine_id)
         if not ws:
             return False
         if not await self._send_ws(ws, channel, data):
-            await self.disconnect_host(user_id, device_id)
+            await self.disconnect_machine(user_id, machine_id)
             return False
         return True
 
     async def send_to_ws(self, ws: WebSocket, channel: str, data: dict) -> bool:
         return await self._send_ws(ws, channel, data)
 
-    async def broadcast_to_hosts(self, user_id: int, channel: str, data: dict) -> int:
+    async def broadcast_to_machines(self, user_id: int, channel: str, data: dict) -> int:
         sent = 0
-        for device_id in self.device_ids(user_id):
-            if await self.send_to_host(user_id, device_id, channel, data):
+        for machine_id in self.machine_ids(user_id):
+            if await self.send_to_machine(user_id, machine_id, channel, data):
                 sent += 1
         return sent
 
@@ -131,20 +131,20 @@ class HostChannelHub:
         return sent
 
     async def broadcast(self, user_id: int, channel: str, data: dict) -> int:
-        sent = await self.broadcast_to_hosts(user_id, channel, data)
+        sent = await self.broadcast_to_machines(user_id, channel, data)
         sent += await self.broadcast_to_viewers(user_id, channel, data)
         return sent
 
     # -- upstream dispatch ------------------------------------------------------
 
-    async def handle_message(self, user_id: int, device_id: str, msg: dict, ws: WebSocket) -> bool:
+    async def handle_message(self, user_id: int, machine_id: str, msg: dict, ws: WebSocket) -> bool:
         channel = msg.get("channel")
         handler = self._handlers.get(channel)
         if not handler:
             return False
         payload = {k: v for k, v in msg.items() if k != "channel"}
         try:
-            await handler(user_id, device_id, payload, ws)
+            await handler(user_id, machine_id, payload, ws)
         except Exception:
             log.exception(f"[wschannel] handler error channel={channel}")
         return True

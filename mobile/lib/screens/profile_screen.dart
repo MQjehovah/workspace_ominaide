@@ -5,7 +5,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'appearance_screen.dart';
 import 'bots_screen.dart';
-import 'device_screen.dart';
+import 'machine_screen.dart';
 import 'login_screen.dart';
 import 'mcp_screen.dart';
 import 'memory_screen.dart';
@@ -328,11 +328,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       palette: palette,
                       children: [
                         _MenuRow(
-                          icon: Icons.devices_other_outlined,
+                          icon: Icons.computer_outlined,
                           color: palette.success,
-                          title: '设备',
+                          title: '本地机器',
                           value: '在线',
-                          onTap: () => _push(const DeviceScreen()),
+                          onTap: () => _push(const MachineScreen()),
                         ),
                         _MenuRow(
                           icon: Icons.hub_outlined,

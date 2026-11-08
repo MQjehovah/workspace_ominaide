@@ -21,7 +21,7 @@ let ws: any = null
 let reconnectTimer: any = null
 let pingTimer: any = null
 let lastSignature: string = ''
-let deviceId = ''
+let machineId = ''
 let dispatcher: InboundDispatcher | null = null
 const queue: any[] = []
 
@@ -47,7 +47,7 @@ export function channelStatus() {
   return {
     enabled: true,
     connected: !!(ws && ws.readyState === WebSocket.OPEN),
-    deviceId,
+    machineId,
     queued: queue.length,
   }
 }
@@ -70,18 +70,18 @@ export async function startBackendChannel(): Promise<void> {
   }
   if (ws) return
 
-  if (!deviceId) {
-    deviceId = cfg.hostDeviceId || ''
-    if (!deviceId) {
-      deviceId = randomUUID()
-      await setConfig('hostDeviceId', deviceId)
+  if (!machineId) {
+    machineId = cfg.hostMachineId || ''
+    if (!machineId) {
+      machineId = randomUUID()
+      await setConfig('hostMachineId', machineId)
     }
   }
 
   try {
     const base = serverUrl.replace(/^http/, 'ws').replace(/\/+$/, '')
     ws = new WebSocket(
-      `${base}/ws/host?token=${encodeURIComponent(token)}&device_id=${encodeURIComponent(deviceId)}&device_name=${encodeURIComponent(require('os').hostname())}`
+      `${base}/ws/host?token=${encodeURIComponent(token)}&machine_id=${encodeURIComponent(machineId)}&machine_name=${encodeURIComponent(require('os').hostname())}`
     )
 
     ws.on('message', (data: any) => handleInbound(data))

@@ -1,4 +1,4 @@
-"""Local desktop execution bridge: device selection and round-trip results."""
+"""Local desktop execution bridge: machine selection and round-trip results."""
 
 import asyncio
 
@@ -10,45 +10,45 @@ def _text(response) -> str:
     return response.content[0].text
 
 
-async def test_list_local_devices_empty(monkeypatch):
-    monkeypatch.setattr(local_tools.host_channel, "device_ids", lambda user_id: [])
+async def test_list_local_machines_empty(monkeypatch):
+    monkeypatch.setattr(local_tools.host_channel, "machine_ids", lambda user_id: [])
 
-    response = await local_tool.list_local_devices(1, {})
+    response = await local_tool.list_local_machines(1, {})
     assert not response.isError
-    assert "没有在线的桌面设备" in _text(response)
+    assert "没有在线的本地机器" in _text(response)
 
 
-async def test_local_shell_requires_device_when_multiple(monkeypatch):
+async def test_local_shell_requires_machine_when_multiple(monkeypatch):
     names = {"dev-a": "mac-a", "dev-b": "mac-b"}
     monkeypatch.setattr(
-        local_tools.host_channel, "device_ids", lambda user_id: list(names)
+        local_tools.host_channel, "machine_ids", lambda user_id: list(names)
     )
     monkeypatch.setattr(
-        local_tools.host_channel, "device_name", lambda device_id: names[device_id]
+        local_tools.host_channel, "machine_name", lambda machine_id: names[machine_id]
     )
 
     response = await local_tool.local_shell(1, {"command": "pwd"})
     assert response.isError
-    assert "多个桌面设备在线" in _text(response)
+    assert "多个本地机器在线" in _text(response)
 
 
-async def test_local_shell_roundtrip_and_device_name(monkeypatch):
+async def test_local_shell_roundtrip_and_machine_name(monkeypatch):
     calls: list[dict] = []
 
     monkeypatch.setattr(
-        local_tools.host_channel, "device_ids", lambda user_id: ["dev-a"]
+        local_tools.host_channel, "machine_ids", lambda user_id: ["dev-a"]
     )
     monkeypatch.setattr(
-        local_tools.host_channel, "device_name", lambda device_id: "mac-a"
+        local_tools.host_channel, "machine_name", lambda machine_id: "mac-a"
     )
 
-    async def fake_send(user_id, device_id, channel, data):
+    async def fake_send(user_id, machine_id, channel, data):
         calls.append(data)
         assert channel == "local-tools"
         await asyncio.sleep(0)
         await local_tools._handle_message(
             user_id,
-            device_id,
+            machine_id,
             {
                 "type": "result",
                 "call_id": data["call_id"],
@@ -66,14 +66,14 @@ async def test_local_shell_roundtrip_and_device_name(monkeypatch):
         )
         return True
 
-    monkeypatch.setattr(local_tools.host_channel, "send_to_host", fake_send)
+    monkeypatch.setattr(local_tools.host_channel, "send_to_machine", fake_send)
 
     response = await local_tool.local_shell(
-        1, {"command": "pwd", "device": "mac-a"}
+        1, {"command": "pwd", "machine": "mac-a"}
     )
     assert not response.isError, _text(response)
     text = _text(response)
-    assert "设备：mac-a" in text
+    assert "本地机器：mac-a" in text
     assert "退出码：0" in text
     assert "/Users/me" in text
     assert calls and calls[0]["args"]["command"] == "pwd"
@@ -81,17 +81,17 @@ async def test_local_shell_roundtrip_and_device_name(monkeypatch):
 
 async def test_local_shell_reports_desktop_error(monkeypatch):
     monkeypatch.setattr(
-        local_tools.host_channel, "device_ids", lambda user_id: ["dev-a"]
+        local_tools.host_channel, "machine_ids", lambda user_id: ["dev-a"]
     )
     monkeypatch.setattr(
-        local_tools.host_channel, "device_name", lambda device_id: "mac-a"
+        local_tools.host_channel, "machine_name", lambda machine_id: "mac-a"
     )
 
-    async def fake_send(user_id, device_id, channel, data):
+    async def fake_send(user_id, machine_id, channel, data):
         await asyncio.sleep(0)
         await local_tools._handle_message(
             user_id,
-            device_id,
+            machine_id,
             {
                 "type": "result",
                 "call_id": data["call_id"],
@@ -102,7 +102,7 @@ async def test_local_shell_reports_desktop_error(monkeypatch):
         )
         return True
 
-    monkeypatch.setattr(local_tools.host_channel, "send_to_host", fake_send)
+    monkeypatch.setattr(local_tools.host_channel, "send_to_machine", fake_send)
 
     response = await local_tool.local_shell(1, {"command": "rm -rf /tmp/x"})
     assert response.isError
@@ -121,17 +121,17 @@ def test_local_shell_defers_approval_to_desktop():
 async def test_local_file_tools_roundtrip(monkeypatch):
     def install(handler):
         monkeypatch.setattr(
-            local_tools.host_channel, "device_ids", lambda user_id: ["dev-a"]
+            local_tools.host_channel, "machine_ids", lambda user_id: ["dev-a"]
         )
         monkeypatch.setattr(
-            local_tools.host_channel, "device_name", lambda device_id: "mac-a"
+            local_tools.host_channel, "machine_name", lambda machine_id: "mac-a"
         )
 
-        async def fake_send(user_id, device_id, channel, data):
+        async def fake_send(user_id, machine_id, channel, data):
             await asyncio.sleep(0)
             await local_tools._handle_message(
                 user_id,
-                device_id,
+                machine_id,
                 {
                     "type": "result",
                     "call_id": data["call_id"],
@@ -142,7 +142,7 @@ async def test_local_file_tools_roundtrip(monkeypatch):
             )
             return True
 
-        monkeypatch.setattr(local_tools.host_channel, "send_to_host", fake_send)
+        monkeypatch.setattr(local_tools.host_channel, "send_to_machine", fake_send)
 
     install(lambda data: {
         "path": "/Users/me/projects",

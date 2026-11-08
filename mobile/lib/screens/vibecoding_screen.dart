@@ -19,7 +19,7 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
   StreamSubscription<Map<String, dynamic>>? _sub;
 
   final LinkedHashMap<String, VibecodingTask> _tasks = LinkedHashMap();
-  List<VibecodingDevice> _devices = [];
+  List<VibecodingMachine> _machines = [];
   List<VibecodingProject> _projects = [];
   Map<String, bool> _tools = {};
   String _selectedTool = 'opencode';
@@ -71,9 +71,9 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
     switch (msg['type']) {
       case 'device.status':
         setState(() {
-          _devices = ((msg['devices'] as List?) ?? [])
+          _machines = ((msg['machines'] as List?) ?? (msg['devices'] as List?) ?? [])
               .whereType<Map>()
-              .map((d) => VibecodingDevice.fromJson(Map<String, dynamic>.from(d)))
+              .map((d) => VibecodingMachine.fromJson(Map<String, dynamic>.from(d)))
               .toList();
         });
         break;
@@ -132,7 +132,7 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
         if (event != 'started') return;
         _tasks[taskId] = VibecodingTask(
           taskId: taskId,
-          deviceId: msg['device_id']?.toString(),
+          machineId: msg['machine_id']?.toString(),
           tool: data['tool']?.toString(),
           project: data['project']?.toString(),
           projectName: data['project_name']?.toString(),
@@ -220,7 +220,7 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (_devices.isNotEmpty) ..._buildDeviceCard(scheme),
+            if (_machines.isNotEmpty) ..._buildMachineCard(scheme),
             _buildDispatchCard(scheme),
             const SizedBox(height: 16),
             Text('最近任务', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: scheme.primary)),
@@ -238,14 +238,14 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
     );
   }
 
-  List<Widget> _buildDeviceCard(ColorScheme scheme) {
+  List<Widget> _buildMachineCard(ColorScheme scheme) {
     return [
       Card(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: _devices
+            children: _machines
                 .map((d) => Row(
                       children: [
                         const Icon(Icons.computer, size: 18, color: Colors.green),

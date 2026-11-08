@@ -1,7 +1,7 @@
 export interface ChannelClientStatus {
   enabled: boolean
   connected: boolean
-  deviceId: string
+  machineId: string
   queued: number
 }
 
@@ -43,9 +43,9 @@ export function createVibeChannelClient(context: any): VibeChannelClient {
     status: async () => {
       try {
         const st = await signal('channel:status')
-        return st || { enabled: false, connected: false, deviceId: '', queued: 0 }
+        return st || { enabled: false, connected: false, machineId: '', queued: 0 }
       } catch {
-        return { enabled: false, connected: false, deviceId: '', queued: 0 }
+        return { enabled: false, connected: false, machineId: '', queued: 0 }
       }
     },
     setServerMessageHandler: (fn) => {

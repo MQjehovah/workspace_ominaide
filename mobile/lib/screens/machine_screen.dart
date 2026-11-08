@@ -5,15 +5,15 @@ import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'vibecoding_screen.dart';
 
-class DeviceScreen extends StatefulWidget {
-  const DeviceScreen({super.key});
+class MachineScreen extends StatefulWidget {
+  const MachineScreen({super.key});
 
   @override
-  State<DeviceScreen> createState() => _DeviceScreenState();
+  State<MachineScreen> createState() => _MachineScreenState();
 }
 
-class _DeviceScreenState extends State<DeviceScreen> {
-  List<dynamic> _devices = [];
+class _MachineScreenState extends State<MachineScreen> {
+  List<dynamic> _machines = [];
   bool _loading = true;
 
   @override
@@ -24,10 +24,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final devices = await ApiService().listVibecodingDevices();
+    final machines = await ApiService().listVibecodingMachines();
     if (!mounted) return;
     setState(() {
-      _devices = devices;
+      _machines = machines;
       _loading = false;
     });
   }
@@ -41,9 +41,9 @@ class _DeviceScreenState extends State<DeviceScreen> {
         child: Column(
           children: [
             PageHeader(
-              kicker: 'Devices',
-              title: '设备',
-              subtitle: '${_devices.length} 个已连接',
+              kicker: 'Machines',
+              title: '本地机器',
+              subtitle: '${_machines.length} 台在线',
               actions: [
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
@@ -63,30 +63,30 @@ class _DeviceScreenState extends State<DeviceScreen> {
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
-                      child: _devices.isEmpty
+                      child: _machines.isEmpty
                           ? ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: const [
                                 SizedBox(height: 50),
                                 EmptyState(
-                                  icon: Icons.devices_other_outlined,
-                                  title: '还没有连接设备',
-                                  subtitle: '在桌面端或设备上登录同一个账号后，会显示在这里。',
+                                  icon: Icons.computer_outlined,
+                                  title: '还没有连接本地机器',
+                                  subtitle: '在桌面端登录同一个账号后，会显示在这里。',
                                 ),
                               ],
                             )
                           : ListView.builder(
                               physics: const AlwaysScrollableScrollPhysics(),
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                              itemCount: _devices.length,
+                              itemCount: _machines.length,
                               itemBuilder: (context, index) {
-                                final raw = _devices[index];
-                                final device = raw is Map
+                                final raw = _machines[index];
+                                final machine = raw is Map
                                     ? raw.map((k, v) => MapEntry(k.toString(), v))
                                     : <String, dynamic>{};
-                                final name = (device['name'] ??
-                                        device['device_id'] ??
-                                        '设备')
+                                final name = (machine['name'] ??
+                                        machine['machine_id'] ??
+                                        '本地机器')
                                     .toString();
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
@@ -102,7 +102,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                             borderRadius: BorderRadius.circular(11),
                                           ),
                                           child: Icon(
-                                            Icons.devices_other_outlined,
+                                            Icons.computer_outlined,
                                             size: 17,
                                             color: palette.success,
                                           ),
@@ -123,8 +123,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                (device['platform'] ??
-                                                        device['device_id'] ??
+                                                (machine['platform'] ??
+                                                        machine['machine_id'] ??
                                                         '')
                                                     .toString(),
                                                 style: TextStyle(
@@ -136,7 +136,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                           ),
                                         ),
                                         SourcePill(
-                                          label: (device['status'] ?? '在线')
+                                          label: (machine['status'] ?? '在线')
                                               .toString(),
                                           color: palette.success,
                                         ),

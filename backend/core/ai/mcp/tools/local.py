@@ -15,26 +15,26 @@ def _err(text: str) -> MCPCallResponse:
     return MCPCallResponse(isError=True, content=[MCPContent(text=text)])
 
 
-async def list_local_devices(user_id: int, args: dict) -> MCPCallResponse:
-    devices = local_tools.devices(user_id)
-    if not devices:
+async def list_local_machines(user_id: int, args: dict) -> MCPCallResponse:
+    machines = local_tools.machines(user_id)
+    if not machines:
         return _ok(
-            "当前没有在线的桌面设备。请先打开 OmniAide 桌面端并登录，"
+            "当前没有在线的本地机器。请先打开 OmniAide 桌面端并登录，"
             "然后重试。"
         )
-    lines = ["在线桌面设备："]
-    for item in devices:
-        lines.append(f"- {item['name']} · device_id={item['device_id']}")
+    lines = ["在线本地机器："]
+    for item in machines:
+        lines.append(f"- {item['name']} · machine_id={item['machine_id']}")
     lines.append("")
-    lines.append("调用 local_* 工具时可用 device_id 指定设备；只有一台在线时可省略。")
+    lines.append("调用 local_* 工具时可用 machine_id 指定本地机器；只有一台本地机器在线时可省略。")
     return _ok("\n".join(lines))
 
 
-def _resolve_device(user_id: int, args: dict) -> str:
-    return local_tools.resolve_device(
+def _resolve_machine(user_id: int, args: dict) -> str:
+    return local_tools.resolve_machine(
         user_id,
-        device_id=str(args.get("device_id") or "").strip() or None,
-        device=str(args.get("device") or "").strip() or None,
+        machine_id=str(args.get("machine_id") or "").strip() or None,
+        machine=str(args.get("machine") or "").strip() or None,
     )
 
 
@@ -46,24 +46,24 @@ async def _call(
     *,
     timeout: int = 120,
 ) -> tuple[str | None, dict | None, str | None]:
-    """Return ``(device_id, result, error)``."""
+    """Return ``(machine_id, result, error)``."""
     try:
-        device_id = _resolve_device(user_id, args)
-    except local_tools.LocalDeviceError as exc:
+        machine_id = _resolve_machine(user_id, args)
+    except local_tools.LocalMachineError as exc:
         return None, None, str(exc)
     try:
         response = await local_tools.call_local(
             user_id,
-            device_id,
+            machine_id,
             tool,
             payload,
             timeout_seconds=timeout,
         )
-    except local_tools.LocalDeviceError as exc:
-        return device_id, None, str(exc)
+    except local_tools.LocalMachineError as exc:
+        return machine_id, None, str(exc)
     if not response.get("ok"):
-        return device_id, None, str(response.get("error") or "未知错误")
-    return device_id, response.get("result") or {}, None
+        return machine_id, None, str(response.get("error") or "未知错误")
+    return machine_id, response.get("result") or {}, None
 
 
 async def local_shell(user_id: int, args: dict) -> MCPCallResponse:
@@ -81,7 +81,7 @@ async def local_shell(user_id: int, args: dict) -> MCPCallResponse:
     timeout = min(max(timeout, 1), 3600)
 
     cwd = str(args.get("cwd") or "").strip() or None
-    device_id, payload, error = await _call(
+    machine_id, payload, error = await _call(
         user_id,
         args,
         "shell",
@@ -89,15 +89,15 @@ async def local_shell(user_id: int, args: dict) -> MCPCallResponse:
         timeout=timeout,
     )
     if error or payload is None:
-        name = local_tools.host_channel.device_name(device_id) if device_id else ""
-        return _err(f"本地命令执行失败（{name or '未连接设备'}）：{error}")
+        name = local_tools.host_channel.machine_name(machine_id) if machine_id else ""
+        return _err(f"本地命令执行失败（{name or '未连接本地机器'}）：{error}")
 
     limit = settings.local_shell_max_output_chars
     stdout = str(payload.get("stdout") or "")[:limit].strip()
     stderr = str(payload.get("stderr") or "")[: min(limit, 8000)].strip()
-    device_name = local_tools.host_channel.device_name(device_id or "")
+    machine_name = local_tools.host_channel.machine_name(machine_id or "")
     lines = [
-        f"设备：{device_name} ({device_id})",
+        f"本地机器：{machine_name} ({machine_id})",
         f"cwd：{payload.get('cwd') or cwd or '~'}",
         f"退出码：{payload.get('exit_code')}"
         + ("（超时）" if payload.get("timed_out") else ""),
@@ -114,7 +114,7 @@ async def local_list_dir(user_id: int, args: dict) -> MCPCallResponse:
     if not path:
         return _err("path 必填，例如 ~/projects")
 
-    device_id, payload, error = await _call(
+    machine_id, payload, error = await _call(
         user_id,
         args,
         "list_dir",
@@ -127,9 +127,9 @@ async def local_list_dir(user_id: int, args: dict) -> MCPCallResponse:
         return _err(f"列目录失败：{error}")
 
     entries = payload.get("entries") or []
-    device_name = local_tools.host_channel.device_name(device_id or "")
+    machine_name = local_tools.host_channel.machine_name(machine_id or "")
     lines = [
-        f"设备：{device_name} ({device_id})",
+        f"本地机器：{machine_name} ({machine_id})",
         f"目录：{payload.get('path') or path}",
         f"共 {len(entries)} 项",
     ]
@@ -154,7 +154,7 @@ async def local_read_file(user_id: int, args: dict) -> MCPCallResponse:
         max_bytes = 200_000
     max_bytes = min(max(max_bytes, 1), 2_000_000)
 
-    device_id, payload, error = await _call(
+    machine_id, payload, error = await _call(
         user_id,
         args,
         "read_file",
@@ -163,9 +163,9 @@ async def local_read_file(user_id: int, args: dict) -> MCPCallResponse:
     if error or payload is None:
         return _err(f"读取文件失败：{error}")
 
-    device_name = local_tools.host_channel.device_name(device_id or "")
+    machine_name = local_tools.host_channel.machine_name(machine_id or "")
     lines = [
-        f"设备：{device_name} ({device_id})",
+        f"本地机器：{machine_name} ({machine_id})",
         f"文件：{payload.get('path') or path}",
         f"大小：{payload.get('size', 0)}B",
     ]
@@ -188,7 +188,7 @@ async def local_write_file(user_id: int, args: dict) -> MCPCallResponse:
     if not isinstance(content, str):
         return _err("content 必须是字符串")
 
-    device_id, payload, error = await _call(
+    machine_id, payload, error = await _call(
         user_id,
         args,
         "write_file",
@@ -202,10 +202,10 @@ async def local_write_file(user_id: int, args: dict) -> MCPCallResponse:
     if error or payload is None:
         return _err(f"写入文件失败：{error}")
 
-    device_name = local_tools.host_channel.device_name(device_id or "")
+    machine_name = local_tools.host_channel.machine_name(machine_id or "")
     action = "创建" if payload.get("created") else "覆盖"
     return _ok(
-        f"设备：{device_name} ({device_id})\n"
+        f"本地机器：{machine_name} ({machine_id})\n"
         f"已{action}：{payload.get('path') or path}\n"
         f"写入：{payload.get('bytes', len(content.encode('utf-8')))} 字节"
     )
@@ -225,7 +225,7 @@ async def local_grep(user_id: int, args: dict) -> MCPCallResponse:
         max_results = 100
     max_results = min(max(max_results, 1), 500)
 
-    device_id, payload, error = await _call(
+    machine_id, payload, error = await _call(
         user_id,
         args,
         "grep",
@@ -242,9 +242,9 @@ async def local_grep(user_id: int, args: dict) -> MCPCallResponse:
         return _err(f"搜索失败：{error}")
 
     matches = payload.get("matches") or []
-    device_name = local_tools.host_channel.device_name(device_id or "")
+    machine_name = local_tools.host_channel.machine_name(machine_id or "")
     lines = [
-        f"设备：{device_name} ({device_id})",
+        f"本地机器：{machine_name} ({machine_id})",
         f"路径：{payload.get('path') or path}",
         f"匹配：{len(matches)} 条",
     ]
@@ -260,23 +260,23 @@ async def local_grep(user_id: int, args: dict) -> MCPCallResponse:
 TOOLS = [
     (
         MCPTool(
-            name="list_local_devices",
+            name="list_local_machines",
             description=(
-                "列出当前在线的桌面执行设备（OmniAide 桌面端）。"
-                "多台电脑在线时，用返回的 device_id 指定 local_* 工具在哪台执行。"
+                "列出当前在线的本地机器（OmniAide 桌面端）。"
+                "多台本地机器在线时，用返回的 machine_id 指定 local_* 工具在哪台本地机器执行。"
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
-        list_local_devices,
+        list_local_machines,
     ),
     (
         MCPTool(
             name="local_shell",
             description=(
-                "在用户自己的电脑（Mac/Windows）上执行 shell 命令，适合访问本机文件、"
+                "在用户自己的本地机器（Mac/Windows）上执行 shell 命令，适合访问本机文件、"
                 "localhost、局域网/VPN 资源或本机已安装的 CLI。命令默认需要在桌面端"
-                "逐条批准。多台设备在线时用 device_id 指定；可先调用 "
-                "list_local_devices 查看。不要在服务器上执行同样的命令时使用本工具。"
+                "逐条批准。多台本地机器在线时用 machine_id 指定；可先调用 "
+                "list_local_machines 查看。不要在服务器上执行同样的命令时使用本工具。"
             ),
             inputSchema={
                 "type": "object",
@@ -290,13 +290,13 @@ TOOLS = [
                         "type": "integer",
                         "description": "超时秒数，默认 600，最大 3600",
                     },
-                    "device_id": {
+                    "machine_id": {
                         "type": "string",
-                        "description": "桌面设备 ID；只有一台在线时可省略",
+                        "description": "本地机器 ID；只有一台本地机器在线时可省略",
                     },
-                    "device": {
+                    "machine": {
                         "type": "string",
-                        "description": "桌面设备名称（主机名）；与 device_id 二选一",
+                        "description": "本地机器名称（主机名）；与 machine_id 二选一",
                     },
                 },
                 "required": ["command"],
@@ -308,7 +308,7 @@ TOOLS = [
         MCPTool(
             name="local_list_dir",
             description=(
-                "列出用户电脑上某个目录的内容。路径支持 ~ 和绝对路径；"
+                "列出用户本地机器上某个目录的内容。路径支持 ~ 和绝对路径；"
                 "相对路径按用户主目录解析。默认需要在桌面端确认。"
             ),
             inputSchema={
@@ -319,8 +319,8 @@ TOOLS = [
                         "type": "boolean",
                         "description": "是否包含隐藏文件，默认 false",
                     },
-                    "device_id": {"type": "string", "description": "桌面设备 ID"},
-                    "device": {"type": "string", "description": "桌面设备名称"},
+                    "machine_id": {"type": "string", "description": "本地机器 ID"},
+                    "machine": {"type": "string", "description": "本地机器名称"},
                 },
                 "required": ["path"],
             },
@@ -331,7 +331,7 @@ TOOLS = [
         MCPTool(
             name="local_read_file",
             description=(
-                "读取用户电脑上的文本文件。默认最多读取 200KB，"
+                "读取用户本地机器上的文本文件。默认最多读取 200KB，"
                 "二进制文件只返回元信息。路径支持 ~ 和绝对路径。"
             ),
             inputSchema={
@@ -342,8 +342,8 @@ TOOLS = [
                         "type": "integer",
                         "description": "最多读取字节数，默认 200000，最大 2000000",
                     },
-                    "device_id": {"type": "string", "description": "桌面设备 ID"},
-                    "device": {"type": "string", "description": "桌面设备名称"},
+                    "machine_id": {"type": "string", "description": "本地机器 ID"},
+                    "machine": {"type": "string", "description": "本地机器名称"},
                 },
                 "required": ["path"],
             },
@@ -354,7 +354,7 @@ TOOLS = [
         MCPTool(
             name="local_write_file",
             description=(
-                "在用户电脑上创建或覆盖文本文件。默认不覆盖已有文件；"
+                "在用户本地机器上创建或覆盖文本文件。默认不覆盖已有文件；"
                 "需要修改已有文件时传 overwrite=true（桌面端会确认）。"
             ),
             inputSchema={
@@ -370,8 +370,8 @@ TOOLS = [
                         "type": "boolean",
                         "description": "是否覆盖已有文件，默认 false",
                     },
-                    "device_id": {"type": "string", "description": "桌面设备 ID"},
-                    "device": {"type": "string", "description": "桌面设备名称"},
+                    "machine_id": {"type": "string", "description": "本地机器 ID"},
+                    "machine": {"type": "string", "description": "本地机器名称"},
                 },
                 "required": ["path", "content"],
             },
@@ -382,7 +382,7 @@ TOOLS = [
         MCPTool(
             name="local_grep",
             description=(
-                "在用户电脑的目录里搜索文本，返回 路径:行号: 内容。"
+                "在用户本地机器的目录里搜索文本，返回 路径:行号: 内容。"
                 "适合在本机项目/日志中查找，避免用 shell 拼 grep 命令。"
             ),
             inputSchema={
@@ -402,8 +402,8 @@ TOOLS = [
                         "type": "integer",
                         "description": "最多返回条数，默认 100，最大 500",
                     },
-                    "device_id": {"type": "string", "description": "桌面设备 ID"},
-                    "device": {"type": "string", "description": "桌面设备名称"},
+                    "machine_id": {"type": "string", "description": "本地机器 ID"},
+                    "machine": {"type": "string", "description": "本地机器名称"},
                 },
                 "required": ["pattern", "path"],
             },

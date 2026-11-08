@@ -1,19 +1,19 @@
-class VibecodingDevice {
-  final String deviceId;
+class VibecodingMachine {
+  final String machineId;
   final String name;
   final bool connected;
   final String? activeTask;
 
-  VibecodingDevice({
-    required this.deviceId,
+  VibecodingMachine({
+    required this.machineId,
     required this.name,
     required this.connected,
     this.activeTask,
   });
 
-  factory VibecodingDevice.fromJson(Map<String, dynamic> j) => VibecodingDevice(
-        deviceId: (j['device_id'] ?? '').toString(),
-        name: (j['name'] ?? j['device_id'] ?? '').toString(),
+  factory VibecodingMachine.fromJson(Map<String, dynamic> j) => VibecodingMachine(
+        machineId: (j['machine_id'] ?? '').toString(),
+        name: (j['name'] ?? j['machine_id'] ?? '').toString(),
         connected: j['connected'] == true,
         activeTask: j['active_task']?.toString(),
       );
@@ -54,7 +54,7 @@ VibeStatus vibeStatusOf(String? s) {
 
 class VibecodingTask {
   final String taskId;
-  final String? deviceId;
+  final String? machineId;
   final String? tool;
   final String? project;
   final String? projectName;
@@ -70,7 +70,7 @@ class VibecodingTask {
 
   VibecodingTask({
     required this.taskId,
-    this.deviceId,
+    this.machineId,
     this.tool,
     this.project,
     this.projectName,
@@ -87,7 +87,7 @@ class VibecodingTask {
 
   factory VibecodingTask.fromJson(Map<String, dynamic> j) => VibecodingTask(
         taskId: (j['task_id'] ?? '').toString(),
-        deviceId: j['device_id']?.toString(),
+        machineId: j['machine_id']?.toString(),
         tool: j['tool']?.toString(),
         project: j['project']?.toString(),
         projectName: j['project_name']?.toString(),

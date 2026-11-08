@@ -347,7 +347,7 @@ async function setAlwaysAllow(): Promise<void> {
 }
 
 function approvalDetail(tool: string, args: LocalArgs): string {
-  const lines = [`设备：${hostname()}`]
+  const lines = [`本地机器：${hostname()}`]
   if (tool === 'shell') {
     const cwd = args.cwd ? resolveLocalPath(String(args.cwd)) : homedir()
     const command = String(args.command || '')

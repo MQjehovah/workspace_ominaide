@@ -1,7 +1,7 @@
 # 本地执行（local tools）
 
 Bot 默认在服务端执行所有工具。Local tools 让 Bot 把单次操作转发到用户自己的
-桌面电脑执行，适合访问本机文件、`localhost`、局域网/VPN 资源和本机已安装的 CLI。
+本地机器执行，适合访问本机文件、`localhost`、局域网/VPN 资源和本机已安装的 CLI。
 
 服务端不开放任何入站端口：桌面端主动连接 `/ws/host`，服务端通过这条 WebSocket
 下发请求，桌面端执行并回传结果。
@@ -10,8 +10,8 @@ Bot 默认在服务端执行所有工具。Local tools 让 Bot 把单次操作�
 
 | 工具 | 说明 |
 |---|---|
-| `list_local_devices` | 列出当前在线的桌面设备，返回 `device_id` 和主机名 |
-| `local_shell` | 在桌面设备执行 shell 命令 |
+| `list_local_machines` | 列出当前在线的本地机器，返回 `machine_id` 和主机名 |
+| `local_shell` | 在本地机器执行 shell 命令 |
 | `local_list_dir` | 列出本地目录 |
 | `local_read_file` | 读取本地文本文件 |
 | `local_write_file` | 创建或覆盖本地文本文件 |
@@ -21,13 +21,13 @@ Bot 默认在服务端执行所有工具。Local tools 让 Bot 把单次操作�
 
 ```json
 {
-  "device_id": "可选；只有一台设备在线时可省略",
-  "device": "可选；按主机名选择"
+  "machine_id": "可选；只有一台本地机器在线时可省略",
+  "machine": "可选；按主机名选择"
 }
 ```
 
-多台设备在线且没有指定设备时，工具会返回在线设备列表；Bot 应先调用
-`list_local_devices`。
+多台本地机器在线且没有指定机器时，工具会返回在线机器列表；Bot 应先调用
+`list_local_machines`。
 
 ### 路径
 
@@ -91,6 +91,6 @@ macOS（打包版）
 ## 限制
 
 - shell 和文件操作都是一次性返回，不支持流式输出
-- 多设备只按 `device_id` / 主机名选择，没有默认设备记忆
+- 多台本地机器只按 `machine_id` / 主机名选择，没有默认机器记忆
 - 桌面端必须保持运行并已登录
 - 本地文件不会进入服务端备份

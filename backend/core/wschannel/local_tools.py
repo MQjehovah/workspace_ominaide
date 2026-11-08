@@ -20,7 +20,7 @@ CHANNEL = "local-tools"
 _pending: dict[str, asyncio.Future] = {}
 
 
-class LocalDeviceError(RuntimeError):
+class LocalMachineError(RuntimeError):
     pass
 
 
@@ -29,7 +29,7 @@ def register_channel() -> None:
     host_channel.register(CHANNEL, _handle_message)
 
 
-async def _handle_message(user_id: int, device_id: str, payload: dict, ws) -> None:
+async def _handle_message(user_id: int, machine_id: str, payload: dict, ws) -> None:
     if payload.get("type") != "result":
         return
     call_id = str(payload.get("call_id") or "")
@@ -38,63 +38,63 @@ async def _handle_message(user_id: int, device_id: str, payload: dict, ws) -> No
         future.set_result(payload)
 
 
-def devices(user_id: int) -> list[dict]:
+def machines(user_id: int) -> list[dict]:
     return [
         {
-            "device_id": device_id,
-            "name": host_channel.device_name(device_id),
+            "machine_id": machine_id,
+            "name": host_channel.machine_name(machine_id),
         }
-        for device_id in host_channel.device_ids(user_id)
+        for machine_id in host_channel.machine_ids(user_id)
     ]
 
 
-def resolve_device(
+def resolve_machine(
     user_id: int,
     *,
-    device_id: str | None = None,
-    device: str | None = None,
+    machine_id: str | None = None,
+    machine: str | None = None,
 ) -> str:
-    """Resolve a device by id or name. Requires a choice when several are online."""
-    online = host_channel.device_ids(user_id)
+    """Resolve a local computer by id or name. Requires a choice when several are online."""
+    online = host_channel.machine_ids(user_id)
     if not online:
-        raise LocalDeviceError(
-            "没有在线的桌面设备。请先打开 OmniAide 桌面端并登录。"
+        raise LocalMachineError(
+            "没有在线的本地机器。请先打开 OmniAide 桌面端并登录。"
         )
 
-    device_id = (device_id or "").strip()
-    if device_id:
-        if device_id in online:
-            return device_id
-        raise LocalDeviceError(f"桌面设备 {device_id} 不在线")
+    machine_id = (machine_id or "").strip()
+    if machine_id:
+        if machine_id in online:
+            return machine_id
+        raise LocalMachineError(f"本地机器 {machine_id} 不在线")
 
-    name = (device or "").strip().lower()
+    name = (machine or "").strip().lower()
     if name:
         matches = [
             item for item in online
-            if host_channel.device_name(item).lower() == name
+            if host_channel.machine_name(item).lower() == name
         ]
         if len(matches) == 1:
             return matches[0]
         if not matches:
-            raise LocalDeviceError(f"找不到名为 {device} 的桌面设备")
-        raise LocalDeviceError(
-            f"有多个名为 {device} 的设备，请改用 device_id 指定"
+            raise LocalMachineError(f"找不到名为 {machine} 的本地机器")
+        raise LocalMachineError(
+            f"有多个名为 {machine} 的本地机器，请改用 machine_id 指定"
         )
 
     if len(online) == 1:
         return online[0]
 
     labels = ", ".join(
-        f"{host_channel.device_name(item)} ({item})" for item in online
+        f"{host_channel.machine_name(item)} ({item})" for item in online
     )
-    raise LocalDeviceError(
-        f"有多个桌面设备在线，请用 device_id 指定：{labels}"
+    raise LocalMachineError(
+        f"有多个本地机器在线，请用 machine_id 指定：{labels}"
     )
 
 
 async def call_local(
     user_id: int,
-    device_id: str,
+    machine_id: str,
     tool: str,
     args: dict,
     *,
@@ -106,9 +106,9 @@ async def call_local(
     future: asyncio.Future = loop.create_future()
     _pending[call_id] = future
     try:
-        sent = await host_channel.send_to_host(
+        sent = await host_channel.send_to_machine(
             user_id,
-            device_id,
+            machine_id,
             CHANNEL,
             {
                 "type": "call",
@@ -119,11 +119,11 @@ async def call_local(
             },
         )
         if not sent:
-            raise LocalDeviceError("桌面设备已离线，或消息发送失败")
+            raise LocalMachineError("本地机器已离线，或消息发送失败")
         # The desktop shows an approval dialog before running the command, so
         # leave extra room beyond the command timeout.
         return await asyncio.wait_for(future, timeout=timeout_seconds + 120)
     except asyncio.TimeoutError as exc:
-        raise LocalDeviceError(f"本地执行超时（{timeout_seconds} 秒）") from exc
+        raise LocalMachineError(f"本地执行超时（{timeout_seconds} 秒）") from exc
     finally:
         _pending.pop(call_id, None)

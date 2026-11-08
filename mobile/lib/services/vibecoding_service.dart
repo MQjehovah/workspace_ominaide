@@ -34,7 +34,7 @@ class VibecodingService {
     required String tool,
     required String project,
     required String input,
-    String? deviceId,
+    String? machineId,
   }) {
     _send({
       'type': 'task.dispatch',
@@ -42,18 +42,18 @@ class VibecodingService {
       'tool': tool,
       'project': project,
       'input': input,
-      if (deviceId != null && deviceId.isNotEmpty) 'device_id': deviceId,
+      if (machineId != null && machineId.isNotEmpty) 'machine_id': machineId,
     });
   }
 
   void cancelTask(String taskId) =>
       _send({'type': 'task.control', 'task_id': taskId, 'action': 'cancel'});
 
-  void requestProjects({required String requestId, String? deviceId}) =>
+  void requestProjects({required String requestId, String? machineId}) =>
       _send({
         'type': 'projects.request',
         'request_id': requestId,
-        if (deviceId != null && deviceId.isNotEmpty) 'device_id': deviceId,
+        if (machineId != null && machineId.isNotEmpty) 'machine_id': machineId,
       });
 
   void stop() => _host.stop();

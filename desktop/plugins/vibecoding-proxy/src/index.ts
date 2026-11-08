@@ -492,7 +492,7 @@ export default {
     })
 
     context.registerCommand('getBackendStatus', async () =>
-      (await reporter?.status()) || { enabled: false, connected: false, deviceId: '', queued: 0 })
+      (await reporter?.status()) || { enabled: false, connected: false, machineId: '', queued: 0 })
 
     context.registerCommand('resetSession', async () => {
       resetSession()

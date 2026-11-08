@@ -13,7 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'agent_tasks_screen.dart';
 import 'automation_screen.dart';
-import 'device_screen.dart';
+import 'machine_screen.dart';
 import 'dingtalk_actions_screen.dart';
 import 'files_screen.dart';
 import 'insights_screen.dart';
@@ -260,7 +260,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       'notes' => const NotesScreen(),
       'sources' => const SourcesScreen(),
       'music' => const MusicScreen(),
-      'device' => const DeviceScreen(),
+      'machine' => const MachineScreen(),
       'lab' => const VibecodingScreen(),
       _ => null,
     };

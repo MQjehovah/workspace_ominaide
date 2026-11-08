@@ -75,7 +75,7 @@ TOOL_RISK = {
     "local_read_file": RISK_READ,
     "local_write_file": RISK_WRITE,
     "local_grep": RISK_READ,
-    "list_local_devices": RISK_READ,
+    "list_local_machines": RISK_READ,
     "delegate_coding": RISK_WRITE,
     # External side effects: require explicit approval in chat.
     "ha_toggle": RISK_EXTERNAL,
@@ -195,7 +195,7 @@ def decide(bot: Bot | None, name: str, arguments: dict | None = None) -> tuple[s
     if name == "run_shell":
         return risk, shell_decision((arguments or {}).get("command", ""))
 
-    if name.startswith("local_") or name == "list_local_devices":
+    if name.startswith("local_") or name == "list_local_machines":
         # The desktop app owns local execution approval (ask / always / never),
         # mirroring Grok Bot's separate local-computer policy. Bot-level
         # overrides above still take precedence.

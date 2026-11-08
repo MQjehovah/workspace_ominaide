@@ -42,8 +42,8 @@ async def test_me_exposes_admin_flag(client):
     assert r.json()["is_admin"] is False
 
 
-async def test_vibecoding_devices_endpoint_lists_empty_when_offline(client):
+async def test_vibecoding_machines_endpoint_lists_empty_when_offline(client):
     token = await _new_user(client)
-    r = await client.get("/api/vibecoding/devices", headers=auth(token))
+    r = await client.get("/api/vibecoding/machines", headers=auth(token))
     assert r.status_code == 200, r.text
     assert r.json() == []

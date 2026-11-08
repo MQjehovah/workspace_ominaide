@@ -387,10 +387,10 @@ class ApiService {
     }
   }
 
-  Future<List<dynamic>> listVibecodingDevices() async {
+  Future<List<dynamic>> listVibecodingMachines() async {
     try {
       final res = await _http.get(
-        Uri.parse('$_baseUrl/api/vibecoding/devices'),
+        Uri.parse('$_baseUrl/api/vibecoding/machines'),
         headers: _authHeaders,
       );
       if (res.statusCode != 200) return [];
