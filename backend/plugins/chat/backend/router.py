@@ -36,6 +36,7 @@ from plugins.chat.backend.voice_stream import (
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 DEFAULT_SESSION = "default"
+SSE_HEARTBEAT_SECONDS = 15
 
 
 async def _resolve_bot(user_id: int, bot_id: int | None):
@@ -383,7 +384,6 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
 
     session_id = req.session_id or DEFAULT_SESSION
     bot = await _resolve_bot(user["id"], req.bot_id)
-    messages = await build_messages(req, user["id"], bot=bot)
     await save_message(user["id"], "user", req.message, session_id, bot=bot)
 
     async def event_stream():
@@ -395,6 +395,9 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
 
         async def produce():
             try:
+                # Build context inside the stream so the client gets headers
+                # and heartbeats immediately, even when embeddings/DB are slow.
+                messages = await build_messages(req, user["id"], bot=bot)
                 async for event in run_agent_stream(
                     user["id"],
                     messages,
@@ -416,7 +419,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    event = await asyncio.wait_for(queue.get(), timeout=SSE_HEARTBEAT_SECONDS)
                 except asyncio.TimeoutError:
                     # Keep the SSE connection alive during long tool calls or
                     # desktop approvals; mobile clients time out after 90s idle.
