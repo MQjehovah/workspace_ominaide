@@ -19,7 +19,7 @@ log = get_logger(__name__)
 
 CHANNEL = "local-tools"
 
-_pending: dict[str, asyncio.Future] = {}
+_pending: dict[str, tuple[asyncio.Future, int, str]] = {}
 
 MAX_JOB_EVENTS = 20_000
 MAX_JOB_CHARS = 2_000_000
@@ -106,6 +106,13 @@ async def _on_machine_disconnect(user_id: int, machine_id: str) -> None:
             job.status = "failed"
             job.finished_at = time.monotonic()
             job.event.set()
+    # Don't leave inbound calls waiting for a desktop that just disconnected.
+    for future, call_user, call_machine in list(_pending.values()):
+        if call_user == user_id and call_machine == machine_id and not future.done():
+            future.set_result({
+                "ok": False,
+                "error": "本地机器连接已断开，请重新连接后重试",
+            })
 
 
 async def _handle_message(user_id: int, machine_id: str, payload: dict, ws) -> None:
@@ -134,9 +141,9 @@ async def _handle_message(user_id: int, machine_id: str, payload: dict, ws) -> N
     if message_type != "result":
         return
     call_id = str(payload.get("call_id") or "")
-    future = _pending.get(call_id)
-    if future is not None and not future.done():
-        future.set_result(payload)
+    entry = _pending.get(call_id)
+    if entry is not None and not entry[0].done():
+        entry[0].set_result(payload)
 
 
 def machines(user_id: int) -> list[dict]:
@@ -205,7 +212,7 @@ async def call_local(
     loop = asyncio.get_running_loop()
     call_id = uuid.uuid4().hex
     future: asyncio.Future = loop.create_future()
-    _pending[call_id] = future
+    _pending[call_id] = (future, user_id, machine_id)
     try:
         sent = await host_channel.send_to_machine(
             user_id,
