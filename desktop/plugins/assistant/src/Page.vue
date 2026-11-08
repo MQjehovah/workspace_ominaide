@@ -44,6 +44,7 @@ interface Session {
   botId?: number
   fromCloud?: boolean
   cloudUpdatedAt?: number
+  cloudSyncedAt?: number
 }
 interface Config {
   mode: 'backend' | 'direct' | 'desktop'
@@ -417,6 +418,7 @@ function makeMsg(role: 'user' | 'assistant', text: string): Msg {
 
 async function loadCloudMessages(session: Session | null, force = false): Promise<void> {
   if (!session) return
+  if (session.messages.some(m => m.pending)) return
   if (!force && session.messages.length && !session.fromCloud) return
   try {
     const su = await serverUrl()
@@ -433,6 +435,7 @@ async function loadCloudMessages(session: Session | null, force = false): Promis
       .filter((it: any) => it.role === 'user' || it.role === 'assistant')
       .map((it: any) => makeMsg(it.role, it.content || ''))
     session.fromCloud = false
+    session.cloudSyncedAt = session.cloudUpdatedAt || Date.now()
     for (const m of session.messages) m.html = renderMarkdown(m.text)
     if ((session.title === '新会话' || session.title === '云端会话') && session.messages.length) {
       const first = session.messages.find(m => m.role === 'user')
@@ -448,6 +451,7 @@ async function manualSync() {
   cloudSyncing.value = true
   try {
     await loadCloudSessions(true)
+    if (current.value) await loadCloudMessages(current.value, true)
     showToast('会话已同步')
   } finally {
     cloudSyncing.value = false
@@ -506,7 +510,10 @@ async function loadCloudSessions(initial = false): Promise<void> {
     }
     if (cur) {
       // If another device wrote to the open session, refresh it.
-      if (!loading.value && cur.cloudUpdatedAt && cur.cloudUpdatedAt > cur.updatedAt) {
+      const stale = cur.cloudUpdatedAt && (
+        !cur.cloudSyncedAt || cur.cloudUpdatedAt > cur.cloudSyncedAt
+      )
+      if (!loading.value && stale) {
         await loadCloudMessages(cur, true)
         cur.updatedAt = cur.cloudUpdatedAt
       } else {
@@ -721,7 +728,7 @@ async function switchSession(id: string) {
   if (id === currentId.value) return
   currentId.value = id
   input.value = ''
-  await loadCloudMessages(current.value)
+  await loadCloudMessages(current.value, true)
   scrollBottom()
 }
 
@@ -944,6 +951,7 @@ async function send() {
   attachments.value = []
   const s = ensureSession()
   if (!s.botId) s.botId = currentBotId.value ?? undefined
+  s.cloudSyncedAt = Date.now()
   const history = s.messages
     .filter(m => m.role === 'user' || (m.role === 'assistant' && m.text))
     .map(m => ({ role: m.role, content: m.text }))
