@@ -134,15 +134,21 @@ async def run_agent_stream(
 
             if delta.tool_calls:
                 if tool_calls is None:
-                    tool_calls = [{"id": "", "function": {"name": "", "arguments": ""}} for _ in delta.tool_calls]
-                for i, tc in enumerate(delta.tool_calls):
+                    tool_calls = []
+                for tc in delta.tool_calls:
+                    idx = int(getattr(tc, "index", 0) or 0)
+                    while len(tool_calls) <= idx:
+                        tool_calls.append(
+                            {"id": "", "function": {"name": "", "arguments": ""}}
+                        )
+                    slot = tool_calls[idx]
                     if tc.id:
-                        tool_calls[i]["id"] += tc.id
+                        slot["id"] = tc.id
                     if tc.function:
                         if tc.function.name:
-                            tool_calls[i]["function"]["name"] = tc.function.name
+                            slot["function"]["name"] = tc.function.name
                         if tc.function.arguments:
-                            tool_calls[i]["function"]["arguments"] += tc.function.arguments
+                            slot["function"]["arguments"] += tc.function.arguments
 
             finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
             if finish_reason == "stop":

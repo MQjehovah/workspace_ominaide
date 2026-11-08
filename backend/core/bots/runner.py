@@ -312,18 +312,21 @@ async def _stream_completion(
 
         if delta.tool_calls:
             if raw_calls is None:
-                raw_calls = [
-                    {"id": "", "function": {"name": "", "arguments": ""}}
-                    for _ in delta.tool_calls
-                ]
-            for i, tc in enumerate(delta.tool_calls):
+                raw_calls = []
+            for tc in delta.tool_calls:
+                idx = int(getattr(tc, "index", 0) or 0)
+                while len(raw_calls) <= idx:
+                    raw_calls.append(
+                        {"id": "", "function": {"name": "", "arguments": ""}}
+                    )
+                slot = raw_calls[idx]
                 if tc.id:
-                    raw_calls[i]["id"] += tc.id
+                    slot["id"] = tc.id
                 if tc.function:
                     if tc.function.name:
-                        raw_calls[i]["function"]["name"] = tc.function.name
+                        slot["function"]["name"] = tc.function.name
                     if tc.function.arguments:
-                        raw_calls[i]["function"]["arguments"] += tc.function.arguments
+                        slot["function"]["arguments"] += tc.function.arguments
 
     if content:
         await _set_partial(run_id, content)
