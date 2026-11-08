@@ -55,6 +55,10 @@ class _FilesScreenState extends State<FilesScreen> {
       folderPath: _currentPath,
       search: _search.isEmpty ? null : _search,
     );
+    files.sort((a, b) {
+      if (a.isFolder != b.isFolder) return a.isFolder ? -1 : 1;
+      return b.createdAt.compareTo(a.createdAt);
+    });
     if (!mounted) return;
     setState(() {
       _files = files;

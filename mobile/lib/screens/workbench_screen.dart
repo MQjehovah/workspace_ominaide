@@ -355,7 +355,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     final urgent = _triage?.urgentCount ?? 0;
     final sourceCounts = <String, int>{
       'mail': _triage?.unreadCount('mail') ?? 0,
-      'dingtalk': _triage?.bySource('dingtalk').length ?? 0,
+      'dingtalk': _triage?.unreadCount('dingtalk') ?? 0,
     };
 
     return Scaffold(
@@ -854,112 +854,338 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     return entries.take(3).toList();
   }
 
-  Widget _buildActivitySuggestionsCard(AppPalette palette) {
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+  String _suggestionKindLabel(String kind) {
+    switch (kind) {
+      case 'prepare':
+        return '准备';
+      case 'reply':
+        return '回复';
+      case 'todo':
+        return '待办';
+      case 'schedule':
+        return '日程';
+      case 'review':
+        return '复盘';
+      default:
+        return '跟进';
+    }
+  }
+
+  IconData _suggestionKindIcon(String kind) {
+    switch (kind) {
+      case 'prepare':
+        return Icons.event_available_rounded;
+      case 'reply':
+        return Icons.reply_rounded;
+      case 'todo':
+        return Icons.check_circle_outline_rounded;
+      case 'schedule':
+        return Icons.calendar_month_rounded;
+      case 'review':
+        return Icons.rate_review_outlined;
+      default:
+        return Icons.auto_awesome_rounded;
+    }
+  }
+
+  Color _suggestionKindColor(AppPalette palette, String kind) {
+    switch (kind) {
+      case 'reply':
+      case 'review':
+        return palette.success;
+      case 'todo':
+        return palette.accent;
+      default:
+        return palette.primary;
+    }
+  }
+
+  bool _suggestionHasAction(Map<String, dynamic> item) {
+    final action = item['proposed_action'];
+    return action is Map && action['type'] == 'create_todo';
+  }
+
+  Future<void> _showActivityActions(Map<String, dynamic> item) async {
+    final palette = AppPalette.of(context);
+    final hasAction = _suggestionHasAction(item);
+    final title = (item['title'] ?? '').toString();
+    final reason = (item['reason'] ?? '').toString();
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.auto_awesome_outlined,
-                  size: 15, color: palette.primary),
-              const SizedBox(width: 6),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: palette.ink,
+                      ),
+                    ),
+                    if (reason.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        reason,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.5,
+                          color: palette.muted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: Icon(
+                  hasAction ? Icons.playlist_add_check_rounded : Icons.add_task_rounded,
+                  color: palette.primary,
+                ),
+                title: Text(hasAction ? '执行建议' : '创建待办'),
+                subtitle: Text(
+                  hasAction ? '按建议创建一个待办' : '把这条建议转成待办',
+                  style: TextStyle(fontSize: 11, color: palette.muted),
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'primary'),
+              ),
+              ListTile(
+                leading: Icon(Icons.close_rounded, color: palette.muted),
+                title: Text('忽略', style: TextStyle(color: palette.muted)),
+                onTap: () => Navigator.pop(sheetContext, 'dismiss'),
+              ),
+              const SizedBox(height: 6),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'primary') {
+      await _acceptActivitySuggestion(item);
+    } else if (choice == 'dismiss') {
+      await _dismissActivitySuggestion(item);
+    }
+  }
+
+  Widget _activitySuggestionCard(AppPalette palette, Map<String, dynamic> item) {
+    final kind = (item['kind'] ?? 'follow_up').toString();
+    final title = (item['title'] ?? '').toString();
+    final reason = (item['reason'] ?? '').toString();
+    final confidence = (item['confidence'] as num?)?.toDouble() ?? 0.5;
+    final color = _suggestionKindColor(palette, kind);
+    final hasAction = _suggestionHasAction(item);
+    return Dismissible(
+      key: ValueKey('activity-${item['id']}'),
+      direction: DismissDirection.startToEnd,
+      confirmDismiss: (_) async {
+        await _showActivityActions(item);
+        return false;
+      },
+      background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 18),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.touch_app_rounded, size: 18, color: color),
+            const SizedBox(width: 6),
+            Text(
+              '右滑处理',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+      child: GestureDetector(
+        onTap: () => _showActivityActions(item),
+        child: AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_suggestionKindIcon(kind), size: 11, color: color),
+                        const SizedBox(width: 4),
+                        Text(
+                          _suggestionKindLabel(kind),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    confidence >= 0.75
+                        ? '高置信建议'
+                        : confidence >= 0.55
+                            ? '值得处理'
+                            : '参考建议',
+                    style: TextStyle(fontSize: 9.5, color: palette.muted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
-                '活动建议',
+                title,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 14,
+                  height: 1.35,
                   fontWeight: FontWeight.w700,
                   color: palette.ink,
                 ),
               ),
-              const Spacer(),
-              Text(
-                '定时提取',
-                style: TextStyle(fontSize: 10, color: palette.muted),
+              if (reason.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  reason,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.55,
+                    color: palette.muted,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 9),
+              Row(
+                children: [
+                  Icon(
+                    hasAction
+                        ? Icons.playlist_add_check_rounded
+                        : Icons.add_task_rounded,
+                    size: 13,
+                    color: hasAction ? color : palette.muted,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      hasAction ? '可一键执行：创建待办' : '可转为待办继续跟进',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: hasAction ? color : palette.muted,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '右滑处理',
+                    style: TextStyle(fontSize: 10, color: palette.muted),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 15, color: palette.muted),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          if (_activitySuggestions.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(
-                '暂时没有新的建议，系统会定时整理最近活动。',
-                style: TextStyle(fontSize: 11.5, color: palette.muted),
-              ),
-            )
-          else
-            for (final item in _activitySuggestions.take(5))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            (item['title'] ?? '').toString(),
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              height: 1.4,
-                              fontWeight: FontWeight.w600,
-                              color: palette.ink,
-                            ),
-                          ),
-                          if ((item['reason'] ?? '').toString().isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              (item['reason'] ?? '').toString(),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                height: 1.45,
-                                color: palette.muted,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => _acceptActivitySuggestion(item),
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(0, 24),
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            textStyle: const TextStyle(fontSize: 10.5),
-                          ),
-                          child: Text(
-                            item['proposed_action'] is Map &&
-                                    item['proposed_action']['type'] ==
-                                        'create_todo'
-                                ? '执行'
-                                : '建待办',
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => _dismissActivitySuggestion(item),
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(0, 24),
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            textStyle: const TextStyle(fontSize: 10.5),
-                            foregroundColor: palette.muted,
-                          ),
-                          child: const Text('忽略'),
-                        ),
-                      ],
-                    ),
-                  ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivitySuggestionsCard(AppPalette palette) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, size: 16, color: palette.primary),
+              const SizedBox(width: 6),
+              Text(
+                '活动分析',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: palette.ink,
                 ),
               ),
-        ],
-      ),
+              const Spacer(),
+              if (_activitySuggestions.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: palette.primarySoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_activitySuggestions.length} 条',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: palette.primary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            '根据日程、邮件、钉钉和近期活动预判接下来要做的事',
+            style: TextStyle(fontSize: 10.5, color: palette.muted),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (_activitySuggestions.isEmpty)
+          AppCard(
+            child: Row(
+              children: [
+                Icon(Icons.insights_rounded, size: 18, color: palette.muted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '暂时没有新的分析结果，系统每小时自动更新。',
+                    style: TextStyle(fontSize: 11.5, color: palette.muted),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          for (final item in _activitySuggestions.take(6))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _activitySuggestionCard(palette, item),
+            ),
+      ],
     );
   }
 

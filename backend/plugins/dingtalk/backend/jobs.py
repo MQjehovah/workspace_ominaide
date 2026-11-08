@@ -2,6 +2,7 @@
 
 from core.scheduler import PeriodicJob
 from plugins.dingtalk.backend.sync_calendar import sync_calendar
+from plugins.dingtalk.backend.sync_unread import sync_unread
 from plugins.dingtalk.backend.sync_chat import sync_chat
 
 JOBS = [
@@ -11,6 +12,14 @@ JOBS = [
         handler=sync_chat,
         interval_seconds=24 * 60 * 60,
         timeout_seconds=900,
+        run_on_start=True,
+    ),
+    PeriodicJob(
+        key="dingtalk.sync_unread",
+        owner="dingtalk",
+        handler=sync_unread,
+        interval_seconds=5 * 60,
+        timeout_seconds=300,
         run_on_start=True,
     ),
     PeriodicJob(

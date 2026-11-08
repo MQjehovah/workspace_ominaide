@@ -284,6 +284,10 @@ async def dingtalk_items(
         if key in seen:
             continue
         seen.add(key)
+        try:
+            unread = max(0, int(details.get("unread_count") or 0))
+        except (TypeError, ValueError):
+            unread = 0
         items.append({
             "id": f"dingtalk:{conv_id or row.id}",
             "source": "dingtalk",
@@ -292,10 +296,15 @@ async def dingtalk_items(
             "summary": _dingtalk_summary(content, query),
             "from": conv_name,
             "time": _iso(row.created_at),
-            "priority": "needs_reply",
-            "needs_reply": True,
+            "priority": "needs_reply" if unread else "fyi",
+            "needs_reply": bool(unread),
             "link": "/mcp",
-            "meta": {"conversation_id": conv_id or None, "day": details.get("day")},
+            "meta": {
+                "conversation_id": conv_id or None,
+                "day": details.get("day"),
+                "unread_count": unread,
+                "read": unread == 0,
+            },
         })
         if len(items) >= limit:
             break

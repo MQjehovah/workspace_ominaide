@@ -175,10 +175,12 @@ async def get_files(
     total = total_result.scalar() or 0
 
     if params.cursor is not None:
-        query = query.where(File.id < params.cursor).order_by(File.id.desc()).limit(params.page_size)
+        query = query.where(File.id < params.cursor).order_by(
+                File.is_folder.desc(), File.id.desc()
+            ).limit(params.page_size)
     else:
         offset = (params.page - 1) * params.page_size
-        query = query.order_by(File.updated_at.desc()).offset(offset).limit(params.page_size)
+        query = query.order_by(File.is_folder.desc(), File.updated_at.desc()).offset(offset).limit(params.page_size)
 
     result = await db.execute(query)
     files = list(result.scalars().all())

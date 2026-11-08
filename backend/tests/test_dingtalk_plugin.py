@@ -82,3 +82,44 @@ async def test_user_cannot_register_dingtalk_mcp(client):
         headers=auth(token),
     )
     assert r.status_code == 403, r.text
+
+
+async def test_dingtalk_unread_count_controls_pending_state(client):
+    from core.cos import collectors
+    from core.database.session import async_session
+    from core.events.models import UserActivity
+
+    _, user_id = await _new_user(client)
+    async with async_session() as db:
+        db.add(UserActivity(
+            user_id=user_id,
+            event_type="dingtalk.conversation",
+            entity_type="dingtalk",
+            summary="已读群",
+            details={
+                "conversation": "已读群",
+                "conversation_id": "conv-read",
+                "unread_count": 0,
+                "content": "你好",
+            },
+        ))
+        db.add(UserActivity(
+            user_id=user_id,
+            event_type="dingtalk.conversation",
+            entity_type="dingtalk",
+            summary="未读群",
+            details={
+                "conversation": "未读群",
+                "conversation_id": "conv-unread",
+                "unread_count": 3,
+                "content": "在吗",
+            },
+        ))
+        await db.commit()
+
+    items, _ = await collectors.dingtalk_items(user_id, limit=10)
+    by_id = {item["title"]: item for item in items}
+    assert by_id["已读群"]["needs_reply"] is False
+    assert by_id["已读群"]["meta"]["read"] is True
+    assert by_id["未读群"]["needs_reply"] is True
+    assert by_id["未读群"]["meta"]["unread_count"] == 3

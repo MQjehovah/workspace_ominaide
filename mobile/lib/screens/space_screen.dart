@@ -231,7 +231,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       _error = results.every((value) => value == null);
       // Mail/files/sources badges describe unread or new content, not totals.
       _mail = triage?.unreadCount('mail') ?? 0;
-      _dingtalk = triage?.bySource('dingtalk').length ?? 0;
+      _dingtalk = triage?.unreadCount('dingtalk') ?? 0;
       _notifications = notificationUnread;
       _schedule = events.where((event) => !eventHasEnded(event)).length;
       _todos = todos.length;

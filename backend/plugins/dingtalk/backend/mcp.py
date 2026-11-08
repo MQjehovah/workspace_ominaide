@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from core.ai.mcp.core import MCPCallResponse
@@ -11,6 +12,17 @@ from plugins.dingtalk.backend.service import ensure_dingtalk_server
 
 class DingTalkMcpError(RuntimeError):
     pass
+
+
+_locks: dict[int, asyncio.Lock] = {}
+
+
+def _lock(user_id: int) -> asyncio.Lock:
+    lock = _locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _locks[user_id] = lock
+    return lock
 
 
 def _response_json(response: MCPCallResponse):
@@ -39,8 +51,11 @@ async def server_and_connection(user_id: int):
 
 
 async def call(user_id: int, tool: str, arguments: dict | None = None):
-    server = await server_and_connection(user_id)
-    response = await mcp_hub.call_external(
-        server.id, tool, user_id, arguments or {}
-    )
-    return _response_json(response)
+    # stdio MCP requests are serialized per user. Concurrent sync jobs sharing
+    # one connection otherwise race with reconnect/timeout handling.
+    async with _lock(user_id):
+        server = await server_and_connection(user_id)
+        response = await mcp_hub.call_external(
+            server.id, tool, user_id, arguments or {}
+        )
+        return _response_json(response)

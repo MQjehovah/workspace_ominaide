@@ -114,7 +114,13 @@ async def _upsert_messages(user_id: int, conversation_id: str, messages: list[di
     return lines
 
 
-async def _publish_activity(user_id: int, conversation_id: str, name: str, lines: list[str]) -> None:
+async def _publish_activity(
+    user_id: int,
+    conversation_id: str,
+    name: str,
+    lines: list[str],
+    unread_count: int = 0,
+) -> None:
     if not lines:
         return
     day_key = datetime.now().strftime("%Y-%m-%d")
@@ -129,11 +135,20 @@ async def _publish_activity(user_id: int, conversation_id: str, name: str, lines
             )
         )).scalars().all()
         # Publish a new event only when the synced content actually changed.
+        # Keep the read/unread count fresh even when the text is unchanged.
         for row in recent:
             details = row.details if isinstance(row.details, dict) else {}
             if str(details.get("conversation_id") or "") != conversation_id:
                 continue
             if str(details.get("content_hash") or "") == content_hash:
+                if (
+                    "unread_count" not in details
+                    or int(details.get("unread_count") or 0) != int(unread_count)
+                ):
+                    updated = dict(details)
+                    updated["unread_count"] = int(unread_count)
+                    row.details = updated
+                    await db.commit()
                 return
         await record_event(
             db,
@@ -149,6 +164,7 @@ async def _publish_activity(user_id: int, conversation_id: str, name: str, lines
                 "message_count": len(lines),
                 "content": content,
                 "content_hash": content_hash,
+                "unread_count": int(unread_count),
             },
         )
         await db.commit()
@@ -172,6 +188,23 @@ async def sync_chat() -> dict:
     stats = {"users": len(user_ids), "conversations": 0, "messages": 0, "errors": 0}
     for user_id in user_ids:
         try:
+            unread_ids: set[str] = set()
+            try:
+                unread_payload = await mcp.call(
+                    user_id, "list_unread", {"count": 100}
+                )
+                for item in _unwrap(unread_payload, "conversations"):
+                    if isinstance(item, dict):
+                        cid = str(
+                            item.get("conversationId")
+                            or item.get("conversation_id")
+                            or ""
+                        ).strip()
+                        if cid:
+                            unread_ids.add(cid)
+            except Exception as exc:
+                log.warning(f"[dingtalk.sync] unread list {user_id}: {exc}")
+
             payload = await mcp.call(user_id, "recent_conversations", {"start": start})
             conversations = _unwrap(payload, "conversations")
             if not isinstance(conversations, list):
@@ -211,7 +244,10 @@ async def sync_chat() -> dict:
                 if lines:
                     stats["messages"] += len(lines)
                     name = str(conv.get("name") or conv.get("title") or conversation_id)
-                    await _publish_activity(user_id, conversation_id, name, lines)
+                    unread = 1 if conversation_id in unread_ids else 0
+                    await _publish_activity(
+                        user_id, conversation_id, name, lines, unread_count=unread,
+                    )
                 stats["conversations"] += 1
         except Exception as exc:
             log.warning(f"[dingtalk.sync] user {user_id}: {exc}")
