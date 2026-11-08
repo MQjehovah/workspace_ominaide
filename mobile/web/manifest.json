@@ -1,11 +1,11 @@
 {
-    "name": "omniaide_mobile",
-    "short_name": "omniaide_mobile",
+    "name": "OmniAide",
+    "short_name": "OmniAide",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0A0D13",
+    "theme_color": "#6C5CE7",
+    "description": "OmniAide 私有 AI 工作台",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

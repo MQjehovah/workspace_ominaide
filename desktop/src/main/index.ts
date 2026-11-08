@@ -32,6 +32,7 @@ function createRenderer(view: string, opts: { width: number; height: number; fra
     resizable: opts.resizable ?? false,
     frame: opts.frame ?? false,
     transparent: opts.transparent ?? false,
+    icon: join(__dirname, '../../assets/icon.png'),
     show: false,
     webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false },
   })
@@ -109,6 +110,10 @@ function createTray() {
 }
 
 app.whenReady().then(async () => {
+  app.setName('OmniAide')
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(join(__dirname, '../../assets/icon.png'))
+  }
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(true))
   session.defaultSession.setPermissionCheckHandler(() => true)
   protocol.handle('local-file', (request) => {

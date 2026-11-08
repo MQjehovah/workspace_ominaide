@@ -64,13 +64,21 @@
       "target": [
         "nsis"
       ],
-      "icon": null
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
     },
-    "npmRebuild": true
+    "npmRebuild": true,
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Utility"
+    }
   }
 }

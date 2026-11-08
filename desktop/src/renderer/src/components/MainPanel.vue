@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { PluginInfo, PluginPanel, PanelData, PanelItem } from '../../shared/types'
 import PanelCard from './PanelCard.vue'
+import BrandMark from './BrandMark.vue'
 import { parseBackendDate } from '../utils/date'
 
 const pluginList = ref<PluginInfo[]>([])
@@ -142,6 +143,7 @@ onUnmounted(() => {
 <template>
   <div class="main-panel">
     <div class="title-bar">
+      <BrandMark class="app-mark" />
       <span class="title-text">OmniAide</span>
       <div class="title-actions">
         <button class="title-btn" @click="handleClose">
@@ -242,6 +244,7 @@ onUnmounted(() => {
 .bell-dot { position:absolute;top:-2px;right:-2px;width:16px;height:14px;border-radius:7px;background:linear-gradient(145deg,#ff5f6d,#e91e63);color:#fff;font-size:10px;line-height:14px;text-align:center;font-weight:700;box-shadow:0 2px 4px rgba(233,30,99,0.4); }
 .main-panel { width:300px; height:600px; border-radius:18px; background:#e4e9f0; box-shadow:10px 10px 20px rgba(163,177,198,0.55),-10px -10px 20px rgba(255,255,255,0.75),inset 1px 1px 2px rgba(255,255,255,0.6); border:none; display:flex; flex-direction:column; position:relative; overflow:hidden; }
 .title-bar { height:34px; background:transparent; display:flex; align-items:center; justify-content:space-between; padding:0 14px; -webkit-app-region:drag; }
+.app-mark { width: 18px; height: 18px; flex-shrink: 0; border-radius: 5px; overflow: hidden; }
 .title-text { font-size:13px; color:#6b7280; font-weight:600; letter-spacing:0.5px; }
 .title-actions { display:flex; gap:8px; -webkit-app-region:no-drag; }
 .title-btn { width:26px; height:26px; border-radius:13px; background:#e4e9f0; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#6b7280; box-shadow:3px 3px 6px rgba(163,177,198,0.5),-3px -3px 6px rgba(255,255,255,0.75); }

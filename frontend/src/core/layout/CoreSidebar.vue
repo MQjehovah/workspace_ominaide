@@ -1,7 +1,7 @@
 <template>
   <div class="sidebar" :class="{ collapsed }">
     <div class="sidebar-header">
-      <div class="brand-mark">O</div>
+      <BrandMark class="brand-mark" />
       <div class="brand-text" v-if="!collapsed">
         <span class="logo-text">OmniAide</span>
         <span class="logo-sub">SELF-HOSTED</span>
@@ -116,6 +116,7 @@
 </template>
 
 <script setup lang="ts">
+import BrandMark from '@/components/BrandMark.vue'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -161,10 +162,9 @@ function handleCmd(cmd: string) {
 }
 .sidebar.collapsed .sidebar-header { justify-content: center; padding: 0; }
 .brand-mark {
-  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 15px; font-weight: 800; color: #fff;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 9px;
+  overflow: hidden;
   box-shadow: 0 6px 16px -8px rgba(99, 102, 241, .9);
 }
 .brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }

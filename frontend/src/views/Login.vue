@@ -3,7 +3,7 @@
     <div class="login-shell">
       <aside class="brand-panel">
         <div class="brand-top">
-          <div class="brand-mark">O</div>
+          <BrandMark class="brand-mark" />
           <span class="brand-name">OmniAide</span>
         </div>
         <div class="brand-copy">
@@ -44,6 +44,7 @@
 </template>
 
 <script setup lang="ts">
+import BrandMark from '@/components/BrandMark.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -109,9 +110,7 @@ async function handleLogin() {
 .brand-top { display: flex; align-items: center; gap: 10px; }
 .brand-mark {
   width: 34px; height: 34px; border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; color: #fff;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
+  overflow: hidden;
   box-shadow: 0 10px 24px -10px rgba(99, 102, 241, .9);
 }
 .brand-name { font-size: 16px; font-weight: 700; letter-spacing: .4px; color: #fff; }

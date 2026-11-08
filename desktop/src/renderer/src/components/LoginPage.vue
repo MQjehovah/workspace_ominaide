@@ -5,6 +5,7 @@
         <button class="title-btn" @click="goBack" :style="{ visibility: currentView === 'settings' ? 'visible' : 'hidden' }">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m7-7-7 7 7 7"/></svg>
         </button>
+        <BrandMark class="app-mark" />
         <span class="title-text">{{ currentView === 'login' ? 'OmniAide' : '设置' }}</span>
       </div>
       <div class="title-actions">
@@ -34,6 +35,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import BrandMark from './BrandMark.vue'
 
 const serverUrl = ref('https://mqgeek.com/ominaide')
 const username = ref('')
@@ -90,6 +92,7 @@ function handleClose() {
 .login-page { height:100vh; display:flex; flex-direction:column; background:#fff; padding:16px 20px 20px; box-sizing:border-box; }
 .title-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; -webkit-app-region:drag; }
 .title-left { display:flex; align-items:center; gap:8px; -webkit-app-region:no-drag; }
+.app-mark { width: 22px; height: 22px; flex-shrink: 0; border-radius: 6px; overflow: hidden; }
 .title-text { font-size:18px; font-weight:700; color:#1e1e1e; }
 .title-actions { display:flex; gap:6px; -webkit-app-region:no-drag; }
 .title-btn { width:28px; height:28px; border-radius:6px; border:none; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#666; flex-shrink:0; }

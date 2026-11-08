@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { renderMarkdown } from './markdown'
+import BrandMark from './BrandMark.vue'
 
 const props = defineProps<{ data?: any; execute?: (a: string, args?: any) => Promise<any>; close?: () => void }>()
 
@@ -510,10 +511,10 @@ async function loadCloudSessions(initial = false): Promise<void> {
     }
     if (cur) {
       // If another device wrote to the open session, refresh it.
-      const stale = cur.cloudUpdatedAt && (
+      const stale = !!cur.cloudUpdatedAt && (
         !cur.cloudSyncedAt || cur.cloudUpdatedAt > cur.cloudSyncedAt
       )
-      if (!loading.value && stale) {
+      if (!loading.value && stale && cur.cloudUpdatedAt) {
         await loadCloudMessages(cur, true)
         cur.updatedAt = cur.cloudUpdatedAt
       } else {
@@ -1735,7 +1736,7 @@ const suggestions = [
   <div class="console" :class="{ 'sidebar-hidden': !sidebar }">
     <aside v-if="sidebar" class="sidebar">
       <div class="sidebar-head">
-        <span class="brand"><span class="brand-mark">⌘</span> AI 助理</span>
+        <span class="brand"><BrandMark class="brand-mark" /> AI 助理</span>
       </div>
       <button class="new-session-btn" title="新建会话 (Ctrl+O)" @click="newSession">＋ 新建会话</button>
       <div class="sidebar-search">
@@ -2356,8 +2357,8 @@ const suggestions = [
   border-color: var(--accent);
   background: linear-gradient(135deg, rgba(108, 92, 231, .32), rgba(0, 210, 255, .12));
 }
-.brand { font-size: 13px; font-weight: 700; letter-spacing: .3px; color: var(--text); }
-.brand-mark { color: var(--accent2); margin-right: 2px; }
+.brand { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; letter-spacing: .3px; color: var(--text); }
+.brand-mark { width: 18px; height: 18px; border-radius: 5px; overflow: hidden; flex-shrink: 0; }
 .session-list { flex: 1; overflow-y: auto; padding: 0 8px; }
 .session-item {
   position: relative;
