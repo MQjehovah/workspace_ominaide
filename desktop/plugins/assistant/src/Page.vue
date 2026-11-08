@@ -78,7 +78,7 @@ const paletteIdx = ref(0)
 const toastMsg = ref('')
 const listening = ref(false)
 const composing = ref(false)
-const toolPopover = ref<{ msgId: number; x: number; y: number } | null>(null)
+const expandedToolMsg = ref<number | null>(null)
 const detailOpen = ref(false)
 const detailTab = ref<'process' | 'history' | 'skills' | 'deliverables'>('process')
 const statusFilter = ref<'all' | 'running' | 'done' | 'error'>('all')
@@ -726,7 +726,7 @@ function ensureSession(): Session {
 }
 
 function newSession() {
-  toolPopover.value = null
+  expandedToolMsg.value = null
   const s = createSession()
   sessions.value.unshift(s)
   currentId.value = s.id
@@ -738,7 +738,7 @@ function newSession() {
 
 async function switchSession(id: string) {
   if (id === currentId.value) return
-  toolPopover.value = null
+  expandedToolMsg.value = null
   currentId.value = id
   input.value = ''
   await loadCloudMessages(current.value, true)
@@ -1762,7 +1762,6 @@ onMounted(async () => {
     if (N && N.permission === 'default') N.requestPermission()
   } catch { /* ignore */ }
   window.addEventListener('keydown', onGlobalKey)
-  document.addEventListener('click', onDocClickTool)
   nextTick(() => {
     inputRef.value?.focus()
     setTimeout(() => scrollBottom(true), 80)
@@ -1772,7 +1771,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKey)
-  document.removeEventListener('click', onDocClickTool)
   clearInterval(approvalTimer)
   renderTimers.forEach(t => clearTimeout(t))
   clearTimeout(persistTimer)
@@ -1825,37 +1823,8 @@ function copyToolText(value: any) {
   )
 }
 
-const toolPopoverMsg = computed(() => {
-  const msgId = toolPopover.value?.msgId
-  if (!msgId) return null
-  return current.value?.messages.find(m => m.id === msgId) || null
-})
-
-const toolPopoverStep = computed(() =>
-  toolPopoverMsg.value ? currentStep(toolPopoverMsg.value) : undefined
-)
-
-function toggleToolPopover(m: Msg, e: MouseEvent) {
-  if (toolPopover.value?.msgId === m.id) {
-    toolPopover.value = null
-    return
-  }
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  const width = Math.min(420, window.innerWidth - 24)
-  const height = 340
-  const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
-  let top = rect.bottom + 8
-  if (top + height > window.innerHeight - 12) {
-    top = Math.max(12, rect.top - height - 8)
-  }
-  toolPopover.value = { msgId: m.id, x: left, y: top }
-}
-
-function onDocClickTool(e: MouseEvent) {
-  if (!toolPopover.value) return
-  const el = e.target as HTMLElement
-  if (el.closest('.tool-status') || el.closest('.tool-popover')) return
-  toolPopover.value = null
+function toggleToolDetails(m: Msg) {
+  expandedToolMsg.value = expandedToolMsg.value === m.id ? null : m.id
 }
 
 function prettyJson(args: any): string {
@@ -1963,51 +1932,55 @@ const suggestions = [
               <div class="user-text">{{ m.text }}</div>
             </template>
             <template v-else>
-              <div v-for="(tl, tli) in visibleTimeline(m)" :key="tli" class="tl-wrap">
-                <div v-if="tl.kind === 'reasoning'" class="reasoning" :class="{ open: m.reasoningOpen }">
-                  <button class="reasoning-hd" @click="m.reasoningOpen = !m.reasoningOpen">
-                    <span class="chev">{{ m.reasoningOpen ? '▾' : '▸' }}</span>
-                    <span class="reasoning-title">思考过程</span>
-                  </button>
-                  <div v-if="m.reasoningOpen" class="reasoning-body">{{ tl.text }}</div>
+              <div class="asst-bubble" :class="{ running: m.pending }">
+                <div v-for="(tl, tli) in visibleTimeline(m)" :key="tli" class="tl-wrap">
+                  <div v-if="tl.kind === 'reasoning'" class="reasoning" :class="{ open: m.reasoningOpen }">
+                    <button class="reasoning-hd" @click="m.reasoningOpen = !m.reasoningOpen">
+                      <span class="chev">{{ m.reasoningOpen ? '▾' : '▸' }}</span>
+                      <span class="reasoning-title">思考过程</span>
+                    </button>
+                    <div v-if="m.reasoningOpen" class="reasoning-body">{{ tl.text }}</div>
+                  </div>
+                  <div v-else-if="tl.kind === 'text'" class="tl-text">{{ tl.text }}</div>
                 </div>
-                <div v-else-if="tl.kind === 'text'" class="tl-text">{{ tl.text }}</div>
-                <div v-else-if="tl.kind === 'tool' && stepById(m, tl.stepId)" class="step" :class="stepById(m, tl.stepId)!.status">
-                  <button class="step-hd" @click="stepById(m, tl.stepId)!.collapsed = !stepById(m, tl.stepId)!.collapsed">
-                    <span class="step-icon">{{ stepIcon(stepById(m, tl.stepId)!) }}</span>
-                    <span class="step-name">{{ stepById(m, tl.stepId)!.name }}</span>
-                    <span class="step-status" :class="stepById(m, tl.stepId)!.status">
-                      {{ stepById(m, tl.stepId)!.status === 'running' ? '执行中' : stepById(m, tl.stepId)!.status === 'error' ? '失败' : '完成' }}
-                    </span>
-                    <span class="chev">{{ stepById(m, tl.stepId)!.collapsed ? '▸' : '▾' }}</span>
+
+                <div v-if="m.steps.length" class="tool-block">
+                  <button type="button" class="tool-status" :class="{ running: !!runningStep(m), error: lastStepError(m) }" @click.stop="toggleToolDetails(m)">
+                    <span class="tool-status-ic">{{ toolIcon((runningStep(m) || currentStep(m))?.name || '') }}</span>
+                    <span class="tool-status-name">{{ runningStep(m)?.name || `${m.steps.length} 个工具调用` }}</span>
+                    <span v-if="runningStep(m)" class="tool-status-state">执行中</span>
+                    <span v-else class="tool-status-check" :class="{ err: lastStepError(m) }">{{ lastStepError(m) ? '✕' : '✓' }}</span>
+                    <span class="tool-status-chevron">{{ expandedToolMsg === m.id ? '⌄' : '›' }}</span>
                   </button>
-                  <div v-if="!stepById(m, tl.stepId)!.collapsed" class="step-body">
-                    <div class="step-sec">
-                      <span class="step-sec-label">参数</span>
-                      <pre class="step-args">{{ prettyJson(stepById(m, tl.stepId)!.args) }}</pre>
+                  <div v-if="expandedToolMsg === m.id && currentStep(m)" class="tool-details" @click.stop>
+                    <div class="tool-details-row">
+                      <div class="tool-details-row-hd">
+                        <span class="tool-details-label">参数</span>
+                        <button class="tool-details-copy" @click.stop="copyToolText(currentStep(m)!.args)">复制</button>
+                      </div>
+                      <pre class="tool-details-pre">{{ prettyJson(currentStep(m)!.args) }}</pre>
                     </div>
-                    <div v-if="stepById(m, tl.stepId)!.result" class="step-sec">
-                      <span class="step-sec-label">结果</span>
-                      <pre class="step-result" :class="{ err: stepById(m, tl.stepId)!.status === 'error' }">{{ stepById(m, tl.stepId)!.result }}</pre>
+                    <div v-if="currentStep(m)!.result" class="tool-details-row">
+                      <div class="tool-details-row-hd">
+                        <span class="tool-details-label">结果</span>
+                        <button class="tool-details-copy" @click.stop="copyToolText(currentStep(m)!.result)">复制</button>
+                      </div>
+                      <pre class="tool-details-pre" :class="{ err: currentStep(m)!.status === 'error' }">{{ currentStep(m)!.result }}</pre>
                     </div>
+                    <div v-else-if="currentStep(m)!.status === 'running'" class="tool-details-running">
+                      <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
+                      工具正在执行…
+                    </div>
+                    <div v-if="m.steps.length > 1" class="tool-details-foot">共 {{ m.steps.length }} 个工具调用，当前显示最新一条</div>
                   </div>
                 </div>
-              </div>
 
-              <button v-if="m.steps.length" type="button" class="tool-status" :class="{ running: !!runningStep(m), error: lastStepError(m) }" @click.stop="toggleToolPopover(m, $event)">
-                <span class="tool-status-ic">{{ toolIcon((runningStep(m) || currentStep(m))?.name || '') }}</span>
-                <span class="tool-status-name">{{ runningStep(m)?.name || `${m.steps.length} 个工具调用` }}</span>
-                <span v-if="runningStep(m)" class="tool-status-state">执行中</span>
-                <span v-else class="tool-status-check" :class="{ err: lastStepError(m) }">{{ lastStepError(m) ? '✕' : '✓' }}</span>
-                <span class="tool-status-chevron">›</span>
-              </button>
-              <div v-if="m.pending && !m.text && m.timeline.length === 0" class="pending">
-                <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
-                <span class="pending-text">思考中…</span>
-              </div>
-              <div v-if="m.error" class="error-bubble">{{ m.error }}</div>
-              <div v-if="m.text" class="asst-bubble" :class="{ running: m.pending }">
-                <div class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
+                <div v-if="m.pending && !m.text && !m.steps.length" class="pending">
+                  <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
+                  <span class="pending-text">思考中…</span>
+                </div>
+                <div v-if="m.error" class="error-bubble">{{ m.error }}</div>
+                <div v-if="m.text" class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
               </div>
               <div v-if="m.usage" class="msg-usage">{{ formatUsage(m) }}</div>
               <div class="msg-actions">
@@ -2078,37 +2051,7 @@ const suggestions = [
       </div>
     </main>
 
-    <div v-if="toolPopover && toolPopoverStep" class="tool-popover" :style="{ left: toolPopover.x + 'px', top: toolPopover.y + 'px' }" @click.stop>
-      <div class="tool-popover-hd">
-        <span class="tool-popover-ic">{{ toolIcon(toolPopoverStep.name) }}</span>
-        <span class="tool-popover-name">{{ toolPopoverStep.name }}</span>
-        <span class="tool-popover-status" :class="toolPopoverStep.status">
-          {{ toolPopoverStep.status === 'running' ? '执行中' : toolPopoverStep.status === 'error' ? '失败' : '完成' }}
-        </span>
-        <button class="tool-popover-close" @click="toolPopover = null">×</button>
-      </div>
-      <div class="tool-popover-row">
-        <div class="tool-popover-row-hd">
-          <span class="tool-popover-label">参数</span>
-          <button class="tool-popover-copy" @click.stop="copyToolText(toolPopoverStep.args)">复制</button>
-        </div>
-        <pre class="tool-popover-pre">{{ prettyJson(toolPopoverStep.args) }}</pre>
-      </div>
-      <div v-if="toolPopoverStep.result" class="tool-popover-row">
-        <div class="tool-popover-row-hd">
-          <span class="tool-popover-label">结果</span>
-          <button class="tool-popover-copy" @click.stop="copyToolText(toolPopoverStep.result)">复制</button>
-        </div>
-        <pre class="tool-popover-pre" :class="{ err: toolPopoverStep.status === 'error' }">{{ toolPopoverStep.result }}</pre>
-      </div>
-      <div v-else-if="toolPopoverStep.status === 'running'" class="tool-popover-running">
-        <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
-        工具正在执行…
-      </div>
-      <div v-if="toolPopoverMsg && toolPopoverMsg.steps.length > 1" class="tool-popover-foot">
-        共 {{ toolPopoverMsg.steps.length }} 个工具调用，显示当前最新一条
-      </div>
-    </div>
+
 
     <template v-if="detailOpen">
       <div class="detail-backdrop" @click="detailOpen = false"></div>
@@ -3496,11 +3439,13 @@ const suggestions = [
 
 /* pending */
 .tool-status {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   align-items: center;
   gap: 7px;
-  max-width: min(100%, 560px);
-  margin: 2px 0 10px;
+  margin: 0 0 4px;
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -3522,35 +3467,20 @@ const suggestions = [
 .tool-status-check.err { color: var(--red); }
 .tool-status-chevron { flex-shrink: 0; color: var(--accent2); font-size: 14px; }
 
-.tool-popover {
-  position: fixed;
-  z-index: 120;
-  width: min(420px, calc(100vw - 24px));
-  max-height: min(360px, calc(100vh - 100px));
-  overflow-y: auto;
-  padding: 12px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
+.tool-details {
+  margin: 8px 0 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
-.tool-popover-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.tool-popover-ic { flex-shrink: 0; font-size: 13px; width: 16px; text-align: center; }
-.tool-popover-name { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; color: var(--text); font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tool-popover-status { flex-shrink: 0; font-size: 10.5px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(47, 214, 165, .1); border: 1px solid rgba(47, 214, 165, .25); }
-.tool-popover-status.running { color: var(--amber); background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .28); }
-.tool-popover-status.error { color: var(--red); background: rgba(244, 104, 109, .1); border-color: rgba(244, 104, 109, .28); }
-.tool-popover-close { width: 24px; height: 24px; border: none; border-radius: 7px; background: transparent; color: var(--dim); font-size: 16px; cursor: pointer; flex-shrink: 0; }
-.tool-popover-close:hover { background: var(--bg4); color: var(--text); }
-.tool-popover-row { margin-bottom: 8px; }
-.tool-popover-row-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.tool-popover-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
-.tool-popover-copy { border: none; background: transparent; color: var(--accent2); font-size: 10.5px; cursor: pointer; padding: 1px 4px; border-radius: 4px; }
-.tool-popover-copy:hover { background: var(--bg4); }
-.tool-popover-pre { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; line-height: 1.55; color: #b7c1d4; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; }
-.tool-popover-pre.err { color: var(--red); }
-.tool-popover-running { display: flex; align-items: center; gap: 6px; padding: 6px 0 2px; font-size: 11.5px; color: var(--dim); }
-.tool-popover-foot { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--dim); }
+.tool-details-row { margin-bottom: 8px; }
+.tool-details-row-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.tool-details-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
+.tool-details-copy { border: none; background: transparent; color: var(--accent2); font-size: 10.5px; cursor: pointer; padding: 1px 4px; border-radius: 4px; }
+.tool-details-copy:hover { background: var(--bg4); }
+.tool-details-pre { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; line-height: 1.55; color: #b7c1d4; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto; }
+.tool-details-pre.err { color: var(--red); }
+.tool-details-running { display: flex; align-items: center; gap: 6px; padding: 6px 0 2px; font-size: 11.5px; color: var(--dim); }
+.tool-details-foot { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--dim); }
 
 .pending {
   display: inline-flex;
