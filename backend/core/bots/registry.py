@@ -81,7 +81,7 @@ async def _ensure_default(db, user_id: int) -> Bot:
         role=DEFAULT_BOT_ROLE,
         system_prompt=settings.assistant_system_prompt,
         temperature=0.7,
-        max_turns=30,
+        max_turns=60,
         is_default=True,
         status="active",
     )

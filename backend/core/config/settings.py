@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     # Legacy/test override. When set, projects use this directory directly
     # instead of <workspace_root>/<user_id>/projects. Leave empty in production.
     coding_workspace_root: str = ""
-    coding_max_turns: int = 40
+    coding_max_turns: int = 60
     coding_command_timeout_ms: int = 120000
     # One-shot delivery: after the agent finishes, verify -> branch -> commit -> push.
     # When enabled the agent tools themselves cannot commit/push; delivery owns git.
@@ -153,7 +153,7 @@ class Settings(BaseSettings):
     # Scheduled AI jobs live in Bot routines, not here.
     # Bot runs: persistent execution, heartbeat and recovery.
     bot_run_concurrency: int = 2
-    bot_run_max_turns: int = 20
+    bot_run_max_turns: int = 60
     bot_run_timeout_seconds: int = 1800
     bot_run_heartbeat_seconds: int = 15
     bot_run_poll_seconds: float = 0.4

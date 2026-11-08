@@ -37,7 +37,7 @@ class Bot(Base):
     temperature = Column(Float, default=0.7)
     allowed_tools = Column(JSON, nullable=True)
     risk_policy = Column(JSON, nullable=True)
-    max_turns = Column(Integer, default=30)
+    max_turns = Column(Integer, default=60)
     token_budget = Column(Integer, nullable=True)
     is_default = Column(Boolean, default=False)
     status = Column(String(20), default="active", index=True)

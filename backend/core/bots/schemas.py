@@ -12,7 +12,7 @@ class BotCreate(BaseModel):
     temperature: float = 0.7
     allowed_tools: list[str] | None = None
     risk_policy: dict | None = None
-    max_turns: int = 30
+    max_turns: int = 60
     token_budget: int | None = None
     is_default: bool = False
 

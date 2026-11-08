@@ -134,7 +134,7 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
     model = (bot.model or settings.llm_model) if bot is not None else settings.llm_model
     max_turns = min(
         int((bot.max_turns if bot is not None else 0) or settings.coding_max_turns),
-        60,
+        100,
     )
 
     final = ""

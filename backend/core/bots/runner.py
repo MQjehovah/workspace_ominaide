@@ -224,7 +224,7 @@ async def _loop(run: BotRun, bot: Bot, messages: list[dict], seq: int) -> None:
         all_tools = [t for t in all_tools if t.name in bot.allowed_tools]
     tools = _to_openai_tools(all_tools)
 
-    max_turns = min(int(bot.max_turns or settings.bot_run_max_turns), 50)
+    max_turns = min(int(bot.max_turns or settings.bot_run_max_turns), 100)
     deadline = _now() + timedelta(seconds=max(60, settings.bot_run_timeout_seconds))
 
     for _ in range(max_turns):

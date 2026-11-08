@@ -355,7 +355,7 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
                 user["id"],
                 messages,
                 tools_filter=bot.allowed_tools,
-                max_turns=bot.max_turns or 30,
+                max_turns=bot.max_turns or 60,
                 model=bot.model,
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
             )
@@ -390,7 +390,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
                 user["id"],
                 messages,
                 tools_filter=bot.allowed_tools,
-                max_turns=bot.max_turns or 30,
+                max_turns=bot.max_turns or 60,
                 model=bot.model,
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
             ):
@@ -597,7 +597,7 @@ async def voice(
                 user["id"],
                 messages,
                 tools_filter=bot.allowed_tools,
-                max_turns=bot.max_turns or 30,
+                max_turns=bot.max_turns or 60,
                 model=bot.model,
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
             )
@@ -742,7 +742,7 @@ async def voice_stream(
                     user["id"],
                     messages,
                     tools_filter=bot.allowed_tools,
-                    max_turns=bot.max_turns or 30,
+                    max_turns=bot.max_turns or 60,
                     model=bot.model,
                     temperature=bot.temperature if bot.temperature is not None else 0.7,
                 )

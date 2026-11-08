@@ -46,7 +46,7 @@ async def run_agent(
     user_id: int,
     messages: list[dict],
     tools_filter: list[str] | None = None,
-    max_turns: int = 20,
+    max_turns: int = 60,
     model: str | None = None,
     temperature: float = 0.7,
 ) -> str:
@@ -90,7 +90,7 @@ async def run_agent_stream(
     user_id: int,
     messages: list[dict],
     tools_filter: list[str] | None = None,
-    max_turns: int = 20,
+    max_turns: int = 60,
     model: str | None = None,
     temperature: float = 0.7,
 ):
