@@ -826,7 +826,6 @@ function flushIntermediateText(m: Msg) {
 function startStep(m: Msg, name: string, args: any) {
   flushIntermediateText(m)
   const step: Step = { id: stepSeq++, name, args, result: '', status: 'running', collapsed: false }
-  toolPanelOverride.value[m.id] = true
   m.steps.push(step)
   m.timeline.push({ kind: 'tool', stepId: step.id })
   m.reasoningSeparated = false
@@ -864,17 +863,11 @@ function upsertServerStep(m: Msg, data: any): Step | null {
     m.timeline.push({ kind: 'tool', stepId: sid })
     if (sid >= stepSeq) stepSeq = sid + 1
   } else {
-    const wasRunning = st.status === 'running'
     if (data.tool) st.name = data.tool
     if (data.arguments !== undefined) st.args = data.arguments
     if (data.content !== undefined) st.result = data.content || ''
     st.status = status
-    if (wasRunning && status !== 'running' && !m.steps.some(x => x.status === 'running')) {
-      st.collapsed = true
-      toolPanelOverride.value[m.id] = false
-    }
   }
-  if (status === 'running') toolPanelOverride.value[m.id] = true
   return st
 }
 
@@ -1831,8 +1824,7 @@ function copyToolText(value: any) {
 }
 
 function toolPanelOpen(m: Msg): boolean {
-  const override = toolPanelOverride.value[m.id]
-  return override === undefined ? !!runningStep(m) : override
+  return !!toolPanelOverride.value[m.id]
 }
 
 function toggleToolPanel(m: Msg) {
@@ -1960,6 +1952,12 @@ const suggestions = [
                 <div v-else-if="tl.kind === 'text'" class="tl-text">{{ tl.text }}</div>
               </div>
 
+              <div v-if="m.pending && !m.text && !m.steps.length" class="pending">
+                <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
+                <span class="pending-text">思考中…</span>
+              </div>
+              <div v-if="m.error" class="error-bubble">{{ m.error }}</div>
+              <div v-if="m.text" class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
               <div v-if="m.steps.length" class="tool-panel" :class="{ running: !!runningStep(m), error: lastStepError(m) }">
                 <button type="button" class="tool-panel-hd" @click="toggleToolPanel(m)">
                   <span class="tool-panel-icon" :class="{ spinning: !!runningStep(m) }">{{ runningStep(m) ? '◌' : toolIcon(currentStep(m)?.name || '') }}</span>
@@ -1969,44 +1967,34 @@ const suggestions = [
                   </span>
                   <span class="tool-panel-chevron" :class="{ open: toolPanelOpen(m) }">›</span>
                 </button>
-                <div v-if="toolPanelOpen(m)" class="tool-panel-body">
-                  <div v-for="step in m.steps" :key="step.id" class="tool-row" :class="step.status">
-                    <button type="button" class="tool-row-hd" @click="toggleStep(step)">
-                      <span class="tool-row-icon">{{ stepIcon(step) }}</span>
-                      <span class="tool-row-name">{{ step.name }}</span>
-                      <span class="tool-row-status" :class="step.status">{{ step.status === 'running' ? '执行中' : step.status === 'error' ? '失败' : '完成' }}</span>
-                      <span class="tool-row-chevron" :class="{ open: !step.collapsed }">›</span>
-                    </button>
-                    <div v-if="!step.collapsed" class="tool-row-body">
-                      <div class="tool-row-sec">
-                        <div class="tool-row-sec-hd">
-                          <span>参数</span>
-                          <button @click.stop="copyToolText(step.args)">复制</button>
-                        </div>
-                        <pre class="tool-row-pre">{{ prettyJson(step.args) }}</pre>
+                <div v-if="toolPanelOpen(m) && currentStep(m)" class="tool-details-fixed">
+                  <div class="tool-details-meta">共 {{ m.steps.length }} 个工具调用</div>
+                  <div class="tool-details-current">
+                    <div class="tool-details-current-hd">
+                      <span class="tool-details-current-name">{{ toolIcon(currentStep(m)!.name) }} {{ currentStep(m)!.name }}</span>
+                      <span class="tool-row-status" :class="currentStep(m)!.status">{{ currentStep(m)!.status === 'running' ? '执行中' : currentStep(m)!.status === 'error' ? '失败' : '完成' }}</span>
+                    </div>
+                    <div class="tool-row-sec">
+                      <div class="tool-row-sec-hd">
+                        <span>参数</span>
+                        <button @click.stop="copyToolText(currentStep(m)!.args)">复制</button>
                       </div>
-                      <div v-if="step.result" class="tool-row-sec">
-                        <div class="tool-row-sec-hd">
-                          <span>结果</span>
-                          <button @click.stop="copyToolText(step.result)">复制</button>
-                        </div>
-                        <pre class="tool-row-pre" :class="{ err: step.status === 'error' }">{{ step.result }}</pre>
+                      <pre class="tool-row-pre">{{ prettyJson(currentStep(m)!.args) }}</pre>
+                    </div>
+                    <div v-if="currentStep(m)!.result" class="tool-row-sec">
+                      <div class="tool-row-sec-hd">
+                        <span>结果</span>
+                        <button @click.stop="copyToolText(currentStep(m)!.result)">复制</button>
                       </div>
-                      <div v-else-if="step.status === 'running'" class="tool-row-running">
-                        <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
-                        工具正在执行…
-                      </div>
+                      <pre class="tool-row-pre" :class="{ err: currentStep(m)!.status === 'error' }">{{ currentStep(m)!.result }}</pre>
+                    </div>
+                    <div v-else-if="currentStep(m)!.status === 'running'" class="tool-row-running">
+                      <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
+                      工具正在执行…
                     </div>
                   </div>
                 </div>
               </div>
-
-              <div v-if="m.pending && !m.text && !m.steps.length" class="pending">
-                <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
-                <span class="pending-text">思考中…</span>
-              </div>
-              <div v-if="m.error" class="error-bubble">{{ m.error }}</div>
-              <div v-if="m.text" class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
               </div>
               <div v-if="m.usage" class="msg-usage">{{ formatUsage(m) }}</div>
               <div class="msg-actions">
@@ -3465,8 +3453,10 @@ const suggestions = [
 
 /* pending */
 .tool-panel {
-  max-width: min(780px, 92%);
-  margin: 0 0 10px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 10px 0 0;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg2);
@@ -3479,7 +3469,9 @@ const suggestions = [
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 12px;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 10px;
   border: none;
   background: transparent;
   color: var(--text);
@@ -3497,6 +3489,20 @@ const suggestions = [
 .tool-panel-badge.err { color: var(--red); background: rgba(244, 104, 109, .1); border-color: rgba(244, 104, 109, .28); }
 .tool-panel-chevron { flex-shrink: 0; color: var(--dim); font-size: 14px; transition: transform .15s ease; }
 .tool-panel-chevron.open { transform: rotate(90deg); }
+.tool-details-fixed {
+  height: 240px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+.tool-details-meta { flex-shrink: 0; font-size: 10.5px; color: var(--dim); margin-bottom: 6px; }
+.tool-details-current { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
+.tool-details-current-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.tool-details-current-name { flex: 1; min-width: 0; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tool-panel-body { border-top: 1px solid var(--border); padding: 4px 6px 6px; max-height: 360px; overflow-y: auto; }
 .tool-row { border-radius: 8px; margin: 2px 0; }
 .tool-row.running { background: rgba(251, 191, 36, .04); }
