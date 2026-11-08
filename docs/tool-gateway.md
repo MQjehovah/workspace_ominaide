@@ -18,8 +18,8 @@ pinned_tools
   ├─ save_memory / send_notification / web_search / fetch_url
   └─ skill_search / skill_call
 
-本地机器在线时额外注入（source=local，不属于 builtin）：
-  └─ local_shell / local_shell_start / local_shell_wait / local_file
+本地机器工具（source=local，不属于 builtin，也不常驻）：
+  └─ 只能通过 tool_search(scope="machine") 发现
 
 其余工具：插件工具、服务端 MCP、本地 MCP、业务工具
   └─ 只进入搜索目录，不直接进入上下文
@@ -50,13 +50,24 @@ pinned_tools
 builtin   核心/业务内置工具
 plugin    插件工具，包括外部授权插件（Google）
 mcp       服务端 MCP
-local     本地机器上的 MCP
+local     本地机器工具 / 本地 MCP（只在 scope=machine 时出现）
 ```
 
-本地 MCP 使用 `scope=local` 或 `scope=all`：
+`scope`：
 
 ```text
-tool_search(query="browser", scope="all", machine_id="...")
+server    服务端工具（默认）
+machine   本地机器工具 + 本地 MCP
+all       两者
+```
+
+`local` 仍然作为 `machine` 的兼容别名。
+
+本地机器工具和本地 MCP 使用 `scope=machine` 或 `scope=all`：
+
+```text
+tool_search(query="browser", scope="machine", machine_id="...")
+tool_search(query="local_shell", scope="machine")
 ```
 
 本地工具的 `tool_id` 形如：
@@ -86,13 +97,14 @@ local:m1/browser/* -> exec     -> ask
 
 ## 本地工具
 
-`local_*` 不是 builtin 工具，而是桌面端节点注入的工具：
+`local_*` 不是 builtin 工具，也不常驻在工具表里：
 
 - `source = "local"`
-- 不进入默认 `pinned_tools`
-- 桌面端在线时才出现在该用户的工具列表里
-- 桌面端离线时自动消失
-- 其他用户不会因为别人的机器在线而看到它们
+- 永远不出现在 LLM 的默认工具列表
+- 必须用 `tool_search(scope="machine")` 或 `scope="all"` 搜索
+- 再用 `tool_call` 调用
+- 桌面端离线时搜索返回空/错误
+- 其他用户不会因为别人的机器在线而搜到本地工具
 
 文件操作合并为一个入口：
 

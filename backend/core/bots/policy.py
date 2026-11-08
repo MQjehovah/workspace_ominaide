@@ -83,6 +83,7 @@ TOOL_RISK = {
     "local_list_dir": RISK_READ,
     "local_read_file": RISK_READ,
     "local_write_file": RISK_WRITE,
+    "local_file": RISK_READ,
     "local_grep": RISK_READ,
     "list_local_machines": RISK_READ,
     "google_gmail_search": RISK_READ,
@@ -212,23 +213,29 @@ def decide(bot: Bot | None, name: str, arguments: dict | None = None) -> tuple[s
             return RISK_EXEC, "deny"
         allowed = getattr(bot, "allowed_tools", None) if bot is not None else None
         if raw.startswith("local:"):
-            if allowed is not None and "local_mcp_call" not in allowed:
-                return RISK_EXEC, "deny"
-            custom = (getattr(bot, "risk_policy", None) or {}) if bot is not None else {}
-            spec = (custom.get("tools") or {}).get("local_mcp_call")
-            if isinstance(spec, str) and spec in ("auto", "ask", "deny"):
-                return RISK_EXEC, spec
-            if isinstance(spec, dict) and spec.get("decision") in ("auto", "ask", "deny"):
-                return RISK_EXEC, spec["decision"]
-            decision = custom.get(RISK_EXEC)
-            if decision in ("auto", "ask", "deny"):
-                return RISK_EXEC, decision
-            return RISK_EXEC, "ask"
-        target = raw
-        for prefix in ("builtin:", "plugin:", "mcp:"):
-            if target.startswith(prefix):
-                target = target[len(prefix):]
-                break
+            rest = raw[len("local:"):]
+            if ":" in rest:
+                # local:<machine>:<server>:<tool> -> local MCP, exec by default.
+                if allowed is not None and "local_mcp_call" not in allowed:
+                    return RISK_EXEC, "deny"
+                custom = (getattr(bot, "risk_policy", None) or {}) if bot is not None else {}
+                spec = (custom.get("tools") or {}).get("local_mcp_call")
+                if isinstance(spec, str) and spec in ("auto", "ask", "deny"):
+                    return RISK_EXEC, spec
+                if isinstance(spec, dict) and spec.get("decision") in ("auto", "ask", "deny"):
+                    return RISK_EXEC, spec["decision"]
+                decision = custom.get(RISK_EXEC)
+                if decision in ("auto", "ask", "deny"):
+                    return RISK_EXEC, decision
+                return RISK_EXEC, "ask"
+            # local:<tool> -> registered local primitive, use its own risk.
+            target = rest
+        else:
+            target = raw
+            for prefix in ("builtin:", "plugin:", "mcp:"):
+                if target.startswith(prefix):
+                    target = target[len(prefix):]
+                    break
         if target in ("tool_call", "tool_search", "local_mcp_search", "local_mcp_call"):
             return RISK_EXEC, "deny"
         if allowed is not None and target not in allowed:
@@ -236,6 +243,10 @@ def decide(bot: Bot | None, name: str, arguments: dict | None = None) -> tuple[s
         return decide(bot, target, call_args)
 
     risk = resolve_risk(bot, name)
+    if name == "local_file":
+        op = str((arguments or {}).get("op") or "").strip().lower()
+        if op in ("write", "save"):
+            risk = RISK_WRITE
     custom = (getattr(bot, "risk_policy", None) or {}) if bot is not None else {}
 
     tools = custom.get("tools") or {}

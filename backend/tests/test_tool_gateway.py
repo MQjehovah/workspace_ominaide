@@ -92,6 +92,19 @@ async def test_tool_call_risk_uses_underlying_tool():
     )
     assert (risk, decision) == ("exec", "ask")
 
+    risk, decision = policy.decide(
+        None, "tool_call", {"tool_id": "local:local_shell"}
+    )
+    # Desktop approval handles local execution; the bot-level risk is exec.
+    assert (risk, decision) == ("exec", "auto")
+
+    risk, decision = policy.decide(
+        None,
+        "tool_call",
+        {"tool_id": "local:local_file", "arguments": {"op": "write"}},
+    )
+    assert (risk, decision) == ("write", "auto")
+
     _, decision = policy.decide(
         None, "tool_call", {"tool_id": "builtin:tool_search"}
     )
@@ -135,7 +148,7 @@ async def test_local_file_dispatches_by_op(monkeypatch):
         assert calls[-1] == expected
 
 
-def test_exposure_keeps_only_pinned_tools(monkeypatch):
+def test_exposure_never_includes_local_tools(monkeypatch):
     from core.ai.mcp import gateway
 
     tools = [
@@ -147,31 +160,22 @@ def test_exposure_keeps_only_pinned_tools(monkeypatch):
         if tool.name.startswith("local_"):
             tool.source = "local"
 
-    monkeypatch.setattr(gateway, "_online_machine_ids", lambda uid: [])
+    monkeypatch.setattr(gateway, "_online_machine_ids", lambda uid: ["machine-a"])
     exposed = {t.name for t in select_exposed_tools(tools, DummyBot())}
     assert "tool_search" in exposed
     assert "tool_call" in exposed
     assert "local_shell" not in exposed
     assert "local_file" not in exposed
-    assert "local_read_file" not in exposed
-    assert "local_list_dir" not in exposed
     assert "skill_search" in exposed
     assert "skill_call" in exposed
     assert "some_plugin_tool" not in exposed
 
-    # Local tools are injected only while a desktop machine is online.
-    monkeypatch.setattr(gateway, "_online_machine_ids", lambda uid: ["machine-a"])
-    exposed = {t.name for t in select_exposed_tools(tools, DummyBot())}
-    assert "local_shell" in exposed
-    assert "local_file" in exposed
-    assert "some_plugin_tool" not in exposed
-
     class PinnedBot(DummyBot):
-        pinned_tools = ["some_plugin_tool"]
+        pinned_tools = ["some_plugin_tool", "local_shell"]
 
     exposed = {t.name for t in select_exposed_tools(tools, PinnedBot())}
     assert "some_plugin_tool" in exposed
-
+    assert "local_shell" not in exposed
 
 def test_exposure_respects_allowed_tools():
     tools = [
@@ -208,10 +212,51 @@ def test_display_target_unwraps_gateway_call():
     assert display_target(
         "tool_call",
         {
+            "tool_id": "local:local_shell",
+            "arguments": {"command": "ls"},
+        },
+    ) == ("local_shell", {"command": "ls"})
+    assert display_target(
+        "tool_call",
+        {
             "tool_id": "local:m1:filesystem:read_file",
             "arguments": {"path": "~/a"},
         },
     ) == ("local_mcp:filesystem/read_file", {"path": "~/a"})
+
+
+async def test_local_tools_only_via_machine_scope(monkeypatch):
+    from core.ai.mcp import gateway
+
+    name = "local_shell"
+
+    async def handler(user_id, args):
+        return MCPCallResponse(content=[MCPContent(text="ok")])
+
+    tool = _fake_tool(name, description="run shell on the local machine")
+    tool.source = "local"
+    tool_registry.register(tool, handler)
+
+    async def fake_local_search(user_id, query, **kwargs):
+        return [], None
+
+    monkeypatch.setattr(gateway, "_online_machine_ids", lambda uid: ["machine-a"])
+    monkeypatch.setattr(gateway, "search_local_tools", fake_local_search)
+    try:
+        response = await tool_search(1, {"query": "shell", "scope": "server"})
+        payload = json.loads(response.content[0].text)
+        assert all(item["name"] != name for item in payload["tools"])
+
+        response = await tool_search(1, {"query": "shell", "scope": "machine"})
+        payload = json.loads(response.content[0].text)
+        assert any(item["tool_id"] == f"local:{name}" for item in payload["tools"])
+
+        # ``local`` remains an alias for ``machine``.
+        response = await tool_search(1, {"query": "shell", "scope": "local"})
+        payload = json.loads(response.content[0].text)
+        assert payload["scope"] == "machine"
+    finally:
+        tool_registry.unregister(name)
 
 
 async def test_local_mcp_search_and_call(monkeypatch):

@@ -50,20 +50,15 @@ DEFAULT_PINNED_TOOLS = {
     "skill_call",
 }
 
-# Injected only while a local machine is online. They are source="local",
-# not builtin, and disappear from the tool list when the desktop disconnects.
-LOCAL_INJECTED_TOOLS = {
-    "local_shell",
-    "local_shell_start",
-    "local_shell_wait",
-    "local_file",
-}
+# All local machine tools are source="local". They are never exposed
+# directly; use tool_search(scope="machine") to discover them.
 
 GATEWAY_INSTRUCTION = (
     "可用工具很多，未直接列出的能力必须先调用 tool_search 检索，再用 tool_call 调用。"
-    "不要臆造工具名或参数。本地机器或本地 MCP 工具使用 scope=local 或 scope=all。"
+    "不要臆造工具名或参数。"
+    "所有 local_* 本地工具和本地 MCP 工具不在默认工具表中，必须先用 "
+    "tool_search(scope=\"machine\") 或 scope=\"all\" 检索，再用 tool_call 调用。"
     "技能先用 skill_search 检索，再用 skill_call 调用。"
-    "本地机器在线时会自动注入 local_* 工具；离线时不会出现。"
     "tool_call 的审批按底层真实工具执行。"
 )
 
@@ -131,17 +126,10 @@ def select_exposed_tools(
         # Bots with an explicit allowlist keep those tools directly exposed.
         pinned = allowed if allowed is not None else DEFAULT_PINNED_TOOLS
     wanted = set(pinned) | GATEWAY_TOOLS
-
-    # Local machine tools are injected by the desktop node, not builtin.
-    if _online_machine_ids(user_id):
-        wanted |= {
-            t.name
-            for t in tools
-            if t.source == "local" and t.name in LOCAL_INJECTED_TOOLS
-        }
-    else:
-        tools = [t for t in tools if t.source != "local"]
-    return [t for t in tools if t.name in wanted]
+    # Local machine tools are search-only. Never expose them directly.
+    return [
+        t for t in tools if t.name in wanted and t.source != "local"
+    ]
 
 
 # Common Chinese terms mapped to English words used in tool names/descriptions.
@@ -322,6 +310,9 @@ def parse_tool_id(tool_id: str, name: str | None = None) -> dict:
     raw = (tool_id or name or "").strip()
     if raw.startswith(_LOCAL_PREFIX):
         rest = raw[len(_LOCAL_PREFIX):]
+        if ":" not in rest:
+            # Registered local primitive, e.g. local:local_shell
+            return {"kind": "server", "name": rest, "source": "local"}
         parts = rest.split(":", 2)
         if len(parts) != 3:
             return {"kind": "invalid", "raw": raw}
@@ -368,42 +359,47 @@ async def tool_search(user_id: int, args: dict) -> MCPCallResponse:
     limit = min(max(limit, 1), 20)
 
     scope = str(args.get("scope") or "server").strip().lower()
-    if scope not in ("server", "local", "all"):
+    if scope in ("local", "mechine"):
+        scope = "machine"
+    if scope not in ("server", "machine", "all"):
         scope = "server"
     source = str(args.get("source") or "").strip().lower() or None
     if source == "local":
-        scope = "local"
+        scope = "machine"
         source = None
     machine_id = str(args.get("machine_id") or "").strip() or None
 
     bot = await _load_bot(user_id)
+    allowed = getattr(bot, "allowed_tools", None) if bot is not None else None
     items: list[dict] = []
+    seen: set[str] = set()
     local_error: str | None = None
 
-    if scope in ("server", "all"):
-        items.extend(
-            search_server_tools(
-                user_id, query, source=source, limit=limit, bot=bot
-            )
-        )
-    allowed = getattr(bot, "allowed_tools", None) if bot is not None else None
-    local_allowed = allowed is None or "local_mcp_call" in allowed
-    if (
-        scope in ("local", "all")
-        and source not in ("builtin", "plugin", "mcp")
-        and local_allowed
-    ):
-        local_items, local_error = await search_local_tools(
-            user_id, query, limit=limit, machine_id=machine_id
-        )
-        items.extend(local_items)
-        # Other local tools (machine list, job cancel) are not injected by
-        # default, so keep them discoverable while a machine is online.
-        for item in search_server_tools(
-            user_id, query, source="local", limit=limit, bot=bot
-        ):
-            if item["name"] not in LOCAL_INJECTED_TOOLS:
+    def add(new_items: list[dict]) -> None:
+        for item in new_items:
+            tool_id = item.get("tool_id") or ""
+            if tool_id and tool_id not in seen:
+                seen.add(tool_id)
                 items.append(item)
+
+    if scope in ("server", "all"):
+        add(search_server_tools(user_id, query, source=source, limit=limit, bot=bot))
+
+    if scope in ("machine", "all") and source not in ("builtin", "plugin", "mcp"):
+        # Local primitives are registered but only discoverable here.
+        local_items = search_server_tools(
+            user_id, query, source="local", limit=limit, bot=bot
+        )
+        if allowed is not None:
+            local_items = [i for i in local_items if i["name"] in allowed]
+        add(local_items)
+
+        # MCP servers running on the desktop.
+        if allowed is None or "local_mcp_call" in allowed:
+            mcp_items, local_error = await search_local_tools(
+                user_id, query, limit=limit, machine_id=machine_id
+            )
+            add(mcp_items)
 
     items = items[:limit]
     payload: dict = {"query": query, "scope": scope, "tools": items}
@@ -411,11 +407,10 @@ async def tool_search(user_id: int, args: dict) -> MCPCallResponse:
         payload["local_error"] = local_error
     if not items:
         payload["hint"] = (
-            "没有匹配工具。换更短的关键词；本地机器上的 MCP 需要 "
-            "scope=local 或 scope=all。"
+            "没有匹配工具。换更短的关键词；本地机器工具和本地 MCP 需要 "
+            "scope=machine 或 scope=all。"
         )
     return _ok(json.dumps(payload, ensure_ascii=False))
-
 
 async def _bot_allows(user_id: int, name: str) -> bool:
     bot = await _load_bot(user_id)
@@ -435,7 +430,8 @@ async def tool_call(user_id: int, args: dict) -> MCPCallResponse:
 
     if target["kind"] == "invalid":
         return _err(
-            "tool_id 格式无效。本地工具格式：local:<machine_id>:<server_id>:<tool>"
+            "tool_id 格式无效。本地 primitive：local:<tool>；"
+            "本地 MCP：local:<machine_id>:<server_id>:<tool>"
         )
 
     if target["kind"] == "local":
@@ -493,8 +489,8 @@ TOOLS = [
             name="tool_search",
             description=(
                 "搜索可用工具目录，返回工具 ID、描述和参数 schema。"
-                "插件工具、服务端 MCP、本地工具都在这里按需发现；"
-                "外层只常驻少量核心工具，避免上下文膨胀。"
+                "插件工具、服务端 MCP 用默认 scope=server；"
+                "所有 local_* 本地工具和本地 MCP 必须 scope=machine 才能搜到。"
                 "找到后必须用 tool_call 调用。"
             ),
             inputSchema={
@@ -506,17 +502,20 @@ TOOLS = [
                     },
                     "scope": {
                         "type": "string",
-                        "enum": ["server", "local", "all"],
-                        "description": "server=服务端工具（默认），local=本地机器 MCP，all=两者",
+                        "enum": ["server", "machine", "all"],
+                        "description": (
+                            "server=服务端工具（默认），machine=本地机器工具和本地 MCP，"
+                            "all=两者。local 为 machine 的兼容别名。"
+                        ),
                     },
                     "source": {
                         "type": "string",
                         "enum": ["builtin", "plugin", "mcp", "local"],
-                        "description": "可选，按来源过滤",
+                        "description": "可选，按来源过滤；local 等同于 scope=machine",
                     },
                     "machine_id": {
                         "type": "string",
-                        "description": "搜索本地 MCP 时指定机器 ID",
+                        "description": "搜索本地机器工具时指定机器 ID",
                     },
                     "limit": {
                         "type": "integer",

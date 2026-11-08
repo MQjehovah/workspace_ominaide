@@ -8,10 +8,11 @@ Bot 默认在服务端执行所有工具。Local tools 让 Bot 把单次操作�
 
 ## 工具
 
-这些工具由桌面端节点注入，`source=local`，不属于 builtin，也不会常驻在
-服务端默认工具表里。桌面端在线时自动出现，离线时自动消失。
+这些工具 `source=local`，不属于 builtin，也不会常驻在服务端默认工具表里。
+所有 local_* 都必须先用 `tool_search(scope="machine")` 搜索，再用 `tool_call` 调用。
+桌面端离线时搜索不到。
 
-在线时注入：
+可通过 machine scope 搜索：
 
 | 工具 | 说明 |
 |---|---|
@@ -45,8 +46,8 @@ Bot 默认在服务端执行所有工具。Local tools 让 Bot 把单次操作�
 }
 ```
 
-多台本地机器在线且没有指定机器时，工具会返回在线机器列表；Bot 应先调用
-`list_local_machines`。
+多台本地机器在线且没有指定机器时，工具会返回在线机器列表；需要时先用
+`tool_search(query="list_local_machines", scope="machine")` 找到并调用它。
 
 ### 路径
 
