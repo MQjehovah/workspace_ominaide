@@ -77,6 +77,7 @@ const paletteQuery = ref('')
 const paletteIdx = ref(0)
 const toastMsg = ref('')
 const listening = ref(false)
+const composing = ref(false)
 const detailOpen = ref(false)
 const detailTab = ref<'process' | 'history' | 'skills' | 'deliverables'>('process')
 const statusFilter = ref<'all' | 'running' | 'done' | 'error'>('all')
@@ -1570,6 +1571,9 @@ function copyLastReply() {
 
 // ---------------- keyboard ----------------
 function onKeydown(e: KeyboardEvent) {
+  // Enter while composing (Chinese/Japanese/Korean IME) confirms the IME
+  // candidate, it must not send the message.
+  if (composing.value || e.isComposing || e.keyCode === 229) return
   const ctrl = e.ctrlKey || e.metaKey
   if (ctrl && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleSearch(); return }
   if (slashOpen.value) {
@@ -1914,6 +1918,8 @@ const suggestions = [
             class="input"
             placeholder="给 AI 下达指令… (Ctrl+V 粘贴截图 / 拖拽文件)"
             @keydown="onKeydown"
+            @compositionstart="composing = true"
+            @compositionend="composing = false"
             @paste="onPaste"
           ></textarea>
           <div class="input-tools">
