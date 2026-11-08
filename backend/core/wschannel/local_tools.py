@@ -120,7 +120,9 @@ async def call_local(
         )
         if not sent:
             raise LocalDeviceError("桌面设备已离线，或消息发送失败")
-        return await asyncio.wait_for(future, timeout=timeout_seconds + 15)
+        # The desktop shows an approval dialog before running the command, so
+        # leave extra room beyond the command timeout.
+        return await asyncio.wait_for(future, timeout=timeout_seconds + 120)
     except asyncio.TimeoutError as exc:
         raise LocalDeviceError(f"本地执行超时（{timeout_seconds} 秒）") from exc
     finally:

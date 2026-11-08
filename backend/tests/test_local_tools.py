@@ -107,3 +107,12 @@ async def test_local_shell_reports_desktop_error(monkeypatch):
     response = await local_tool.local_shell(1, {"command": "rm -rf /tmp/x"})
     assert response.isError
     assert "用户拒绝执行本地命令" in _text(response)
+
+
+def test_local_shell_defers_approval_to_desktop():
+    from core.bots import policy
+
+    risk, decision = policy.decide(None, "local_shell", {"command": "rm -rf /tmp/x"})
+    assert risk == "exec"
+    # The desktop app owns the ask/always/never policy for local commands.
+    assert decision == "auto"
