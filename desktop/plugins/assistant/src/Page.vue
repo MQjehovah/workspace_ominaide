@@ -43,6 +43,7 @@ interface Session {
   pinned?: boolean
   botId?: number
   fromCloud?: boolean
+  cloudUpdatedAt?: number
 }
 interface Config {
   mode: 'backend' | 'direct' | 'desktop'
@@ -95,6 +96,9 @@ const agentTab = ref<'local' | 'mcp' | 'skills'>('local')
 const mcpServers = ref<any[]>([])
 const mcpTools = ref<any[]>([])
 const skillsList = ref<any[]>([])
+const serverMcpTools = computed(() =>
+  (toolsCache.value || []).filter((t: any) => t.source === 'mcp')
+)
 const agentActive = ref<{ sessionId: string; asst: Msg } | null>(null)
 const desktopTools = ref<string[]>([])
 const agentStage = ref('')
@@ -123,6 +127,7 @@ const currentBotId = ref<number | null>(null)
 const BOT_KEY = 'assistant_bot_id'
 const approvals = ref<any[]>([])
 let approvalTimer: any = null
+let cloudSyncTimer: any = null
 const cfgMode = ref('backend')
 const cfgKey = ref('')
 const cfgUrl = ref('https://api.openai.com/v1')
@@ -411,9 +416,9 @@ function makeMsg(role: 'user' | 'assistant', text: string): Msg {
   }
 }
 
-async function loadCloudMessages(session: Session | null): Promise<void> {
+async function loadCloudMessages(session: Session | null, force = false): Promise<void> {
   if (!session) return
-  if (session.messages.length && !session.fromCloud) return
+  if (!force && session.messages.length && !session.fromCloud) return
   try {
     const su = await serverUrl()
     const tk = await getToken()
@@ -466,9 +471,11 @@ async function loadCloudSessions(): Promise<void> {
           histIdx: 0,
           botId: it.bot_id ?? currentBotId.value ?? undefined,
           fromCloud: true,
+          cloudUpdatedAt: ts,
         }
         sessions.value.push(s)
       } else {
+        s.cloudUpdatedAt = ts
         if (ts > s.updatedAt) s.updatedAt = ts
         if (!s.title || s.title === '新会话') s.title = it.title || s.title
         if (!s.botId && it.bot_id) s.botId = it.bot_id
@@ -476,8 +483,15 @@ async function loadCloudSessions(): Promise<void> {
     }
     sessions.value.sort((a, b) => b.updatedAt - a.updatedAt)
     const cur = current.value
-    if (cur) await loadCloudMessages(cur)
-    else if (sessions.value.length) {
+    if (cur) {
+      // If another device wrote to the open session, refresh it.
+      if (!loading.value && cur.cloudUpdatedAt && cur.cloudUpdatedAt > cur.updatedAt) {
+        await loadCloudMessages(cur, true)
+        cur.updatedAt = cur.cloudUpdatedAt
+      } else {
+        await loadCloudMessages(cur)
+      }
+    } else if (sessions.value.length) {
       currentId.value = sessions.value[0].id
       await loadCloudMessages(sessions.value[0])
     }
@@ -1417,6 +1431,7 @@ function openAgentSettings(tab: 'local' | 'mcp' | 'skills' = 'local') {
   agentOpen.value = true
   loadMcp()
   loadSkills()
+  loadTools()
 }
 
 // ---------------- cloud history ----------------
@@ -1629,6 +1644,14 @@ function applySettings() {
 }
 
 // ---------------- lifecycle ----------------
+function onCloudFocus() {
+  loadCloudSessions().catch(() => {})
+}
+
+function onCloudVisibility() {
+  if (document.visibilityState === 'visible') loadCloudSessions().catch(() => {})
+}
+
 onMounted(async () => {
   loadConfig()
   loadSessions()
@@ -1636,6 +1659,9 @@ onMounted(async () => {
   await loadCloudSessions()
   loadApprovals()
   approvalTimer = setInterval(loadApprovals, 10000)
+  cloudSyncTimer = setInterval(() => { loadCloudSessions() }, 30000)
+  window.addEventListener('focus', onCloudFocus)
+  document.addEventListener('visibilitychange', onCloudVisibility)
   if (!current.value) newSession()
   try {
     const mqAgent = (window as any).mqbox?.agent
@@ -1661,6 +1687,9 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKey)
   clearInterval(approvalTimer)
+  clearInterval(cloudSyncTimer)
+  window.removeEventListener('focus', onCloudFocus)
+  document.removeEventListener('visibilitychange', onCloudVisibility)
   renderTimers.forEach(t => clearTimeout(t))
   clearTimeout(persistTimer)
   clearTimeout(toastTimer)
@@ -2124,7 +2153,20 @@ const suggestions = [
             <div v-else class="detail-empty">还没有 MCP 服务器。添加一个 stdio 本地服务器或 HTTP 远程服务器。</div>
 
             <div class="mcp-tools">
-              <div class="mcp-tools-hd">已发现工具 ({{ mcpTools.filter(t => t.serverId !== '__local__').length }})</div>
+              <div class="mcp-tools-hd">服务端 MCP 工具 ({{ serverMcpTools.length }})</div>
+              <div v-if="!serverMcpTools.length" class="detail-empty">服务端没有已连接的 MCP 工具。</div>
+              <div v-for="t in serverMcpTools" :key="t.name" class="mcp-tool">
+                <div class="mcp-tool-row">
+                  <div class="mcp-tool-info">
+                    <span class="mcp-tool-name">{{ t.name }}</span>
+                    <span class="mcp-tool-desc">{{ t.description }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mcp-tools">
+              <div class="mcp-tools-hd">本地 MCP 工具 ({{ mcpTools.filter(t => t.serverId !== '__local__').length }})</div>
               <div v-if="!mcpTools.filter(t => t.serverId !== '__local__').length" class="detail-empty">连接后点击"刷新工具"发现工具</div>
               <div v-for="t in mcpTools.filter(t => t.serverId !== '__local__')" :key="t.name" class="mcp-tool">
                 <div class="mcp-tool-row">
