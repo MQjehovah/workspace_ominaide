@@ -38,6 +38,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   TriageSnapshot? _triage;
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _todos = [];
+  List<Map<String, dynamic>> _activitySuggestions = [];
   List<FileItem> _files = [];
   List<Map<String, dynamic>> _notes = [];
   List<Map<String, dynamic>> _projects = [];
@@ -191,6 +192,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       _safe(api.getWorkbenchSummary()),
       _safe(api.listNotifications(limit: 50)),
       _safe(api.getMe()),
+      _safe(api.getActivitySuggestions()),
     ]);
     if (!mounted || token != _loadToken) return;
 
@@ -205,9 +207,12 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
 
     final me = results[2] as Map<String, dynamic>?;
     final notifications = (results[1] as List<Map<String, dynamic>>?) ?? [];
+    final activitySuggestions =
+        (results[3] as List<Map<String, dynamic>>?) ?? const [];
     setState(() {
       _error = results[0] == null && summary.isEmpty;
       _applySummary(summary);
+      _activitySuggestions = activitySuggestions;
       _unreadNotifications =
           notifications.where((n) => n['read'] == false).length;
       _name = (me?['display_name'] ?? me?['username'] ?? '').toString();
@@ -237,6 +242,47 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
         'stats': brief.stats,
         'sources': {'dingtalk': brief.dingtalkStatus},
       }));
+    }
+  }
+
+  Future<void> _acceptActivitySuggestion(Map<String, dynamic> item) async {
+    final id = item['id'];
+    if (id is! int) return;
+    try {
+      await ApiService().createTodoItem({
+        'title': (item['title'] ?? '处理活动建议').toString(),
+        'description': (item['reason'] ?? '').toString(),
+        'priority': 1,
+      });
+      await ApiService().acceptActivitySuggestion(id);
+      if (!mounted) return;
+      setState(() {
+        _activitySuggestions =
+            _activitySuggestions.where((e) => e['id'] != id).toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已创建待办')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('创建待办失败: $e')),
+      );
+    }
+  }
+
+  Future<void> _dismissActivitySuggestion(Map<String, dynamic> item) async {
+    final id = item['id'];
+    if (id is! int) return;
+    try {
+      await ApiService().dismissActivitySuggestion(id);
+      if (!mounted) return;
+      setState(() {
+        _activitySuggestions =
+            _activitySuggestions.where((e) => e['id'] != id).toList();
+      });
+    } catch (_) {
+      // Keep the item when the request fails.
     }
   }
 
@@ -380,6 +426,8 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                       sourceCounts,
                       _unreadNotifications,
                     ),
+                    const SizedBox(height: 9),
+                    _buildActivitySuggestionsCard(palette),
                     const SizedBox(height: 9),
                     _buildRecentCard(palette),
                   ],
@@ -799,6 +847,109 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       return right.compareTo(left);
     });
     return entries.take(3).toList();
+  }
+
+  Widget _buildActivitySuggestionsCard(AppPalette palette) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome_outlined,
+                  size: 15, color: palette.primary),
+              const SizedBox(width: 6),
+              Text(
+                '活动建议',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: palette.ink,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '定时提取',
+                style: TextStyle(fontSize: 10, color: palette.muted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_activitySuggestions.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                '暂时没有新的建议，系统会定时整理最近活动。',
+                style: TextStyle(fontSize: 11.5, color: palette.muted),
+              ),
+            )
+          else
+            for (final item in _activitySuggestions.take(5))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (item['title'] ?? '').toString(),
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              height: 1.4,
+                              fontWeight: FontWeight.w600,
+                              color: palette.ink,
+                            ),
+                          ),
+                          if ((item['reason'] ?? '').toString().isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              (item['reason'] ?? '').toString(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                height: 1.45,
+                                color: palette.muted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => _acceptActivitySuggestion(item),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(0, 24),
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            textStyle: const TextStyle(fontSize: 10.5),
+                          ),
+                          child: const Text('建待办'),
+                        ),
+                        TextButton(
+                          onPressed: () => _dismissActivitySuggestion(item),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(0, 24),
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            textStyle: const TextStyle(fontSize: 10.5),
+                            foregroundColor: palette.muted,
+                          ),
+                          child: const Text('忽略'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
   }
 
   Widget _buildRecentCard(AppPalette palette) {

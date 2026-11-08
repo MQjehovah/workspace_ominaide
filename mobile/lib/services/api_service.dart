@@ -1464,6 +1464,24 @@ class ApiService {
         .toList();
   }
 
+  Future<List<Map<String, dynamic>>> getActivitySuggestions({
+    int limit = 6,
+  }) async {
+    final res = await get('/insights/suggestions?limit=$limit');
+    if (res.statusCode != 200) return [];
+    return _asMapList(decodeJson(res)['items']);
+  }
+
+  Future<bool> acceptActivitySuggestion(int id) async {
+    final res = await post('/insights/suggestions/$id/accept', const {});
+    return res.statusCode == 200;
+  }
+
+  Future<bool> dismissActivitySuggestion(int id) async {
+    final res = await post('/insights/suggestions/$id/dismiss', const {});
+    return res.statusCode == 200;
+  }
+
   // -- Agent tasks --
   Future<List<Map<String, dynamic>>> listAgentTasks({int limit = 50}) async {
     final res = await get('/agent/tasks?limit=$limit');

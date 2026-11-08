@@ -1746,6 +1746,7 @@ onMounted(async () => {
   await loadBots()
   await loadCloudSessions(true)
   loadApprovals()
+  loadActivitySuggestions()
   approvalTimer = setInterval(loadApprovals, 10000)
   if (!current.value) newSession()
   try {
@@ -1837,6 +1838,51 @@ function toggleStep(step: Step) {
 
 function prettyJson(args: any): string {
   try { return JSON.stringify(args, null, 2) } catch { return String(args) }
+}
+
+const activitySuggestions = ref<any[]>([])
+
+async function loadActivitySuggestions() {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    const r = await fetch(`${su}/api/insights/suggestions?limit=4`, {
+      headers: { Authorization: 'Bearer ' + tk },
+    })
+    if (!r.ok) return
+    const data = await r.json()
+    activitySuggestions.value = Array.isArray(data?.items) ? data.items : []
+  } catch { /* ignore */ }
+}
+
+async function acceptActivitySuggestion(s: any) {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    await fetch(`${su}/api/plugins/todo/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
+      body: JSON.stringify({ title: s.title || '处理活动建议', description: s.reason || '', priority: 1 }),
+    })
+    await fetch(`${su}/api/insights/suggestions/${s.id}/accept`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + tk },
+    })
+    activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
+    showToast('已创建待办')
+  } catch { showToast('创建待办失败') }
+}
+
+async function dismissActivitySuggestion(s: any) {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    await fetch(`${su}/api/insights/suggestions/${s.id}/dismiss`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + tk },
+    })
+    activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
+  } catch { /* ignore */ }
 }
 
 const suggestions = [
@@ -2011,6 +2057,19 @@ const suggestions = [
           <div class="empty-mark">⌘</div>
           <p class="empty-title">新的 AI 控制台</p>
           <p class="empty-sub">用自然语言下达指令,AI 会自动调用工具完成任务</p>
+          <div v-if="activitySuggestions.length" class="activity-suggestions">
+            <div class="activity-suggestions-hd">活动建议</div>
+            <div v-for="s in activitySuggestions" :key="s.id" class="activity-suggestion">
+              <div class="activity-suggestion-main">
+                <div class="activity-suggestion-title">{{ s.title }}</div>
+                <div v-if="s.reason" class="activity-suggestion-reason">{{ s.reason }}</div>
+              </div>
+              <div class="activity-suggestion-actions">
+                <button @click="acceptActivitySuggestion(s)">建待办</button>
+                <button class="muted" @click="dismissActivitySuggestion(s)">忽略</button>
+              </div>
+            </div>
+          </div>
           <div class="suggestions">
             <button v-for="s in suggestions" :key="s" class="suggestion" @click="sendSuggestion(s)">{{ s }}</button>
           </div>
@@ -3661,6 +3720,16 @@ const suggestions = [
 }
 .empty-title { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
 .empty-sub { font-size: 13px; color: var(--dim); margin: 0 0 26px; }
+.activity-suggestions { width: min(560px, 90vw); margin: 0 auto 16px; text-align: left; }
+.activity-suggestions-hd { font-size: 11px; font-weight: 700; color: var(--dim); letter-spacing: .5px; margin-bottom: 7px; }
+.activity-suggestion { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg2); }
+.activity-suggestion-main { flex: 1; min-width: 0; }
+.activity-suggestion-title { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.activity-suggestion-reason { margin-top: 3px; font-size: 11px; line-height: 1.5; color: var(--dim); }
+.activity-suggestion-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
+.activity-suggestion-actions button { border: none; background: transparent; color: var(--accent2); font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.activity-suggestion-actions button:hover { background: var(--bg4); }
+.activity-suggestion-actions button.muted { color: var(--dim); }
 .suggestions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; max-width: 720px; margin: 0 auto; }
 .suggestion {
   border: 1px solid var(--border);

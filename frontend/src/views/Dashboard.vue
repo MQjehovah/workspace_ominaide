@@ -118,6 +118,33 @@
         <div class="page-card block">
           <div class="card-head">
             <div>
+              <h3>活动建议</h3>
+              <span class="card-sub">由最近活动定时提取</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div v-if="activitySuggestions.length" class="suggestion-list">
+              <div v-for="s in activitySuggestions" :key="s.id" class="suggestion-item">
+                <div class="suggestion-main">
+                  <div class="suggestion-title">{{ s.title }}</div>
+                  <div v-if="s.reason" class="suggestion-reason">{{ s.reason }}</div>
+                </div>
+                <div class="suggestion-actions">
+                  <el-button link type="primary" size="small" @click="acceptSuggestion(s)">建待办</el-button>
+                  <el-button link size="small" @click="dismissSuggestion(s)">忽略</el-button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty">
+              <el-icon :size="28"><Promotion /></el-icon>
+              <p>暂时没有新的建议，系统会定时整理。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-card block">
+          <div class="card-head">
+            <div>
               <h3>快捷入口</h3>
               <span class="card-sub">常用功能一步直达</span>
             </div>
@@ -204,6 +231,7 @@ const today = computed(() => new Intl.DateTimeFormat('zh-CN').format(new Date())
 const counts = reactive({ files: 0, notes: 0, todos: 0, unread: 0 })
 const events = ref<any[]>([])
 const todayEvents = ref<any[]>([])
+const activitySuggestions = ref<any[]>([])
 const todos = ref<any[]>([])
 const codingTasks = ref<any[]>([])
 const connected = ref(false)
@@ -290,6 +318,10 @@ async function loadAll() {
       events.value = Array.isArray(r.data) ? r.data : []
     }),
 
+    client.get('/insights/suggestions', { params: { limit: 6 } }).then(r => {
+      activitySuggestions.value = r.data?.items || []
+    }),
+
     client.get('/projects/runs?limit=5').then(r => {
       codingTasks.value = Array.isArray(r.data) ? r.data : []
     }),
@@ -300,6 +332,25 @@ async function toggleTodo(t: any) {
   try {
     await client.put(`/plugins/todo/items/${t.id}`, { status: 'done' })
     todos.value = todos.value.filter(x => x.id !== t.id)
+  } catch { }
+}
+
+async function acceptSuggestion(s: any) {
+  try {
+    await client.post('/plugins/todo/items', {
+      title: s.title || '处理活动建议',
+      description: s.reason || '',
+      priority: 1,
+    })
+    await client.post(`/insights/suggestions/${s.id}/accept`)
+    activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
+  } catch { }
+}
+
+async function dismissSuggestion(s: any) {
+  try {
+    await client.post(`/insights/suggestions/${s.id}/dismiss`)
+    activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
   } catch { }
 }
 
@@ -400,6 +451,13 @@ onUnmounted(() => {
 .activity-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand-500); margin-top: 6px; flex-shrink: 0; }
 .activity-summary { font-size: 13px; color: #3a4256; }
 .activity-meta { font-size: 11px; color: #a0a4ad; margin-top: 2px; }
+
+.suggestion-list { display: flex; flex-direction: column; gap: 8px; }
+.suggestion-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid #eef0f4; border-radius: 10px; background: #fafbfd; }
+.suggestion-main { flex: 1; min-width: 0; }
+.suggestion-title { font-size: 13px; font-weight: 600; color: #2c3550; }
+.suggestion-reason { margin-top: 3px; font-size: 11.5px; line-height: 1.5; color: #909399; }
+.suggestion-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex-shrink: 0; }
 
 .quick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .quick-item { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 14px 8px; border-radius: 11px; border: 1px solid #eef0f4; background: #fafbfd; color: #4b5563; font-size: 12px; cursor: pointer; transition: all .15s; }
