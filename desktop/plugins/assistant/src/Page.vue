@@ -1961,14 +1961,15 @@ const suggestions = [
               <div v-if="m.steps.length" class="tool-panel" :class="{ running: !!runningStep(m), error: lastStepError(m) }">
                 <button type="button" class="tool-panel-hd" @click="toggleToolPanel(m)">
                   <span class="tool-panel-icon" :class="{ spinning: !!runningStep(m) }">{{ runningStep(m) ? '◌' : toolIcon(currentStep(m)?.name || '') }}</span>
-                  <span class="tool-panel-title">{{ runningStep(m) ? `正在调用 · ${runningStep(m)!.name}` : `${m.steps.length} 个工具调用` }}</span>
+                  <span class="tool-panel-title">
+                    {{ m.steps.length }} 个工具调用<template v-if="runningStep(m)"> · 正在调用 {{ runningStep(m)!.name }}</template>
+                  </span>
                   <span class="tool-panel-badge" :class="{ running: !!runningStep(m), err: lastStepError(m) }">
                     {{ runningStep(m) ? '执行中' : lastStepError(m) ? '有失败' : '已完成' }}
                   </span>
                   <span class="tool-panel-chevron" :class="{ open: toolPanelOpen(m) }">›</span>
                 </button>
                 <div v-if="toolPanelOpen(m) && currentStep(m)" class="tool-details-fixed">
-                  <div class="tool-details-meta">共 {{ m.steps.length }} 个工具调用</div>
                   <div class="tool-details-current">
                     <div class="tool-details-current-hd">
                       <span class="tool-details-current-name">{{ toolIcon(currentStep(m)!.name) }} {{ currentStep(m)!.name }}</span>
@@ -3495,11 +3496,10 @@ const suggestions = [
   flex-direction: column;
   box-sizing: border-box;
   margin-top: 8px;
-  padding-top: 8px;
+  padding: 8px 10px 0 34px;
   border-top: 1px solid var(--border);
   overflow: hidden;
 }
-.tool-details-meta { flex-shrink: 0; font-size: 10.5px; color: var(--dim); margin-bottom: 6px; }
 .tool-details-current { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
 .tool-details-current-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .tool-details-current-name { flex: 1; min-width: 0; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
