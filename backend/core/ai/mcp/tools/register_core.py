@@ -19,6 +19,7 @@ from core.ai.mcp.tools.schedule import TOOLS as SCHEDULE_TOOLS
 from core.ai.mcp.tools.skills import TOOLS as SKILL_TOOLS
 from core.ai.mcp.tools.local import TOOLS as LOCAL_TOOLS
 from core.ai.mcp.tools.google import TOOLS as GOOGLE_TOOLS
+from core.ai.mcp.gateway import TOOLS as GATEWAY_TOOL_DEFS
 
 
 def register_core_tools():
@@ -53,6 +54,8 @@ def register_core_tools():
     for tool, handler in GOOGLE_TOOLS:
         # External authorization plugin, but still a plugin tool.
         tool.source = "plugin"
+        tool_registry.register(tool, handler)
+    for tool, handler in GATEWAY_TOOL_DEFS:
         tool_registry.register(tool, handler)
     from core.wschannel.local_tools import register_channel
 

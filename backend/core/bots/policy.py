@@ -71,6 +71,8 @@ TOOL_RISK = {
     "fetch_url": RISK_READ,
     "run_shell": RISK_EXEC,
     "local_shell": RISK_EXEC,
+    "tool_search": RISK_READ,
+    "tool_call": RISK_EXEC,
     "local_mcp_search": RISK_READ,
     "local_mcp_call": RISK_EXEC,
     "local_shell_start": RISK_EXEC,
@@ -191,8 +193,46 @@ def shell_decision(command: str, default: str = "ask") -> str:
     return "auto"
 
 
+def _tool_call_target(arguments: dict | None) -> tuple[str, dict]:
+    args = arguments or {}
+    raw = str(args.get("tool_id") or args.get("name") or "").strip()
+    call_args = args.get("arguments")
+    if not isinstance(call_args, dict):
+        call_args = args.get("args") if isinstance(args.get("args"), dict) else {}
+    return raw, call_args
+
+
 def decide(bot: Bot | None, name: str, arguments: dict | None = None) -> tuple[str, str]:
     """Return ``(risk_level, decision)`` where decision is auto/ask/deny."""
+    if name == "tool_call":
+        raw, call_args = _tool_call_target(arguments)
+        if not raw:
+            return RISK_EXEC, "deny"
+        allowed = getattr(bot, "allowed_tools", None) if bot is not None else None
+        if raw.startswith("local:"):
+            if allowed is not None and "local_mcp_call" not in allowed:
+                return RISK_EXEC, "deny"
+            custom = (getattr(bot, "risk_policy", None) or {}) if bot is not None else {}
+            spec = (custom.get("tools") or {}).get("local_mcp_call")
+            if isinstance(spec, str) and spec in ("auto", "ask", "deny"):
+                return RISK_EXEC, spec
+            if isinstance(spec, dict) and spec.get("decision") in ("auto", "ask", "deny"):
+                return RISK_EXEC, spec["decision"]
+            decision = custom.get(RISK_EXEC)
+            if decision in ("auto", "ask", "deny"):
+                return RISK_EXEC, decision
+            return RISK_EXEC, "ask"
+        target = raw
+        for prefix in ("builtin:", "plugin:", "mcp:"):
+            if target.startswith(prefix):
+                target = target[len(prefix):]
+                break
+        if target in ("tool_call", "tool_search", "local_mcp_search", "local_mcp_call"):
+            return RISK_EXEC, "deny"
+        if allowed is not None and target not in allowed:
+            return resolve_risk(bot, target), "deny"
+        return decide(bot, target, call_args)
+
     risk = resolve_risk(bot, name)
     custom = (getattr(bot, "risk_policy", None) or {}) if bot is not None else {}
 

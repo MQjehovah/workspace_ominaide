@@ -105,6 +105,10 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("bot_runs")}
             if "parent_run_id" not in cols:
                 result.append("bot_runs_parent")
+        if "bots" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("bots")}
+            if "pinned_tools" not in cols:
+                result.append("bots_pinned_tools")
 
         if "projects" in table_names:
             cols = {c["name"] for c in inspector.get_columns("projects")}
@@ -173,6 +177,8 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE user_profiles ADD COLUMN developer TEXT NULL"))
             elif table == "bot_runs_parent":
                 await conn.execute(text("ALTER TABLE bot_runs ADD COLUMN parent_run_id INTEGER NULL"))
+            elif table == "bots_pinned_tools":
+                await conn.execute(text("ALTER TABLE bots ADD COLUMN pinned_tools JSON NULL"))
             elif table == "bot_routines_spec":
                 await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN spec JSON NULL"))
             elif table == "bot_routines_spec_version":

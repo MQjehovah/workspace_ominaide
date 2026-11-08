@@ -11,6 +11,7 @@ class BotCreate(BaseModel):
     model: str | None = None
     temperature: float = 0.7
     allowed_tools: list[str] | None = None
+    pinned_tools: list[str] | None = None
     risk_policy: dict | None = None
     max_turns: int = 60
     token_budget: int | None = None
@@ -26,6 +27,7 @@ class BotUpdate(BaseModel):
     model: str | None = None
     temperature: float | None = None
     allowed_tools: list[str] | None = None
+    pinned_tools: list[str] | None = None
     risk_policy: dict | None = None
     max_turns: int | None = None
     token_budget: int | None = None
@@ -44,6 +46,7 @@ class BotOut(BaseModel):
     model: str | None = None
     temperature: float | None = None
     allowed_tools: list[str] | None = None
+    pinned_tools: list[str] | None = None
     risk_policy: dict | None = None
     max_turns: int | None = None
     token_budget: int | None = None

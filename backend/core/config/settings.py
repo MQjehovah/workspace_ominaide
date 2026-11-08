@@ -157,6 +157,9 @@ class Settings(BaseSettings):
     bot_run_timeout_seconds: int = 1800
     bot_run_heartbeat_seconds: int = 15
     bot_run_poll_seconds: float = 0.4
+    # Expose a small pinned tool set plus tool_search/tool_call instead of
+    # sending every registered tool schema to the LLM.
+    tool_gateway_enabled: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     # General shell tool for the bot (approval required). Runs in the backend

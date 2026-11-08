@@ -79,22 +79,22 @@ local_shell_cancel(job_id="...")
 MCP 工具都注册成独立工具，而是通过两个网关工具按需发现和调用：
 
 ```text
-local_mcp_search(query, machine_id?)
+tool_search(query, scope="local", machine_id?)
   → 查询某台本地机器上匹配的 MCP 工具和 schema
 
-local_mcp_call(server_id, tool, arguments, machine_id?)
-  → 调用搜索到的那个工具
+tool_call(tool_id, arguments)
+  → 调用搜索到的那个工具（tool_id 形如 local:<machine>:<server>:<tool>）
 ```
 
 流程：
 
 ```text
 Bot
-  → local_mcp_search(query="browser")
+  → tool_search(query="browser", scope="local")
   → 桌面 MCP manager 列出并过滤工具
   → 返回匹配工具的 server_id / name / input_schema
   → Bot 判断需要调用
-  → local_mcp_call(server_id, tool, arguments)
+  → tool_call(tool_id, arguments)
   → /ws/host local-tools
   → 桌面 MCP manager
   → 本地 MCP server
@@ -103,9 +103,9 @@ Bot
 规则：
 
 - 桌面端不主动把全部工具推给服务端
-- 工具表只增加 `local_mcp_search` 和 `local_mcp_call` 两个入口
+- 工具表只增加统一的 `tool_search` 和 `tool_call` 两个入口
 - 多台机器在线时用 `machine_id` / `machine` 指定
-- `local_mcp_call` 默认需要审批
+- 本地 MCP 调用默认按 `exec` 风险审批
 - 桌面端离线时查询和调用都会失败
 - 只代理用户配置的本地 MCP，不代理内置 Office / 后端 MCP
 

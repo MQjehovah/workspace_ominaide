@@ -97,5 +97,7 @@ POST /api/dingtalk/logout
 ## 限制
 
 - 当前支持 stdio 与 HTTP（JSON / 基础 SSE）；旧版 SSE transport 尚未覆盖。
-- `scope=desktop` 的本地 MCP 通过 `local_mcp_search` / `local_mcp_call` 两个网关工具按需发现和调用，不把每个本地工具注册到后端工具表。
+- `scope=desktop` 的本地 MCP 通过统一工具网关 `tool_search(scope="local")` / `tool_call` 按需发现和调用，不把每个本地工具注册到后端工具表。
 - 多用户共享一个全局工具目录，slug 必须全局唯一；多用户/多组织场景后续可改为 per-user namespace。
+
+- 服务端与本地工具统一走 `tool_search` / `tool_call`，见 [工具网关](tool-gateway.md)。

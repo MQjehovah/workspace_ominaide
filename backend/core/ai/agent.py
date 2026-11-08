@@ -2,6 +2,7 @@
 import json
 from core.config.settings import settings
 from core.ai.clients import get_openai_client
+from core.ai.mcp.gateway import select_exposed_tools
 from core.ai.mcp.registry import tool_registry
 
 
@@ -53,9 +54,9 @@ async def run_agent(
     """Non-streaming agent loop (kept for backward compat)."""
     client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
     all_tools = tool_registry.get_tools(user_id=user_id)
-    if tools_filter is not None:
-        all_tools = [t for t in all_tools if t.name in tools_filter]
-    openai_tools = _to_openai_tools(all_tools)
+    openai_tools = _to_openai_tools(
+        select_exposed_tools(all_tools, allowed=tools_filter)
+    )
 
     for turn in range(max_turns):
         resp = await client.chat.completions.create(
@@ -97,9 +98,9 @@ async def run_agent_stream(
     """Streaming agent: yields SSE-formatted strings."""
     client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
     all_tools = tool_registry.get_tools(user_id=user_id)
-    if tools_filter is not None:
-        all_tools = [t for t in all_tools if t.name in tools_filter]
-    openai_tools = _to_openai_tools(all_tools)
+    openai_tools = _to_openai_tools(
+        select_exposed_tools(all_tools, allowed=tools_filter)
+    )
 
     total_chars = 0
     total_tools = 0

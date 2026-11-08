@@ -158,6 +158,7 @@ async def create_bot(user_id: int, data) -> Bot:
             model=data.model,
             temperature=data.temperature,
             allowed_tools=data.allowed_tools,
+            pinned_tools=getattr(data, "pinned_tools", None),
             risk_policy=data.risk_policy,
             max_turns=data.max_turns,
             token_budget=data.token_budget,

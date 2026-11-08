@@ -22,6 +22,7 @@ from openai import AsyncOpenAI
 from sqlalchemy import select, update
 
 from core.ai.agent import _serialize_result, _to_openai_tools
+from core.ai.mcp.gateway import display_target, select_exposed_tools
 from core.ai.mcp.registry import tool_registry
 from core.bots import policy
 from core.bots.context import (
@@ -220,9 +221,7 @@ async def _execute_coding(run: BotRun, bot: Bot, coding) -> None:
 async def _loop(run: BotRun, bot: Bot, messages: list[dict], seq: int) -> None:
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
     all_tools = tool_registry.get_tools(user_id=run.user_id)
-    if bot.allowed_tools is not None:
-        all_tools = [t for t in all_tools if t.name in bot.allowed_tools]
-    tools = _to_openai_tools(all_tools)
+    tools = _to_openai_tools(select_exposed_tools(all_tools, bot))
 
     max_turns = min(int(bot.max_turns or settings.bot_run_max_turns), 100)
     deadline = _now() + timedelta(seconds=max(60, settings.bot_run_timeout_seconds))
@@ -352,18 +351,24 @@ async def _execute_tool_calls(
     for i in range(start, len(tool_calls)):
         tc = tool_calls[i]
         name = tc["name"]
+        display_name, display_args = display_target(name, tc["arguments"])
         risk, decision = policy.decide(bot, name, tc["arguments"])
 
         if decision == "deny":
-            text = f"工具 {name} 被当前 Bot 的策略拒绝执行。"
+            text = f"工具 {display_name} 被当前 Bot 的策略拒绝执行。"
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
-            await _add_step(run.id, seq, "tool", name, tc["arguments"], text, "denied")
+            await _add_step(run.id, seq, "tool", display_name, display_args, text, "denied")
             seq += 1
             continue
 
         if decision == "ask":
-            reason = f"{name} 属于 {risk} 风险级别，需要用户确认。"
-            approval = await _create_approval(run, tc, risk, reason)
+            reason = f"{display_name} 属于 {risk} 风险级别，需要用户确认。"
+            approval = await _create_approval(
+                run,
+                {"id": tc["id"], "name": display_name, "arguments": display_args},
+                risk,
+                reason,
+            )
             await _save_checkpoint(
                 run.id,
                 {
@@ -378,13 +383,13 @@ async def _execute_tool_calls(
             )
             await _set_status(run.id, "waiting_approval")
             await _add_step(
-                run.id, seq, "approval", name, tc["arguments"], reason, "pending"
+                run.id, seq, "approval", display_name, display_args, reason, "pending"
             )
             await _notify_approval(run, approval, reason)
             return "waiting", seq
 
         step_id = await _add_step(
-            run.id, seq, "tool", name, tc["arguments"], "", "running"
+            run.id, seq, "tool", display_name, display_args, "", "running"
         )
         text, is_err = await _call_tool(run, name, tc["arguments"])
         messages.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
@@ -410,9 +415,10 @@ async def _resume_pending(
         return "continue", seq
 
     tc = tool_calls[idx]
+    display_name, display_args = display_target(tc["name"], tc["arguments"])
     if approval is not None and approval.status == "approved":
         step_id = await _add_step(
-            run.id, seq, "tool", tc["name"], tc["arguments"], "", "running"
+            run.id, seq, "tool", display_name, display_args, "", "running"
         )
         text, is_err = await _call_tool(run, tc["name"], tc["arguments"])
         messages.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
@@ -421,9 +427,9 @@ async def _resume_pending(
         )
     else:
         reason = (approval.reason if approval is not None else "") or "用户拒绝"
-        text = f"用户拒绝执行工具 {tc['name']}。原因：{reason}"
+        text = f"用户拒绝执行工具 {display_name}。原因：{reason}"
         messages.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
-        await _add_step(run.id, seq, "approval", tc["name"], tc["arguments"], text, "denied")
+        await _add_step(run.id, seq, "approval", display_name, display_args, text, "denied")
     seq += 1
 
     # Clear the pending marker before continuing, otherwise a crash could loop.

@@ -36,6 +36,9 @@ class Bot(Base):
     model = Column(String(100), nullable=True)
     temperature = Column(Float, default=0.7)
     allowed_tools = Column(JSON, nullable=True)
+    # Tools always exposed to the LLM. Others are reachable through
+    # tool_search/tool_call when the tool gateway is enabled.
+    pinned_tools = Column(JSON, nullable=True)
     risk_policy = Column(JSON, nullable=True)
     max_turns = Column(Integer, default=60)
     token_budget = Column(Integer, nullable=True)
