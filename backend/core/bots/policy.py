@@ -70,6 +70,8 @@ TOOL_RISK = {
     "web_search": RISK_READ,
     "fetch_url": RISK_READ,
     "run_shell": RISK_EXEC,
+    "local_shell": RISK_EXEC,
+    "list_local_devices": RISK_READ,
     "delegate_coding": RISK_WRITE,
     # External side effects: require explicit approval in chat.
     "ha_toggle": RISK_EXTERNAL,
@@ -188,6 +190,15 @@ def decide(bot: Bot | None, name: str, arguments: dict | None = None) -> tuple[s
 
     if name == "run_shell":
         return risk, shell_decision((arguments or {}).get("command", ""))
+
+    if name == "local_shell":
+        # The desktop app owns local execution approval (ask / always / never),
+        # mirroring Grok Bot's separate local-computer policy. Bot-level
+        # overrides above still take precedence.
+        decision = custom.get(risk) or "auto"
+        if decision not in ("auto", "ask", "deny"):
+            decision = "auto"
+        return risk, decision
 
     decision = custom.get(risk) or DEFAULT_LEVEL_POLICY.get(risk, "ask")
     if decision not in ("auto", "ask", "deny"):

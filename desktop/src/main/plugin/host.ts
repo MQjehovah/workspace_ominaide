@@ -11,6 +11,7 @@ import type { PluginInfo, PluginPanel, SearchProvider } from '../../shared/types
 import { loadPlugins } from './loader'
 import { PluginProcessManager } from './child-process'
 import { channelSend, channelStatus, setInboundDispatcher } from '../backendChannel'
+import { handleLocalToolMessage } from '../localTools'
 
 const processManager = new PluginProcessManager()
 const plugins = new Map<string, PluginInfo>()
@@ -20,6 +21,12 @@ const panels: PluginPanel[] = []
 const channelSubscriptions = new Map<string, string>()
 
 setInboundDispatcher((channel, msg) => {
+  if (channel === 'local-tools') {
+    handleLocalToolMessage(msg).catch((err) => {
+      writeLog('system', 'error', `local-tools handler error: ${err?.message || err}`)
+    })
+    return
+  }
   const pluginId = channelSubscriptions.get(channel)
   if (!pluginId) return
   const proc = processManager.getProcess(pluginId)

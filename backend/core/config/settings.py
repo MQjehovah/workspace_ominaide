@@ -169,6 +169,11 @@ class Settings(BaseSettings):
     shell_default_cwd: str = "/app"
     shell_timeout_seconds: int = 600
     shell_max_output_chars: int = 30_000
+    # Local shell runs on the user's own desktop through the /ws/host channel.
+    # The desktop enforces its own per-command approval policy.
+    local_shell_enabled: bool = True
+    local_shell_timeout_seconds: int = 600
+    local_shell_max_output_chars: int = 30_000
     cors_origins: str = '["*","http://localhost:3000","http://localhost:5173","http://localhost:5000","http://localhost:8080","app://."]'
     webrtc_ice_servers: str = '[{"urls":"stun:mqgeek.com:3478"},{"urls":"turn:mqgeek.com:3478","username":"guest","credential":"guest"},{"urls":"turn:mqgeek.com:3478?transport=tcp","username":"guest","credential":"guest"}]'
 

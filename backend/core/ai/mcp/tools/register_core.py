@@ -17,6 +17,7 @@ from core.ai.mcp.tools.chat_history import TOOLS as CHAT_HISTORY_TOOLS
 from core.ai.mcp.tools.objects import TOOLS as OBJECT_TOOLS
 from core.ai.mcp.tools.schedule import TOOLS as SCHEDULE_TOOLS
 from core.ai.mcp.tools.skills import TOOLS as SKILL_TOOLS
+from core.ai.mcp.tools.local import TOOLS as LOCAL_TOOLS
 
 
 def register_core_tools():
@@ -46,6 +47,11 @@ def register_core_tools():
         tool_registry.register(tool, handler)
     for tool, handler in SKILL_TOOLS:
         tool_registry.register(tool, handler)
+    for tool, handler in LOCAL_TOOLS:
+        tool_registry.register(tool, handler)
+    from core.wschannel.local_tools import register_channel
+
+    register_channel()
     tool_registry.register(
         MCPTool(
             name="search_files",
