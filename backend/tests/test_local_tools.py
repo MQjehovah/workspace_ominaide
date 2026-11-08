@@ -116,3 +116,76 @@ def test_local_shell_defers_approval_to_desktop():
     assert risk == "exec"
     # The desktop app owns the ask/always/never policy for local commands.
     assert decision == "auto"
+
+
+async def test_local_file_tools_roundtrip(monkeypatch):
+    def install(handler):
+        monkeypatch.setattr(
+            local_tools.host_channel, "device_ids", lambda user_id: ["dev-a"]
+        )
+        monkeypatch.setattr(
+            local_tools.host_channel, "device_name", lambda device_id: "mac-a"
+        )
+
+        async def fake_send(user_id, device_id, channel, data):
+            await asyncio.sleep(0)
+            await local_tools._handle_message(
+                user_id,
+                device_id,
+                {
+                    "type": "result",
+                    "call_id": data["call_id"],
+                    "ok": True,
+                    "result": handler(data),
+                },
+                None,
+            )
+            return True
+
+        monkeypatch.setattr(local_tools.host_channel, "send_to_host", fake_send)
+
+    install(lambda data: {
+        "path": "/Users/me/projects",
+        "entries": [
+            {"name": "src", "type": "dir"},
+            {"name": "README.md", "type": "file", "size": 12},
+        ],
+        "truncated": False,
+    })
+    response = await local_tool.local_list_dir(1, {"path": "~/projects"})
+    assert not response.isError, _text(response)
+    assert "[dir] src" in _text(response)
+    assert "README.md" in _text(response)
+
+    install(lambda data: {
+        "path": "/Users/me/a.txt",
+        "size": 5,
+        "binary": False,
+        "content": "hello",
+        "truncated": False,
+    })
+    response = await local_tool.local_read_file(1, {"path": "~/a.txt"})
+    assert not response.isError, _text(response)
+    assert "hello" in _text(response)
+
+    install(lambda data: {
+        "path": "/Users/me/new.txt",
+        "bytes": 5,
+        "created": True,
+    })
+    response = await local_tool.local_write_file(
+        1, {"path": "~/new.txt", "content": "hello"}
+    )
+    assert not response.isError, _text(response)
+    assert "已创建" in _text(response)
+
+    install(lambda data: {
+        "path": "/Users/me/projects",
+        "matches": [{"path": "src/a.ts", "line": 3, "text": "const a = 1"}],
+        "truncated": False,
+    })
+    response = await local_tool.local_grep(
+        1, {"pattern": "const", "path": "~/projects"}
+    )
+    assert not response.isError, _text(response)
+    assert "src/a.ts:3: const a = 1" in _text(response)
