@@ -49,8 +49,15 @@ class _FilesScreenState extends State<FilesScreen> {
     super.dispose();
   }
 
+  String _normalizePath(String path) {
+    final text = path.trim();
+    if (text.isEmpty || text == '/') return '/';
+    return '/${text.split('/').where((s) => s.isNotEmpty).join('/')}';
+  }
+
   Future<void> _loadFiles() async {
     setState(() => _loading = true);
+    _currentPath = _normalizePath(_currentPath);
     final files = await ApiService().listFiles(
       folderPath: _currentPath,
       search: _search.isEmpty ? null : _search,
@@ -76,10 +83,12 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 
   void _openFolder(FileItem folder) {
-    final path =
-        '${folder.folderPath.replaceAll(RegExp(r'/+$'), '')}/${folder.originalName}/';
+    final parent = _normalizePath(folder.folderPath);
+    final path = parent == '/'
+        ? '/${folder.originalName}'
+        : '$parent/${folder.originalName}';
     _history.add(_currentPath);
-    setState(() => _currentPath = path);
+    setState(() => _currentPath = _normalizePath(path));
     _loadFiles();
   }
 
@@ -941,7 +950,7 @@ class _FilesScreenState extends State<FilesScreen> {
                         return GestureDetector(
                           onTap: () {
                             _history.add(_currentPath);
-                            setState(() => _currentPath = '$path/');
+                            setState(() => _currentPath = _normalizePath(path));
                             _loadFiles();
                           },
                           child: Text(

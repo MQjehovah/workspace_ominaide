@@ -122,6 +122,18 @@ TOOLS = [
         },
     },
     {
+        "name": "mark_read",
+        "description": "把指定会话中的某条消息及其之前的消息标记为已读。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {"type": "string", "description": "会话 openConversationId"},
+                "message_id": {"type": "string", "description": "最后一条已读消息 openMessageId"},
+            },
+            "required": ["conversation_id", "message_id"],
+        },
+    },
+    {
         "name": "recent_conversations",
         "description": "列出指定时间以来有新消息的单聊和群聊。",
         "inputSchema": {
@@ -533,6 +545,20 @@ async def call_tool(name: str, args: dict) -> dict:
             if args.get("exclude_muted"):
                 cmd += ["--exclude-muted"]
             return {"content": [{"type": "text", "text": _ok(await run_dws(cmd))}]}
+
+        if name == "mark_read":
+            conversation_id = _s(args.get("conversation_id"))
+            message_id = _s(args.get("message_id"))
+            if not conversation_id or not message_id:
+                return _tool_err("conversation_id 和 message_id 必填")
+            cmd = [
+                "chat", "+conversation-mark-read",
+                "--conversation-id", conversation_id,
+                "--message-id", message_id,
+                "--format", "json",
+                "--yes",
+            ]
+            return {"content": [{"type": "text", "text": _ok(await run_dws(cmd, timeout=60))}]}
 
         if name == "recent_conversations":
             cmd = ["chat", "+recent-conversations", "--format", "json"]

@@ -155,3 +155,64 @@ async def test_conversation_ids_with_slashes_can_load_messages(client):
     assert r.status_code == 200, r.text
     items = r.json()["items"]
     assert items and items[0]["text"] == "你好"
+
+
+async def test_mark_read_clears_local_unread_state(client, monkeypatch):
+    from core.database.session import async_session
+    from core.events.models import UserActivity
+    from plugins.dingtalk.backend.models import DingTalkConversation
+
+    from plugins.dingtalk.backend import read as dingtalk_read
+
+    async def no_message(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(dingtalk_read, "_latest_message_id", no_message)
+
+    token, user_id = await _new_user(client)
+    cid = "conv-mark-read"
+    async with async_session() as db:
+        db.add(DingTalkConversation(
+            user_id=user_id,
+            conversation_id=cid,
+            name="待读群",
+            unread_count=1,
+        ))
+        db.add(UserActivity(
+            user_id=user_id,
+            event_type="dingtalk.conversation",
+            entity_type="dingtalk",
+            summary="待读群",
+            details={
+                "conversation": "待读群",
+                "conversation_id": cid,
+                "unread_count": 1,
+                "content": "消息",
+            },
+        ))
+        await db.commit()
+
+    r = await client.post(
+        "/api/plugins/dingtalk/read",
+        json={"conversation_id": cid},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+
+    from sqlalchemy import select
+
+    async with async_session() as db:
+        conv = (await db.execute(
+            select(DingTalkConversation).where(
+                DingTalkConversation.user_id == user_id,
+                DingTalkConversation.conversation_id == cid,
+            )
+        )).scalar_one()
+        activity = (await db.execute(
+            select(UserActivity).where(
+                UserActivity.user_id == user_id,
+                UserActivity.summary == "待读群",
+            )
+        )).scalar_one()
+    assert conv.unread_count == 0
+    assert activity.details["unread_count"] == 0

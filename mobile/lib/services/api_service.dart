@@ -2043,6 +2043,16 @@ class ApiService {
     return _asMapList(decodeJson(res)['items']);
   }
 
+  Future<void> markDingtalkRead(
+    String conversationId, {
+    String? messageId,
+  }) async {
+    await post('/plugins/dingtalk/read', {
+      'conversation_id': conversationId,
+      if (messageId != null && messageId.isNotEmpty) 'message_id': messageId,
+    });
+  }
+
 
   // -- Quick capture --
   Future<Map<String, dynamic>> createCapture({

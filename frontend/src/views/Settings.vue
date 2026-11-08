@@ -370,6 +370,13 @@ async function loadDingtalkMessages(conv: any) {
   try {
     const res = await client.get('/plugins/dingtalk/messages', { params: { conversation_id: conv.conversation_id } })
     dingtalkMessages.value = res.data?.items || []
+    conv.unread_count = 0
+    await client.post('/plugins/dingtalk/read', {
+      conversation_id: conv.conversation_id,
+      message_id: dingtalkMessages.value.length
+        ? dingtalkMessages.value[dingtalkMessages.value.length - 1].message_id
+        : undefined,
+    })
   } catch {
     dingtalkMessages.value = []
   }

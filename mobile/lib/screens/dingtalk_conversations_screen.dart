@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
@@ -52,11 +54,13 @@ class _DingTalkConversationsScreenState
         .toString();
     final id = (conversation['conversation_id'] ?? '').toString();
     if (id.isEmpty) return;
+    setState(() => conversation['unread_count'] = 0);
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _ConversationPage(conversationId: id, title: name),
       ),
     );
+    if (mounted) _load();
   }
 
   @override
@@ -233,6 +237,13 @@ class _ConversationPageState extends State<_ConversationPage> {
     });
     try {
       final items = await ApiService().dingtalkMessages(widget.conversationId);
+      final lastId = items.isEmpty
+          ? null
+          : (items.last['message_id'] ?? '').toString();
+      unawaited(ApiService().markDingtalkRead(
+        widget.conversationId,
+        messageId: lastId,
+      ));
       if (!mounted) return;
       setState(() {
         _messages = items;

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 
 from core.auth.dependencies import get_current_user
-from plugins.dingtalk.backend import api, service
+from plugins.dingtalk.backend import api, read, service
 
 router = APIRouter(tags=["dingtalk"])
 
@@ -57,3 +58,18 @@ async def messages(
             user["id"], conversation_id, limit=limit, before_id=before_id
         )
     }
+
+
+class MarkReadRequest(BaseModel):
+    conversation_id: str
+    message_id: str | None = None
+
+
+@router.post("/read")
+async def mark_read(
+    req: MarkReadRequest,
+    user: dict = Depends(get_current_user),
+):
+    return await read.mark_conversation_read(
+        user["id"], req.conversation_id, req.message_id
+    )
