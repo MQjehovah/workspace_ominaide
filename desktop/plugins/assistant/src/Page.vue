@@ -442,7 +442,7 @@ async function loadCloudMessages(session: Session | null, force = false): Promis
   } catch { /* offline */ }
 }
 
-async function loadCloudSessions(): Promise<void> {
+async function loadCloudSessions(initial = false): Promise<void> {
   try {
     const su = await serverUrl()
     const tk = await getToken()
@@ -482,7 +482,16 @@ async function loadCloudSessions(): Promise<void> {
       }
     }
     sessions.value.sort((a, b) => b.updatedAt - a.updatedAt)
-    const cur = current.value
+    let cur = current.value
+    if (initial && (!cur || (cur.messages.length === 0 && cur.title === '新会话'))) {
+      const latestCloud = sessions.value.find(
+        s => s.cloudUpdatedAt && (!currentBotId.value || !s.botId || s.botId === currentBotId.value)
+      )
+      if (latestCloud) {
+        currentId.value = latestCloud.id
+        cur = latestCloud
+      }
+    }
     if (cur) {
       // If another device wrote to the open session, refresh it.
       if (!loading.value && cur.cloudUpdatedAt && cur.cloudUpdatedAt > cur.updatedAt) {
@@ -540,7 +549,7 @@ async function loadBots() {
 
 async function onBotChange() {
   if (currentBotId.value) localStorage.setItem(BOT_KEY, String(currentBotId.value))
-  await loadCloudSessions()
+  await loadCloudSessions(true)
   const first = sessions.value.find(s => !s.botId || s.botId === currentBotId.value)
   if (first) {
     currentId.value = first.id
@@ -1656,7 +1665,7 @@ onMounted(async () => {
   loadConfig()
   loadSessions()
   await loadBots()
-  await loadCloudSessions()
+  await loadCloudSessions(true)
   loadApprovals()
   approvalTimer = setInterval(loadApprovals, 10000)
   cloudSyncTimer = setInterval(() => { loadCloudSessions() }, 30000)
