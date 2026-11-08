@@ -55,6 +55,10 @@ def main() -> None:
         render(ROUNDED, desktop / "assets" / f"icon-{size}.png", size)
     shutil.copyfile(desktop / "assets" / "icon-1024.png", desktop / "assets" / "icon.png")
     render(ROUNDED, desktop / "assets" / "tray-icon.png", 32)
+    tray_template = BRAND / "omniaide-tray-template.svg"
+    if tray_template.exists():
+        render(tray_template, desktop / "assets" / "trayTemplate.png", 18)
+        render(tray_template, desktop / "assets" / "trayTemplate@2x.png", 36)
     (desktop / "build").mkdir(exist_ok=True)
     generate_iconset(ROUNDED, desktop / "build" / "icon.icns", [
         ("icon_16x16.png", 16), ("icon_16x16@2x.png", 32),

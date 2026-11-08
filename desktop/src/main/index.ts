@@ -96,7 +96,12 @@ function showSearchWindow() {
 }
 
 function createTray() {
-  const icon = nativeImage.createFromPath(join(__dirname, '../../assets/tray-icon.png'))
+  const isMac = process.platform === 'darwin'
+  const iconPath = isMac
+    ? join(__dirname, '../../assets/trayTemplate.png')
+    : join(__dirname, '../../assets/tray-icon.png')
+  const icon = nativeImage.createFromPath(iconPath)
+  if (isMac) icon.setTemplateImage(true)
   tray = new Tray(icon)
   tray.setToolTip('OmniAide')
   const contextMenu = Menu.buildFromTemplate([
