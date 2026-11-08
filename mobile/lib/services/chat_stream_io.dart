@@ -24,7 +24,7 @@ Stream<String> streamChatSse(
     }
 
     final lines = streamed.stream
-        .timeout(const Duration(seconds: 90))
+        .timeout(const Duration(minutes: 5))
         .transform(utf8.decoder)
         .transform(const LineSplitter());
     await for (final line in lines) {

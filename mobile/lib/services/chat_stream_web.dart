@@ -27,7 +27,7 @@ Stream<String> streamChatSse(
     while (true) {
       final chunk = await reader
           .read()
-          .timeout(const Duration(seconds: 90));
+          .timeout(const Duration(minutes: 5));
       if (chunk.done) break;
       final value = chunk.value;
       final List<int> bytes = value is Uint8List
