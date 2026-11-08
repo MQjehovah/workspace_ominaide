@@ -14,10 +14,10 @@ Bot 每次运行时的工具列表：
 
 ```text
 pinned_tools
-  ├─ tool_search
-  ├─ tool_call
-  ├─ save_memory / send_notification / web_search / fetch_url / skill
-  └─ 本地 shell / 文件原语
+  ├─ tool_search / tool_call
+  ├─ save_memory / send_notification / web_search / fetch_url
+  ├─ skill_search / skill_call
+  └─ local_shell / local_shell_start / local_shell_wait / local_file
 
 其余工具：插件工具、服务端 MCP、本地 MCP、业务工具
   └─ 只进入搜索目录，不直接进入上下文
@@ -81,6 +81,48 @@ local:m1/browser/* -> exec     -> ask
 ```
 
 审批卡片和运行步骤显示真实工具名，而不是 `tool_call`。
+
+## 本地工具
+
+本地工具不再逐个常驻。文件操作合并为一个入口：
+
+```text
+local_file(op=list|read|write|grep, path=..., ...)
+```
+
+- `op=list` 列目录
+- `op=read` 读文本
+- `op=write` 写文件
+- `op=grep` 在目录中搜索
+
+旧的 `local_list_dir` / `local_read_file` / `local_write_file` / `local_grep`
+保留兼容，但不再常驻，也不出现在搜索结果里。
+
+本地 shell：
+
+```text
+local_shell            同步执行
+local_shell_start      长任务，返回 job_id
+local_shell_wait       读取增量输出
+```
+
+`local_shell_cancel` 和 `list_local_machines` 按需通过 `tool_search` 发现。
+只有一台本地机器在线时不需要 machine_id；多台时错误信息会列出可选 machine_id。
+
+## 技能
+
+技能不是普通工具，走独立入口：
+
+```text
+skill_search(query)
+  → skill_key / name / description / inputs / allowed_tools
+
+skill_call(skill_key, input)
+  → 执行技能
+```
+
+系统提示只告诉模型「有 N 个已启用技能」，不再展开全部技能描述。
+旧的 `skill` 工具保留兼容，但不再常驻。
 
 ## 安全
 

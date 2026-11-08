@@ -97,6 +97,43 @@ async def test_tool_call_risk_uses_underlying_tool():
     assert decision == "deny"
 
 
+async def test_local_file_dispatches_by_op(monkeypatch):
+    from core.ai.mcp.tools import local as local_module
+
+    calls: list[str] = []
+
+    async def fake_list(user_id, args):
+        calls.append("list")
+        return MCPCallResponse(content=[MCPContent(text="list ok")])
+
+    async def fake_read(user_id, args):
+        calls.append("read")
+        return MCPCallResponse(content=[MCPContent(text="read ok")])
+
+    async def fake_write(user_id, args):
+        calls.append("write")
+        return MCPCallResponse(content=[MCPContent(text="write ok")])
+
+    async def fake_grep(user_id, args):
+        calls.append("grep")
+        return MCPCallResponse(content=[MCPContent(text="grep ok")])
+
+    monkeypatch.setattr(local_module, "local_list_dir", fake_list)
+    monkeypatch.setattr(local_module, "local_read_file", fake_read)
+    monkeypatch.setattr(local_module, "local_write_file", fake_write)
+    monkeypatch.setattr(local_module, "local_grep", fake_grep)
+
+    for op, expected in (
+        ("list", "list"),
+        ("read", "read"),
+        ("write", "write"),
+        ("grep", "grep"),
+    ):
+        response = await local_module.local_file(1, {"op": op, "path": "~/a"})
+        assert not response.isError
+        assert calls[-1] == expected
+
+
 def test_exposure_keeps_only_pinned_tools():
     tools = [
         _fake_tool(name)
@@ -106,6 +143,11 @@ def test_exposure_keeps_only_pinned_tools():
     assert "tool_search" in exposed
     assert "tool_call" in exposed
     assert "local_shell" in exposed
+    assert "local_file" in exposed
+    assert "local_read_file" not in exposed
+    assert "local_list_dir" not in exposed
+    assert "skill_search" in exposed
+    assert "skill_call" in exposed
     assert "some_plugin_tool" not in exposed
 
     class PinnedBot(DummyBot):

@@ -27,7 +27,17 @@ log = get_logger(__name__)
 GATEWAY_TOOLS = {"tool_search", "tool_call"}
 # Legacy gateway tools stay registered for compatibility but must not appear
 # in search results, otherwise the model can bypass the unified entry point.
-HIDDEN_FROM_SEARCH = GATEWAY_TOOLS | {"local_mcp_search", "local_mcp_call"}
+HIDDEN_FROM_SEARCH = GATEWAY_TOOLS | {
+    "local_mcp_search",
+    "local_mcp_call",
+    # Legacy local file tools are replaced by the compact local_file tool.
+    "local_list_dir",
+    "local_read_file",
+    "local_write_file",
+    "local_grep",
+    # Legacy single skill tool is replaced by skill_search / skill_call.
+    "skill",
+}
 
 DEFAULT_PINNED_TOOLS = {
     "tool_search",
@@ -36,21 +46,18 @@ DEFAULT_PINNED_TOOLS = {
     "send_notification",
     "web_search",
     "fetch_url",
-    "skill",
-    "list_local_machines",
+    "skill_search",
+    "skill_call",
     "local_shell",
     "local_shell_start",
     "local_shell_wait",
-    "local_shell_cancel",
-    "local_list_dir",
-    "local_read_file",
-    "local_write_file",
-    "local_grep",
+    "local_file",
 }
 
 GATEWAY_INSTRUCTION = (
     "可用工具很多，未直接列出的能力必须先调用 tool_search 检索，再用 tool_call 调用。"
     "不要臆造工具名或参数。本地机器或本地 MCP 工具使用 scope=local 或 scope=all。"
+    "技能先用 skill_search 检索，再用 skill_call 调用。"
     "tool_call 的审批按底层真实工具执行。"
 )
 

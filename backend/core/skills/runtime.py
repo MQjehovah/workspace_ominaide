@@ -94,12 +94,11 @@ async def build_skill_context(bot: Bot) -> str:
     skills = await enabled_skills(bot)
     if not skills:
         return ""
-    lines = [
-        "当前 Bot 可用技能（需要时调用 skill 工具，参数 skill_key + input）：",
-    ]
-    for skill in skills:
-        lines.append(f"- {skill.key}: {skill.description}")
-    return "\n".join(lines)
+    return (
+        f"当前 Bot 有 {len(skills)} 个已启用技能。"
+        "需要技能时先调用 skill_search 检索，再用 skill_call 执行；"
+        "不要猜测技能 key。"
+    )
 
 
 async def run_skill(

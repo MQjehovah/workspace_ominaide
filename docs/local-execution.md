@@ -8,13 +8,26 @@ Bot 默认在服务端执行所有工具。Local tools 让 Bot 把单次操作�
 
 ## 工具
 
+常驻工具：
+
 | 工具 | 说明 |
 |---|---|
-| `list_local_machines` | 列出当前在线的本地机器，返回 `machine_id` 和主机名 |
 | `local_shell` | 在本地机器执行短命令 |
 | `local_shell_start` | 启动长命令，立即返回 `job_id` |
 | `local_shell_wait` | 读取长命令增量输出 |
+| `local_file` | 文件操作入口：`op=list/read/write/grep` |
+
+按需通过 `tool_search` 发现：
+
+| 工具 | 说明 |
+|---|---|
+| `list_local_machines` | 列出当前在线的本地机器，返回 `machine_id` 和主机名 |
 | `local_shell_cancel` | 取消长命令并杀掉进程组 |
+
+兼容保留但不再常驻：
+
+| 工具 | 说明 |
+|---|---|
 | `local_list_dir` | 列出本地目录 |
 | `local_read_file` | 读取本地文本文件 |
 | `local_write_file` | 创建或覆盖本地文本文件 |

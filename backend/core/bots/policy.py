@@ -73,6 +73,8 @@ TOOL_RISK = {
     "local_shell": RISK_EXEC,
     "tool_search": RISK_READ,
     "tool_call": RISK_EXEC,
+    "skill_search": RISK_READ,
+    "skill_call": RISK_READ,
     "local_mcp_search": RISK_READ,
     "local_mcp_call": RISK_EXEC,
     "local_shell_start": RISK_EXEC,

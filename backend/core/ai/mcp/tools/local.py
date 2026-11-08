@@ -445,6 +445,20 @@ async def local_grep(user_id: int, args: dict) -> MCPCallResponse:
     return _ok("\n".join(lines))
 
 
+async def local_file(user_id: int, args: dict) -> MCPCallResponse:
+    """One local filesystem entry point for list/read/write/grep."""
+    op = str(args.get("op") or "").strip().lower()
+    if op in ("list", "ls", "dir"):
+        return await local_list_dir(user_id, args)
+    if op in ("read", "cat"):
+        return await local_read_file(user_id, args)
+    if op in ("write", "save"):
+        return await local_write_file(user_id, args)
+    if op in ("grep", "search"):
+        return await local_grep(user_id, args)
+    return _err("op 必须是 list / read / write / grep")
+
+
 TOOLS = [
     (
         MCPTool(
@@ -709,5 +723,75 @@ TOOLS = [
             },
         ),
         local_grep,
+    ),
+    (
+        MCPTool(
+            name="local_file",
+            description=(
+                "在用户本地机器上操作文件。op=list 列目录，op=read 读文本，"
+                "op=write 写文件，op=grep 在目录中搜索文本。"
+                "本机文件、项目、日志优先用它；写入默认需要桌面端确认。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "op": {
+                        "type": "string",
+                        "enum": ["list", "read", "write", "grep"],
+                        "description": "操作类型",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "文件或目录路径，支持 ~ 和绝对路径",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "op=write 时的文本内容",
+                    },
+                    "include_hidden": {
+                        "type": "boolean",
+                        "description": "op=list 时是否包含隐藏文件",
+                    },
+                    "max_bytes": {
+                        "type": "integer",
+                        "description": "op=read 时最多读取的字节数，默认 200000",
+                    },
+                    "create_dirs": {
+                        "type": "boolean",
+                        "description": "op=write 时是否自动创建父目录",
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "op=write 时是否允许覆盖已有文件",
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "op=grep 时的正则表达式",
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "op=grep 时的文件名过滤，例如 *.ts",
+                    },
+                    "case_sensitive": {
+                        "type": "boolean",
+                        "description": "op=grep 时是否区分大小写，默认 true",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "op=grep 时最多返回条数，默认 100",
+                    },
+                    "machine_id": {
+                        "type": "string",
+                        "description": "本地机器 ID；只有一台在线时可省略",
+                    },
+                    "machine": {
+                        "type": "string",
+                        "description": "本地机器名称；与 machine_id 二选一",
+                    },
+                },
+                "required": ["op", "path"],
+            },
+        ),
+        local_file,
     ),
 ]
