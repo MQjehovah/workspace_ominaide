@@ -1841,6 +1841,7 @@ function prettyJson(args: any): string {
 }
 
 const activitySuggestions = ref<any[]>([])
+const insightOpen = ref(false)
 
 async function loadActivitySuggestions() {
   try {
@@ -1951,6 +1952,7 @@ const suggestions = [
           </span>
         </div>
         <div class="head-right">
+          <button class="icon-btn" :class="{ active: insightOpen }" title="活动建议" @click="insightOpen = !insightOpen; if (insightOpen) loadActivitySuggestions()">✦<span v-if="activitySuggestions.length" class="icon-badge">{{ activitySuggestions.length }}</span></button>
           <button class="icon-btn" :class="{ active: detailOpen }" title="详情 / 历史 (Ctrl+P)" @click="detailOpen = !detailOpen; if (detailOpen) detailTab = 'process'">▤</button>
           <button class="icon-btn" title="打开命令面板 (Ctrl+K)" @click="openPalette">⌘</button>
           <button class="icon-btn" title="设置 / MCP / 技能" @click="openSettings">⚙</button>
@@ -1966,6 +1968,26 @@ const suggestions = [
           <button class="approval-btn no" @click="decideApproval(a.id, false)">拒绝</button>
         </div>
       </div>
+
+      <transition name="fade">
+        <div v-if="insightOpen" class="insight-strip">
+          <div class="insight-strip-hd">
+            <span>✦ 活动建议</span>
+            <button @click="insightOpen = false">×</button>
+          </div>
+          <div v-if="!activitySuggestions.length" class="insight-empty">暂时没有新的建议，系统会定时整理最近活动。</div>
+          <div v-for="s in activitySuggestions" :key="s.id" class="activity-suggestion">
+            <div class="activity-suggestion-main">
+              <div class="activity-suggestion-title">{{ s.title }}</div>
+              <div v-if="s.reason" class="activity-suggestion-reason">{{ s.reason }}</div>
+            </div>
+            <div class="activity-suggestion-actions">
+              <button @click="acceptActivitySuggestion(s)">建待办</button>
+              <button class="muted" @click="dismissActivitySuggestion(s)">忽略</button>
+            </div>
+          </div>
+        </div>
+      </transition>
 
       <transition name="fade">
         <div v-if="searchOpen" class="conv-search">
@@ -2734,6 +2756,7 @@ const suggestions = [
 .icon-btn:hover { background: var(--bg4); color: var(--text); }
 .icon-btn.close:hover { color: var(--red); }
 .icon-btn.active { color: var(--accent2); background: var(--bg4); }
+.icon-badge { margin-left: 1px; font-size: 9px; color: var(--accent2); }
 
 /* filter chips */
 .filter-row { display: flex; gap: 6px; padding: 0 12px 8px; flex-wrap: wrap; }
@@ -3730,6 +3753,11 @@ const suggestions = [
 .activity-suggestion-actions button { border: none; background: transparent; color: var(--accent2); font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
 .activity-suggestion-actions button:hover { background: var(--bg4); }
 .activity-suggestion-actions button.muted { color: var(--dim); }
+.insight-strip { margin: 0 12px 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2); }
+.insight-strip-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 11px; font-weight: 700; color: var(--accent2); letter-spacing: .4px; }
+.insight-strip-hd button { border: none; background: transparent; color: var(--dim); font-size: 14px; cursor: pointer; padding: 0 2px; }
+.insight-strip-hd button:hover { color: var(--text); }
+.insight-empty { padding: 6px 2px; font-size: 11.5px; color: var(--dim); }
 .suggestions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; max-width: 720px; margin: 0 auto; }
 .suggestion {
   border: 1px solid var(--border);
