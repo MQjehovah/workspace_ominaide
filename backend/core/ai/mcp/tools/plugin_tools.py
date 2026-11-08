@@ -26,6 +26,7 @@ def register_plugin_tools_from_manifest(manifest: dict, plugin_name: str):
                     name=name,
                     description=tool_def.get("description", ""),
                     inputSchema=tool_def.get("inputSchema", {"type": "object", "properties": {}}),
+                    source="plugin",
                 ),
                 lambda user_id, args, _handler=handler: _handler(user_id, args),
             )

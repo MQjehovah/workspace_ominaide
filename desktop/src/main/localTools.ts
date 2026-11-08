@@ -7,6 +7,7 @@ import { dialog } from 'electron'
 
 import { getConfig, setConfig } from './config'
 import { channelSend } from './backendChannel'
+import { callProxyTool, listProxyTools } from './mcp/mcp-manager'
 import { writeLog } from './logger'
 
 const MAX_STDOUT = 30_000
@@ -535,6 +536,39 @@ async function runTool(tool: string, args: LocalArgs): Promise<unknown> {
       return await writeFile(args)
     case 'grep':
       return await grep(args)
+    case 'mcp_search': {
+      const query = String(args.query || '').trim().toLowerCase()
+      if (!query) throw new Error('query 必填')
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 30)
+      const tools = await listProxyTools()
+      return {
+        tools: tools
+          .filter((item) =>
+            [
+              item.server_id,
+              item.server_name,
+              item.name,
+              item.description,
+            ]
+              .join(' ')
+              .toLowerCase()
+              .includes(query),
+          )
+          .slice(0, limit),
+      }
+    }
+    case 'mcp_call': {
+      const serverId = String(args.server_id || '').trim()
+      const toolName = String(args.tool || '').trim()
+      if (!serverId || !toolName) throw new Error('server_id 和 tool 必填')
+      const toolArgs =
+        args.arguments && typeof args.arguments === 'object' ? args.arguments : {}
+      const result = await callProxyTool(serverId, toolName, toolArgs)
+      return {
+        content: result.content,
+        is_error: result.error,
+      }
+    }
     default:
       throw new Error(`不支持的本地工具：${tool || '-'}`)
   }
@@ -553,7 +587,7 @@ export async function handleLocalToolMessage(msg: any): Promise<void> {
     msg?.args && typeof msg.args === 'object' ? msg.args : {}
 
   try {
-    if (tool !== 'shell_cancel') {
+    if (!['shell_cancel', 'mcp_search', 'mcp_call'].includes(tool)) {
       await ensureApproved(tool, args)
     }
     const result = await runTool(tool, args)

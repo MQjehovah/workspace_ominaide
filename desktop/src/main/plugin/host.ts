@@ -12,7 +12,6 @@ import { loadPlugins } from './loader'
 import { PluginProcessManager } from './child-process'
 import { channelSend, channelStatus, setInboundDispatcher } from '../backendChannel'
 import { handleLocalToolMessage } from '../localTools'
-import { handleLocalMcpMessage } from '../localMcpProxy'
 
 const processManager = new PluginProcessManager()
 const plugins = new Map<string, PluginInfo>()
@@ -25,12 +24,6 @@ setInboundDispatcher((channel, msg) => {
   if (channel === 'local-tools') {
     handleLocalToolMessage(msg).catch((err) => {
       writeLog('system', 'error', `local-tools handler error: ${err?.message || err}`)
-    })
-    return
-  }
-  if (channel === 'local-mcp') {
-    handleLocalMcpMessage(msg).catch((err) => {
-      writeLog('system', 'error', `local-mcp handler error: ${err?.message || err}`)
     })
     return
   }

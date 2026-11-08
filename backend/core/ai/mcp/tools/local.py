@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from core.ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
 from core.config.settings import settings
 from core.wschannel import local_tools
@@ -201,6 +203,98 @@ async def local_shell_cancel(user_id: int, args: dict) -> MCPCallResponse:
     except local_tools.LocalMachineError as exc:
         return _err(str(exc))
     return _ok(f"已请求取消 {job_id}，当前状态：{job.status}")
+
+
+async def local_mcp_search(user_id: int, args: dict) -> MCPCallResponse:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return _err("query 必填，例如 filesystem / browser / git")
+    try:
+        limit = int(args.get("limit") or 10)
+    except (TypeError, ValueError):
+        limit = 10
+    limit = min(max(limit, 1), 30)
+    try:
+        machine_id = _resolve_machine(user_id, args)
+        response = await local_tools.call_local(
+            user_id,
+            machine_id,
+            "mcp_search",
+            {"query": query, "limit": limit},
+            timeout_seconds=60,
+        )
+    except local_tools.LocalMachineError as exc:
+        return _err(str(exc))
+    if not response.get("ok"):
+        return _err(str(response.get("error") or "读取本地 MCP 失败"))
+    payload = response.get("result") or {}
+    tools = payload.get("tools") if isinstance(payload, dict) else []
+    machine_name = local_tools.host_channel.machine_name(machine_id)
+    lines = [
+        f"本地机器：{machine_name} ({machine_id})",
+        f"搜索：{query}",
+    ]
+    if not tools:
+        lines.append("没有匹配的本地 MCP 工具。")
+        return _ok("\n".join(lines))
+    by_server: dict[str, list] = {}
+    names: dict[str, str] = {}
+    for item in tools:
+        server_id = str(item.get("server_id") or "")
+        if not server_id:
+            continue
+        by_server.setdefault(server_id, []).append(item)
+        names[server_id] = str(item.get("server_name") or server_id)
+    for server_id, items in by_server.items():
+        lines.append(f"\n服务器：{names.get(server_id, server_id)} (server_id={server_id})")
+        for item in items:
+            lines.append(f"- {item.get('name')}: {item.get('description') or ''}")
+            schema = item.get("input_schema")
+            if isinstance(schema, dict):
+                lines.append(
+                    "  schema: "
+                    + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))[:1200]
+                )
+    lines.append(
+        "\n调用方式：local_mcp_call(server_id, tool, arguments, machine_id)"
+    )
+    return _ok("\n".join(lines))
+
+
+async def local_mcp_call(user_id: int, args: dict) -> MCPCallResponse:
+    server_id = str(args.get("server_id") or "").strip()
+    tool_name = str(args.get("tool") or "").strip()
+    if not server_id or not tool_name:
+        return _err("server_id 和 tool 必填")
+    arguments = args.get("arguments")
+    if not isinstance(arguments, dict):
+        arguments = args.get("args") if isinstance(args.get("args"), dict) else {}
+    try:
+        machine_id = _resolve_machine(user_id, args)
+        response = await local_tools.call_local(
+            user_id,
+            machine_id,
+            "mcp_call",
+            {
+                "server_id": server_id,
+                "tool": tool_name,
+                "arguments": arguments,
+            },
+            timeout_seconds=120,
+        )
+    except local_tools.LocalMachineError as exc:
+        return _err(str(exc))
+    if not response.get("ok"):
+        return _err(str(response.get("error") or "本地 MCP 调用失败"))
+    payload = response.get("result") or {}
+    content = payload.get("content") if isinstance(payload, dict) else None
+    if isinstance(content, str):
+        text = content
+    else:
+        text = json.dumps(content, ensure_ascii=False)
+    if payload.get("is_error"):
+        return _err(text or "本地 MCP 工具执行出错")
+    return _ok(text or "(本地 MCP 返回空结果)")
 
 
 async def local_list_dir(user_id: int, args: dict) -> MCPCallResponse:
@@ -461,6 +555,54 @@ TOOLS = [
             },
         ),
         local_shell_cancel,
+    ),
+    (
+        MCPTool(
+            name="local_mcp_search",
+            description=(
+                "搜索指定本地机器上的 MCP 工具及参数 schema。"
+                "用 query 关键词（如 filesystem、browser、git）检索，"
+                "再用 local_mcp_call 调用匹配的工具。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "搜索关键词"},
+                    "limit": {
+                        "type": "integer",
+                        "description": "最多返回数量，默认 10，最大 30",
+                    },
+                    "machine_id": {"type": "string", "description": "本地机器 ID"},
+                    "machine": {"type": "string", "description": "本地机器名称"},
+                },
+                "required": ["query"],
+            },
+        ),
+        local_mcp_search,
+    ),
+    (
+        MCPTool(
+            name="local_mcp_call",
+            description=(
+                "调用本地机器上的 MCP 工具。先调用 local_mcp_search 获取 server_id、"
+                "工具名和参数 schema。调用会需要审批。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "server_id": {"type": "string", "description": "MCP 服务器 ID"},
+                    "tool": {"type": "string", "description": "工具名"},
+                    "arguments": {
+                        "type": "object",
+                        "description": "工具参数 JSON",
+                    },
+                    "machine_id": {"type": "string", "description": "本地机器 ID"},
+                    "machine": {"type": "string", "description": "本地机器名称"},
+                },
+                "required": ["server_id", "tool"],
+            },
+        ),
+        local_mcp_call,
     ),
     (
         MCPTool(

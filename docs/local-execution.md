@@ -73,23 +73,40 @@ local_shell_cancel(job_id="...")
 }
 ```
 
-## 本地 MCP 代理
+## 本地 MCP
 
-桌面端可以管理本地 MCP 服务器（stdio / HTTP），它们的工具会自动通过
-`/ws/host` 的 `local-mcp` 通道代理给服务端 Bot：
+桌面端可以管理本地 MCP 服务器（stdio / HTTP）。服务端 Bot 不会把每个本地
+MCP 工具都注册成独立工具，而是通过两个网关工具按需发现和调用：
 
 ```text
-服务端 Bot
-  → local_mcp_<machine>_<server>_<tool>
-  → /ws/host local-mcp
+local_mcp_search(query, machine_id?)
+  → 查询某台本地机器上匹配的 MCP 工具和 schema
+
+local_mcp_call(server_id, tool, arguments, machine_id?)
+  → 调用搜索到的那个工具
+```
+
+流程：
+
+```text
+Bot
+  → local_mcp_search(query="browser")
+  → 桌面 MCP manager 列出并过滤工具
+  → 返回匹配工具的 server_id / name / input_schema
+  → Bot 判断需要调用
+  → local_mcp_call(server_id, tool, arguments)
+  → /ws/host local-tools
   → 桌面 MCP manager
   → 本地 MCP server
 ```
 
-- 在桌面版 AI 助手 → 设置 → 本地 MCP 中添加服务器
-- 服务端会注册带 `local_mcp_` 前缀的工具
-- 工具风险统一为 `exec`，默认需要审批
-- 桌面端离线时工具不可用
+规则：
+
+- 桌面端不主动把全部工具推给服务端
+- 工具表只增加 `local_mcp_search` 和 `local_mcp_call` 两个入口
+- 多台机器在线时用 `machine_id` / `machine` 指定
+- `local_mcp_call` 默认需要审批
+- 桌面端离线时查询和调用都会失败
 - 只代理用户配置的本地 MCP，不代理内置 Office / 后端 MCP
 
 ## 机器名称

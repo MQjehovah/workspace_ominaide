@@ -71,6 +71,8 @@ TOOL_RISK = {
     "fetch_url": RISK_READ,
     "run_shell": RISK_EXEC,
     "local_shell": RISK_EXEC,
+    "local_mcp_search": RISK_READ,
+    "local_mcp_call": RISK_EXEC,
     "local_shell_start": RISK_EXEC,
     "local_shell_wait": RISK_READ,
     "local_shell_cancel": RISK_EXEC,
@@ -207,12 +209,12 @@ def decide(bot: Bot | None, name: str, arguments: dict | None = None) -> tuple[s
         return risk, shell_decision((arguments or {}).get("command", ""))
 
     if name.startswith("local_") or name == "list_local_machines":
-        # The desktop app owns local execution approval (ask / always / never),
-        # mirroring Grok Bot's separate local-computer policy. Bot-level
-        # overrides above still take precedence.
-        decision = custom.get(risk) or "auto"
+        # local_mcp_call is a generic gateway to arbitrary local MCP tools, so
+        # it asks by default. Other local tools are gated by the desktop policy.
+        default = "ask" if name == "local_mcp_call" else "auto"
+        decision = custom.get(risk) or default
         if decision not in ("auto", "ask", "deny"):
-            decision = "auto"
+            decision = default
         return risk, decision
 
     decision = custom.get(risk) or DEFAULT_LEVEL_POLICY.get(risk, "ask")

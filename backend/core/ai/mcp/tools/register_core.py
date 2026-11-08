@@ -51,10 +51,9 @@ def register_core_tools():
     for tool, handler in LOCAL_TOOLS:
         tool_registry.register(tool, handler)
     for tool, handler in GOOGLE_TOOLS:
+        # External authorization plugin, but still a plugin tool.
+        tool.source = "plugin"
         tool_registry.register(tool, handler)
-    from core.wschannel.desktop_mcp import register_channel as register_desktop_mcp
-
-    register_desktop_mcp()
     from core.wschannel.local_tools import register_channel
 
     register_channel()

@@ -10,7 +10,6 @@ import { getConfig } from './config'
 import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window'
 import { registerMcpIpc } from './mcp/ipc'
 import { initMcpManager, disposeAll } from './mcp/mcp-manager'
-import { initLocalMcpProxy } from './localMcpProxy'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
@@ -140,7 +139,6 @@ app.whenReady().then(async () => {
   registerIpcHandlers()
   registerMcpIpc()
   initMcpManager()
-  initLocalMcpProxy()
   await initPlugins()
   createTray()
   const cfg = await getConfig()
