@@ -14,7 +14,6 @@ router = APIRouter(prefix="/api/connectors", tags=["connectors"])
 
 _CONNECTORS = [
     {"key": "mail", "title": "邮件"},
-    {"key": "dingtalk", "title": "钉钉"},
     {"key": "schedule", "title": "日程"},
     {"key": "files", "title": "文件"},
     {"key": "notes", "title": "笔记"},

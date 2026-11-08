@@ -49,21 +49,30 @@ GET    /api/mcp/calls
 GET    /api/mcp/templates
 ```
 
-## 钉钉 MCP Server
+## 钉钉插件与私有 MCP
 
-`backend/mcp_servers/dingtalk/` 是一个标准 stdio MCP Server，内部调用 `dws`：
+钉钉已从核心模块迁移为独立插件：
 
-- `health`
-- `search_messages`
-- `list_unread`
-- `recent_conversations`
-- `send_message`
-- `list_events`
-- `create_event`
-- `list_todos`
-- `create_todo`
+- 插件代码：`backend/plugins/dingtalk/`
+- 私有 MCP Server：`backend/plugins/dingtalk/mcp_server/`，内部调用 `dws`
+- 插件路由：`/api/plugins/dingtalk/*`
 
-写工具带 `confirmed` 参数；未确认时只返回 `confirmation_required`，不执行发送/创建。
+私有 MCP 以 `scope=internal`、`owner_plugin=dingtalk`、`expose_tools=false` 注册到
+McpHub。原始 `mcp:dingtalk-*__*` 工具不会进入全局工具表，也不会出现在用户的
+MCP 管理页；只有插件 curated 的 `dingtalk_*` 工具对 Bot 可见。
+
+核心保持通用能力：MCP Hub、定时任务、活动建议提取。钉钉插件自己负责账号、
+登录、消息同步、日程同步和会话查看；日程通过通用事件
+`calendar.external.upsert` / `calendar.external.delete` 交给 schedule 插件。
+
+插件注册的周期任务：
+
+| 任务 | 周期 | 说明 |
+| --- | --- | --- |
+| `dingtalk.sync_calendar` | 15 分钟 | 拉取日程并发布外部日历事件 |
+| `dingtalk.sync_chat` | 24 小时 | 同步会话并发布 `dingtalk.conversation` 活动 |
+| `schedule.sync_external_calendar` | 5 分钟 | schedule 消费外部日历事件 |
+| `core.insights.extract` | 10 分钟 | 批量提取活动建议（唯一的 LLM 环节） |
 
 ### 容器内登录 dws
 
@@ -74,15 +83,17 @@ Dockerfile 已安装 Node + `dingtalk-workspace-cli@1.0.62`。DingTalk 配置和
 /data/workspace/<user_id>/dingtalk/home    # HOME，token 在 ~/.local/share/dws-cli
 ```
 
-对应宿主机 `/data/docker/omniaide/data/workspace/<user_id>/dingtalk`。每次调用 `dws` 都必须注入该用户的环境（`core.paths.dingtalk_env(user_id)`）；不再有全局 `DWS_CONFIG_DIR`，也不会在 `/config` 下保存 token。
+对应宿主机 `/data/docker/omniaide/data/workspace/<user_id>/dingtalk`。每次调用 `dws` 都必须注入该用户的环境（`plugins.dingtalk.backend.paths.dingtalk_env(user_id)`）；不再有全局 `DWS_CONFIG_DIR`，也不会在 `/config` 下保存 token。
 
 绑定入口：Web「设置 → 钉钉」或移动端「设置 → 钉钉」，后端 API 为：
 
 ```
-GET  /api/dingtalk/status
-POST /api/dingtalk/login/start
-GET  /api/dingtalk/login/status
-POST /api/dingtalk/logout
+GET  /api/plugins/dingtalk/status
+POST /api/plugins/dingtalk/login/start
+GET  /api/plugins/dingtalk/login/status
+POST /api/plugins/dingtalk/logout
+GET  /api/plugins/dingtalk/conversations
+GET  /api/plugins/dingtalk/conversations/{conversation_id}/messages
 ```
 
 首次绑定使用设备流，页面展示授权码和链接；登录态持久化，token 自动刷新。

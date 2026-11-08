@@ -23,7 +23,8 @@ from sqlalchemy import select
 from core.crypto import encrypt_secret
 from core.database.session import async_session
 from core.mcp_hub.models import McpServer
-from core.paths import dingtalk_env, dingtalk_root, ensure_user_workspace, user_root
+from core.paths import user_root
+from plugins.dingtalk.backend.paths import dingtalk_env, dingtalk_root, ensure_dingtalk_workspace
 
 DEVICE_CODE_RE = re.compile(r"授权码[:：]\s*([A-Za-z0-9-]+)")
 DEVICE_URL_RE = re.compile(r"https://\S*verify\.htm\S*")
@@ -56,12 +57,16 @@ def _is_dingtalk(row: McpServer) -> bool:
         return True
     if "钉钉" in (row.name or ""):
         return True
-    return any("mcp_servers.dingtalk" in str(arg) for arg in (row.args or []))
+    return any(
+        "plugins.dingtalk.mcp_server" in str(arg)
+        or "mcp_servers.dingtalk" in str(arg)
+        for arg in (row.args or [])
+    )
 
 
 async def ensure_dingtalk_server(user_id: int) -> McpServer:
     """Return this user's DingTalk MCP server, creating or upgrading it."""
-    ensure_user_workspace(user_id)
+    ensure_dingtalk_workspace(user_id)
     env = dingtalk_env(user_id)
     async with async_session() as db:
         rows = list((await db.execute(
@@ -75,10 +80,12 @@ async def ensure_dingtalk_server(user_id: int) -> McpServer:
                 user_id=user_id,
                 slug=f"dingtalk-{user_id}",
                 name="钉钉",
-                scope="backend",
+                scope="internal",
+                owner_plugin="dingtalk",
+                expose_tools=False,
                 transport="stdio",
                 command="python",
-                args=["-m", "mcp_servers.dingtalk"],
+                args=["-m", "plugins.dingtalk.mcp_server"],
                 risk_default="read",
                 enabled=True,
                 auto_start=True,
@@ -95,16 +102,31 @@ async def ensure_dingtalk_server(user_id: int) -> McpServer:
                 row.slug = target_slug
             row.name = row.name or "钉钉"
             row.transport = "stdio"
-            row.command = row.command or "python"
-            if not row.args:
-                row.args = ["-m", "mcp_servers.dingtalk"]
-            row.scope = "backend"
+            # Legacy rows may point at ``mcp_servers.dingtalk`` or a custom
+            # command; always replace them with the plugin-owned server.
+            row.command = "python"
+            row.args = ["-m", "plugins.dingtalk.mcp_server"]
+            row.scope = "internal"
+            row.owner_plugin = "dingtalk"
+            row.expose_tools = False
             row.enabled = True
             row.auto_start = True
         row.env_encrypted = encrypt_secret(json.dumps(env, ensure_ascii=False))
         await db.commit()
         await db.refresh(row)
         return row
+
+
+async def migrate_existing_servers() -> None:
+    """Move legacy DingTalk MCP rows to the plugin-private namespace."""
+    async with async_session() as db:
+        rows = list((await db.execute(select(McpServer))).scalars().all())
+        users = sorted({int(row.user_id) for row in rows if _is_dingtalk(row)})
+    for user_id in users:
+        try:
+            await ensure_dingtalk_server(user_id)
+        except Exception as e:
+            log.warning(f"[dingtalk] migrate user {user_id} failed: {e}")
 
 
 async def connect_dingtalk_server(user_id: int) -> None:
@@ -131,9 +153,9 @@ def _authenticated(payload: dict) -> bool:
 
 
 async def dingtalk_status(user_id: int) -> dict:
-    from mcp_servers.dingtalk.dws_client import DwSError, run_dws
+    from plugins.dingtalk.mcp_server.dws_client import DwSError, run_dws
 
-    ensure_user_workspace(user_id)
+    ensure_dingtalk_workspace(user_id)
     payload: dict = {}
     error: str | None = None
     try:
@@ -229,7 +251,7 @@ async def start_login(user_id: int) -> LoginSession:
             if time.time() - existing.started_at < SESSION_TTL and existing.status == "pending":
                 return existing
 
-        ensure_user_workspace(user_id)
+        ensure_dingtalk_workspace(user_id)
         await ensure_dingtalk_server(user_id)
         env = {**os.environ, **dingtalk_env(user_id)}
         proc = await asyncio.create_subprocess_exec(
@@ -257,7 +279,7 @@ def session_out(session: LoginSession) -> dict:
 
 
 async def logout(user_id: int) -> dict:
-    from mcp_servers.dingtalk.dws_client import DwSError, run_dws
+    from plugins.dingtalk.mcp_server.dws_client import DwSError, run_dws
 
     cancel_login(user_id)
     try:

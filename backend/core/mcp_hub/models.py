@@ -18,7 +18,9 @@ class McpServer(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     slug = Column(String(64), nullable=False)
     name = Column(String(120), nullable=False)
-    scope = Column(String(20), default="backend")   # backend | desktop
+    scope = Column(String(20), default="backend")   # backend | desktop | internal
+    owner_plugin = Column(String(64), nullable=True, index=True)
+    expose_tools = Column(Boolean, default=True, nullable=False)
     transport = Column(String(20), default="stdio")  # stdio | http
     command = Column(String(500), nullable=True)
     args = Column(JSON, nullable=True)

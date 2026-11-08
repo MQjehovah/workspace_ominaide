@@ -1451,21 +1451,6 @@ class ApiService {
     return _asMap(decodeJson(res));
   }
 
-  Future<List<Map<String, dynamic>>> getDingTalkActions({
-    bool refresh = false,
-  }) async {
-    final res = await get(
-      '/workbench/dingtalk-actions${refresh ? '?refresh=true' : ''}',
-    );
-    if (res.statusCode != 200) return [];
-    final data = decodeJson(res);
-    final list = data is Map ? (data['items'] as List? ?? const []) : const [];
-    return list
-        .whereType<Map>()
-        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
-        .toList();
-  }
-
   Future<List<String>> getWorkbenchSuggestions({bool refresh = false}) async {
     final res =
         await get('/inbox/suggestions${refresh ? '?refresh=true' : ''}');
@@ -1996,26 +1981,43 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> dingtalkStatus() async {
-    final res = await get('/dingtalk/status');
+    final res = await get('/plugins/dingtalk/status');
     if (res.statusCode != 200) throw Exception(_extractError(res));
     return _asMap(decodeJson(res));
   }
 
   Future<Map<String, dynamic>> startDingtalkLogin() async {
-    final res = await post('/dingtalk/login/start', const {});
+    final res = await post('/plugins/dingtalk/login/start', const {});
     if (res.statusCode != 200) throw Exception(_extractError(res));
     return _asMap(decodeJson(res));
   }
 
   Future<Map<String, dynamic>> dingtalkLoginStatus() async {
-    final res = await get('/dingtalk/login/status');
+    final res = await get('/plugins/dingtalk/login/status');
     if (res.statusCode != 200) throw Exception(_extractError(res));
     return _asMap(decodeJson(res));
   }
 
   Future<void> dingtalkLogout() async {
-    final res = await post('/dingtalk/logout', const {});
+    final res = await post('/plugins/dingtalk/logout', const {});
     if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<List<Map<String, dynamic>>> dingtalkConversations() async {
+    final res = await get('/plugins/dingtalk/conversations');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res)['items']);
+  }
+
+  Future<List<Map<String, dynamic>>> dingtalkMessages(
+    String conversationId, {
+    int limit = 100,
+  }) async {
+    final res = await get(
+      '/plugins/dingtalk/conversations/${Uri.encodeComponent(conversationId)}/messages?limit=$limit',
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return _asMapList(decodeJson(res)['items']);
   }
 
 

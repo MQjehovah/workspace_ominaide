@@ -90,7 +90,7 @@ async def _stop_runtime(user_id: int) -> None:
 
     # Stop a pending DingTalk device-flow login process.
     try:
-        from core.dingtalk.service import cancel_login
+        from plugins.dingtalk.backend.service import cancel_login
 
         cancel_login(user_id)
     except Exception as exc:

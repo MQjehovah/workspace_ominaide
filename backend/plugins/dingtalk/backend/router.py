@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from core.auth.dependencies import get_current_user
-from core.dingtalk import service
+from plugins.dingtalk.backend import api, service
 
-router = APIRouter(prefix="/api/dingtalk", tags=["dingtalk"])
+router = APIRouter(tags=["dingtalk"])
 
 
 @router.get("/status")
@@ -35,3 +35,25 @@ async def login_status(user: dict = Depends(get_current_user)):
 @router.post("/logout")
 async def logout(user: dict = Depends(get_current_user)):
     return await service.logout(user["id"])
+
+
+@router.get("/conversations")
+async def conversations(
+    limit: int = Query(50, ge=1, le=200),
+    user: dict = Depends(get_current_user),
+):
+    return {"items": await api.list_conversations(user["id"], limit)}
+
+
+@router.get("/conversations/{conversation_id}/messages")
+async def messages(
+    conversation_id: str,
+    limit: int = Query(100, ge=1, le=300),
+    before_id: int | None = Query(None),
+    user: dict = Depends(get_current_user),
+):
+    return {
+        "items": await api.list_messages(
+            user["id"], conversation_id, limit=limit, before_id=before_id
+        )
+    }

@@ -8,7 +8,7 @@ from core.mcp_hub.client import StdioMcpConnection
 
 
 def test_dingtalk_tool_catalog():
-    from mcp_servers.dingtalk.tools import TOOLS
+    from plugins.dingtalk.mcp_server.tools import TOOLS
 
     names = {t["name"] for t in TOOLS}
     assert {"health", "search_messages", "list_unread", "send_message",
@@ -19,7 +19,7 @@ def test_dingtalk_tool_catalog():
 
 
 async def test_write_tools_require_confirmation(monkeypatch):
-    from mcp_servers.dingtalk import tools as dt
+    from plugins.dingtalk.mcp_server import tools as dt
 
     called = []
 
@@ -44,7 +44,7 @@ async def test_write_tools_require_confirmation(monkeypatch):
 
 
 async def test_search_messages_builds_dws_command(monkeypatch):
-    from mcp_servers.dingtalk import tools as dt
+    from plugins.dingtalk.mcp_server import tools as dt
 
     called = []
 
@@ -65,7 +65,7 @@ async def test_search_messages_builds_dws_command(monkeypatch):
 
 
 async def test_read_chat_messages_builds_command(monkeypatch):
-    from mcp_servers.dingtalk import tools as dt
+    from plugins.dingtalk.mcp_server import tools as dt
 
     called = []
 
@@ -93,7 +93,7 @@ async def test_read_chat_messages_builds_command(monkeypatch):
 
 
 async def test_generic_cli_guards_writes_and_destructive_commands(monkeypatch):
-    from mcp_servers.dingtalk import tools as dt
+    from plugins.dingtalk.mcp_server import tools as dt
 
     called = []
 
@@ -129,7 +129,7 @@ async def test_generic_cli_guards_writes_and_destructive_commands(monkeypatch):
 
 
 async def test_generic_cli_help_returns_plain_text(monkeypatch):
-    from mcp_servers.dingtalk import tools as dt
+    from plugins.dingtalk.mcp_server import tools as dt
 
     async def fake_text(args, timeout=60):
         return "Usage: dws chat [flags]\n+chat-list  list chats"
@@ -144,7 +144,7 @@ async def test_generic_cli_help_returns_plain_text(monkeypatch):
 
 async def test_dingtalk_stdio_server_protocol():
     backend = Path(__file__).resolve().parent.parent
-    conn = StdioMcpConnection(sys.executable, ["-m", "mcp_servers.dingtalk.server"], cwd=str(backend))
+    conn = StdioMcpConnection(sys.executable, ["-m", "plugins.dingtalk.mcp_server"], cwd=str(backend))
     try:
         await conn.start()
         tools = await conn.list_tools()

@@ -52,7 +52,7 @@
 - stdio + HTTP MCP 客户端；启动自动连接、工具发现、命名空间 `server__tool`
 - 现有 builtin 工具与外部 MCP 工具统一出现在 `/api/mcp/tools`
 - 动态风险注册到 Bot 策略；写操作仍走审批
-- 钉钉作为标准 MCP Server（`mcp_servers/dingtalk`），内部调用 `dws`
+- 钉钉作为独立插件（`plugins/dingtalk`），通过插件私有 MCP 调用 `dws`；原始工具不进入全局目录
 - Web「MCP 管理」页：Server CRUD、连接、工具风险、调用审计
 - 容器镜像内置 Node + `dws`，`DWS_CONFIG_DIR=/data/dws`，无需桌面 Bridge
 

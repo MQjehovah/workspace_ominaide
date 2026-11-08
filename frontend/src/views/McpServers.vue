@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2>MCP 管理</h2>
-        <p class="sub">统一管理 Home Assistant、钉钉、浏览器等 MCP Server；工具会自动进入 Bot 目录。</p>
+        <p class="sub">统一管理 Home Assistant、浏览器等 MCP Server；工具会自动进入 Bot 目录。</p>
       </div>
       <div class="header-actions">
         <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
@@ -75,7 +75,7 @@
         </el-form-item>
         <template v-if="form.transport === 'stdio'">
           <el-form-item label="命令"><el-input v-model="form.command" placeholder="python / npx / uvx" /></el-form-item>
-          <el-form-item label="参数"><el-input v-model="argsText" type="textarea" :rows="3" placeholder='每行一个参数，例如 -m\nmcp_servers.dingtalk' /></el-form-item>
+          <el-form-item label="参数"><el-input v-model="argsText" type="textarea" :rows="3" placeholder='每行一个参数，例如 -m\nyour_mcp_server' /></el-form-item>
           <el-form-item label="环境变量"><el-input v-model="envText" type="textarea" :rows="2" placeholder='JSON，例如 {"DWS_CONFIG_DIR":"/data/dws"}；编辑时留空保持不变' /></el-form-item>
         </template>
         <template v-else>

@@ -52,6 +52,8 @@ async def lifespan(app: FastAPI):
     import core.mcp_hub.models  # noqa
     import core.wschannel.models  # noqa
     import plugins.oauth.backend.models  # noqa
+    import plugins.dingtalk.backend.models  # noqa
+    import core.insights.models  # noqa
     import core.memory_models  # noqa
     import plugins.sources.backend.models  # noqa
     import core.objects.models  # noqa
@@ -74,11 +76,17 @@ async def lifespan(app: FastAPI):
     register_cleanup_handlers()
     from core.captures.service import register_capture_handlers
     register_capture_handlers()
+    from core.scheduler import scheduler as periodic_scheduler
     from core.jobs.service import start_worker as start_jobs_worker
     jobs_task = start_jobs_worker()
     scheduler_task = asyncio.create_task(scheduler_loop())
     await ensure_buckets()
     await discover_plugins(app)
+    from core.insights.jobs import JOBS as INSIGHT_JOBS
+
+    for job in INSIGHT_JOBS:
+        periodic_scheduler.register(job)
+    periodic_scheduler.start()
     register_core_tools()
     register_ai_tools()
 
@@ -95,6 +103,7 @@ async def lifespan(app: FastAPI):
     from core.ai.clients import warm_voice_clients
     warm_task = asyncio.create_task(warm_voice_clients())
     yield
+    await periodic_scheduler.stop()
     await mcp_hub.shutdown()
     warm_task.cancel()
     routine_task.cancel()
@@ -166,9 +175,6 @@ app.add_middleware(TraceMiddleware)
 from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)
 
-from core.dingtalk.router import router as dingtalk_router
-app.include_router(dingtalk_router)
-
 from core.captures.router import router as captures_router
 app.include_router(captures_router)
 
@@ -207,6 +213,9 @@ app.include_router(automation_router)
 
 from core.ai.search_router import router as search_router
 app.include_router(search_router)
+
+from core.insights.router import router as activity_insights_router
+app.include_router(activity_insights_router)
 
 from core.ai.insights_router import router as insights_router
 app.include_router(insights_router)

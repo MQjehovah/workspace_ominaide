@@ -61,6 +61,12 @@ async def discover_plugins(app: FastAPI):
             if record.enabled:
                 await _register_plugin_routes(app, plugin_id, plugin_dir)
                 _register_plugin_tools(manifest, plugin_id)
+                _register_plugin_jobs(plugin_id, plugin_dir)
+                await _run_plugin_lifecycle(plugin_id, plugin_dir, "startup")
+            else:
+                from core.scheduler import scheduler
+
+                scheduler.unregister_owner(plugin_id)
 
         await db.commit()
 
@@ -117,9 +123,55 @@ async def toggle_plugin(db: AsyncSession, name: str) -> PluginRegistry:
     return record
 
 
+async def _run_plugin_lifecycle(plugin_name: str, plugin_dir: Path, hook: str) -> None:
+    path = plugin_dir / "backend" / "lifecycle.py"
+    if not path.exists():
+        return
+    module_name = f"plugins.{plugin_name}.backend.lifecycle"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if not (spec and spec.loader):
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    fn = getattr(module, hook, None)
+    if callable(fn):
+        result = fn()
+        if hasattr(result, "__await__"):
+            await result
+
+
+def _register_plugin_jobs(plugin_name: str, plugin_dir: Path) -> None:
+    """Load optional ``backend/jobs.py`` and register its periodic jobs."""
+    jobs_path = plugin_dir / "backend" / "jobs.py"
+    if not jobs_path.exists():
+        return
+    module_name = f"plugins.{plugin_name}.backend.jobs"
+    spec = importlib.util.spec_from_file_location(module_name, jobs_path)
+    if not (spec and spec.loader):
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    from core.scheduler import scheduler
+
+    for job in getattr(module, "JOBS", []):
+        job.owner = plugin_name
+        scheduler.register(job)
+
+
 def _register_plugin_tools(manifest: dict, plugin_name: str):
     from core.ai.mcp.tools.plugin_tools import register_plugin_tools_from_manifest
+
     register_plugin_tools_from_manifest(manifest, plugin_name)
+    tools_path = PLUGINS_DIR / plugin_name / "backend" / "tools.py"
+    if tools_path.exists():
+        module_name = f"plugins.{plugin_name}.backend.tools"
+        spec = importlib.util.spec_from_file_location(module_name, tools_path)
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            register = getattr(module, "register", None)
+            if callable(register):
+                register()
 
 
 async def uninstall_plugin(db: AsyncSession, app: FastAPI, name: str):

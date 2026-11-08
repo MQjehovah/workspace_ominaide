@@ -15,7 +15,7 @@ import 'agent_tasks_screen.dart';
 import 'automation_screen.dart';
 import 'device_screen.dart';
 import 'machine_screen.dart';
-import 'dingtalk_actions_screen.dart';
+import 'dingtalk_conversations_screen.dart';
 import 'files_screen.dart';
 import 'insights_screen.dart';
 import 'inbox_screen.dart';
@@ -248,7 +248,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
     final Widget? target = switch (key) {
       'inbox' => const InboxScreen(),
       'mail' => const MailScreen(),
-      'dingtalk' => const DingTalkActionsScreen(),
+      'dingtalk' => const DingTalkConversationsScreen(),
       'notifications' => const NotificationsScreen(),
       'schedule' => const ScheduleScreen(),
       'minutes' => const MeetingMinutesScreen(),

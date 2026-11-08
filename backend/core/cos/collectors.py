@@ -246,11 +246,11 @@ async def dingtalk_items(
     query: str | None = None,
     limit: int = 15,
 ) -> tuple[list[dict], str]:
-    """Read DingTalk conversations cached by the background sync.
+    """Read DingTalk conversations cached by the plugin sync.
 
-    The scheduler stores one activity per conversation per day. Request
-    handlers must never launch the dws CLI: the sync owns that work, and the
-    workbench must stay fast (the CLI takes seconds).
+    The plugin publishes one activity per conversation when synced content
+    changes. Request handlers must never launch the dws CLI: the sync owns that
+    work, and the workbench must stay fast (the CLI takes seconds).
     """
     from core.events.models import UserActivity
 

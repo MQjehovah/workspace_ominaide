@@ -44,15 +44,6 @@ def _slugify(value: str) -> str:
     return slug[:64] or "mcp"
 
 
-def is_dingtalk_server(server: McpServer) -> bool:
-    """Detect the built-in DingTalk stdio server.
-
-    Requiring the module argument (not just a slug/name) prevents a user from
-    disguising an arbitrary command as DingTalk.
-    """
-    return any("mcp_servers.dingtalk" in str(arg) for arg in (server.args or []))
-
-
 async def user_is_admin(user_id: int) -> bool:
     try:
         from core.auth.domain.models import User
@@ -131,13 +122,6 @@ class McpHub:
         if not server.command:
             raise McpError("stdio MCP 服务器缺少 command")
         env = _decrypt_json(server.env_encrypted)
-        if is_dingtalk_server(server):
-            # Force the per-user DWS config + HOME even if an old global
-            # DWS_CONFIG_DIR was stored on the row.
-            from core.paths import dingtalk_env, ensure_user_workspace
-
-            ensure_user_workspace(server.user_id)
-            env.update(dingtalk_env(server.user_id))
         return StdioMcpConnection(
             server.command,
             list(server.args or []),
@@ -148,7 +132,7 @@ class McpHub:
         server = await self._load_server(server_id, user_id)
         if server is None:
             raise McpError("MCP 服务器不存在")
-        if server.transport == "stdio" and not is_dingtalk_server(server):
+        if server.transport == "stdio" and not server.owner_plugin:
             if not await user_is_admin(server.user_id):
                 raise McpError("普通用户不能运行 stdio MCP")
         async with self._lock(server_id):
@@ -217,6 +201,8 @@ class McpHub:
                 if name not in seen:
                     await db.delete(row)
             await db.commit()
+        if not server.expose_tools:
+            return
 
         for item in tools:
             name = str(item.get("name") or "").strip()
@@ -259,6 +245,9 @@ class McpHub:
         if conn is None:
             raise McpError("MCP 服务器未连接")
         return conn
+
+    async def ensure_connected(self, server_id: int, user_id: int | None = None) -> None:
+        await self._ensure_conn(server_id, user_id)
 
     async def call_external(self, server_id: int, tool_name: str, user_id: int,
                             arguments: dict, run_id: int | None = None) -> MCPCallResponse:

@@ -2,16 +2,6 @@
 
 TEMPLATES = [
     {
-        "key": "dingtalk",
-        "name": "钉钉",
-        "description": "在「设置 → 钉钉」绑定本人账号后，通过 dws CLI 读取消息、日程、待办并发送消息。",
-        "transport": "stdio",
-        "command": "python",
-        "args": ["-m", "mcp_servers.dingtalk"],
-        "scope": "backend",
-        "risk_default": "read",
-    },
-    {
         "key": "home-assistant",
         "name": "Home Assistant",
         "description": "连接 Home Assistant 的 MCP 端点，控制灯、开关、场景等。",

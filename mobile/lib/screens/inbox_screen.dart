@@ -278,7 +278,7 @@ class _InboxScreenState extends State<InboxScreen> {
     );
     controller.dispose();
     if (text == null || text.isEmpty) return;
-    final result = await ApiService().callMCP('dingtalk__send_message', {
+    final result = await ApiService().callMCP('dingtalk_send_message', {
       'target': item.title,
       'content': text,
       'confirmed': true,

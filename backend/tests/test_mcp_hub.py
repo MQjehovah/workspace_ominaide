@@ -135,4 +135,5 @@ async def test_mcp_templates_are_available(client):
     r = await client.get("/api/mcp/templates", headers=auth(token))
     assert r.status_code == 200, r.text
     keys = {t["key"] for t in r.json()["templates"]}
-    assert {"dingtalk", "home-assistant", "playwright"} <= keys
+    assert {"home-assistant", "playwright"} <= keys
+    assert "dingtalk" not in keys

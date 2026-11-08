@@ -112,7 +112,7 @@ async def test_project_path_traversal_is_rejected(tmp_path, monkeypatch):
 def test_dingtalk_env_is_per_user(tmp_path, monkeypatch):
     _use_tmp_workspace(tmp_path, monkeypatch)
 
-    from core.paths import dingtalk_env
+    from plugins.dingtalk.backend.paths import dingtalk_env
 
     env1 = dingtalk_env(11)
     env2 = dingtalk_env(12)
@@ -120,33 +120,6 @@ def test_dingtalk_env_is_per_user(tmp_path, monkeypatch):
     assert env1["HOME"] != env2["HOME"]
     assert env1["DWS_CONFIG_DIR"] == str(tmp_path / "11" / "dingtalk" / ".dws")
     assert env2["DWS_CONFIG_DIR"] == str(tmp_path / "12" / "dingtalk" / ".dws")
-
-
-async def test_calendar_sync_uses_each_users_env(tmp_path, monkeypatch):
-    _use_tmp_workspace(tmp_path, monkeypatch)
-
-    from core.paths import dingtalk_env
-    from plugins.schedule.backend import dingtalk_sync
-
-    calls = []
-
-    async def fake_run(args, timeout=60, env=None):
-        calls.append(env)
-        return {"data": {"events": []}}
-
-    monkeypatch.setattr("mcp_servers.dingtalk.dws_client.run_dws", fake_run)
-    result = await dingtalk_sync.sync_dingtalk_calendar([101, 102])
-
-    assert result["users"] == 2
-    assert calls == [dingtalk_env(101), dingtalk_env(102)]
-
-
-def test_scheduler_has_no_default_user_fallback():
-    from core.ai.scheduler import _sync_dingtalk
-
-    source = inspect.getsource(_sync_dingtalk)
-    assert "or [1]" not in source
-    assert "dingtalk_env" in source
 
 
 async def test_admin_jobs_and_metrics_are_scoped(client, admin_token):

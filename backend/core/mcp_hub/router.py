@@ -103,7 +103,7 @@ async def _load_server(user_id: int, server_id: int) -> McpServer:
         row = (await db.execute(
             select(McpServer).where(McpServer.id == server_id, McpServer.user_id == user_id)
         )).scalar_one_or_none()
-    if row is None:
+    if row is None or row.scope == "internal" or row.owner_plugin:
         raise HTTPException(status_code=404, detail="MCP server not found")
     return row
 
@@ -117,7 +117,13 @@ async def templates(user: dict = Depends(get_current_user)):
 async def list_servers(user: dict = Depends(get_current_user)):
     async with async_session() as db:
         rows = list((await db.execute(
-            select(McpServer).where(McpServer.user_id == user["id"]).order_by(McpServer.id)
+            select(McpServer)
+            .where(
+                McpServer.user_id == user["id"],
+                McpServer.scope != "internal",
+                McpServer.owner_plugin.is_(None),
+            )
+            .order_by(McpServer.id)
         )).scalars().all())
         counts = dict((await db.execute(
             select(McpTool.server_id, func.count(McpTool.id))
@@ -132,12 +138,15 @@ async def list_servers(user: dict = Depends(get_current_user)):
 @router.post("/servers")
 async def create_server(req: McpServerCreate, user: dict = Depends(get_current_user)):
     slug = _slugify(req.slug or req.name)
-    # Tool names are global. A shared "dingtalk" slug would mix users, so every
-    # DingTalk server is namespaced by owner.
     if slug.startswith("dingtalk") or "钉钉" in (req.name or ""):
-        slug = f"dingtalk-{user['id']}"
+        raise HTTPException(
+            status_code=403,
+            detail="钉钉由插件统一管理，不能注册为用户 MCP",
+        )
     if req.transport not in ("stdio", "http"):
         raise HTTPException(status_code=422, detail="transport must be stdio or http")
+    if req.scope == "internal":
+        raise HTTPException(status_code=403, detail="internal MCP servers are plugin-owned")
     # A stdio MCP can run any command inside the backend container, which would
     # break per-user isolation. Only admins may register them; normal users use
     # the built-in DingTalk binding or HTTP MCP servers.
@@ -186,6 +195,8 @@ async def create_server(req: McpServerCreate, user: dict = Depends(get_current_u
 async def update_server(server_id: int, req: McpServerUpdate, user: dict = Depends(get_current_user)):
     server = await _load_server(user["id"], server_id)
     fields = req.model_dump(exclude_unset=True)
+    if fields.get("scope") == "internal":
+        raise HTTPException(status_code=403, detail="internal MCP servers are plugin-owned")
     if not user.get("is_admin") and any(
         key in fields for key in ("transport", "command", "args", "scope")
     ):

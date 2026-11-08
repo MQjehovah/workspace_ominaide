@@ -9,7 +9,6 @@ from sqlalchemy import select
 from core.auth.dependencies import get_current_user
 from core.cos import collectors
 from core.database.session import async_session
-from core.workbench.dingtalk_actions import dingtalk_actions
 
 router = APIRouter(prefix="/api/workbench", tags=["workbench"])
 
@@ -193,4 +192,7 @@ async def get_dingtalk_actions(
     refresh: bool = False,
     user: dict = Depends(get_current_user),
 ):
-    return await dingtalk_actions(user["id"], refresh=refresh)
+    """Deprecated read-only alias for cached activity suggestions (no LLM)."""
+    from core.insights.service import list_suggestions
+
+    return {"items": await list_suggestions(user["id"], limit=5), "source": "cached"}

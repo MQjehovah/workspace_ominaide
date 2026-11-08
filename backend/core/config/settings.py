@@ -98,17 +98,6 @@ class Settings(BaseSettings):
     desktop_plugins_dir: str = "desktop_plugins"
     # Daily memory agent auto-approves candidates at or above this confidence.
     memory_auto_approve_threshold: int = 85
-    # Lightweight DingTalk message sync (no LLM) feeding the daily memory agent.
-    dingtalk_sync_enabled: bool = True
-    dingtalk_sync_hour: int = 1
-    dingtalk_sync_minute: int = 45
-    dingtalk_sync_hours: int = 24
-    dingtalk_sync_max_messages: int = 200
-    # DingTalk calendar mirror (no LLM). Keeps external source metadata.
-    dingtalk_calendar_sync_enabled: bool = True
-    dingtalk_calendar_sync_minutes: int = 15
-    dingtalk_calendar_days_before: int = 7
-    dingtalk_calendar_days_after: int = 90
     intelligence_layer_enabled: bool = True
     # Every user gets an isolated runtime directory: <workspace_root>/<user_id>.
     # projects/ holds coding projects, dingtalk/ holds that user's DWS config and

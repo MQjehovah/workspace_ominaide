@@ -132,22 +132,18 @@ async def update_schedule_event(user_id: int, args: dict) -> MCPCallResponse:
     if source == "dingtalk" and (start or payload_data.get("title") or payload_data.get("location")):
         if not external_id:
             return _err("该钉钉日程缺少 external_id，请先重新同步")
-        from core.paths import dingtalk_env
-        from mcp_servers.dingtalk.dws_client import DwSError, run_dws
+        from plugins.dingtalk.backend import api as dingtalk_api
 
-        cmd = ["calendar", "+update", "--event", external_id, "--format", "json", "--yes"]
-        if payload_data.get("title"):
-            cmd += ["--title", payload_data["title"]]
+        patch = {
+            "title": payload_data.get("title"),
+            "location": payload_data.get("location"),
+        }
         if start and end:
-            cmd += [
-                "--start", start.astimezone().isoformat(),
-                "--end", end.astimezone().isoformat(),
-            ]
-        if payload_data.get("location"):
-            cmd += ["--location", payload_data["location"]]
+            patch["start"] = start.astimezone().isoformat()
+            patch["end"] = end.astimezone().isoformat()
         try:
-            await run_dws(cmd, timeout=120, env=dingtalk_env(user_id))
-        except DwSError as e:
+            await dingtalk_api.update_calendar_event(user_id, external_id, patch)
+        except Exception as e:
             return _err(f"钉钉日程更新失败: {e}")
 
     payload = EventUpdate(**payload_data)
@@ -195,17 +191,11 @@ async def cancel_schedule_event(user_id: int, args: dict) -> MCPCallResponse:
         )
 
     if source == "dingtalk" and external_id:
-        from core.paths import dingtalk_env
-        from mcp_servers.dingtalk.dws_client import DwSError, run_dws
+        from plugins.dingtalk.backend import api as dingtalk_api
 
         try:
-            await run_dws(
-                ["calendar", "+cancel-event", "--event", external_id,
-                 "--format", "json", "--yes"],
-                timeout=120,
-                env=dingtalk_env(user_id),
-            )
-        except DwSError as e:
+            await dingtalk_api.cancel_calendar_event(user_id, external_id)
+        except Exception as e:
             return _err(f"钉钉日程取消失败: {e}")
 
     async with async_session() as db:

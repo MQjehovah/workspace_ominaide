@@ -65,7 +65,8 @@ async def run_dws(
     """Run ``dws`` as the user described by ``env``.
 
     Callers that act on a user's own DingTalk account MUST pass
-    ``core.paths.dingtalk_env(user_id)`` so config and token store stay isolated.
+    ``plugins.dingtalk.backend.paths.dingtalk_env(user_id)`` so config and token
+    store stay isolated.
     """
     stdout, stderr, returncode = await _execute(args, timeout, env)
     if returncode != 0:

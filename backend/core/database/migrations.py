@@ -109,6 +109,12 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("bots")}
             if "pinned_tools" not in cols:
                 result.append("bots_pinned_tools")
+        if "mcp_servers" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("mcp_servers")}
+            if "owner_plugin" not in cols:
+                result.append("mcp_servers_owner_plugin")
+            if "expose_tools" not in cols:
+                result.append("mcp_servers_expose_tools")
 
         if "projects" in table_names:
             cols = {c["name"] for c in inspector.get_columns("projects")}
@@ -179,6 +185,10 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE bot_runs ADD COLUMN parent_run_id INTEGER NULL"))
             elif table == "bots_pinned_tools":
                 await conn.execute(text("ALTER TABLE bots ADD COLUMN pinned_tools JSON NULL"))
+            elif table == "mcp_servers_owner_plugin":
+                await conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN owner_plugin VARCHAR(64) NULL"))
+            elif table == "mcp_servers_expose_tools":
+                await conn.execute(text(f"ALTER TABLE mcp_servers ADD COLUMN expose_tools BOOLEAN DEFAULT {bool_true}"))
             elif table == "bot_routines_spec":
                 await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN spec JSON NULL"))
             elif table == "bot_routines_spec_version":

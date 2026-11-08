@@ -215,6 +215,33 @@
                   </div>
                 </div>
               </el-form-item>
+              <el-form-item label="会话查看">
+                <div style="width:100%">
+                  <el-button size="small" @click="loadDingtalkConversations">刷新会话</el-button>
+                  <div class="dt-conv-list">
+                    <button
+                      v-for="c in dingtalkConversations"
+                      :key="c.conversation_id"
+                      type="button"
+                      class="dt-conv-item"
+                      :class="{ active: dingtalkActiveConv?.conversation_id === c.conversation_id }"
+                      @click="loadDingtalkMessages(c)"
+                    >
+                      <span class="dt-conv-name">{{ c.name }}</span>
+                      <span class="dt-conv-meta">{{ c.unread_count || 0 }} 未读</span>
+                    </button>
+                    <div v-if="!dingtalkConversations.length" class="dt-empty">还没有同步会话</div>
+                  </div>
+                  <div v-if="dingtalkActiveConv" class="dt-msg-panel">
+                    <div class="dt-msg-hd">{{ dingtalkActiveConv.name }}</div>
+                    <div v-for="m in dingtalkMessages" :key="m.id" class="dt-msg">
+                      <span class="dt-msg-sender">{{ m.sender || '未知' }}</span>
+                      <span class="dt-msg-text">{{ m.text }}</span>
+                    </div>
+                    <div v-if="!dingtalkMessages.length" class="dt-empty">暂无消息</div>
+                  </div>
+                </div>
+              </el-form-item>
               <el-form-item label="当前账号">
                 <pre style="margin:0;max-height:220px;overflow:auto;font-size:12px">{{ dingtalkStatusText }}</pre>
               </el-form-item>
@@ -325,11 +352,34 @@ let dingtalkTimer: number | undefined
 const dingtalkStatusText = computed(() =>
   JSON.stringify(dingtalk.value.status || {}, null, 2)
 )
+const dingtalkConversations = ref<any[]>([])
+const dingtalkMessages = ref<any[]>([])
+const dingtalkActiveConv = ref<any>(null)
+
+async function loadDingtalkConversations() {
+  try {
+    const res = await client.get('/plugins/dingtalk/conversations')
+    dingtalkConversations.value = res.data?.items || []
+  } catch {
+    dingtalkConversations.value = []
+  }
+}
+
+async function loadDingtalkMessages(conv: any) {
+  dingtalkActiveConv.value = conv
+  try {
+    const res = await client.get(`/plugins/dingtalk/conversations/${encodeURIComponent(conv.conversation_id)}/messages`)
+    dingtalkMessages.value = res.data?.items || []
+  } catch {
+    dingtalkMessages.value = []
+  }
+}
 
 async function fetchDingtalkStatus() {
   try {
-    const res = await client.get('/dingtalk/status')
+    const res = await client.get('/plugins/dingtalk/status')
     dingtalk.value = res.data
+    if (res.data?.authenticated) loadDingtalkConversations()
   } catch (e: any) {
     dingtalk.value.error = e.response?.data?.detail || '无法读取钉钉状态'
   }
@@ -337,7 +387,7 @@ async function fetchDingtalkStatus() {
 
 async function pollDingtalkLogin() {
   try {
-    const res = await client.get('/dingtalk/login/status')
+    const res = await client.get('/plugins/dingtalk/login/status')
     dingtalkLogin.value = res.data
     if (res.data.status === 'authorized') {
       stopDingtalkPolling()
@@ -360,7 +410,7 @@ function stopDingtalkPolling() {
 async function startDingtalkLogin() {
   dingtalkStarting.value = true
   try {
-    const res = await client.post('/dingtalk/login/start', {})
+    const res = await client.post('/plugins/dingtalk/login/start', {})
     dingtalkLogin.value = res.data
     stopDingtalkPolling()
     dingtalkTimer = window.setInterval(pollDingtalkLogin, 2500)
@@ -373,7 +423,7 @@ async function startDingtalkLogin() {
 
 async function logoutDingtalk() {
   try {
-    await client.post('/dingtalk/logout', {})
+    await client.post('/plugins/dingtalk/logout', {})
     dingtalkLogin.value = null
     stopDingtalkPolling()
     ElMessage.success('已解绑钉钉')

@@ -2,7 +2,7 @@
 
 
 def test_dingtalk_event_mapping():
-    from plugins.schedule.backend.dingtalk_sync import _event_time, _external_meta
+    from plugins.dingtalk.backend.sync_calendar import _event_time, _normalize
 
     raw = {
         "id": "evt-1",
@@ -19,8 +19,20 @@ def test_dingtalk_event_mapping():
 
     start = _event_time(raw["start"])
     assert start is not None and start.hour == 10
-    meta = _external_meta(raw, "6-5 会议室")
+    event = _normalize(raw)
+    assert event is not None
+    assert event["title"] == "面试"
+    meta = event["metadata"]
     assert meta["organizer"] == "钱飞飞"
-    assert meta["rooms"][0]["name"] == "6-5 会议室"
+    assert meta["rooms"][0] == "6-5 会议室"
     assert meta["meeting_room_code"] == "865 618 983"
-    assert meta["attendees"][0]["name"] == "季明清"
+    assert meta["attendees"][0]["displayName"] == "季明清"
+
+
+def test_dingtalk_event_fingerprint_changes_on_update():
+    from plugins.dingtalk.backend.sync_calendar import _fingerprint
+
+    base = {"title": "面试", "start": "2026-11-06T10:00:00", "status": "confirmed"}
+    assert _fingerprint(base) == _fingerprint(dict(base))
+    changed = dict(base, title="面试改期")
+    assert _fingerprint(base) != _fingerprint(changed)

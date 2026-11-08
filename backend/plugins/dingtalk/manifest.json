@@ -1,0 +1,22 @@
+{
+  "id": "dingtalk",
+  "name": "dingtalk",
+  "version": "1.0.0",
+  "title": "钉钉",
+  "description": "钉钉账号绑定、消息与日程同步、会话查看",
+  "icon": "ChatDotSquare",
+  "permissions": [
+    "dingtalk.account",
+    "dingtalk.messages.read",
+    "dingtalk.messages.send",
+    "dingtalk.calendar.read",
+    "dingtalk.calendar.write",
+    "dingtalk.todos.read",
+    "dingtalk.todos.write",
+    "dingtalk.contacts.read"
+  ],
+  "routes": {
+    "settings": "/settings?tab=dingtalk"
+  },
+  "tools": []
+}
