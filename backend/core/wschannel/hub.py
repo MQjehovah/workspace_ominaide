@@ -93,6 +93,10 @@ class HostChannelHub:
     def machine_name(self, machine_id: str) -> str:
         return self.machine_names.get(machine_id, machine_id)
 
+    def set_machine_name(self, machine_id: str, name: str) -> None:
+        if machine_id and name:
+            self.machine_names[machine_id] = name
+
     # -- sends (all outbound messages are channel-wrapped) ---------------------
 
     async def _send_ws(self, ws: WebSocket, channel: str, data: dict) -> bool:

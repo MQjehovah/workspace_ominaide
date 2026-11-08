@@ -1,27 +1,64 @@
-﻿from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+﻿from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
+
 from core.auth.dependencies import get_current_user
 from core.auth.jwt import decode_access_token
+from core.wschannel import machines as machine_service
 from core.wschannel.hub import host_channel
 
 router = APIRouter(tags=["wschannel"])
 
 
+class RenameMachineRequest(BaseModel):
+    name: str = Field(default="", max_length=120)
+
+
+def _machine_out(row, online_ids: set[str]) -> dict:
+    return {
+        "machine_id": row.machine_id,
+        "name": row.display_name(),
+        "default_name": row.default_name,
+        "platform": row.platform or "desktop",
+        "status": "online" if row.machine_id in online_ids else "offline",
+        "online": row.machine_id in online_ids,
+        "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+    }
+
+
 @router.get("/api/vibecoding/machines")
 async def list_vibecoding_machines(user: dict = Depends(get_current_user)):
-    """Connected desktop machines for the current user.
-
-    The Hub only knows live WebSocket machines; after a backend restart the
-    desktop reconnects and repopulates this list.
-    """
-    return [
-        {
+    """Known desktop machines for the current user, including offline ones."""
+    online_ids = set(host_channel.machine_ids(user["id"]))
+    rows = await machine_service.list_machines(user["id"])
+    out = [_machine_out(row, online_ids) for row in rows]
+    known = {row.machine_id for row in rows}
+    # A connection that beat the DB write should still be visible.
+    for machine_id in online_ids - known:
+        out.append({
             "machine_id": machine_id,
             "name": host_channel.machine_name(machine_id),
+            "default_name": host_channel.machine_name(machine_id),
             "platform": "desktop",
             "status": "online",
-        }
-        for machine_id in host_channel.machine_ids(user["id"])
-    ]
+            "online": True,
+            "last_seen": None,
+        })
+    out.sort(key=lambda item: (not item["online"], item["name"].lower()))
+    return out
+
+
+@router.put("/api/vibecoding/machines/{machine_id}")
+async def rename_machine(
+    machine_id: str,
+    req: RenameMachineRequest,
+    user: dict = Depends(get_current_user),
+):
+    row = await machine_service.rename(user["id"], machine_id, req.name)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    if machine_id in host_channel.machine_ids(user["id"]):
+        host_channel.set_machine_name(machine_id, row.display_name())
+    return _machine_out(row, set(host_channel.machine_ids(user["id"])))
 
 
 @router.websocket("/ws/host")
@@ -63,9 +100,16 @@ async def host_channel_ws(websocket: WebSocket):
     if not machine_id:
         await websocket.close(code=4003)
         return
-    name = websocket.query_params.get("machine_name") or machine_id
+    default_name = websocket.query_params.get("machine_name") or machine_id
+    try:
+        display_name = await machine_service.register(
+            user_id, machine_id, default_name
+        )
+    except Exception:
+        display_name = default_name
+
     await websocket.accept()
-    await host_channel.connect_machine(user_id, machine_id, name, websocket)
+    await host_channel.connect_machine(user_id, machine_id, display_name, websocket)
     try:
         while True:
             msg = await websocket.receive_json()
@@ -79,3 +123,4 @@ async def host_channel_ws(websocket: WebSocket):
         pass
     finally:
         await host_channel.disconnect_machine(user_id, machine_id)
+        await machine_service.touch(user_id, machine_id)

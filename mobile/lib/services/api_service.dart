@@ -387,6 +387,11 @@ class ApiService {
     }
   }
 
+  Future<void> renameVibecodingMachine(String machineId, String name) async {
+    final res = await put('/vibecoding/machines/$machineId', {'name': name});
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
   Future<List<dynamic>> listVibecodingMachines() async {
     try {
       final res = await _http.get(

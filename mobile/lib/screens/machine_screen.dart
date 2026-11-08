@@ -32,6 +32,59 @@ class _MachineScreenState extends State<MachineScreen> {
     });
   }
 
+  Future<void> _rename(Map<String, dynamic> machine) async {
+    final controller = TextEditingController(
+      text: (machine['name'] ?? '').toString(),
+    );
+    final value = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重命名本地机器'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '名称',
+            hintText: '留空恢复默认主机名',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) return;
+    try {
+      await ApiService().renameVibecodingMachine(
+        (machine['machine_id'] ?? '').toString(),
+        value,
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('名称已更新')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('改名失败：${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
+  int get _onlineCount => _machines.where((raw) {
+        if (raw is! Map) return false;
+        return raw['online'] == true || raw['status'] == 'online';
+      }).length;
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -43,7 +96,7 @@ class _MachineScreenState extends State<MachineScreen> {
             PageHeader(
               kicker: 'Machines',
               title: '本地机器',
-              subtitle: '${_machines.length} 台在线',
+              subtitle: '${_machines.length} 台 · $_onlineCount 在线',
               actions: [
                 RoundIconButton(
                   icon: Icons.arrow_back_rounded,
@@ -85,9 +138,19 @@ class _MachineScreenState extends State<MachineScreen> {
                                     ? raw.map((k, v) => MapEntry(k.toString(), v))
                                     : <String, dynamic>{};
                                 final name = (machine['name'] ??
+                                        machine['default_name'] ??
                                         machine['machine_id'] ??
                                         '本地机器')
                                     .toString();
+                                final online = machine['online'] == true ||
+                                    machine['status'] == 'online';
+                                final platform = (machine['platform'] ?? 'desktop')
+                                    .toString();
+                                final lastSeen = (machine['last_seen'] ?? '')
+                                    .toString();
+                                final seenShort = lastSeen.length > 16
+                                    ? lastSeen.substring(0, 16)
+                                    : lastSeen;
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: AppCard(
@@ -123,10 +186,9 @@ class _MachineScreenState extends State<MachineScreen> {
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                (machine['platform'] ??
-                                                        machine['machine_id'] ??
-                                                        '')
-                                                    .toString(),
+                                                online
+                                                    ? platform
+                                                    : '$platform · 离线${seenShort.isNotEmpty ? ' $seenShort' : ''}',
                                                 style: TextStyle(
                                                   fontSize: 10.5,
                                                   color: palette.muted,
@@ -135,10 +197,18 @@ class _MachineScreenState extends State<MachineScreen> {
                                             ],
                                           ),
                                         ),
+                                        IconButton(
+                                          onPressed: () => _rename(machine),
+                                          icon: const Icon(Icons.edit_outlined,
+                                              size: 16),
+                                          tooltip: '重命名',
+                                          visualDensity: VisualDensity.compact,
+                                        ),
                                         SourcePill(
-                                          label: (machine['status'] ?? '在线')
-                                              .toString(),
-                                          color: palette.success,
+                                          label: online ? '在线' : '离线',
+                                          color: online
+                                              ? palette.success
+                                              : palette.muted,
                                         ),
                                       ],
                                     ),
