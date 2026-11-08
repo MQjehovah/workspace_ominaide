@@ -48,6 +48,12 @@ DEFAULT_PINNED_TOOLS = {
     "local_grep",
 }
 
+GATEWAY_INSTRUCTION = (
+    "可用工具很多，未直接列出的能力必须先调用 tool_search 检索，再用 tool_call 调用。"
+    "不要臆造工具名或参数。本地机器或本地 MCP 工具使用 scope=local 或 scope=all。"
+    "tool_call 的审批按底层真实工具执行。"
+)
+
 _LOCAL_PREFIX = "local:"
 _ID_PREFIXES = ("builtin:", "plugin:", "mcp:")
 
@@ -58,6 +64,10 @@ def _ok(text: str) -> MCPCallResponse:
 
 def _err(text: str) -> MCPCallResponse:
     return MCPCallResponse(isError=True, content=[MCPContent(text=text)])
+
+
+def gateway_instruction() -> str | None:
+    return GATEWAY_INSTRUCTION if settings.tool_gateway_enabled else None
 
 
 def canonical_id(tool: MCPTool) -> str:

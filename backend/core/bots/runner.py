@@ -22,7 +22,11 @@ from openai import AsyncOpenAI
 from sqlalchemy import select, update
 
 from core.ai.agent import _serialize_result, _to_openai_tools
-from core.ai.mcp.gateway import display_target, select_exposed_tools
+from core.ai.mcp.gateway import (
+    display_target,
+    gateway_instruction,
+    select_exposed_tools,
+)
 from core.ai.mcp.registry import tool_registry
 from core.bots import policy
 from core.bots.context import (
@@ -458,6 +462,9 @@ async def _default_messages(user_id: int, bot: Bot, prompt: str) -> list[dict]:
     persona = bot.system_prompt or settings.assistant_system_prompt
     if persona:
         messages.append({"role": "system", "content": persona})
+    instruction = gateway_instruction()
+    if instruction:
+        messages.append({"role": "system", "content": instruction})
     ctx = await build_bot_context(user_id, bot, prompt)
     if ctx:
         messages.append({"role": "system", "content": ctx})

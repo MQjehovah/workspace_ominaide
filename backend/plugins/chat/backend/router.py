@@ -145,6 +145,11 @@ async def build_messages(
     )
     if persona and persona_text:
         messages.append({"role": "system", "content": persona_text})
+    from core.ai.mcp.gateway import gateway_instruction
+
+    instruction = gateway_instruction()
+    if instruction:
+        messages.append({"role": "system", "content": instruction})
     if extra_system:
         messages.append({"role": "system", "content": extra_system})
     t_ctx = time.monotonic()
