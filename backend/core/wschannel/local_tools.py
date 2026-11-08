@@ -285,7 +285,7 @@ async def wait_job(
     """Return output events after ``cursor`` and the next cursor."""
     job = _get_job(user_id, job_id)
     cursor = max(0, int(cursor))
-    wait_seconds = min(max(int(wait_seconds), 1), 60)
+    wait_seconds = min(max(int(wait_seconds), 1), 300)
     deadline = time.monotonic() + wait_seconds
     while len(job.events) <= cursor and job.running:
         remaining = deadline - time.monotonic()

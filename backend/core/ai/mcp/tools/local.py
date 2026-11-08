@@ -154,9 +154,9 @@ async def local_shell_wait(user_id: int, args: dict) -> MCPCallResponse:
     except (TypeError, ValueError):
         cursor = 0
     try:
-        wait_seconds = int(args.get("wait_seconds") or 20)
+        wait_seconds = int(args.get("wait_seconds") or 60)
     except (TypeError, ValueError):
-        wait_seconds = 20
+        wait_seconds = 60
 
     try:
         job, events, next_cursor = await local_tools.wait_job(
@@ -548,7 +548,7 @@ TOOLS = [
                     },
                     "wait_seconds": {
                         "type": "integer",
-                        "description": "等待秒数，默认 20，最大 60",
+                        "description": "等待秒数，默认 60，最大 300；长任务建议用 300 减少轮次",
                     },
                 },
                 "required": ["job_id"],
