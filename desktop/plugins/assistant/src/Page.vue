@@ -1874,7 +1874,7 @@ const suggestions = [
 
       <div ref="msgsRef" class="msgs" @click="onMsgsClick" @scroll.passive="onMsgsScroll">
         <template v-if="current">
-          <div v-for="m in current.messages" :id="'msg-' + m.id" :key="m.id" class="msg" :class="[m.role, { flash: flashId === m.id }]">
+          <div v-for="m in current.messages" :id="'msg-' + m.id" :key="m.id" class="msg" :class="[m.role, { flash: flashId === m.id, running: m.pending }]">
             <template v-if="m.role === 'user'">
               <div class="msg-user-label">你</div>
               <div class="user-text">{{ m.text }}</div>
@@ -1916,7 +1916,7 @@ const suggestions = [
                 <span class="pending-text">思考中…</span>
               </div>
               <div v-if="m.error" class="error-bubble">{{ m.error }}</div>
-              <div v-if="m.text" class="asst-bubble">
+              <div v-if="m.text" class="asst-bubble" :class="{ running: m.pending }">
                 <div class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
               </div>
               <div v-if="m.usage" class="msg-usage">{{ formatUsage(m) }}</div>
@@ -3235,6 +3235,26 @@ const suggestions = [
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: 14px 14px 14px 3px;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.asst-bubble.running {
+  border-color: rgba(108, 92, 231, .42);
+  animation: bubbleGlow 2.4s ease-in-out infinite;
+}
+@keyframes bubbleGlow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(108, 92, 231, .08), 0 0 16px rgba(108, 92, 231, .08); }
+  50% { box-shadow: 0 0 0 1px rgba(0, 210, 255, .18), 0 0 30px rgba(108, 92, 231, .22); }
+}
+.asst-bubble.running .md::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent2);
+  animation: caretBlink 1s steps(2) infinite;
+}
+@keyframes caretBlink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 /* reasoning */
@@ -3303,6 +3323,19 @@ const suggestions = [
 .step-hd:hover { background: var(--bg4); }
 .step-icon { color: var(--dim); font-size: 13px; width: 14px; text-align: center; }
 .step.running .step-icon { color: var(--amber); animation: spin 1s linear infinite; display: inline-block; }
+.step.running {
+  border-color: rgba(251, 191, 36, .28);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, .06), 0 0 18px rgba(251, 191, 36, .08);
+}
+.step.running .step-hd {
+  background: linear-gradient(100deg, var(--bg3) 0%, rgba(251, 191, 36, .10) 45%, var(--bg3) 90%);
+  background-size: 220% 100%;
+  animation: stepShimmer 1.8s linear infinite;
+}
+@keyframes stepShimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 .step.done .step-icon { color: var(--green); }
 .step.error .step-icon { color: var(--red); }
@@ -3341,10 +3374,19 @@ const suggestions = [
 
 /* pending */
 .pending {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 12px 2px;
+  gap: 7px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(108, 92, 231, .22);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(108, 92, 231, .10), rgba(0, 210, 255, .04));
+  animation: pendingPulse 1.8s ease-in-out infinite;
+}
+@keyframes pendingPulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(108, 92, 231, .06); }
+  50% { box-shadow: 0 0 0 1px rgba(0, 210, 255, .16), 0 0 20px rgba(108, 92, 231, .12); }
 }
 .pdot {
   width: 7px; height: 7px; border-radius: 50%;
