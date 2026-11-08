@@ -1820,7 +1820,9 @@ const suggestions = [
                 <span class="pending-text">思考中…</span>
               </div>
               <div v-if="m.error" class="error-bubble">{{ m.error }}</div>
-              <div v-if="m.text" class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
+              <div v-if="m.text" class="asst-bubble">
+                <div class="md" :class="{ clipped: m.collapsed }" v-html="m.html"></div>
+              </div>
               <div v-if="m.usage" class="msg-usage">{{ formatUsage(m) }}</div>
               <div class="msg-actions">
                 <button title="复制" @click="copyText(m)">⧉ 复制</button>
@@ -2713,7 +2715,7 @@ const suggestions = [
   content: '';
   position: absolute;
   left: 0; right: 0; bottom: 0; height: 60px;
-  background: linear-gradient(to top, var(--bg), transparent);
+  background: linear-gradient(to top, var(--bg3), transparent);
   pointer-events: none;
 }
 
@@ -3041,17 +3043,31 @@ const suggestions = [
   color: var(--dim);
   margin-bottom: 5px;
   font-weight: 600;
+  text-align: right;
 }
+.msg.user { text-align: right; }
 .user-text {
+  display: inline-block;
+  max-width: min(760px, 82%);
+  text-align: left;
   font-size: 14px;
-  color: var(--text);
-  padding: 9px 13px;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  border-top-left-radius: 2px;
+  color: #fff;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #6c5ce7, #5a4bd1);
+  border: 1px solid rgba(108, 92, 231, .45);
+  border-radius: 14px 14px 3px 14px;
   white-space: pre-wrap;
   word-break: break-word;
+  box-shadow: 0 2px 10px rgba(108, 92, 231, .18);
+}
+
+.asst-bubble {
+  display: inline-block;
+  max-width: min(780px, 92%);
+  padding: 10px 14px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 14px 14px 14px 3px;
 }
 
 /* reasoning */
