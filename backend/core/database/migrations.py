@@ -31,6 +31,22 @@ async def ensure_schema_migrations():
             await conn.execute(text("ALTER TABLE connector_accounts RENAME TO oauth_accounts"))
             table_names.discard("connector_accounts")
             table_names.add("oauth_accounts")
+        elif "connector_accounts" in table_names and "oauth_accounts" in table_names:
+            # create_all creates the new table before migrations run, so copy
+            # any existing accounts over and drop the old table.
+            await conn.execute(text(
+                "INSERT INTO oauth_accounts "
+                "(user_id, provider, account_id, email, name, access_token, "
+                "refresh_token, scopes, expires_at, status, created_at, updated_at) "
+                "SELECT c.user_id, c.provider, c.account_id, c.email, c.name, "
+                "c.access_token, c.refresh_token, c.scopes, c.expires_at, c.status, "
+                "c.created_at, c.updated_at FROM connector_accounts c "
+                "WHERE NOT EXISTS (SELECT 1 FROM oauth_accounts o "
+                "WHERE o.user_id = c.user_id AND o.provider = c.provider "
+                "AND o.account_id = c.account_id)"
+            ))
+            await conn.execute(text("DROP TABLE connector_accounts"))
+            table_names.discard("connector_accounts")
         if "plugin_registry" in table_names:
             await conn.execute(text(
                 "UPDATE plugin_registry SET name = 'sources', title = '资讯' "
