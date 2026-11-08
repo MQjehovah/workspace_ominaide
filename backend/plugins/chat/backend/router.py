@@ -387,33 +387,67 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
     await save_message(user["id"], "user", req.message, session_id, bot=bot)
 
     async def event_stream():
-        reply_parts = []
+        reply_parts: list[str] = []
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(session_id)
+        queue: asyncio.Queue = asyncio.Queue()
+        done_marker = object()
+
+        async def produce():
+            try:
+                async for event in run_agent_stream(
+                    user["id"],
+                    messages,
+                    tools_filter=bot.allowed_tools,
+                    max_turns=bot.max_turns or 60,
+                    model=bot.model,
+                    temperature=bot.temperature if bot.temperature is not None else 0.7,
+                ):
+                    await queue.put(event)
+            except Exception as e:
+                await queue.put(
+                    f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+                )
+            finally:
+                await queue.put(done_marker)
+
+        producer = asyncio.create_task(produce())
+        sent_done = False
         try:
-            async for event in run_agent_stream(
-                user["id"],
-                messages,
-                tools_filter=bot.allowed_tools,
-                max_turns=bot.max_turns or 60,
-                model=bot.model,
-                temperature=bot.temperature if bot.temperature is not None else 0.7,
-            ):
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    # Keep the SSE connection alive during long tool calls or
+                    # desktop approvals; mobile clients time out after 90s idle.
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                    continue
+                if event is done_marker:
+                    break
                 if event.startswith("data: "):
                     try:
                         payload = json.loads(event[6:].strip())
                         if payload.get("type") == "token":
                             reply_parts.append(payload.get("content", ""))
+                        elif payload.get("type") == "done":
+                            sent_done = True
                     except Exception:
                         pass
                 yield event
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            if not sent_done:
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
         finally:
+            if not producer.done():
+                producer.cancel()
+                try:
+                    await producer
+                except asyncio.CancelledError:
+                    pass
             reset_current_session_id(session_token)
             reset_current_bot_id(token)
-            await save_message(user["id"], "assistant", "".join(reply_parts), session_id, bot=bot)
+            await save_message(
+                user["id"], "assistant", "".join(reply_parts), session_id, bot=bot
+            )
 
     return StreamingResponse(
         event_stream(),

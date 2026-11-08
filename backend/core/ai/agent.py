@@ -192,7 +192,7 @@ async def run_agent_stream(
                 user_id,
                 type("Req", (), {"name": name, "arguments": func_args})(),
             )
-            content = json.dumps(result.data, ensure_ascii=False) if hasattr(result, "data") else str(result)
+            content = _serialize_result(result)
             is_err = bool(getattr(result, "isError", False) or getattr(result, "is_error", False))
             yield f"data: {json.dumps({'type': 'tool_result', 'name': name, 'content': content, 'error': is_err}, ensure_ascii=False)}\n\n"
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": content})
