@@ -1691,9 +1691,9 @@ const suggestions = [
   <div class="console" :class="{ 'sidebar-hidden': !sidebar }">
     <aside v-if="sidebar" class="sidebar">
       <div class="sidebar-head">
-        <span class="brand"><span class="brand-mark">⌘</span> AI 控制台</span>
-        <button class="icon-btn" title="新建会话 (Ctrl+O)" @click="newSession">＋</button>
+        <span class="brand"><span class="brand-mark">⌘</span> AI 助理</span>
       </div>
+      <button class="new-session-btn" title="新建会话 (Ctrl+O)" @click="newSession">＋ 新建会话</button>
       <div class="sidebar-search">
         <input v-model="sessionQuery" class="s-search" placeholder="搜索会话…" />
       </div>
@@ -1719,8 +1719,7 @@ const suggestions = [
         <div v-if="filteredSessions.length === 0" class="session-empty">{{ sessions.length ? '没有匹配的任务' : '暂无会话' }}</div>
       </div>
       <div class="sidebar-foot">
-        <span class="model-badge" :title="cfg.baseUrl">{{ cfg.model }}</span>
-        <button class="foot-btn" @click="openSettings">⚙ 设置</button>
+        <span class="sync-state"><span class="sync-dot"></span> 会话自动同步</span>
       </div>
     </aside>
 
@@ -1744,12 +1743,9 @@ const suggestions = [
           </span>
         </div>
         <div class="head-right">
-          <button class="icon-btn" title="新建任务 (Ctrl+O)" @click="newSession">＋</button>
-          <button class="icon-btn" title="历史提问" @click="openDetail('history')">⏱</button>
-          <button class="icon-btn" :class="{ active: detailOpen }" title="详情面板 (Ctrl+P)" @click="detailOpen = !detailOpen; if (detailOpen) detailTab = 'process'">▤</button>
-          <button class="icon-btn" title="MCP / 技能管理" @click="openAgentSettings('mcp')">🧩</button>
+          <button class="icon-btn" :class="{ active: detailOpen }" title="详情 / 历史 (Ctrl+P)" @click="detailOpen = !detailOpen; if (detailOpen) detailTab = 'process'">▤</button>
           <button class="icon-btn" title="打开命令面板 (Ctrl+K)" @click="openPalette">⌘</button>
-          <button class="icon-btn" title="设置" @click="openSettings">⚙</button>
+          <button class="icon-btn" title="设置 / MCP / 技能" @click="openSettings">⚙</button>
           <button class="icon-btn close" title="关闭" @click="close">×</button>
         </div>
       </header>
@@ -2280,6 +2276,26 @@ const suggestions = [
   justify-content: space-between;
   padding: 14px 14px 10px;
 }
+.new-session-btn {
+  margin: 0 12px 10px;
+  height: 36px;
+  border: 1px solid rgba(108, 92, 231, .35);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(108, 92, 231, .22), rgba(0, 210, 255, .08));
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: border-color .12s ease, background .12s ease;
+}
+.new-session-btn:hover {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, rgba(108, 92, 231, .32), rgba(0, 210, 255, .12));
+}
 .brand { font-size: 13px; font-weight: 700; letter-spacing: .3px; color: var(--text); }
 .brand-mark { color: var(--accent2); margin-right: 2px; }
 .session-list { flex: 1; overflow-y: auto; padding: 0 8px; }
@@ -2333,11 +2349,13 @@ const suggestions = [
 .sidebar-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
   padding: 12px 14px;
   border-top: 1px solid var(--border);
 }
+.sync-state { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); }
+.sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
 .model-badge {
   font-size: 11px;
   color: var(--accent2);
