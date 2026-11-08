@@ -78,6 +78,7 @@ const paletteIdx = ref(0)
 const toastMsg = ref('')
 const listening = ref(false)
 const composing = ref(false)
+const toolPopover = ref<{ msgId: number; x: number; y: number } | null>(null)
 const detailOpen = ref(false)
 const detailTab = ref<'process' | 'history' | 'skills' | 'deliverables'>('process')
 const statusFilter = ref<'all' | 'running' | 'done' | 'error'>('all')
@@ -725,6 +726,7 @@ function ensureSession(): Session {
 }
 
 function newSession() {
+  toolPopover.value = null
   const s = createSession()
   sessions.value.unshift(s)
   currentId.value = s.id
@@ -736,6 +738,7 @@ function newSession() {
 
 async function switchSession(id: string) {
   if (id === currentId.value) return
+  toolPopover.value = null
   currentId.value = id
   input.value = ''
   await loadCloudMessages(current.value, true)
@@ -1759,6 +1762,7 @@ onMounted(async () => {
     if (N && N.permission === 'default') N.requestPermission()
   } catch { /* ignore */ }
   window.addEventListener('keydown', onGlobalKey)
+  document.addEventListener('click', onDocClickTool)
   nextTick(() => {
     inputRef.value?.focus()
     setTimeout(() => scrollBottom(true), 80)
@@ -1768,6 +1772,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKey)
+  document.removeEventListener('click', onDocClickTool)
   clearInterval(approvalTimer)
   renderTimers.forEach(t => clearTimeout(t))
   clearTimeout(persistTimer)
@@ -1789,8 +1794,45 @@ function runningStep(m: Msg): Step | undefined {
 }
 
 function visibleTimeline(m: Msg): TimelineItem[] {
-  // Tool calls live in the compact summary; full details are in the process panel.
+  // Tool calls live in the compact summary; full details are in the popover.
   return m.timeline.filter(tl => tl.kind !== 'tool')
+}
+
+function currentStep(m: Msg): Step | undefined {
+  return runningStep(m) || [...m.steps].reverse().find(s => s.status !== 'running')
+}
+
+const toolPopoverMsg = computed(() => {
+  const msgId = toolPopover.value?.msgId
+  if (!msgId) return null
+  return current.value?.messages.find(m => m.id === msgId) || null
+})
+
+const toolPopoverStep = computed(() =>
+  toolPopoverMsg.value ? currentStep(toolPopoverMsg.value) : undefined
+)
+
+function toggleToolPopover(m: Msg, e: MouseEvent) {
+  if (toolPopover.value?.msgId === m.id) {
+    toolPopover.value = null
+    return
+  }
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const width = Math.min(420, window.innerWidth - 24)
+  const height = 340
+  const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
+  let top = rect.bottom + 8
+  if (top + height > window.innerHeight - 12) {
+    top = Math.max(12, rect.top - height - 8)
+  }
+  toolPopover.value = { msgId: m.id, x: left, y: top }
+}
+
+function onDocClickTool(e: MouseEvent) {
+  if (!toolPopover.value) return
+  const el = e.target as HTMLElement
+  if (el.closest('.tool-summary') || el.closest('.tool-popover')) return
+  toolPopover.value = null
 }
 
 function prettyJson(args: any): string {
@@ -1929,13 +1971,13 @@ const suggestions = [
                 </div>
               </div>
 
-              <div v-if="m.steps.length" class="tool-summary" @click="openDetail('process')">
+              <button v-if="m.steps.length" type="button" class="tool-summary" @click.stop="toggleToolPopover(m, $event)">
                 <span class="tool-summary-dot" :class="{ running: !!runningStep(m) }"></span>
                 <span class="tool-summary-text">
-                  {{ runningStep(m) ? `正在执行 · ${runningStep(m)!.name}` : `已完成 ${m.steps.length} 个工具调用` }}
+                  {{ runningStep(m) ? `执行中 · ${runningStep(m)!.name}` : `${m.steps.length} 个工具调用` }}
                 </span>
-                <span class="tool-summary-link">查看过程 ›</span>
-              </div>
+                <span class="tool-summary-link">详情</span>
+              </button>
               <div v-if="m.pending && !m.text && m.timeline.length === 0" class="pending">
                 <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
                 <span class="pending-text">思考中…</span>
@@ -2012,6 +2054,31 @@ const suggestions = [
         </div>
       </div>
     </main>
+
+    <div v-if="toolPopover && toolPopoverStep" class="tool-popover" :style="{ left: toolPopover.x + 'px', top: toolPopover.y + 'px' }" @click.stop>
+      <div class="tool-popover-hd">
+        <span class="tool-popover-name">{{ toolPopoverStep.name }}</span>
+        <span class="tool-popover-status" :class="toolPopoverStep.status">
+          {{ toolPopoverStep.status === 'running' ? '执行中' : toolPopoverStep.status === 'error' ? '失败' : '完成' }}
+        </span>
+        <button class="tool-popover-close" @click="toolPopover = null">×</button>
+      </div>
+      <div class="tool-popover-row">
+        <span class="tool-popover-label">参数</span>
+        <pre class="tool-popover-pre">{{ prettyJson(toolPopoverStep.args) }}</pre>
+      </div>
+      <div v-if="toolPopoverStep.result" class="tool-popover-row">
+        <span class="tool-popover-label">结果</span>
+        <pre class="tool-popover-pre" :class="{ err: toolPopoverStep.status === 'error' }">{{ toolPopoverStep.result }}</pre>
+      </div>
+      <div v-else-if="toolPopoverStep.status === 'running'" class="tool-popover-running">
+        <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
+        工具正在执行…
+      </div>
+      <div v-if="toolPopoverMsg && toolPopoverMsg.steps.length > 1" class="tool-popover-foot">
+        共 {{ toolPopoverMsg.steps.length }} 个工具调用，显示当前最新一条
+      </div>
+    </div>
 
     <template v-if="detailOpen">
       <div class="detail-backdrop" @click="detailOpen = false"></div>
@@ -3401,22 +3468,51 @@ const suggestions = [
 .tool-summary {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  max-width: min(100%, 520px);
   margin: 2px 0 10px;
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--bg2);
   color: var(--dim);
+  font: inherit;
   font-size: 11.5px;
   cursor: pointer;
+  text-align: left;
   transition: border-color .12s ease, color .12s ease;
 }
 .tool-summary:hover { border-color: var(--accent); color: var(--text); }
 .tool-summary-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
 .tool-summary-dot.running { background: var(--amber); box-shadow: 0 0 8px var(--amber); animation: pulse 1.2s infinite; }
-.tool-summary-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
-.tool-summary-link { color: var(--accent2); margin-left: 2px; flex-shrink: 0; }
+.tool-summary-text { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-summary-link { color: var(--accent2); flex-shrink: 0; }
+
+.tool-popover {
+  position: fixed;
+  z-index: 120;
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(360px, calc(100vh - 100px));
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
+}
+.tool-popover-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tool-popover-name { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; color: var(--text); font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-popover-status { flex-shrink: 0; font-size: 10.5px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(47, 214, 165, .1); border: 1px solid rgba(47, 214, 165, .25); }
+.tool-popover-status.running { color: var(--amber); background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .28); }
+.tool-popover-status.error { color: var(--red); background: rgba(244, 104, 109, .1); border-color: rgba(244, 104, 109, .28); }
+.tool-popover-close { width: 24px; height: 24px; border: none; border-radius: 7px; background: transparent; color: var(--dim); font-size: 16px; cursor: pointer; flex-shrink: 0; }
+.tool-popover-close:hover { background: var(--bg4); color: var(--text); }
+.tool-popover-row { margin-bottom: 8px; }
+.tool-popover-label { display: block; font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.tool-popover-pre { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; line-height: 1.55; color: #b7c1d4; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; }
+.tool-popover-pre.err { color: var(--red); }
+.tool-popover-running { display: flex; align-items: center; gap: 6px; padding: 6px 0 2px; font-size: 11.5px; color: var(--dim); }
+.tool-popover-foot { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--dim); }
 
 .pending {
   display: inline-flex;
