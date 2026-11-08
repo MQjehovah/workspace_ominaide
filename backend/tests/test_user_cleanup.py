@@ -48,8 +48,12 @@ class _FakeMinio:
 
 async def _seed_user_data(user_id: int) -> None:
     from core.ai.insight_models import DailyInsight
-    from core.bots.models import Bot, BotRun, BotRunStep
+    from core.automation.models import AutomationRun
+    from core.bots.models import (
+        Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
+    )
     from core.coding.models import CodingRun
+    from core.skills.models import BotSkill
     from core.database.session import async_session
     from core.events.models import UserActivity
     from core.jobs.models import BackgroundJob
@@ -75,6 +79,19 @@ async def _seed_user_data(user_id: int) -> None:
         db.add(run)
         await db.flush()
         db.add(BotRunStep(run_id=run.id, seq=1, type="tool", tool_name="x"))
+        db.add(BotMemory(bot_id=bot.id, user_id=user_id, content="m"))
+        db.add(BotSkill(bot_id=bot.id, user_id=user_id, skill_key="daily-brief"))
+        db.add(BotApproval(
+            run_id=run.id, bot_id=bot.id, user_id=user_id,
+            tool_name="local_shell", risk_level="exec",
+        ))
+        routine = BotRoutine(bot_id=bot.id, user_id=user_id, name="r")
+        db.add(routine)
+        await db.flush()
+        db.add(AutomationRun(
+            routine_id=routine.id, user_id=user_id, trigger_type="manual",
+            status="done", idempotency_key=f"test-{user_id}",
+        ))
         db.add(CodingRun(run_id=run.id, user_id=user_id, project_path="/tmp/x"))
 
         server = McpServer(
@@ -173,8 +190,12 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
 
     from core.ai.insight_models import DailyInsight
     from core.auth.domain.models import User
-    from core.bots.models import Bot, BotRun, BotRunStep
+    from core.automation.models import AutomationRun
+    from core.bots.models import (
+        Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
+    )
     from core.coding.models import CodingRun
+    from core.skills.models import BotSkill
     from core.database.session import async_session
     from core.events.models import UserActivity
     from core.jobs.models import BackgroundJob
@@ -195,7 +216,8 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
             select(User.id).where(User.id == user_id)
         )).scalar_one_or_none() is None
         for model in (
-            Bot, BotRun, BotRunStep, CodingRun, McpServer, McpTool,
+            Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
+            BotSkill, AutomationRun, CodingRun, McpServer, McpTool,
             File, Playlist, PlaylistItem, ContentSource, ContentItem,
             SyncFolder, SyncEvent, Project, PluginNote, PluginTodoItem,
             Event, BackgroundJob, UserActivity, RequestTrace,

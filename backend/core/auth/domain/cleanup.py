@@ -12,7 +12,9 @@ import shutil
 from sqlalchemy import delete, select, update
 
 from core.auth.domain.models import User
-from core.bots.models import BotRun, BotRunStep
+from core.bots.models import Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep
+from core.skills.models import BotSkill
+from core.automation.models import AutomationRun
 from core.database.session import async_session
 from core.logging import get_logger
 from core.mcp_hub.models import McpServer, McpTool
@@ -198,7 +200,15 @@ async def _delete_db_rows(user_id: int) -> None:
             .values(parent_id=None)
         )
 
-        # Child tables that do not carry user_id themselves.
+        # Bot ownership graph. These rows all carry user_id, but deleting them
+        # explicitly keeps the order safe even if a child table was added
+        # without a cascade or the generic loop changes.
+        await db.execute(
+            delete(BotApproval).where(BotApproval.user_id == user_id)
+        )
+        await db.execute(
+            delete(AutomationRun).where(AutomationRun.user_id == user_id)
+        )
         await db.execute(
             delete(BotRunStep).where(
                 BotRunStep.run_id.in_(
@@ -206,6 +216,11 @@ async def _delete_db_rows(user_id: int) -> None:
                 )
             )
         )
+        await db.execute(delete(BotSkill).where(BotSkill.user_id == user_id))
+        await db.execute(delete(BotMemory).where(BotMemory.user_id == user_id))
+        await db.execute(delete(BotRoutine).where(BotRoutine.user_id == user_id))
+        await db.execute(delete(BotRun).where(BotRun.user_id == user_id))
+        await db.execute(delete(Bot).where(Bot.user_id == user_id))
         await db.execute(
             delete(McpTool).where(
                 McpTool.server_id.in_(
