@@ -73,6 +73,25 @@ local_shell_cancel(job_id="...")
 }
 ```
 
+## 本地 MCP 代理
+
+桌面端可以管理本地 MCP 服务器（stdio / HTTP），它们的工具会自动通过
+`/ws/host` 的 `local-mcp` 通道代理给服务端 Bot：
+
+```text
+服务端 Bot
+  → local_mcp_<machine>_<server>_<tool>
+  → /ws/host local-mcp
+  → 桌面 MCP manager
+  → 本地 MCP server
+```
+
+- 在桌面版 AI 助手 → 设置 → 本地 MCP 中添加服务器
+- 服务端会注册带 `local_mcp_` 前缀的工具
+- 工具风险统一为 `exec`，默认需要审批
+- 桌面端离线时工具不可用
+- 只代理用户配置的本地 MCP，不代理内置 Office / 后端 MCP
+
 ## 机器名称
 
 默认名称来自桌面端的系统主机名（`os.hostname()`）。用户可以在移动端

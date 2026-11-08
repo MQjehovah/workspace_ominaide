@@ -23,12 +23,17 @@ let pingTimer: any = null
 let lastSignature: string = ''
 let machineId = ''
 let dispatcher: InboundDispatcher | null = null
+let openHandler: (() => void) | null = null
 const queue: any[] = []
 
 const MAX_QUEUE = 500
 
 export function setInboundDispatcher(fn: InboundDispatcher): void {
   dispatcher = fn
+}
+
+export function setChannelOpenHandler(fn: () => void): void {
+  openHandler = fn
 }
 
 export function channelSend(channel: string, msg: Record<string, unknown>): void {
@@ -95,6 +100,7 @@ export async function startBackendChannel(): Promise<void> {
           try { ws?.send(JSON.stringify({ type: 'ping' })) } catch {}
         }, 30000)
       }
+      try { openHandler?.() } catch {}
     })
     ws.on('close', () => {
       ws = null

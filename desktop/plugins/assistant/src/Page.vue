@@ -1867,6 +1867,7 @@ const suggestions = [
             </label>
           </div>
           <div class="settings-actions">
+            <button class="btn-ghost" @click="openAgentSettings('mcp')">🧩 本地 MCP</button>
             <button class="btn-ghost" @click="settingsOpen = false">取消</button>
             <button class="btn-primary" @click="applySettings">应用</button>
           </div>
@@ -1877,14 +1878,16 @@ const suggestions = [
     <transition name="fade">
       <div v-if="agentOpen" class="overlay" @click.self="agentOpen = false">
         <div class="settings-panel agent-panel">
-          <div class="settings-hd">Agent 引擎</div>
+          <div class="settings-hd">本地 MCP</div>
           <div class="agent-tabs">
-            <button class="agent-tab" :class="{ active: agentTab === 'local' }" @click="agentTab = 'local'; loadMcp()">本地工具</button>
-            <button class="agent-tab" :class="{ active: agentTab === 'mcp' }" @click="agentTab = 'mcp'; loadMcp()">MCP 服务器</button>
-            <button class="agent-tab" :class="{ active: agentTab === 'skills' }" @click="agentTab = 'skills'; loadSkills()">技能</button>
+            <button class="agent-tab active" @click="agentTab = 'mcp'; loadMcp()">MCP 服务器</button>
           </div>
 
           <div v-if="agentTab === 'mcp'" class="agent-body">
+            <p class="settings-note" style="margin-top:0">
+              这些 MCP 服务器运行在你的电脑上，工具会自动代理给服务端 Bot，
+              通过 /ws/host 调用；不需要在服务端暴露端口。
+            </p>
             <div class="mcp-add">
               <div class="mcp-add-row">
                 <input v-model="newServer.name" class="s-input" placeholder="服务器名称 (e.g. filesystem)" />

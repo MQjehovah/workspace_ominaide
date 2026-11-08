@@ -1,5 +1,6 @@
 import { ipcMain, WebContents } from 'electron'
 import { getServers, addServer, updateServer, removeServer, listTools, callTool, refresh, getServerStatus } from './mcp-manager'
+import { sendLocalMcpTools } from '../localMcpProxy'
 import { listSkills, createSkill, updateSkill, deleteSkill, toggleSkill, installSkillFromFolder, installSkillFromUrl, pickSkillFolder } from './skills'
 import { runAgentSession, type AgentRequest } from './agent'
 
@@ -14,19 +15,19 @@ export function registerMcpIpc() {
   ipcMain.handle('mcp:list', () => getServers().map(s => ({ ...s, status: getServerStatus(s.id) })))
 
   ipcMain.handle('mcp:add', async (_e, cfg: any) => {
-    try { return { ok: true, server: addServer(cfg) } } catch (e: any) { return { ok: false, error: e.message } }
+    try { const server = addServer(cfg); sendLocalMcpTools().catch(() => {}); return { ok: true, server } } catch (e: any) { return { ok: false, error: e.message } }
   })
 
   ipcMain.handle('mcp:update', async (_e, id: string, patch: any) => {
-    try { return { ok: true, server: updateServer(id, patch) } } catch (e: any) { return { ok: false, error: e.message } }
+    try { const server = updateServer(id, patch); sendLocalMcpTools().catch(() => {}); return { ok: true, server } } catch (e: any) { return { ok: false, error: e.message } }
   })
 
   ipcMain.handle('mcp:remove', async (_e, id: string) => {
-    try { await removeServer(id); return { ok: true } } catch (e: any) { return { ok: false, error: e.message } }
+    try { await removeServer(id); sendLocalMcpTools().catch(() => {}); return { ok: true } } catch (e: any) { return { ok: false, error: e.message } }
   })
 
   ipcMain.handle('mcp:refresh', async () => {
-    try { await refresh(); return { ok: true, tools: await listTools() } } catch (e: any) { return { ok: false, error: e.message } }
+    try { await refresh(); sendLocalMcpTools().catch(() => {}); return { ok: true, tools: await listTools() } } catch (e: any) { return { ok: false, error: e.message } }
   })
 
   ipcMain.handle('mcp:tools', async () => {

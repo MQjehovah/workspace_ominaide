@@ -52,6 +52,9 @@ def register_core_tools():
         tool_registry.register(tool, handler)
     for tool, handler in GOOGLE_TOOLS:
         tool_registry.register(tool, handler)
+    from core.wschannel.desktop_mcp import register_channel as register_desktop_mcp
+
+    register_desktop_mcp()
     from core.wschannel.local_tools import register_channel
 
     register_channel()

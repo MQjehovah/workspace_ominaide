@@ -251,6 +251,70 @@ export async function refresh() {
   await listTools()
 }
 
+export async function listProxyTools(): Promise<Array<{
+  server_id: string
+  server_name: string
+  name: string
+  description: string
+  input_schema: any
+}>> {
+  const out: Array<{
+    server_id: string
+    server_name: string
+    name: string
+    description: string
+    input_schema: any
+  }> = []
+  for (const s of servers) {
+    if (!s.enabled || s.transport === 'internal') continue
+    try {
+      const info = await connectServer(s)
+      const result = await info.client.listTools()
+      for (const t of result.tools) {
+        out.push({
+          server_id: s.id,
+          server_name: s.name,
+          name: t.name,
+          description: t.description || t.name,
+          input_schema: (t as any).inputSchema || { type: 'object', properties: {} },
+        })
+      }
+    } catch (e: any) {
+      console.error(`[mcp] proxy ${s.id} failed:`, e?.message || e)
+    }
+  }
+  return out
+}
+
+export async function callProxyTool(
+  serverId: string,
+  toolName: string,
+  args: any,
+): Promise<{ content: string; error: boolean }> {
+  const server = servers.find((item) => item.id === serverId)
+  if (!server) return { content: `本地 MCP 服务器不存在: ${serverId}`, error: true }
+  try {
+    const info = await connectServer(server)
+    const res = await info.client.callTool({
+      name: toolName,
+      arguments: args || {},
+    })
+    const blocks: any[] = (res as any).content || []
+    let text = ''
+    for (const block of blocks) {
+      if (block && block.type === 'text' && block.text) {
+        text += (text ? '\n' : '') + block.text
+      } else if (block && block.type === 'resource' && block.resource?.text) {
+        text += (text ? '\n' : '') + block.resource.text
+      }
+    }
+    if (res.isError) return { content: text || '工具执行出错', error: true }
+    return { content: text, error: false }
+  } catch (e: any) {
+    return { content: `本地 MCP 调用失败: ${e?.message || e}`, error: true }
+  }
+}
+
 export async function callTool(name: string, args: any): Promise<{ content: string; error: boolean }> {
   const sepIdx = name.indexOf(TOOL_SEP)
   if (sepIdx < 0) {

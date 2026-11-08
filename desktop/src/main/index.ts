@@ -8,8 +8,9 @@ import { startSync, stopSync } from './sync/syncWorker'
 import { startSettingsSync, stopSettingsSync } from './sync/settingsSync'
 import { getConfig } from './config'
 import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window'
-import { abortAllAgentSessions } from './mcp/ipc'
-import { disposeAll } from './mcp/mcp-manager'
+import { registerMcpIpc, abortAllAgentSessions } from './mcp/ipc'
+import { initMcpManager, disposeAll } from './mcp/mcp-manager'
+import { initLocalMcpProxy } from './localMcpProxy'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
@@ -137,8 +138,9 @@ app.whenReady().then(async () => {
     return new Response('Plugin frontend not found', { status: 404 })
   })
   registerIpcHandlers()
-  // The assistant is a thin client of the server-side Bot. Local tools are
-  // executed through the /ws/host local-tools channel, not a local agent loop.
+  registerMcpIpc()
+  initMcpManager()
+  initLocalMcpProxy()
   await initPlugins()
   createTray()
   const cfg = await getConfig()
