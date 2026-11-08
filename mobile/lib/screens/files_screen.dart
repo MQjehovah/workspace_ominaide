@@ -752,6 +752,82 @@ class _FilesScreenState extends State<FilesScreen> {
     }
   }
 
+  Widget _sectionHeader(String label, int count, {double top = 0}) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, top + 8, 16, 4),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: Colors.grey.shade600,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count',
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fileTile(FileItem f) {
+    final isImg = _isImage(f);
+    final hasTags = f.tags.isNotEmpty;
+    return ListTile(
+      leading: Icon(
+        f.isFolder
+            ? Icons.folder
+            : isImg
+                ? Icons.image
+                : Icons.insert_drive_file,
+        color: f.isFolder
+            ? Colors.amber
+            : isImg
+                ? Colors.green
+                : Colors.blue,
+        size: 32,
+      ),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              f.originalName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          if (f.isFavorite) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.star, size: 14, color: Colors.amber),
+          ],
+        ],
+      ),
+      subtitle: Text(
+        f.isFolder
+            ? '文件夹'
+            : '${f.sizeFormatted}  '
+                '${f.createdAt.isNotEmpty ? f.createdAt.substring(0, 10) : ''}'
+                '${hasTags ? '  ·  ${f.tags.join(' / ')}' : ''}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+      ),
+      onTap: f.isFolder ? () => _openFolder(f) : () => _showFileInfo(f),
+      trailing: PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert, size: 18),
+        onSelected: (v) => _handleMenu(v, f),
+        itemBuilder: (_) => _menuItems(f),
+      ),
+    );
+  }
+
   List<PopupMenuEntry<String>> _menuItems(FileItem f) {
     return [
       if (!f.isFolder) ...[
@@ -799,6 +875,8 @@ class _FilesScreenState extends State<FilesScreen> {
   @override
   Widget build(BuildContext context) {
     final crumbs = _currentPath.split('/').where((s) => s.isNotEmpty).toList();
+    final folders = _files.where((f) => f.isFolder).toList();
+    final files = _files.where((f) => !f.isFolder).toList();
     return Scaffold(
       appBar: AppBar(
         title: const Text('文件'),
@@ -894,64 +972,21 @@ class _FilesScreenState extends State<FilesScreen> {
                       )
                     : RefreshIndicator(
                         onRefresh: _loadFiles,
-                        child: ListView.builder(
-                          itemCount: _files.length,
-                          itemBuilder: (_, i) {
-                            final f = _files[i];
-                            final isImg = _isImage(f);
-                            final hasTags = f.tags.isNotEmpty;
-                            return ListTile(
-                              leading: Icon(
-                                f.isFolder
-                                    ? Icons.folder
-                                    : isImg
-                                        ? Icons.image
-                                        : Icons.insert_drive_file,
-                                color: f.isFolder
-                                    ? Colors.amber
-                                    : isImg
-                                        ? Colors.green
-                                        : Colors.blue,
-                                size: 32,
+                        child: ListView(
+                          children: [
+                            if (folders.isNotEmpty) ...[
+                              _sectionHeader('文件夹', folders.length),
+                              ...folders.map(_fileTile),
+                            ],
+                            if (files.isNotEmpty) ...[
+                              _sectionHeader(
+                                '文件',
+                                files.length,
+                                top: folders.isNotEmpty ? 10 : 0,
                               ),
-                              title: Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      f.originalName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  ),
-                                  if (f.isFavorite) ...[
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.star,
-                                        size: 14, color: Colors.amber),
-                                  ],
-                                ],
-                              ),
-                              subtitle: Text(
-                                f.isFolder
-                                    ? '文件夹'
-                                    : '${f.sizeFormatted}  '
-                                        '${f.createdAt.isNotEmpty ? f.createdAt.substring(0, 10) : ''}'
-                                        '${hasTags ? '  ·  ${f.tags.join(' / ')}' : ''}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    fontSize: 11, color: Colors.grey.shade500),
-                              ),
-                              onTap: f.isFolder
-                                  ? () => _openFolder(f)
-                                  : () => _showFileInfo(f),
-                              trailing: PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, size: 18),
-                                onSelected: (v) => _handleMenu(v, f),
-                                itemBuilder: (_) => _menuItems(f),
-                              ),
-                            );
-                          },
+                              ...files.map(_fileTile),
+                            ],
+                          ],
                         ),
                       ),
           ),

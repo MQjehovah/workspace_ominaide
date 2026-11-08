@@ -51,14 +51,20 @@ def _dt(value) -> datetime | None:
         return None
 
 
-async def _upsert_conversation(user_id: int, conv: dict) -> str | None:
+async def _upsert_conversation(
+    user_id: int, conv: dict, unread_count: int | None = None
+) -> str | None:
     conversation_id = str(conv.get("conversationId") or conv.get("conversation_id") or "").strip()
     if not conversation_id:
         return None
     name = str(conv.get("name") or conv.get("title") or conversation_id)
     kind = str(conv.get("type") or conv.get("conversationType") or "")
     last_at = _dt(conv.get("lastMessageTime") or conv.get("last_message_time") or conv.get("updateTime"))
-    unread = int(conv.get("unreadCount") or conv.get("unread_count") or 0)
+    unread = (
+        int(unread_count)
+        if unread_count is not None
+        else int(conv.get("unreadCount") or conv.get("unread_count") or 0)
+    )
     async with async_session() as db:
         row = (await db.execute(
             select(DingTalkConversation).where(
@@ -212,7 +218,13 @@ async def sync_chat() -> dict:
             for conv in conversations[:50]:
                 if not isinstance(conv, dict):
                     continue
-                conversation_id = await _upsert_conversation(user_id, conv)
+                conv_id = str(
+                    conv.get("conversationId") or conv.get("conversation_id") or ""
+                ).strip()
+                conversation_id = await _upsert_conversation(
+                    user_id, conv,
+                    unread_count=1 if conv_id in unread_ids else 0,
+                )
                 if not conversation_id:
                     continue
                 try:

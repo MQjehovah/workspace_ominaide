@@ -2037,7 +2037,7 @@ class ApiService {
     int limit = 100,
   }) async {
     final res = await get(
-      '/plugins/dingtalk/conversations/${Uri.encodeComponent(conversationId)}/messages?limit=$limit',
+      '/plugins/dingtalk/messages?conversation_id=${Uri.encodeQueryComponent(conversationId)}&limit=$limit',
     );
     if (res.statusCode != 200) throw Exception(_extractError(res));
     return _asMapList(decodeJson(res)['items']);

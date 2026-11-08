@@ -368,7 +368,7 @@ async function loadDingtalkConversations() {
 async function loadDingtalkMessages(conv: any) {
   dingtalkActiveConv.value = conv
   try {
-    const res = await client.get(`/plugins/dingtalk/conversations/${encodeURIComponent(conv.conversation_id)}/messages`)
+    const res = await client.get('/plugins/dingtalk/messages', { params: { conversation_id: conv.conversation_id } })
     dingtalkMessages.value = res.data?.items || []
   } catch {
     dingtalkMessages.value = []

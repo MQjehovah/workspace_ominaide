@@ -45,9 +45,9 @@ async def conversations(
     return {"items": await api.list_conversations(user["id"], limit)}
 
 
-@router.get("/conversations/{conversation_id}/messages")
+@router.get("/messages")
 async def messages(
-    conversation_id: str,
+    conversation_id: str = Query(...),
     limit: int = Query(100, ge=1, le=300),
     before_id: int | None = Query(None),
     user: dict = Depends(get_current_user),

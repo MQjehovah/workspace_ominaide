@@ -984,37 +984,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     final confidence = (item['confidence'] as num?)?.toDouble() ?? 0.5;
     final color = _suggestionKindColor(palette, kind);
     final hasAction = _suggestionHasAction(item);
-    return Dismissible(
-      key: ValueKey('activity-${item['id']}'),
-      direction: DismissDirection.startToEnd,
-      confirmDismiss: (_) async {
-        await _showActivityActions(item);
-        return false;
-      },
-      background: Container(
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.only(left: 18),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.touch_app_rounded, size: 18, color: color),
-            const SizedBox(width: 6),
-            Text(
-              '右滑处理',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ),
-      child: GestureDetector(
+    return GestureDetector(
         onTap: () => _showActivityActions(item),
         child: AppCard(
           child: Column(
@@ -1102,7 +1072,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                     ),
                   ),
                   Text(
-                    '右滑处理',
+                    '点击处理',
                     style: TextStyle(fontSize: 10, color: palette.muted),
                   ),
                   const SizedBox(width: 2),
@@ -1113,8 +1083,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildActivitySuggestionsCard(AppPalette palette) {

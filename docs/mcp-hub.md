@@ -100,7 +100,7 @@ POST /api/plugins/dingtalk/login/start
 GET  /api/plugins/dingtalk/login/status
 POST /api/plugins/dingtalk/logout
 GET  /api/plugins/dingtalk/conversations
-GET  /api/plugins/dingtalk/conversations/{conversation_id}/messages
+GET  /api/plugins/dingtalk/messages?conversation_id=...
 ```
 
 首次绑定使用设备流，页面展示授权码和链接；登录态持久化，token 自动刷新。

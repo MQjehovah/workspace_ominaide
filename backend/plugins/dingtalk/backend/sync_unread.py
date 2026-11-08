@@ -11,6 +11,7 @@ from core.events.bus import record_event
 from core.logging import get_logger
 from core.mcp_hub.models import McpServer
 from plugins.dingtalk.backend import mcp
+from plugins.dingtalk.backend.models import DingTalkConversation
 from core.events.models import UserActivity
 
 log = get_logger(__name__)
@@ -57,6 +58,33 @@ async def sync_unread() -> dict:
 
             since = datetime.now() - timedelta(days=7)
             async with async_session() as db:
+                conversations = list((await db.execute(
+                    select(DingTalkConversation).where(
+                        DingTalkConversation.user_id == user_id,
+                    )
+                )).scalars().all())
+                by_cid = {row.conversation_id: row for row in conversations}
+                for row in conversations:
+                    row.unread_count = 1 if row.conversation_id in unread else 0
+                now = datetime.now()
+                for cid, name in unread.items():
+                    row = by_cid.get(cid)
+                    if row is None:
+                        row = DingTalkConversation(
+                            user_id=user_id,
+                            conversation_id=cid,
+                            name=name[:300],
+                            unread_count=1,
+                            last_message_at=now,
+                        )
+                        db.add(row)
+                        by_cid[cid] = row
+                    else:
+                        row.name = row.name or name[:300]
+                        row.unread_count = 1
+                        if row.last_message_at is None:
+                            row.last_message_at = now
+
                 rows = list((await db.execute(
                     select(UserActivity)
                     .where(

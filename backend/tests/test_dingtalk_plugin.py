@@ -123,3 +123,35 @@ async def test_dingtalk_unread_count_controls_pending_state(client):
     assert by_id["已读群"]["meta"]["read"] is True
     assert by_id["未读群"]["needs_reply"] is True
     assert by_id["未读群"]["meta"]["unread_count"] == 3
+
+
+async def test_conversation_ids_with_slashes_can_load_messages(client):
+    from core.database.session import async_session
+    from plugins.dingtalk.backend.models import DingTalkConversation, DingTalkMessage
+
+    token, user_id = await _new_user(client)
+    cid = "cid/abc+def=="
+    async with async_session() as db:
+        db.add(DingTalkConversation(
+            user_id=user_id,
+            conversation_id=cid,
+            name="带特殊字符的群",
+            unread_count=1,
+        ))
+        db.add(DingTalkMessage(
+            user_id=user_id,
+            conversation_id=cid,
+            message_id="msg-1",
+            sender="张三",
+            text="你好",
+        ))
+        await db.commit()
+
+    r = await client.get(
+        "/api/plugins/dingtalk/messages",
+        params={"conversation_id": cid},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert items and items[0]["text"] == "你好"
