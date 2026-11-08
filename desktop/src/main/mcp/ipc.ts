@@ -1,15 +1,7 @@
-import { ipcMain, WebContents } from 'electron'
+import { ipcMain } from 'electron'
 import { getServers, addServer, updateServer, removeServer, listTools, callTool, refresh, getServerStatus } from './mcp-manager'
 import { sendLocalMcpTools } from '../localMcpProxy'
 import { listSkills, createSkill, updateSkill, deleteSkill, toggleSkill, installSkillFromFolder, installSkillFromUrl, pickSkillFolder } from './skills'
-import { runAgentSession, type AgentRequest } from './agent'
-
-interface AgentSession {
-  controller: AbortController
-  wc: WebContents
-}
-
-const sessions = new Map<string, AgentSession>()
 
 export function registerMcpIpc() {
   ipcMain.handle('mcp:list', () => getServers().map(s => ({ ...s, status: getServerStatus(s.id) })))
@@ -66,38 +58,5 @@ export function registerMcpIpc() {
     try { return { ok: true, skill: await installSkillFromUrl(url) } } catch (e: any) { return { ok: false, error: e.message } }
   })
 
-  ipcMain.handle('agent:start', async (event, req: AgentRequest) => {
-    if (!req?.llm?.baseUrl || !req?.llm?.apiKey || !req?.llm?.model) {
-      return { error: '请先在设置中配置 LLM (Base URL / API Key / 模型)' }
-    }
-    const sessionId = req.sessionId || 's_' + Date.now()
-    const controller = new AbortController()
-    const wc = event.sender
-    sessions.set(sessionId, { controller, wc })
-    const emit = (p: any) => {
-      if (!wc.isDestroyed()) wc.send('agent:event', { ...p, sessionId })
-    }
-    try {
-      await runAgentSession(
-        { ...req, sessionId },
-        emit,
-        controller.signal,
-        { maxTurns: req.maxTurns, temperature: req.llm?.temperature, maxTokens: req.llm?.maxTokens, maxContextChars: req.maxContextChars }
-      )
-    } finally {
-      sessions.delete(sessionId)
-    }
-    return { ok: true }
-  })
 
-  ipcMain.handle('agent:abort', async (_e, sessionId: string) => {
-    const s = sessions.get(sessionId)
-    if (s) s.controller.abort()
-    return { ok: true }
-  })
-}
-
-export function abortAllAgentSessions() {
-  for (const s of sessions.values()) s.controller.abort()
-  sessions.clear()
 }

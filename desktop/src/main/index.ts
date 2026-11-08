@@ -8,7 +8,7 @@ import { startSync, stopSync } from './sync/syncWorker'
 import { startSettingsSync, stopSettingsSync } from './sync/settingsSync'
 import { getConfig } from './config'
 import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window'
-import { registerMcpIpc, abortAllAgentSessions } from './mcp/ipc'
+import { registerMcpIpc } from './mcp/ipc'
 import { initMcpManager, disposeAll } from './mcp/mcp-manager'
 import { initLocalMcpProxy } from './localMcpProxy'
 
@@ -186,7 +186,6 @@ app.on('before-quit', () => {
   stopSettingsSync()
   getProcessManager().stopAll()
   closeAllPluginWindows()
-  abortAllAgentSessions()
   disposeAll().catch(() => {})
   try { (require('./backendChannel') as any)?.stopBackendChannel?.() } catch { /* ignore */ }
 })
