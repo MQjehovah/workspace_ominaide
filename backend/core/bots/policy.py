@@ -68,6 +68,8 @@ TOOL_RISK = {
     "list_coding_runs": RISK_READ,
     "get_coding_run": RISK_READ,
     "web_search": RISK_READ,
+    "web_fetch": RISK_READ,
+    # Legacy name kept for old checkpoints.
     "fetch_url": RISK_READ,
     "run_shell": RISK_EXEC,
     "local_shell": RISK_EXEC,

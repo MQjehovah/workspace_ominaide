@@ -15,7 +15,7 @@ Bot 每次运行时的工具列表：
 ```text
 pinned_tools
   ├─ tool_search / tool_call
-  ├─ save_memory / send_notification / web_search / fetch_url
+  ├─ save_memory / send_notification / web_search / web_fetch
   └─ skill_search / skill_call
 
 本地机器工具（source=local，不属于 builtin，也不常驻）：

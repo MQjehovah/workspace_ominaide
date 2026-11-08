@@ -45,7 +45,7 @@ DEFAULT_PINNED_TOOLS = {
     "save_memory",
     "send_notification",
     "web_search",
-    "fetch_url",
+    "web_fetch",
     "skill_search",
     "skill_call",
 }

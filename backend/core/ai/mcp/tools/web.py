@@ -140,11 +140,11 @@ async def web_search(user_id: int, args: dict) -> MCPCallResponse:
         lines.append(f"   URL: {item['url']}")
         if item["snippet"]:
             lines.append(f"   摘要: {item['snippet']}")
-    lines.append("需要正文时调用 fetch_url(url)。")
+    lines.append("需要正文时调用 web_fetch(url)。")
     return _ok("\n".join(lines))
 
 
-async def fetch_url(user_id: int, args: dict) -> MCPCallResponse:
+async def web_fetch(user_id: int, args: dict) -> MCPCallResponse:
     url = (args.get("url") or "").strip()
     if not url:
         return _err("url 必填")
@@ -221,7 +221,7 @@ TOOLS = [
             name="web_search",
             description=(
                 "搜索公开互联网（Bing）。用户问实时信息、新闻、价格、技术文档、"
-                "某个网站/产品的最新情况时使用。需要网页正文时接着调用 fetch_url。"
+                "某个网站/产品的最新情况时使用。需要网页正文时接着调用 web_fetch。"
             ),
             inputSchema={
                 "type": "object",
@@ -239,7 +239,7 @@ TOOLS = [
     ),
     (
         MCPTool(
-            name="fetch_url",
+            name="web_fetch",
             description=(
                 "打开一个公开网页并提取正文。先用 web_search 找到 URL，再调用它读取详情。"
                 "只支持公网 http/https 地址。"
@@ -256,6 +256,6 @@ TOOLS = [
                 "required": ["url"],
             },
         ),
-        fetch_url,
+        web_fetch,
     ),
 ]

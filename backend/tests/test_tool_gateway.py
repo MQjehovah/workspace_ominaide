@@ -44,7 +44,7 @@ async def test_search_finds_tool_and_call_executes(monkeypatch):
         _fake_tool(name, description="搜索测试邮件"), handler
     )
     try:
-        response = await tool_search(1, {"query": "邮件"})
+        response = await tool_search(1, {"query": "fake_mail_search", "limit": 20})
         assert not response.isError
         payload = json.loads(response.content[0].text)
         assert any(

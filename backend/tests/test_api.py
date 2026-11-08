@@ -222,7 +222,8 @@ async def test_coding_tools_registered(client, admin_token):
     assert "ha_list_entities" in names
     assert "ha_toggle" in names
     assert "web_search" in names
-    assert "fetch_url" in names
+    assert "web_fetch" in names
+    assert "fetch_url" not in names
     assert "todo_update" in names
     assert "event_delete" in names
     assert "note_delete" in names

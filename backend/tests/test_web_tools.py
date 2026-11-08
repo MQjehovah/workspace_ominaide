@@ -38,6 +38,6 @@ def test_unwrap_bing_redirect():
         "file:///etc/passwd",
     ],
 )
-def test_fetch_url_rejects_internal_targets(url):
+def test_web_fetch_rejects_internal_targets(url):
     with pytest.raises(ValueError):
         _validate_url(url)
