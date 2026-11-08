@@ -20,6 +20,7 @@ _ALLOWED = {
     "list_chats": ("dingtalk_list_chats", "read"),
     "list_chat_messages": ("dingtalk_list_chat_messages", "read"),
     "at_me": ("dingtalk_at_me", "read"),
+    "list_chat_members": ("dingtalk_list_chat_members", "read"),
     "conversation_info": ("dingtalk_conversation_info", "read"),
     "send_message": ("dingtalk_send_message", "external"),
     "search_contacts": ("dingtalk_search_contacts", "read"),

@@ -185,14 +185,3 @@ async def workbench_summary(user: dict = Depends(get_current_user)):
         },
         "generated_at": now.isoformat(timespec="seconds"),
     }
-
-
-@router.get("/dingtalk-actions")
-async def get_dingtalk_actions(
-    refresh: bool = False,
-    user: dict = Depends(get_current_user),
-):
-    """Deprecated read-only alias for cached activity suggestions (no LLM)."""
-    from core.insights.service import list_suggestions
-
-    return {"items": await list_suggestions(user["id"], limit=5), "source": "cached"}

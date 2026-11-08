@@ -60,6 +60,8 @@ async def test_private_mcp_is_hidden_from_global_catalog(client):
     assert not any(name.startswith(f"{server.slug}__") for name in names)
     # Curated plugin tools remain available to agents.
     assert "dingtalk_search_messages" in names
+    assert "dingtalk_list_chat_members" in names
+    assert not any("dws_cli" in name for name in names)
 
 
 async def test_user_cannot_register_dingtalk_mcp(client):
