@@ -41,6 +41,8 @@ interface Session {
   promptHistory: string[]
   histIdx: number
   pinned?: boolean
+  botId?: number
+  fromCloud?: boolean
 }
 interface Config {
   mode: 'backend' | 'direct' | 'desktop'
@@ -149,6 +151,9 @@ function sessionStatus(s: Session): 'running' | 'done' | 'error' | 'idle' {
 
 const filteredSessions = computed(() => {
   let list = sessions.value
+  if (currentBotId.value) {
+    list = list.filter(s => !s.botId || s.botId === currentBotId.value)
+  }
   if (statusFilter.value !== 'all') {
     list = list.filter(s => sessionStatus(s) === statusFilter.value)
   }
@@ -163,8 +168,11 @@ const filteredSessions = computed(() => {
 })
 
 const statusCounts = computed(() => {
-  const c: Record<string, number> = { all: sessions.value.length, running: 0, done: 0, error: 0 }
-  for (const s of sessions.value) {
+  const list = currentBotId.value
+    ? sessions.value.filter(s => !s.botId || s.botId === currentBotId.value)
+    : sessions.value
+  const c: Record<string, number> = { all: list.length, running: 0, done: 0, error: 0 }
+  for (const s of list) {
     const st = sessionStatus(s)
     if (st === 'running' || st === 'done' || st === 'error') c[st]++
   }
@@ -255,7 +263,16 @@ function newId(): string {
 }
 
 function createSession(): Session {
-  return { id: newId(), title: '新会话', createdAt: Date.now(), updatedAt: Date.now(), messages: [], promptHistory: [], histIdx: 0 }
+  return {
+    id: newId(),
+    title: '新会话',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: [],
+    promptHistory: [],
+    histIdx: 0,
+    botId: currentBotId.value ?? undefined,
+  }
 }
 
 function saveSessions() {
@@ -265,6 +282,7 @@ function saveSessions() {
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
     pinned: !!s.pinned,
+    botId: s.botId,
     messages: s.messages.slice(-200).map(m => ({
       id: m.id,
       role: m.role,
@@ -311,6 +329,7 @@ function loadSessions() {
       }),
       promptHistory: s.promptHistory || [],
       histIdx: 0,
+      botId: s.botId,
     }))
     sessions.value = loaded
     if (data.current && loaded.some((s: any) => s.id === data.current)) currentId.value = data.current
@@ -369,6 +388,127 @@ async function getToken(): Promise<string> {
   return localStorage.getItem('token') || ''
 }
 
+function parseServerTs(value: any): number {
+  if (!value) return 0
+  let text = String(value)
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(text)) text += 'Z'
+  const ts = Date.parse(text)
+  return Number.isNaN(ts) ? 0 : ts
+}
+
+function makeMsg(role: 'user' | 'assistant', text: string): Msg {
+  return {
+    id: idSeq++,
+    role,
+    text,
+    html: '',
+    reasoning: '',
+    reasoningOpen: false,
+    steps: [],
+    timeline: [],
+    pending: false,
+    error: '',
+  }
+}
+
+async function loadCloudMessages(session: Session | null): Promise<void> {
+  if (!session) return
+  if (session.messages.length && !session.fromCloud) return
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    if (!tk) return
+    const params = new URLSearchParams({ session_id: session.id, limit: '200' })
+    const r = await fetch(`${su}/api/chat/history?${params.toString()}`, {
+      headers: { Authorization: 'Bearer ' + tk },
+    })
+    if (!r.ok) return
+    const items = await r.json()
+    if (!Array.isArray(items)) return
+    session.messages = items
+      .filter((it: any) => it.role === 'user' || it.role === 'assistant')
+      .map((it: any) => makeMsg(it.role, it.content || ''))
+    session.fromCloud = false
+    for (const m of session.messages) m.html = renderMarkdown(m.text)
+    if ((session.title === '新会话' || session.title === '云端会话') && session.messages.length) {
+      const first = session.messages.find(m => m.role === 'user')
+      if (first?.text) session.title = first.text.replace(/\s+/g, ' ').trim().slice(0, 24) || session.title
+    }
+  } catch { /* offline */ }
+}
+
+async function loadCloudSessions(): Promise<void> {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    if (!tk) return
+    const params = new URLSearchParams()
+    if (currentBotId.value) params.set('bot_id', String(currentBotId.value))
+    const r = await fetch(`${su}/api/chat/sessions${params.toString() ? `?${params.toString()}` : ''}`, {
+      headers: { Authorization: 'Bearer ' + tk },
+    })
+    if (!r.ok) return
+    const items = await r.json()
+    if (!Array.isArray(items)) return
+    for (const it of items) {
+      const sid = String(it.session_id || '').trim()
+      if (!sid) continue
+      const ts = parseServerTs(it.updated_at) || Date.now()
+      let s = sessions.value.find(x => x.id === sid)
+      if (!s) {
+        s = {
+          id: sid,
+          title: it.title || '云端会话',
+          createdAt: ts,
+          updatedAt: ts,
+          messages: [],
+          promptHistory: [],
+          histIdx: 0,
+          botId: it.bot_id ?? currentBotId.value ?? undefined,
+          fromCloud: true,
+        }
+        sessions.value.push(s)
+      } else {
+        if (ts > s.updatedAt) s.updatedAt = ts
+        if (!s.title || s.title === '新会话') s.title = it.title || s.title
+        if (!s.botId && it.bot_id) s.botId = it.bot_id
+      }
+    }
+    sessions.value.sort((a, b) => b.updatedAt - a.updatedAt)
+    const cur = current.value
+    if (cur) await loadCloudMessages(cur)
+    else if (sessions.value.length) {
+      currentId.value = sessions.value[0].id
+      await loadCloudMessages(sessions.value[0])
+    }
+  } catch { /* offline */ }
+}
+
+async function deleteCloudSession(id: string): Promise<void> {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    if (!tk) return
+    await fetch(`${su}/api/chat/sessions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + tk },
+    })
+  } catch { /* offline */ }
+}
+
+async function renameCloudSession(id: string, title: string): Promise<void> {
+  try {
+    const su = await serverUrl()
+    const tk = await getToken()
+    if (!tk) return
+    await fetch(`${su}/api/chat/sessions/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
+      body: JSON.stringify({ title }),
+    })
+  } catch { /* offline */ }
+}
+
 async function loadBots() {
   try {
     const su = await serverUrl()
@@ -384,9 +524,17 @@ async function loadBots() {
   } catch { /* ignore */ }
 }
 
-function onBotChange() {
+async function onBotChange() {
   if (currentBotId.value) localStorage.setItem(BOT_KEY, String(currentBotId.value))
-  newSession()
+  await loadCloudSessions()
+  const first = sessions.value.find(s => !s.botId || s.botId === currentBotId.value)
+  if (first) {
+    currentId.value = first.id
+    await loadCloudMessages(first)
+    scrollBottom()
+  } else {
+    newSession()
+  }
 }
 
 async function loadApprovals() {
@@ -534,16 +682,18 @@ function newSession() {
   nextTick(() => inputRef.value?.focus())
 }
 
-function switchSession(id: string) {
+async function switchSession(id: string) {
   if (id === currentId.value) return
   currentId.value = id
   input.value = ''
+  await loadCloudMessages(current.value)
   scrollBottom()
 }
 
 function deleteSession(id: string) {
   const idx = sessions.value.findIndex(s => s.id === id)
   if (idx < 0) return
+  void deleteCloudSession(id)
   sessions.value.splice(idx, 1)
   if (currentId.value === id) {
     currentId.value = sessions.value[Math.max(0, idx - 1)]?.id || ''
@@ -556,7 +706,9 @@ function deleteSession(id: string) {
 
 function clearSession() {
   if (!current.value) return
+  void deleteCloudSession(current.value.id)
   current.value.messages = []
+  current.value.fromCloud = false
   scrollBottom()
 }
 
@@ -664,7 +816,7 @@ function handleEvent(m: Msg, data: any) {
   }
 }
 
-async function streamMessage(message: string, history: { role: string; content: string }[], images: string[], m: Msg): Promise<void> {
+async function streamMessage(message: string, history: { role: string; content: string }[], images: string[], m: Msg, sessionId: string): Promise<void> {
   const c = cfg.value
   c.mode = 'backend'
   if (c.mode === 'backend') {
@@ -673,7 +825,7 @@ async function streamMessage(message: string, history: { role: string; content: 
     const r = await fetch(`${su}/api/chat/runs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
-      body: JSON.stringify({ message, history, images, bot_id: currentBotId.value || undefined }),
+      body: JSON.stringify({ message, history, images, session_id: sessionId, bot_id: currentBotId.value || undefined }),
       signal: abortCtl?.signal,
     })
     if (!r.ok) {
@@ -756,6 +908,10 @@ async function send() {
   if (!message.trim() && images.length) message = '请分析这张图片'
   attachments.value = []
   const s = ensureSession()
+  if (!s.botId) s.botId = currentBotId.value ?? undefined
+  const history = s.messages
+    .filter(m => m.role === 'user' || (m.role === 'assistant' && m.text))
+    .map(m => ({ role: m.role, content: m.text }))
   s.messages.push({ id: idSeq++, role: 'user', text: message, html: '', reasoning: '', reasoningOpen: false, steps: [], timeline: [], pending: false, error: '' })
   s.promptHistory.push(message)
   s.histIdx = s.promptHistory.length
@@ -772,9 +928,7 @@ async function send() {
   scrollToBottomAfterRender()
   abortCtl = new AbortController()
   try {
-    const history = s.messages.slice(0, -1).filter(m => m.role === 'user' || (m.role === 'assistant' && m.text))
-      .map(m => ({ role: m.role, content: m.text }))
-    await streamMessage(message, history, images, asst)
+    await streamMessage(message, history, images, asst, s.id)
   } catch (e: any) {
     asst.error = e?.name === 'AbortError' ? '已停止生成' : `请求失败: ${e?.message || e}`
   } finally {
@@ -969,7 +1123,10 @@ function commitRename() {
   const s = sessions.value.find(x => x.id === editingId.value)
   if (s) {
     const t = editingTitle.value.trim()
-    if (t) s.title = t
+    if (t) {
+      s.title = t
+      void renameCloudSession(s.id, t)
+    }
   }
   editingId.value = ''
 }
@@ -1472,10 +1629,11 @@ function applySettings() {
 }
 
 // ---------------- lifecycle ----------------
-onMounted(() => {
+onMounted(async () => {
   loadConfig()
   loadSessions()
-  loadBots()
+  await loadBots()
+  await loadCloudSessions()
   loadApprovals()
   approvalTimer = setInterval(loadApprovals, 10000)
   if (!current.value) newSession()
