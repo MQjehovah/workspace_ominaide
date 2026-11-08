@@ -1744,8 +1744,6 @@ const suggestions = [
           </span>
         </div>
         <div class="head-right">
-          <span class="mode-badge" :class="cfg.mode">{{ cfg.mode === 'backend' ? '后端代理' : cfg.mode === 'desktop' ? '桌面 Agent' : '直连' }}</span>
-          <span v-if="cfg.mode === 'desktop' && desktopTools.length" class="mode-badge desktop" :title="desktopTools.join('\n')">🧰 {{ desktopTools.length }} 工具</span>
           <button class="icon-btn" title="新建任务 (Ctrl+O)" @click="newSession">＋</button>
           <button class="icon-btn" title="历史提问" @click="openDetail('history')">⏱</button>
           <button class="icon-btn" :class="{ active: detailOpen }" title="详情面板 (Ctrl+P)" @click="detailOpen = !detailOpen; if (detailOpen) detailTab = 'process'">▤</button>
@@ -2269,7 +2267,7 @@ const suggestions = [
 
 /* ---------------- sidebar ---------------- */
 .sidebar {
-  width: 232px;
+  width: 248px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -2290,16 +2288,21 @@ const suggestions = [
   display: block;
   width: 100%;
   text-align: left;
-  padding: 9px 24px 9px 24px;
-  margin-bottom: 2px;
-  border: none;
-  border-radius: 8px;
+  padding: 10px 26px 10px 26px;
+  margin-bottom: 3px;
+  border: 1px solid transparent;
+  border-radius: 11px;
   background: transparent;
   color: var(--text);
   cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
 }
-.session-item:hover { background: var(--bg3); }
-.session-item.active { background: var(--bg4); box-shadow: inset 2px 0 0 var(--accent); }
+.session-item:hover { background: var(--bg3); border-color: var(--border); }
+.session-item.active {
+  background: linear-gradient(135deg, rgba(108, 92, 231, .16), rgba(0, 210, 255, .06));
+  border-color: rgba(108, 92, 231, .3);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
 .session-title {
   display: block;
   font-size: 13px;
@@ -2360,14 +2363,25 @@ const suggestions = [
 .foot-btn:hover { background: var(--bg4); color: var(--text); }
 
 /* ---------------- main ---------------- */
-.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background:
+    radial-gradient(1100px 520px at 82% -12%, rgba(108, 92, 231, .1), transparent 62%),
+    radial-gradient(900px 420px at 8% 108%, rgba(0, 210, 255, .05), transparent 60%),
+    var(--bg);
+}
 .console-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg2);
+  background: rgba(15, 20, 29, .86);
+  backdrop-filter: blur(14px);
+  z-index: 6;
 }
 .head-left, .head-right { display: flex; align-items: center; gap: 8px; }
 .head-title {
@@ -2376,7 +2390,7 @@ const suggestions = [
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 320px;
+  max-width: 380px;
 }
 .bot-select {
   font-size: 12px;
@@ -3034,9 +3048,13 @@ const suggestions = [
 .msgs {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px 10px;
+  padding: 24px max(24px, calc((100% - 980px) / 2)) 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg4) transparent;
 }
-.msg { margin-bottom: 18px; }
+.msgs::-webkit-scrollbar { width: 8px; }
+.msgs::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 8px; }
+.msg { margin-bottom: 22px; }
 
 .msg-user-label {
   font-size: 11px;
@@ -3269,7 +3287,7 @@ const suggestions = [
 .md :deep(strong) { font-weight: 700; }
 
 /* empty */
-.empty { text-align: center; padding-top: 12vh; }
+.empty { text-align: center; padding-top: 10vh; }
 .empty-mark {
   width: 64px; height: 64px;
   margin: 0 auto 18px;
@@ -3282,34 +3300,40 @@ const suggestions = [
 }
 .empty-title { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
 .empty-sub { font-size: 13px; color: var(--dim); margin: 0 0 26px; }
-.suggestions { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; max-width: 720px; margin: 0 auto; }
 .suggestion {
   border: 1px solid var(--border);
-  background: var(--bg2);
+  background: rgba(21, 27, 38, .72);
   color: var(--text);
   font-size: 13px;
-  padding: 8px 18px;
-  border-radius: 20px;
+  padding: 10px 18px;
+  border-radius: 22px;
   cursor: pointer;
   transition: all .15s;
 }
 .suggestion:hover { border-color: var(--accent); background: var(--bg3); color: var(--accent2); }
 
 /* ---------------- input ---------------- */
-.input-area { padding: 10px 16px 12px; border-top: 1px solid var(--border); background: var(--bg2); }
+.input-area {
+  padding: 12px max(16px, calc((100% - 980px) / 2)) 16px;
+  border-top: 1px solid var(--border);
+  background: rgba(15, 20, 29, .78);
+  backdrop-filter: blur(14px);
+}
 .input-box {
   display: flex;
   align-items: flex-end;
   gap: 8px;
   border: 1px solid var(--border);
   background: var(--bg3);
-  border-radius: 10px;
-  padding: 8px 8px 8px 12px;
+  border-radius: 16px;
+  padding: 10px 10px 10px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
   transition: border-color .15s, box-shadow .15s;
 }
 .input-box:focus-within, .input-box.focused {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(108, 92, 231, .18);
+  box-shadow: 0 0 0 3px rgba(108, 92, 231, .16), 0 12px 34px rgba(0, 0, 0, .22);
 }
 .input {
   flex: 1;
@@ -3337,10 +3361,10 @@ const suggestions = [
 .tool-btn:hover { background: var(--bg4); }
 .tool-btn.active { background: rgba(244, 104, 109, .15); }
 .send-btn {
-  height: 32px;
-  padding: 0 14px;
+  height: 34px;
+  padding: 0 16px;
   border: none;
-  border-radius: 8px;
+  border-radius: 11px;
   background: linear-gradient(135deg, var(--accent), #8f6cff);
   color: #fff;
   font-size: 12.5px;
