@@ -151,6 +151,20 @@ async def build_messages(
     instruction = gateway_instruction()
     if instruction:
         messages.append({"role": "system", "content": instruction})
+    if req.machine_id:
+        from core.wschannel.hub import host_channel
+
+        online = host_channel.machine_ids(user_id)
+        if req.machine_id in online:
+            machine_name = host_channel.machine_name(req.machine_id)
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"当前用户正在本地机器「{machine_name}」({req.machine_id}) 上对话。"
+                    "除非用户明确要求其他机器，local_* 工具默认使用这台机器；"
+                    "不要凭之前的上下文切换到其他在线机器。"
+                ),
+            })
     if extra_system:
         messages.append({"role": "system", "content": extra_system})
     t_ctx = time.monotonic()

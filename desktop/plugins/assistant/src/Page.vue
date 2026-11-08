@@ -384,6 +384,14 @@ async function serverUrl(): Promise<string> {
   return localStorage.getItem('server_url') || 'https://mqgeek.com/ominaide'
 }
 
+async function getMachineId(): Promise<string> {
+  try {
+    const w = window as any
+    if (w.mqbox?.config?.get) return (await w.mqbox.config.get('hostMachineId')) || ''
+  } catch { /* ignore */ }
+  return ''
+}
+
 async function getToken(): Promise<string> {
   try {
     const w = window as any
@@ -916,10 +924,11 @@ async function streamMessage(message: string, history: { role: string; content: 
   if (c.mode === 'backend') {
     const su = await serverUrl()
     const tk = await getToken()
+    const machineId = await getMachineId()
     const r = await fetch(`${su}/api/chat/runs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
-      body: JSON.stringify({ message, history, images, session_id: sessionId, bot_id: currentBotId.value || undefined }),
+      body: JSON.stringify({ message, history, images, session_id: sessionId, bot_id: currentBotId.value || undefined, machine_id: machineId || undefined }),
       signal: abortCtl?.signal,
     })
     if (!r.ok) {
@@ -1775,6 +1784,15 @@ function stepById(m: Msg, id?: number): Step | undefined {
   return m.steps.find(s => s.id === id)
 }
 
+function runningStep(m: Msg): Step | undefined {
+  return [...m.steps].reverse().find(s => s.status === 'running')
+}
+
+function visibleTimeline(m: Msg): TimelineItem[] {
+  // Tool calls live in the compact summary; full details are in the process panel.
+  return m.timeline.filter(tl => tl.kind !== 'tool')
+}
+
 function prettyJson(args: any): string {
   try { return JSON.stringify(args, null, 2) } catch { return String(args) }
 }
@@ -1880,7 +1898,7 @@ const suggestions = [
               <div class="user-text">{{ m.text }}</div>
             </template>
             <template v-else>
-              <div v-for="(tl, tli) in m.timeline" :key="tli" class="tl-wrap">
+              <div v-for="(tl, tli) in visibleTimeline(m)" :key="tli" class="tl-wrap">
                 <div v-if="tl.kind === 'reasoning'" class="reasoning" :class="{ open: m.reasoningOpen }">
                   <button class="reasoning-hd" @click="m.reasoningOpen = !m.reasoningOpen">
                     <span class="chev">{{ m.reasoningOpen ? '▾' : '▸' }}</span>
@@ -1911,6 +1929,13 @@ const suggestions = [
                 </div>
               </div>
 
+              <div v-if="m.steps.length" class="tool-summary" @click="openDetail('process')">
+                <span class="tool-summary-dot" :class="{ running: !!runningStep(m) }"></span>
+                <span class="tool-summary-text">
+                  {{ runningStep(m) ? `正在执行 · ${runningStep(m)!.name}` : `已完成 ${m.steps.length} 个工具调用` }}
+                </span>
+                <span class="tool-summary-link">查看过程 ›</span>
+              </div>
               <div v-if="m.pending && !m.text && m.timeline.length === 0" class="pending">
                 <span class="pdot"></span><span class="pdot"></span><span class="pdot"></span>
                 <span class="pending-text">思考中…</span>
@@ -3373,6 +3398,26 @@ const suggestions = [
 .step-result.err { color: var(--red); }
 
 /* pending */
+.tool-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg2);
+  color: var(--dim);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color .12s ease, color .12s ease;
+}
+.tool-summary:hover { border-color: var(--accent); color: var(--text); }
+.tool-summary-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.tool-summary-dot.running { background: var(--amber); box-shadow: 0 0 8px var(--amber); animation: pulse 1.2s infinite; }
+.tool-summary-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
+.tool-summary-link { color: var(--accent2); margin-left: 2px; flex-shrink: 0; }
+
 .pending {
   display: inline-flex;
   align-items: center;
