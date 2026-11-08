@@ -1860,18 +1860,25 @@ async function acceptActivitySuggestion(s: any) {
   try {
     const su = await serverUrl()
     const tk = await getToken()
-    await fetch(`${su}/api/plugins/todo/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
-      body: JSON.stringify({ title: s.title || '处理活动建议', description: s.reason || '', priority: 1 }),
-    })
-    await fetch(`${su}/api/insights/suggestions/${s.id}/accept`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + tk },
-    })
+    if (s.proposed_action?.type === 'create_todo') {
+      await fetch(`${su}/api/insights/suggestions/${s.id}/execute`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + tk },
+      })
+    } else {
+      await fetch(`${su}/api/plugins/todo/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
+        body: JSON.stringify({ title: s.title || '处理活动建议', description: s.reason || '', priority: 1 }),
+      })
+      await fetch(`${su}/api/insights/suggestions/${s.id}/accept`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + tk },
+      })
+    }
     activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
-    showToast('已创建待办')
-  } catch { showToast('创建待办失败') }
+    showToast('已处理建议')
+  } catch { showToast('处理建议失败') }
 }
 
 async function dismissActivitySuggestion(s: any) {
@@ -1982,7 +1989,7 @@ const suggestions = [
               <div v-if="s.reason" class="activity-suggestion-reason">{{ s.reason }}</div>
             </div>
             <div class="activity-suggestion-actions">
-              <button @click="acceptActivitySuggestion(s)">建待办</button>
+              <button @click="acceptActivitySuggestion(s)">{{ s.proposed_action?.type === 'create_todo' ? '执行' : '建待办' }}</button>
               <button class="muted" @click="dismissActivitySuggestion(s)">忽略</button>
             </div>
           </div>
@@ -2087,7 +2094,7 @@ const suggestions = [
                 <div v-if="s.reason" class="activity-suggestion-reason">{{ s.reason }}</div>
               </div>
               <div class="activity-suggestion-actions">
-                <button @click="acceptActivitySuggestion(s)">建待办</button>
+                <button @click="acceptActivitySuggestion(s)">{{ s.proposed_action?.type === 'create_todo' ? '执行' : '建待办' }}</button>
                 <button class="muted" @click="dismissActivitySuggestion(s)">忽略</button>
               </div>
             </div>
