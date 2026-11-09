@@ -9,3 +9,5 @@ dist-electron/
 plugins/*/frontend/
 
 plugin-bundle/
+
+release-win/

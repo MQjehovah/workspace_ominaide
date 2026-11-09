@@ -26,5 +26,5 @@ for (const entry of entries) {
   if (!existsSync(nodeModules)) {
     execSync('npm install', { cwd: pluginDir, stdio: 'inherit', timeout: 120000 })
   }
-  execSync('npm run build', { cwd: pluginDir, stdio: 'inherit', timeout: 120000 })
+  execSync('npm run build', { cwd: pluginDir, stdio: 'inherit', timeout: 600000 })
 }
