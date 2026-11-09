@@ -2,8 +2,8 @@
   <div class="page-wrapper">
     <div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
       <div>
-        <h2>能力中心</h2>
-        <p style="color:#909399;font-size:13px;margin-top:4px">任务、指标、Agent、连接器、上下文调试</p>
+        <h2>运行看板</h2>
+        <p style="color:#909399;font-size:13px;margin-top:4px">指标、任务、Agent、上下文调试</p>
       </div>
       <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
     </div>

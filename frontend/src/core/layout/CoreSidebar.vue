@@ -30,17 +30,13 @@
         <el-icon><Collection /></el-icon>
         <span>随手记</span>
       </el-menu-item>
-      <el-menu-item index="/people">
-        <el-icon><UserFilled /></el-icon>
-        <span>人物</span>
-      </el-menu-item>
       <el-menu-item index="/insights">
         <el-icon><Sunrise /></el-icon>
         <span>每日回顾</span>
       </el-menu-item>
-      <el-menu-item index="/about">
+      <el-menu-item index="/memory">
         <el-icon><UserFilled /></el-icon>
-        <span>关于我</span>
+        <span>记忆</span>
       </el-menu-item>
       <el-menu-item index="/schedule">
         <el-icon><Calendar /></el-icon>
@@ -85,9 +81,9 @@
         <el-icon><Monitor /></el-icon>
         <span>插件市场</span>
       </el-menu-item>
-      <el-menu-item v-if="isAdmin" index="/admin/capabilities">
+      <el-menu-item v-if="isAdmin" index="/admin/runtime">
         <el-icon><Odometer /></el-icon>
-        <span>能力中心</span>
+        <span>运行看板</span>
       </el-menu-item>
       <el-menu-item index="/mcp">
         <el-icon><Connection /></el-icon>

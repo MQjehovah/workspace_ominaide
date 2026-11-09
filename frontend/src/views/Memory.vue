@@ -24,6 +24,7 @@
             <el-button :icon="Refresh" circle :loading="refreshing" @click="refreshAll" />
           </el-tooltip>
           <el-button :icon="Edit" @click="$router.push('/settings')">编辑资料</el-button>
+          <el-button :icon="UserFilled" @click="$router.push('/people')">人物</el-button>
         </div>
       </div>
 
@@ -328,7 +329,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, Refresh, Search } from '@element-plus/icons-vue'
+import { Edit, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 import EntityGraph from '@/components/EntityGraph.vue'

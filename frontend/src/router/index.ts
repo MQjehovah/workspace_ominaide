@@ -51,10 +51,10 @@ const router = createRouter({
           component: () => import('@/views/People.vue')
         },
         {
-          path: 'about',
-          name: 'About',
-          meta: { title: '关于我' },
-          component: () => import('@/views/About.vue')
+          path: 'memory',
+          name: 'Memory',
+          meta: { title: '记忆' },
+          component: () => import('@/views/Memory.vue')
         },
         {
           path: 'chat',
@@ -117,10 +117,10 @@ const router = createRouter({
           component: () => import('@/views/AdminPlugins.vue')
         },
         {
-          path: 'admin/capabilities',
-          name: 'Capabilities',
-          meta: { title: '能力中心', admin: true },
-          component: () => import('@/views/Capabilities.vue')
+          path: 'admin/runtime',
+          name: 'Runtime',
+          meta: { title: '运行看板', admin: true },
+          component: () => import('@/views/Runtime.vue')
         },
         {
           path: 'mcp',

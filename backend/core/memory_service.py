@@ -275,7 +275,7 @@ async def _index_record(user_id: int, record: MemoryRecord) -> None:
             record.id,
             f"[{record.kind}] {record.content[:60]}",
             record.content,
-            metadata={"kind": record.kind, "link": "/about"},
+            metadata={"kind": record.kind, "link": "/memory"},
         )
     except Exception as e:
         log.warning(f"[memory] index error: {e}")
