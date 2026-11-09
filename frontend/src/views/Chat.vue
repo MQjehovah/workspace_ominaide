@@ -13,12 +13,27 @@
           class="session-row"
           :class="{ active: s.session_id === sessionId }"
           @click="switchSession(s.session_id)"
+          @contextmenu.prevent="startRename(s)"
         >
-          <div class="session-main">
-            <div class="session-title">{{ s.title || '未命名对话' }}</div>
+          <div v-if="renamingId !== s.session_id" class="session-main" @dblclick.stop="startRename(s)">
+            <div class="session-title" :title="s.title || '未命名对话'">{{ s.title || '未命名对话' }}</div>
             <div class="session-time">{{ formatTime(s.updated_at) }}</div>
           </div>
-          <button type="button" class="session-del" title="删除会话" @click.stop="removeSession(s.session_id)">×</button>
+          <div v-else class="session-main session-editing" @click.stop>
+            <el-input
+              v-model="renameValue"
+              size="small"
+              maxlength="200"
+              placeholder="会话名称"
+              @keyup.enter.stop="commitRename(s)"
+              @keyup.esc.stop="cancelRename"
+              @blur="commitRename(s)"
+            />
+          </div>
+          <div v-if="renamingId !== s.session_id" class="session-actions">
+            <button type="button" class="session-act" title="重命名会话" @click.stop="startRename(s)">✎</button>
+            <button type="button" class="session-del" title="删除会话" @click.stop="removeSession(s.session_id)">×</button>
+          </div>
         </div>
         <div v-if="sessions.length === 0" class="pane-empty">还没有会话</div>
       </aside>
@@ -26,7 +41,16 @@
       <section class="message-pane page-card">
         <div class="chat-toolbar">
           <div class="current-conv">
-            <div class="current-title">{{ currentTitle }}</div>
+            <div class="current-title" @dblclick="currentSession && startRename(currentSession)">
+              <span>{{ currentTitle }}</span>
+              <button
+                v-if="currentSession"
+                type="button"
+                class="title-edit"
+                title="重命名会话"
+                @click="startRename(currentSession)"
+              >✎</button>
+            </div>
             <div class="current-sub">{{ messages.length }} 条消息 · {{ botName }}</div>
           </div>
           <div class="toolbar-spacer"></div>
@@ -134,6 +158,8 @@ const route = useRoute()
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const starterPrompts = ['总结今天的待办', '帮我安排明天日程', '查看未读邮件']
 const sessionQuery = ref('')
+const renamingId = ref<string | null>(null)
+const renameValue = ref('')
 const sessions = ref<any[]>([])
 const bots = ref<any[]>([])
 const messages = ref<any[]>([])
@@ -290,6 +316,41 @@ function newSession() {
   sessionId.value = newSessionId()
   messages.value = []
   input.value = ''
+  cancelRename()
+}
+
+async function startRename(session: any) {
+  if (!session?.session_id) return
+  renamingId.value = session.session_id
+  renameValue.value = session.title || ''
+  await nextTick()
+  const input = document.querySelector('.session-editing input') as HTMLInputElement | null
+  input?.focus()
+  input?.select()
+}
+
+function cancelRename() {
+  renamingId.value = null
+  renameValue.value = ''
+}
+
+async function commitRename(session: any) {
+  if (renamingId.value !== session.session_id) return
+  const title = renameValue.value.trim()
+  if (!title) {
+    ElMessage.warning('会话名称不能为空')
+    return
+  }
+  const id = session.session_id
+  renamingId.value = null
+  try {
+    await client.patch(`/chat/sessions/${encodeURIComponent(id)}`, { title })
+    const found = sessions.value.find((item) => item.session_id === id)
+    if (found) found.title = title
+    ElMessage.success('会话已重命名')
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '重命名失败')
+  }
 }
 
 async function switchSession(id: string) {
@@ -303,7 +364,7 @@ async function removeSession(id: string) {
   } catch {
     return
   }
-  await client.delete(`/chat/sessions/${id}`)
+  await client.delete(`/chat/sessions/${encodeURIComponent(id)}`)
   if (sessionId.value === id) newSession()
   await loadSessions()
 }
@@ -553,7 +614,8 @@ onMounted(async () => {
 .message-pane { border-radius: 18px; background: radial-gradient(900px 400px at 80% -20%, #eef2ff 0, transparent 60%), #fff; box-shadow: 0 12px 34px -28px rgba(30,41,59,.5); }
 .chat-toolbar { padding: 2px 2px 12px; }
 .current-conv { min-width: 0; }
-.current-title { font-size: 14px; font-weight: 700; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+.current-title { font-size: 14px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 2px; max-width: 420px; }
+.current-title > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .current-sub { margin-top: 2px; font-size: 11px; color: #9aa3b2; }
 .toolbar-spacer { flex: 1; }
 .message-body { padding: 22px 12px 8px; }
@@ -567,15 +629,28 @@ onMounted(async () => {
 .composer :deep(.el-textarea__inner) { border: none; box-shadow: none; background: transparent; padding: 4px 6px; font-size: 13.5px; }
 .context-bar { padding-top: 8px; }
 
-.session-row { position: relative; padding-right: 30px; }
-.session-del {
-  position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
-  width: 20px; height: 20px; border: none; border-radius: 6px;
-  background: transparent; color: #b0b7c3; font-size: 16px; line-height: 18px;
-  cursor: pointer; opacity: 0; transition: opacity .15s, background .15s, color .15s;
+.session-row { position: relative; padding-right: 54px; }
+.session-actions {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 2px;
+  opacity: 0; transition: opacity .15s;
 }
-.session-row:hover .session-del, .session-row.active .session-del { opacity: 1; }
+.session-row:hover .session-actions, .session-row.active .session-actions { opacity: 1; }
+.session-act, .session-del {
+  width: 20px; height: 20px; border: none; border-radius: 6px;
+  background: transparent; color: #b0b7c3; font-size: 15px; line-height: 18px;
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.session-act:hover { background: #e0e7ff; color: #4f46e5; }
 .session-del:hover { background: #fee2e2; color: #dc2626; }
+.session-editing { padding-right: 0; }
+.session-editing :deep(.el-input__wrapper) { border-radius: 7px; }
+.title-edit {
+  border: none; background: transparent; color: #a0a6b3;
+  cursor: pointer; font-size: 12px; opacity: 0; transition: opacity .15s, color .15s;
+}
+.current-title:hover .title-edit { opacity: 1; }
+.title-edit:hover { color: #4f46e5; }
 .session-row.active .session-title { color: #3730a3; font-weight: 600; }
 .message-row { margin-bottom: 26px; }
 .bubble { font-size: 13.5px; line-height: 1.8; padding: 12px 16px; }
