@@ -139,6 +139,7 @@ async def get_situation(user_id: int, *, force: bool = False) -> dict:
             "mail_unread": len(context.get("unread_mail") or []),
             "dingtalk_unread": len(context.get("dingtalk") or []),
             "notifications": await _unread_notifications(user_id),
+            "recent_mail": (context.get("unread_mail") or [])[:10],
         },
         "recent": {
             "files": context.get("recent_files", []),
@@ -151,6 +152,9 @@ async def get_situation(user_id: int, *, force: bool = False) -> dict:
         "goals": goals,
         "signals": _signals(context, proposals),
     }
+    from ai.cognition.situation_entities import build_situation_entities
+
+    snapshot["entities"] = await build_situation_entities(user_id, snapshot)
     await set_json(key, snapshot, ttl_seconds=CACHE_TTL)
     return snapshot
 
