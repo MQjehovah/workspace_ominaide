@@ -17,7 +17,8 @@ async function configureFeed() {
   if (configured) return
   const cfg = await getConfig()
   const base = String(cfg.serverUrl || 'https://mqgeek.com/ominaide').replace(/\/+$/, '')
-  autoUpdater.setFeedURL({ provider: 'generic', url: `${base}/api/desktop/releases` })
+  const platform = process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux'
+  autoUpdater.setFeedURL({ provider: 'generic', url: `${base}/api/desktop/releases/${platform}` })
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
   configured = true

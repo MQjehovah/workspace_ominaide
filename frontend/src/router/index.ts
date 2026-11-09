@@ -107,6 +107,12 @@ const router = createRouter({
           component: () => import('@/views/AdminUsers.vue')
         },
         {
+          path: 'admin/desktop',
+          name: 'AdminDesktop',
+          meta: { title: '桌面端', admin: true },
+          component: () => import('@/views/AdminDesktop.vue')
+        },
+        {
           path: 'admin/plugins',
           name: 'AdminPlugins',
           meta: { title: '插件市场', admin: true },

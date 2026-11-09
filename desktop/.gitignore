@@ -7,3 +7,5 @@ dist-electron/
 
 # Plugin build outputs
 plugins/*/frontend/
+
+plugin-bundle/

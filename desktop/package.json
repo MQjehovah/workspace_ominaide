@@ -1,16 +1,17 @@
 {
   "name": "omniaide-desktop",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "OmniAide Desktop - Plugin-based AI Workbench",
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "node scripts/build-plugins.mjs && node scripts/build-frontends.mjs && vite",
     "dev-fast": "vite",
-    "build": "node scripts/build-plugins.mjs && node scripts/build-frontends.mjs && vite build && electron-builder",
+    "build": "node scripts/build-plugins.mjs && node scripts/build-frontends.mjs && node scripts/stage-plugins.mjs && vite build && electron-builder",
     "build-frontends": "node scripts/build-frontends.mjs",
     "migrate-plugins": "node scripts/migrate-to-unified.mjs",
     "preview": "vite preview",
-    "publish:release": "node scripts/publish-release.mjs"
+    "publish:release": "node scripts/publish-release.mjs",
+    "stage-plugins": "node scripts/stage-plugins.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",
@@ -91,6 +92,12 @@
       {
         "provider": "generic",
         "url": "https://mqgeek.com/ominaide/api/desktop/releases"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "plugin-bundle",
+        "to": "plugins"
       }
     ]
   }

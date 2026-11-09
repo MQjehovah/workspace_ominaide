@@ -3,16 +3,27 @@ import { join } from 'path'
 import { app } from 'electron'
 import type { PluginManifest, PluginInfo } from '../../shared/types'
 
-function findPluginDirs(): string[] {
-  const dirs: string[] = []
+interface PluginDir {
+  path: string
+  builtin: boolean
+}
+
+function findPluginDirs(): PluginDir[] {
+  const dirs: PluginDir[] = []
   if (app.isPackaged) {
-    const userPlugins = join(app.getPath('userData'), 'plugins')
-    if (existsSync(userPlugins)) {
-      for (const entry of readdirSync(userPlugins, { withFileTypes: true })) {
+    // Load bundled built-ins first, then user-installed plugins so a user copy
+    // with the same id overrides the bundled one.
+    const roots = [
+      join(process.resourcesPath, 'plugins'),
+      join(app.getPath('userData'), 'plugins'),
+    ]
+    for (const [index, root] of roots.entries()) {
+      if (!existsSync(root)) continue
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
         if (entry.isDirectory()) {
-          const pluginDir = join(userPlugins, entry.name)
+          const pluginDir = join(root, entry.name)
           if (existsSync(join(pluginDir, 'manifest.json')) || existsSync(join(pluginDir, 'package.json'))) {
-            dirs.push(pluginDir)
+            dirs.push({ path: pluginDir, builtin: index === 0 })
           }
         }
       }
@@ -28,18 +39,20 @@ function findPluginDirs(): string[] {
         if (entry.isDirectory()) {
           const pluginDir = join(base, entry.name)
           if (existsSync(join(pluginDir, 'manifest.json')) || existsSync(join(pluginDir, 'package.json'))) {
-            dirs.push(pluginDir)
+            dirs.push({ path: pluginDir, builtin: true })
           }
         }
       }
     }
   }
-  return [...new Set(dirs)]
+  const unique = new Map<string, PluginDir>()
+  for (const item of dirs) unique.set(item.path, item)
+  return [...unique.values()]
 }
 
 export function loadPlugins(): Map<string, PluginInfo> {
   const plugins = new Map<string, PluginInfo>()
-  for (const dir of findPluginDirs()) {
+  for (const { path: dir, builtin } of findPluginDirs()) {
     try {
       // try unified manifest first
       const manifestPath = join(dir, 'manifest.json')
@@ -54,7 +67,7 @@ export function loadPlugins(): Map<string, PluginInfo> {
           icon: m.icon,
           keywords: m.keywords || [],
           permissions: m.permissions || [],
-          builtin: m.builtin !== false,
+          builtin: builtin || m.builtin !== false,
           main: m.main || 'dist/index.js',
         }
         plugins.set(manifest.id, { id: manifest.id, manifest, path: dir, enabled: true })
@@ -73,7 +86,7 @@ export function loadPlugins(): Map<string, PluginInfo> {
         icon: mqbox.icon,
         keywords: mqbox.keywords || [],
         permissions: mqbox.permissions || [],
-        builtin: mqbox.builtin !== false,
+        builtin: builtin || mqbox.builtin !== false,
         main: pkg.main || 'dist/index.js',
       }
       plugins.set(manifest.id, { id: manifest.id, manifest, path: dir, enabled: true })
