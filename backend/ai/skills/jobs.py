@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from core.jobs.service import enqueue, register_handler
 from core.scheduler import PeriodicJob
+from core.observability.context import set_user_id
 from ai.skills import brief_cache
 
 
@@ -27,7 +28,11 @@ async def refresh_user_brief(job) -> dict:
     user_id = int((job.payload or {}).get("user_id") or 0)
     if not user_id:
         return {"skipped": True, "reason": "missing user_id"}
-    payload = await brief_cache.refresh_user(user_id)
+    set_user_id(user_id)
+    try:
+        payload = await brief_cache.refresh_user(user_id)
+    finally:
+        set_user_id(None)
     return {"user_id": user_id, "day": payload.get("day")}
 
 

@@ -33,6 +33,8 @@ async def metrics(
                     RequestTrace.kind,
                     RequestTrace.status,
                     RequestTrace.duration_ms,
+                    RequestTrace.tokens_in,
+                    RequestTrace.tokens_out,
                 ).where(
                     RequestTrace.created_at >= since,
                     RequestTrace.user_id == user["id"],
@@ -64,9 +66,26 @@ async def metrics(
                 )
             )
         ).scalar() or 0
+        token_rows = (
+            await db.execute(
+                select(
+                    RequestTrace.name,
+                    func.sum(RequestTrace.tokens_in),
+                    func.sum(RequestTrace.tokens_out),
+                    func.count(),
+                )
+                .where(
+                    RequestTrace.created_at >= since,
+                    RequestTrace.user_id == user["id"],
+                    RequestTrace.kind == "llm",
+                )
+                .group_by(RequestTrace.name)
+                .order_by((func.sum(RequestTrace.tokens_in) + func.sum(RequestTrace.tokens_out)).desc())
+            )
+        ).all()
 
     groups: dict[str, dict] = {}
-    for kind, status, duration in rows:
+    for kind, status, duration, tokens_in, tokens_out in rows:
         bucket = groups.setdefault(
             kind or "request",
             {"count": 0, "errors": 0, "durations": []},
@@ -75,6 +94,11 @@ async def metrics(
         if status != "ok":
             bucket["errors"] += 1
         bucket["durations"].append(int(duration or 0))
+        bucket["tokens_in"] = bucket.get("tokens_in", 0) + int(tokens_in or 0)
+        bucket["tokens_out"] = bucket.get("tokens_out", 0) + int(tokens_out or 0)
+
+    token_total_in = sum(int(row[1] or 0) for row in token_rows)
+    token_total_out = sum(int(row[2] or 0) for row in token_rows)
 
     summary = {
         key: {
@@ -86,6 +110,8 @@ async def metrics(
             "p50_ms": _percentile(value["durations"], 0.50),
             "p95_ms": _percentile(value["durations"], 0.95),
             "max_ms": max(value["durations"]) if value["durations"] else 0,
+            "tokens_in": value.get("tokens_in", 0),
+            "tokens_out": value.get("tokens_out", 0),
         }
         for key, value in groups.items()
     }
@@ -93,6 +119,21 @@ async def metrics(
         "window_hours": hours,
         "total": total,
         "by_kind": summary,
+        "tokens": {
+            "input": token_total_in,
+            "output": token_total_out,
+            "total": token_total_in + token_total_out,
+            "by_model": [
+                {
+                    "model": row[0] or "unknown",
+                    "input": int(row[1] or 0),
+                    "output": int(row[2] or 0),
+                    "total": int(row[1] or 0) + int(row[2] or 0),
+                    "calls": int(row[3] or 0),
+                }
+                for row in token_rows
+            ],
+        },
         "slowest": [
             {
                 "kind": row[0],

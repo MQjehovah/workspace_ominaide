@@ -22,6 +22,8 @@ async def _write_trace(
     status_code: int | None,
     duration_ms: int,
     error: str | None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
 ) -> None:
     try:
         from core.database.session import async_session
@@ -37,6 +39,8 @@ async def _write_trace(
                     status=status,
                     status_code=status_code,
                     duration_ms=duration_ms,
+                    tokens_in=int(tokens_in or 0),
+                    tokens_out=int(tokens_out or 0),
                     error=(error or "")[:2000] or None,
                 )
             )
@@ -56,6 +60,8 @@ def record_trace(
     method: str | None = None,
     error: str | None = None,
     user_id: int | None = None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
 ) -> None:
     asyncio.create_task(
         _write_trace(
@@ -68,8 +74,22 @@ def record_trace(
             status_code=status_code,
             duration_ms=duration_ms,
             error=error,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
         )
     )
+
+
+class TraceSpan:
+    def __init__(self) -> None:
+        self.tokens_in = 0
+        self.tokens_out = 0
+
+    def add_usage(self, usage) -> None:
+        if usage is None:
+            return
+        self.tokens_in += int(getattr(usage, "prompt_tokens", 0) or 0)
+        self.tokens_out += int(getattr(usage, "completion_tokens", 0) or 0)
 
 
 @asynccontextmanager
@@ -78,8 +98,9 @@ async def trace_span(kind: str, name: str):
     started = time.monotonic()
     status = "ok"
     error: str | None = None
+    span = TraceSpan()
     try:
-        yield
+        yield span
     except Exception as exc:
         status = "error"
         error = str(exc)
@@ -92,4 +113,6 @@ async def trace_span(kind: str, name: str):
             duration_ms=int((time.monotonic() - started) * 1000),
             status=status,
             error=error,
+            tokens_in=span.tokens_in,
+            tokens_out=span.tokens_out,
         )

@@ -1,6 +1,7 @@
 
 from core.logging import get_logger
 log = get_logger(__name__)
+from ai.llm.usage import tracked_create
 import asyncio
 import base64
 import json
@@ -344,7 +345,7 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
     try:
         messages = await build_messages(req, user["id"], bot=bot, persona=False)
         client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
-        resp = await client.chat.completions.create(
+        resp = await tracked_create(client, 
             model=(bot.model if bot is not None and bot.model else settings.llm_model),
             messages=messages,
             temperature=(bot.temperature if bot is not None and bot.temperature is not None else 0.7),
@@ -925,7 +926,7 @@ async def translate(req: TranslateRequest, user: dict = Depends(get_current_user
     target_lang = lang_map.get(req.target, req.target)
     try:
         client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
-        resp = await client.chat.completions.create(
+        resp = await tracked_create(client, 
             model=settings.llm_model,
             messages=[
                 {"role": "system", "content": f"你是一个专业翻译。请把用户文本翻译成{target_lang}。只返回翻译结果，不要任何解释或多余内容。保持原意、语气和格式。"},

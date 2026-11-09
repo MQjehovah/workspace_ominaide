@@ -213,3 +213,25 @@ async def test_shell_tool_is_admin_only(client, admin_token):
 
     allowed = await run_shell(admin_id, {"command": "echo ok", "cwd": workdir})
     assert not allowed.isError, allowed.content[0].text
+
+
+async def test_metrics_include_llm_token_usage(client, admin_token):
+    admin_id = (await _me(client, admin_token))["id"]
+
+    from core.database.session import async_session
+    from core.observability.models import RequestTrace
+
+    async with async_session() as db:
+        db.add(RequestTrace(
+            trace_id="llm-token-trace", user_id=admin_id, kind="llm",
+            name="deepseek-test", status="ok", duration_ms=12,
+            tokens_in=120, tokens_out=30,
+        ))
+        await db.commit()
+
+    r = await client.get("/api/metrics", headers=auth(admin_token))
+    assert r.status_code == 200, r.text
+    tokens = r.json()["tokens"]
+    assert tokens["input"] >= 120
+    assert tokens["output"] >= 30
+    assert any(row["model"] == "deepseek-test" for row in tokens["by_model"])

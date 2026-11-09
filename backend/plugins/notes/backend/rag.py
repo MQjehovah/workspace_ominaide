@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from core.logging import get_logger
 log = get_logger(__name__)
+from ai.llm.usage import tracked_create
 
 import asyncio
 import json
@@ -507,7 +508,7 @@ async def _rewrite_queries(query: str) -> list[str]:
     try:
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-        resp = await client.chat.completions.create(
+        resp = await tracked_create(client, 
             model=settings.llm_model,
             messages=[
                 {"role": "system", "content": (
@@ -700,7 +701,7 @@ async def _judge_sufficiency(question: str, results: list[dict[str, Any]]) -> di
     try:
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-        resp = await client.chat.completions.create(
+        resp = await tracked_create(client, 
             model=settings.llm_model,
             messages=[
                 {"role": "system", "content": (
@@ -786,7 +787,7 @@ async def ask_notes(
 
     from openai import AsyncOpenAI
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-    resp = await client.chat.completions.create(
+    resp = await tracked_create(client, 
         model=settings.llm_model,
         messages=[
             {"role": "system", "content": (

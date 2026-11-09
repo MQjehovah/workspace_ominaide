@@ -5,6 +5,7 @@ workspace through the sandboxed workspace tools, then hands git delivery to
 ``ai.coding.delivery`` so branch/verify/commit policy stays in one place.
 """
 import json
+from ai.llm.usage import tracked_create
 import logging
 from pathlib import Path
 
@@ -145,7 +146,7 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
             return {"status": "cancelled", "output": last_text or None, "error": None}
 
         try:
-            resp = await client.chat.completions.create(
+            resp = await tracked_create(client, 
                 model=model,
                 messages=messages,
                 tools=TOOLS,

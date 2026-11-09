@@ -19,5 +19,7 @@ class RequestTrace(Base):
     status = Column(String(20), nullable=False, default="ok")
     status_code = Column(Integer, nullable=True)
     duration_ms = Column(Integer, nullable=False, default=0)
+    tokens_in = Column(Integer, nullable=False, default=0)
+    tokens_out = Column(Integer, nullable=False, default=0)
     error = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)

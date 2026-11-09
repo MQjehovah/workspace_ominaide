@@ -10,7 +10,46 @@
 
     <el-tabs v-model="tab" class="cap-tabs">
       <el-tab-pane label="运行指标" name="metrics">
-        <div class="metric-grid" v-loading="loading.metrics">
+        <div class="token-grid" v-loading="loading.metrics">
+          <div class="token-card primary">
+            <div class="token-label">LLM 总 Token</div>
+            <div class="token-value">{{ formatNumber(metrics.tokens?.total) }}</div>
+            <div class="token-sub">输入 {{ formatNumber(metrics.tokens?.input) }} · 输出 {{ formatNumber(metrics.tokens?.output) }}</div>
+          </div>
+          <div class="token-card">
+            <div class="token-label">LLM 调用次数</div>
+            <div class="token-value">{{ formatNumber(metrics.by_kind?.llm?.count) }}</div>
+            <div class="token-sub">p95 {{ metrics.by_kind?.llm?.p95_ms || 0 }} ms</div>
+          </div>
+          <div class="token-card">
+            <div class="token-label">平均每次 Token</div>
+            <div class="token-value">{{ formatNumber(avgTokens) }}</div>
+            <div class="token-sub">输入 + 输出 / 调用次数</div>
+          </div>
+        </div>
+
+        <div class="page-card" style="margin-top:14px" v-if="metrics.tokens?.by_model?.length">
+          <div class="page-card-body">
+            <h4 style="margin:0 0 10px">按模型 Token</h4>
+            <el-table :data="metrics.tokens.by_model" size="small" stripe>
+              <el-table-column prop="model" label="模型" min-width="260" show-overflow-tooltip />
+              <el-table-column label="输入" width="130">
+                <template #default="{ row }">{{ formatNumber(row.input) }}</template>
+              </el-table-column>
+              <el-table-column label="输出" width="130">
+                <template #default="{ row }">{{ formatNumber(row.output) }}</template>
+              </el-table-column>
+              <el-table-column label="合计" width="140">
+                <template #default="{ row }"><b>{{ formatNumber(row.total) }}</b></template>
+              </el-table-column>
+              <el-table-column label="调用" width="100">
+                <template #default="{ row }">{{ formatNumber(row.calls) }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+
+        <div class="metric-grid" v-loading="loading.metrics" style="margin-top:14px">
           <div class="metric-card" v-for="(value, key) in metrics.by_kind" :key="key">
             <div class="metric-title">{{ kindLabel(String(key)) }}</div>
             <div class="metric-main">{{ value.count }}</div>
@@ -151,14 +190,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import client from '@/api/client'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 
 const tab = ref('metrics')
 const loading = reactive({ metrics: false, jobs: false, agent: false, context: false, automation: false })
-const metrics = ref<any>({ by_kind: {}, slowest: [] })
+const metrics = ref<any>({ by_kind: {}, slowest: [], tokens: {} })
 const jobs = ref<any[]>([])
 const jobStatus = ref('')
 const goal = ref('')
@@ -176,6 +215,17 @@ const automationText = ref(JSON.stringify({
   actions: [{ type: 'agent', params: { goal: '汇总未读邮件并生成摘要' } }],
 }, null, 2))
 const automationResult = ref<any>(null)
+
+function formatNumber(value: any) {
+  const number = Number(value || 0)
+  return Number.isFinite(number) ? number.toLocaleString('zh-CN') : '0'
+}
+
+const avgTokens = computed(() => {
+  const calls = Number(metrics.value?.by_kind?.llm?.count || 0)
+  const total = Number(metrics.value?.tokens?.total || 0)
+  return calls > 0 ? Math.round(total / calls) : 0
+})
 
 function kindLabel(kind: string) {
   return ({ request: '接口请求', mcp: 'MCP 调用', llm: 'LLM 调用', asr: 'ASR 转写' } as any)[kind] || kind
@@ -255,10 +305,18 @@ onMounted(refreshAll)
 </script>
 
 <style scoped>
+.token-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.token-card { background: #fff; border: 1px solid #ebeef5; border-radius: 12px; padding: 16px; }
+.token-card.primary { background: linear-gradient(135deg, #eef2ff, #f5f3ff); border-color: #ddd6fe; }
+.token-label { font-size: 12px; color: #909399; }
+.token-value { font-size: 28px; font-weight: 800; color: #303133; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.token-card.primary .token-value { color: #4338ca; }
+.token-sub { font-size: 11px; color: #909399; margin-top: 4px; }
 .metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .metric-card { background: #fff; border: 1px solid #ebeef5; border-radius: 12px; padding: 16px; }
 .metric-title { font-size: 12px; color: #909399; }
 .metric-main { font-size: 30px; font-weight: 800; color: #303133; margin-top: 4px; }
 .metric-sub { font-size: 11px; color: #909399; margin-top: 4px; }
 .json-box { margin-top: 12px; background: #f5f7fa; border-radius: 8px; padding: 12px; font-size: 12px; overflow: auto; max-height: 420px; }
+@media (max-width: 900px) { .token-grid { grid-template-columns: 1fr; } }
 </style>

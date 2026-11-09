@@ -19,6 +19,7 @@ from core.database.session import async_session
 from core.logging import get_logger
 
 log = get_logger(__name__)
+from ai.llm.usage import tracked_create
 MAX_BYTES = 2 * 1024 * 1024
 
 
@@ -77,7 +78,7 @@ async def _llm_analyze(title: str, content: str) -> dict:
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-        resp = await client.chat.completions.create(
+        resp = await tracked_create(client, 
             model=settings.llm_model,
             messages=[
                 {

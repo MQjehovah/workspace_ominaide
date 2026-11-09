@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from core.logging import get_logger
 log = get_logger(__name__)
+from ai.llm.usage import tracked_create
 
 import json
 import re
@@ -210,7 +211,7 @@ async def _llm_insight(data: dict) -> dict | None:
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-        resp = await client.chat.completions.create(
+        resp = await tracked_create(client, 
             model=settings.llm_model,
             messages=[
                 {"role": "system", "content": (

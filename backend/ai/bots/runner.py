@@ -13,6 +13,7 @@ Design notes:
 
 from core.logging import get_logger
 log = get_logger(__name__)
+from ai.llm.usage import record_chat_usage, tracked_create
 import asyncio
 import json
 import time
@@ -288,14 +289,18 @@ async def _stream_completion(
     raw_calls: list[dict] | None = None
     last_partial = 0.0
 
-    stream = await client.chat.completions.create(
+    stream = await tracked_create(client, 
         model=bot.model or settings.llm_model,
         messages=messages,
         tools=tools or None,
         temperature=bot.temperature if bot.temperature is not None else 0.7,
         stream=True,
+        stream_options={"include_usage": True},
     )
     async for chunk in stream:
+        usage = getattr(chunk, "usage", None)
+        if usage:
+            record_chat_usage(bot.model or settings.llm_model, usage)
         delta = chunk.choices[0].delta if chunk.choices else None
         if not delta:
             continue

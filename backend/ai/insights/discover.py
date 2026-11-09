@@ -3,6 +3,7 @@ user's work patterns, and produces natural-language insights & proactive suggest
 
 from core.logging import get_logger
 log = get_logger(__name__)
+from ai.llm.usage import tracked_create
 
 from datetime import datetime, timedelta, timezone
 
@@ -122,7 +123,7 @@ async def discover_insights(user_id: int):
             ]
             prompt_text = "\n".join(s for s in summary_lines if s)
 
-            resp = await client.chat.completions.create(
+            resp = await tracked_create(client, 
                 model=settings.llm_model,
                 messages=[
                     {"role": "system", "content": (

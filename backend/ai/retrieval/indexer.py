@@ -1,6 +1,7 @@
 
 from core.logging import get_logger
 log = get_logger(__name__)
+from ai.llm.usage import tracked_create
 import json
 import re
 from core.config.settings import settings
@@ -74,7 +75,7 @@ async def extract_and_store_entities(user_id: int, content: str, source_type: st
             base_url=settings.llm_base_url,
         )
 
-        resp = await client.chat.completions.create(
+        resp = await tracked_create(client, 
             model=settings.llm_model,
             messages=[
                 {"role": "system", "content": "从文本中提取稳定的实体（人物、项目、产品、术语），以JSON格式返回数组：[{\"name\":\"实体名\",\"type\":\"person|project|term\"}]。不要提取代码路径、API 路由、操作动词、单个字母或测试占位符。只返回JSON，不要其他文字。"},

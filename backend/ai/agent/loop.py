@@ -1,5 +1,6 @@
 """Agent with streaming support."""
 import json
+from ai.llm.usage import record_chat_usage, tracked_create
 from core.config.settings import settings
 from ai.llm.clients import get_openai_client
 from ai.mcp.gateway import select_exposed_tools
@@ -59,7 +60,7 @@ async def run_agent(
     )
 
     for turn in range(max_turns):
-        resp = await client.chat.completions.create(
+        resp = await tracked_create(client, 
             model=model or settings.llm_model,
             messages=messages,
             tools=openai_tools or None,
@@ -112,13 +113,17 @@ async def run_agent_stream(
         accumulated_content = ""
         accumulated_reasoning = ""
         tool_calls = None
-        async for chunk in await client.chat.completions.create(
+        async for chunk in await tracked_create(client, 
             model=model or settings.llm_model,
             messages=messages,
             tools=openai_tools or None,
             temperature=temperature,
             stream=True,
+            stream_options={"include_usage": True},
         ):
+            usage = getattr(chunk, "usage", None)
+            if usage:
+                record_chat_usage(model or settings.llm_model, usage)
             delta = chunk.choices[0].delta if chunk.choices else None
             if not delta:
                 continue
@@ -203,6 +208,8 @@ async def run_agent_stream(
             yield f"data: {json.dumps({'type': 'tool_result', 'name': name, 'content': content, 'error': is_err}, ensure_ascii=False)}\n\n"
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": content})
 
-    yield f"data: {json.dumps({'type': 'token', 'content': '\n\n[Agent reached max turns]'})}\n\n"
+    yield "data: " + json.dumps({
+        'type': 'token', 'content': '\n\n[Agent reached max turns]'
+    }) + "\n\n"
     yield usage_event()
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
