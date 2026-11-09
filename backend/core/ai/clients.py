@@ -11,6 +11,10 @@ import asyncio
 
 from openai import AsyncOpenAI
 
+from core.logging import get_logger
+
+log = get_logger(__name__)
+
 _clients: dict[tuple[str, str], AsyncOpenAI] = {}
 
 
@@ -42,9 +46,9 @@ async def warm_voice_clients() -> None:
         try:
             client = get_openai_client(base_url, api_key)
             await asyncio.wait_for(client.models.list(), timeout=8)
-            print(f"[clients] warmed {base_url}", flush=True)
+            log.info("[clients] warmed %s", base_url)
         except Exception as e:
-            print(f"[clients] warm-up failed {base_url}: {e}", flush=True)
+            log.warning("[clients] warm-up failed %s: %s", base_url, e)
 
     # Embedding calls sit in the voice critical path (memory lookup), so pay
     # their TLS handshake at startup too.
@@ -52,6 +56,6 @@ async def warm_voice_clients() -> None:
         from core.ai.embeddings import generate_embedding
 
         await asyncio.wait_for(generate_embedding("warm"), timeout=8)
-        print(f"[clients] warmed embeddings {settings.embedding_base_url}", flush=True)
+        log.info("[clients] warmed embeddings %s", settings.embedding_base_url)
     except Exception as e:
-        print(f"[clients] embedding warm-up failed: {e}", flush=True)
+        log.warning("[clients] embedding warm-up failed: %s", e)

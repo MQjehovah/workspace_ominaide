@@ -1,8 +1,10 @@
 """Logging redaction and a guard against new print() calls."""
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+_PRINT_CALL = re.compile(r"(?<![\w.])print\(")
 
 
 def test_redacts_tokens_and_passwords():
@@ -22,6 +24,7 @@ def test_runtime_code_has_no_print_calls():
         for path in folder.rglob("*.py"):
             if "__pycache__" in str(path) or "mcp_servers" in path.parts:
                 continue
-            if "print(" in path.read_text(encoding="utf-8", errors="ignore"):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if _PRINT_CALL.search(text):
                 offenders.append(str(path.relative_to(ROOT)))
     assert offenders == []

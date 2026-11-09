@@ -38,23 +38,28 @@ async def test_background_job_lifecycle(client):
         seen.append(job.id)
 
     jobs.register_handler("test.noop", handler)
+    # conftest disables the app's background workers so other tests stay
+    # deterministic; this test owns one worker explicitly.
+    jobs.start_workers(1)
+    try:
+        r = await client.post(
+            "/api/jobs",
+            json={"kind": "test.noop", "payload": {"x": 1}},
+            headers=auth(token),
+        )
+        assert r.status_code == 200, r.text
+        job_id = r.json()["id"]
 
-    r = await client.post(
-        "/api/jobs",
-        json={"kind": "test.noop", "payload": {"x": 1}},
-        headers=auth(token),
-    )
-    assert r.status_code == 200, r.text
-    job_id = r.json()["id"]
-
-    for _ in range(40):
-        await asyncio.sleep(0.1)
-        r = await client.get("/api/jobs", headers=auth(token))
-        row = next(item for item in r.json()["items"] if item["id"] == job_id)
-        if row["status"] in {"done", "failed", "dead"}:
-            break
-    assert row["status"] == "done", row
-    assert job_id in seen
+        for _ in range(40):
+            await asyncio.sleep(0.1)
+            r = await client.get("/api/jobs", headers=auth(token))
+            row = next(item for item in r.json()["items"] if item["id"] == job_id)
+            if row["status"] in {"done", "failed", "dead"}:
+                break
+        assert row["status"] == "done", row
+        assert job_id in seen
+    finally:
+        await jobs.stop_workers()
 
 
 async def test_graph_context(client):

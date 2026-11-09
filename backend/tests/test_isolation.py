@@ -3,6 +3,7 @@
 import inspect
 import random
 import string
+import tempfile
 
 from conftest import auth
 
@@ -205,9 +206,10 @@ async def test_shell_tool_is_admin_only(client, admin_token):
 
     from core.ai.mcp.tools.system import run_shell
 
-    denied = await run_shell(user_b, {"command": "echo no", "cwd": "/tmp"})
+    workdir = tempfile.gettempdir()
+    denied = await run_shell(user_b, {"command": "echo no", "cwd": workdir})
     assert denied.isError
     assert "管理员" in denied.content[0].text
 
-    allowed = await run_shell(admin_id, {"command": "echo ok", "cwd": "/tmp"})
+    allowed = await run_shell(admin_id, {"command": "echo ok", "cwd": workdir})
     assert not allowed.isError, allowed.content[0].text
