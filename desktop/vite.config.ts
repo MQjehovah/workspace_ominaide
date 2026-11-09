@@ -17,7 +17,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: resolve(__dirname, 'dist-electron/main'),
-            rollupOptions: { external: (id: string) => id === 'ws' || id === 'fsevents' || id.startsWith('fsevents/') || id.startsWith('@nut-tree-fork/') || id === 'node-pty' || id.startsWith('@modelcontextprotocol/') },
+            rollupOptions: { external: (id: string) => id === 'ws' || id === 'fsevents' || id.startsWith('fsevents/') || id.startsWith('@nut-tree-fork/') || id === 'node-pty' || id.startsWith('@modelcontextprotocol/') || id === 'electron-updater' || id.startsWith('electron-log') },
           },
         },
       },

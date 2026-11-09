@@ -232,7 +232,9 @@ from activities.router import router as activities_router
 app.include_router(activities_router)
 
 from app.objects.router import router as objects_router
+from app.desktop.router import router as desktop_releases_router
 app.include_router(objects_router)
+app.include_router(desktop_releases_router)
 
 
 @app.websocket("/ws/sync/{folder_id}")

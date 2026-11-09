@@ -160,6 +160,17 @@ contextBridge.exposeInMainWorld('mqbox', {
       return () => ipcRenderer.removeListener('agent:event', handler)
     },
   },
+  update: {
+    info: () => ipcRenderer.invoke('update:info'),
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onStatus: (callback: (status: any) => void) => {
+      const handler = (_: any, status: any) => callback(status)
+      ipcRenderer.on('update:status', handler)
+      return () => ipcRenderer.removeListener('update:status', handler)
+    },
+  },
   log: {
     write: (pluginId: string, level: string, message: string) =>
       ipcRenderer.invoke('log:write', pluginId, level, message),

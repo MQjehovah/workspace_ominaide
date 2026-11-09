@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     # skills are discovered under skills_dir (relative to the backend cwd).
     skills_dir: str = "data/skills"
     desktop_plugins_dir: str = "desktop_plugins"
+    desktop_releases_dir: str = "/data/desktop-releases"
     # Daily memory agent auto-approves candidates at or above this confidence.
     memory_auto_approve_threshold: int = 85
     intelligence_layer_enabled: bool = True

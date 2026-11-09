@@ -16,6 +16,10 @@ const notifCount = ref(0)
 const notifs = ref<any[]>([])
 const allNotifs = ref<any[]>([])
 let notifTimer: any = null
+const updateDialog = ref(false)
+const updateInfo = ref<any>({})
+const updateStatus = ref<any>({ status: 'idle' })
+let removeUpdateListener: (() => void) | null = null
 
 async function toggleNotifDropdown() {
   showNotifDropdown.value = !showNotifDropdown.value
@@ -127,8 +131,48 @@ const defaultIcon: Record<string, string> = {
   activity: '📊', translator: '🌐', sysmonitor: '🖥️', pomodoro: '🍅',
 }
 
+async function openUpdateDialog() {
+  showUserMenu.value = false
+  updateDialog.value = true
+  updateInfo.value = await window.mqbox?.update.info() || {}
+  updateStatus.value = updateInfo.value.lastStatus || { status: 'idle' }
+}
+
+async function checkUpdate() {
+  updateStatus.value = { status: 'checking' }
+  try {
+    updateStatus.value = await window.mqbox?.update.check() || { status: 'idle' }
+  } catch (e: any) {
+    updateStatus.value = { status: 'error', message: e?.message || String(e) }
+  }
+}
+
+async function downloadUpdate() {
+  await window.mqbox?.update.download()
+}
+
+async function installUpdate() {
+  await window.mqbox?.update.install()
+}
+
+function updateStatusText(status: any) {
+  const value = status?.status
+  if (value === 'checking') return '正在检查更新…'
+  if (value === 'available') return `发现新版本 v${status.version}`
+  if (value === 'latest') return '已经是最新版本'
+  if (value === 'downloading') return `正在下载 ${status.percent || 0}%`
+  if (value === 'downloaded') return `新版本 v${status.version} 已下载，重启后安装`
+  if (value === 'dev') return '开发模式不检查更新'
+  if (value === 'error') return `更新失败：${status.message || '未知错误'}`
+  return '点击检查更新'
+}
+
 onMounted(() => {
   loadPlugins()
+  removeUpdateListener = window.mqbox?.update?.onStatus?.((status: any) => {
+    updateStatus.value = status
+    if (status.status === 'available' || status.status === 'downloaded') updateDialog.value = true
+  }) || null
   fetchNotifCount()
   notifTimer = setInterval(fetchNotifCount, 15000)
   document.addEventListener('mousedown', onDocClick)
@@ -136,6 +180,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (notifTimer) clearInterval(notifTimer)
+  removeUpdateListener?.()
   document.removeEventListener('mousedown', onDocClick)
 })
 </script>
@@ -189,6 +234,9 @@ onUnmounted(() => {
         <button class="menu-item" @click="openManager()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> 管理
         </button>
+        <button class="menu-item" @click="openUpdateDialog">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.8 1 6.5 2.6"/><polyline points="21 3 21 9 15 9"/></svg> 检查更新
+        </button>
         <button class="menu-item danger" @click="showUserMenu = false; logout()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg> 退出登录
         </button>
@@ -231,6 +279,30 @@ onUnmounted(() => {
           </template>
         </div>
       </template>
+    </div>
+
+    <div v-if="updateDialog" class="update-overlay" @click.self="updateDialog = false">
+      <div class="update-dialog">
+        <div class="update-hd">
+          <span>软件更新</span>
+          <button class="update-close" @click="updateDialog = false">×</button>
+        </div>
+        <div class="update-version">当前版本 v{{ updateInfo.version || '—' }}</div>
+        <div class="update-state" :class="updateStatus.status">{{ updateStatusText(updateStatus) }}</div>
+        <el-progress
+          v-if="updateStatus.status === 'downloading'"
+          :percentage="updateStatus.percent || 0"
+          :stroke-width="6"
+          style="margin-top:10px"
+        />
+        <div class="update-actions">
+          <button v-if="updateStatus.status === 'available'" class="update-btn primary" @click="downloadUpdate">下载更新</button>
+          <button v-else-if="updateStatus.status === 'downloaded'" class="update-btn primary" @click="installUpdate">重启并安装</button>
+          <button v-else class="update-btn" :disabled="updateStatus.status === 'checking' || updateStatus.status === 'downloading'" @click="checkUpdate">
+            检查更新
+          </button>
+        </div>
+      </div>
     </div>
 
     <div class="resize-handle"></div>
@@ -361,4 +433,17 @@ onUnmounted(() => {
     inset 3px 3px 6px rgba(163, 177, 198, 0.55),
     inset -3px -3px 6px rgba(255, 255, 255, 0.8);
 }
+
+.update-overlay { position:absolute; inset:0; background:rgba(15,23,42,.28); display:flex; align-items:center; justify-content:center; z-index:120; }
+.update-dialog { width:260px; background:#eef2f7; border-radius:16px; padding:16px; box-shadow:12px 12px 28px rgba(163,177,198,.55),-8px -8px 20px rgba(255,255,255,.7); }
+.update-hd { display:flex; align-items:center; justify-content:space-between; font-size:14px; font-weight:700; color:#3a4256; }
+.update-close { border:none; background:transparent; color:#8a94a8; cursor:pointer; font-size:18px; }
+.update-version { margin-top:10px; font-size:12px; color:#8a94a8; }
+.update-state { margin-top:8px; font-size:12px; color:#4a5268; line-height:1.5; }
+.update-state.error { color:#dc2626; }
+.update-state.available, .update-state.downloaded { color:#4f46e5; }
+.update-actions { display:flex; justify-content:flex-end; margin-top:14px; }
+.update-btn { height:30px; padding:0 14px; border:none; border-radius:8px; background:#e4e9f0; color:#4a5268; font-size:12px; cursor:pointer; box-shadow:3px 3px 6px rgba(163,177,198,.5),-3px -3px 6px rgba(255,255,255,.75); }
+.update-btn.primary { background:linear-gradient(145deg,#5b6ee1,#4f46e5); color:#fff; }
+.update-btn:disabled { opacity:.55; cursor:default; }
 </style>
