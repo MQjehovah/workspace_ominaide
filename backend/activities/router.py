@@ -55,6 +55,40 @@ async def list_activities(
     return [ActivityResponse.model_validate(e) for e in activities]
 
 
+@router.get("/page")
+async def page_activities(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    event_type: str | None = None,
+    entity_type: str | None = None,
+    days: int | None = Query(None, ge=1, le=90),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import datetime, timedelta
+    query = select(UserActivity).where(UserActivity.user_id == user["id"])
+    if event_type:
+        query = query.where(UserActivity.event_type == event_type)
+    if entity_type:
+        query = query.where(UserActivity.entity_type == entity_type)
+    if days:
+        query = query.where(UserActivity.created_at >= (datetime.utcnow() - timedelta(days=days)))
+    total = (await db.execute(
+        select(func.count()).select_from(query.subquery())
+    )).scalar() or 0
+    rows = list((await db.execute(
+        query.order_by(desc(UserActivity.created_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )).scalars().all())
+    return {
+        "items": [ActivityResponse.model_validate(row) for row in rows],
+        "total": int(total),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
 @router.get("/stats")
 async def activity_stats(
     days: int = Query(7, ge=1, le=90),
@@ -65,20 +99,6 @@ async def activity_stats(
     from datetime import datetime, timedelta
     since = datetime.utcnow() - timedelta(days=days)
 
-    # App usage: sum minutes per app (from app.used events).
-    r = await db.execute(
-        select(UserActivity).where(
-            UserActivity.user_id == user["id"],
-            UserActivity.event_type == "app.used",
-            UserActivity.created_at >= since,
-        )
-    )
-    app_minutes: dict[str, int] = {}
-    for e in r.scalars().all():
-        d = e.details or {}
-        app = d.get("app") or "未知"
-        app_minutes[app] = app_minutes.get(app, 0) + int(d.get("minutes") or 0)
-
     # Event type distribution.
     r2 = await db.execute(
         select(UserActivity.event_type, func.count())
@@ -87,18 +107,11 @@ async def activity_stats(
     )
     type_counts = {t: c for t, c in r2.all()}
 
-    top_apps = sorted(
-        ({"app": k, "minutes": v} for k, v in app_minutes.items()),
-        key=lambda x: -x["minutes"],
-    )
     return {
         "days": days,
-        "app_minutes": top_apps[:10],
-        "total_minutes": sum(app_minutes.values()),
-        "top_app": top_apps[0]["app"] if top_apps else None,
         "type_counts": type_counts,
-        "clipboard_count": type_counts.get("clipboard.copy", 0),
         "event_count": sum(type_counts.values()),
+        "type_count": len(type_counts),
     }
 
 

@@ -6,8 +6,9 @@
           <span class="pane-title">会话</span>
           <el-button size="small" type="primary" @click="newSession">新对话</el-button>
         </div>
+        <el-input v-model="sessionQuery" size="small" clearable placeholder="搜索会话" class="session-search" />
         <div
-          v-for="s in sessions"
+          v-for="s in filteredSessions"
           :key="s.session_id"
           class="session-row"
           :class="{ active: s.session_id === sessionId }"
@@ -34,16 +35,52 @@
           <div v-if="messages.length === 0" class="chat-empty">
             <div class="chat-empty-icon">✦</div>
             <p>问点什么，或让助手帮你查日程、待办、邮件和笔记。</p>
+            <div class="starter-prompts">
+              <button v-for="p in starterPrompts" :key="p" type="button" @click="usePrompt(p)">{{ p }}</button>
+            </div>
           </div>
           <div
             v-for="(m, i) in messages"
-            :key="i"
-            class="bubble-row"
+            :key="m.id || i"
+            class="message-row"
             :class="m.role"
           >
-            <div class="bubble">
-              <div v-if="m.role === 'assistant' && !m.content && loading" class="typing">正在思考…</div>
-              <div v-else class="bubble-text">{{ m.content }}</div>
+            <div class="msg-avatar">{{ m.role === 'user' ? '我' : '✦' }}</div>
+            <div class="msg-main">
+              <div class="bubble" :class="{ streaming: loading && i === messages.length - 1 && m.role === 'assistant' }">
+                <div v-if="m.role === 'assistant' && !m.content && loading" class="typing">
+                  <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                  正在思考…
+                </div>
+                <template v-else>
+                  <details v-if="m.reasoning" class="reasoning-box">
+                    <summary>思考过程</summary>
+                    <div class="reasoning-text">{{ m.reasoning }}</div>
+                  </details>
+                  <div v-if="m.role === 'assistant'" class="md-body" v-html="renderMarkdown(m.content)"></div>
+                  <div v-else class="bubble-text">{{ m.content }}</div>
+                  <div v-if="m.steps?.length" class="tool-panel">
+                    <button type="button" class="tool-panel-toggle" @click="m.stepsOpen = !m.stepsOpen">
+                      ⚙ {{ m.steps.length }} 个工具调用
+                      <span>{{ m.stepsOpen ? '收起' : '展开' }}</span>
+                    </button>
+                    <div v-if="m.stepsOpen" class="tool-steps">
+                      <div v-for="(step, si) in m.steps" :key="si" class="tool-step">
+                        <div class="tool-step-name">
+                          <span>{{ step.status === 'running' ? '◌' : step.status === 'error' ? '×' : '✓' }}</span>
+                          {{ step.name }}
+                        </div>
+                        <pre v-if="step.args" class="tool-pre">{{ step.args }}</pre>
+                        <pre v-if="step.result" class="tool-pre" :class="{ err: step.status === 'error' }">{{ step.result }}</pre>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+              <div class="msg-meta">
+                <span>{{ m.role === 'user' ? '你' : 'AI 助手' }} · {{ formatTime(m.createdAt) }}</span>
+                <button v-if="m.content" type="button" @click="copyMessage(m)">复制</button>
+              </div>
             </div>
           </div>
         </div>
@@ -78,16 +115,21 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import client from '@/api/client'
 import { apiUrl } from '@/api/base'
 import { formatBackendDate } from '@/utils/date'
 import ObjectPicker from '@/components/ObjectPicker.vue'
 
 const route = useRoute()
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const starterPrompts = ['总结今天的待办', '帮我安排明天日程', '查看未读邮件']
+const sessionQuery = ref('')
 const sessions = ref<any[]>([])
 const bots = ref<any[]>([])
 const messages = ref<any[]>([])
@@ -99,6 +141,28 @@ const bodyRef = ref<HTMLElement | null>(null)
 const pickerVisible = ref(false)
 const contextRefs = ref<any[]>([])
 const contextCommentId = ref<number | null>(null)
+
+const filteredSessions = computed(() => {
+  const q = sessionQuery.value.trim().toLowerCase()
+  if (!q) return sessions.value
+  return sessions.value.filter((s) => String(s.title || '').toLowerCase().includes(q))
+})
+
+function renderMarkdown(text: string) {
+  return DOMPurify.sanitize(md.render(String(text || '')))
+}
+
+function copyMessage(m: any) {
+  navigator.clipboard.writeText(String(m.content || '')).then(
+    () => ElMessage.success('已复制'),
+    () => ElMessage.error('复制失败'),
+  )
+}
+
+function usePrompt(text: string) {
+  input.value = text
+  send()
+}
 
 const typeLabels: Record<string, string> = {
   schedule_event: '日程',
@@ -196,7 +260,15 @@ async function loadHistory() {
     })
     messages.value = (data || [])
       .filter((m: any) => m.content)
-      .map((m: any) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }))
+      .map((m: any, index: number) => ({
+        id: `history-${index}-${m.created_at || ''}`,
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: m.content,
+        steps: [] as any[],
+        stepsOpen: false,
+        reasoning: '',
+        createdAt: m.created_at || '',
+      }))
     scrollBottom()
   } catch {
     messages.value = []
@@ -235,8 +307,25 @@ async function send() {
   const text = input.value.trim()
   if (!text || loading.value) return
   input.value = ''
-  messages.value.push({ role: 'user', content: text })
-  const replyIndex = messages.value.push({ role: 'assistant', content: '' }) - 1
+  const now = new Date().toISOString()
+  messages.value.push({
+    id: `u-${Date.now()}`,
+    role: 'user',
+    content: text,
+    steps: [],
+    stepsOpen: false,
+    reasoning: '',
+    createdAt: now,
+  })
+  const replyIndex = messages.value.push({
+    id: `a-${Date.now()}`,
+    role: 'assistant',
+    content: '',
+    steps: [],
+    stepsOpen: false,
+    reasoning: '',
+    createdAt: now,
+  }) - 1
   loading.value = true
   scrollBottom()
 
@@ -284,9 +373,28 @@ async function send() {
               reply += payload.content || ''
               messages.value[replyIndex].content = reply
               scrollBottom()
+            } else if (payload.type === 'reasoning') {
+              messages.value[replyIndex].reasoning += payload.content || ''
+            } else if (payload.type === 'tool_call') {
+              messages.value[replyIndex].steps.push({
+                name: payload.name || 'tool',
+                args: payload.arguments ? JSON.stringify(payload.arguments, null, 2) : '',
+                result: '',
+                status: 'running',
+              })
+            } else if (payload.type === 'tool_result') {
+              const steps = messages.value[replyIndex].steps
+              for (let si = steps.length - 1; si >= 0; si -= 1) {
+                if (steps[si].status === 'running') {
+                  steps[si].status = payload.error ? 'error' : 'done'
+                  steps[si].result = String(payload.content || '').slice(0, 4000)
+                  break
+                }
+              }
             } else if (payload.type === 'done') {
               messages.value[replyIndex].content = payload.reply || reply || '（无回复）'
               if (payload.error) ElMessage.error(payload.error)
+              await loadSessions()
             } else if (payload.type === 'approval_required') {
               ElMessage.warning(`需要确认：${payload.tool || '工具调用'}`)
             } else if (payload.type === 'error') {
@@ -297,7 +405,6 @@ async function send() {
       }
     }
     if (!messages.value[replyIndex].content) messages.value[replyIndex].content = '（无回复）'
-    await loadSessions()
   } catch (e: any) {
     messages.value[replyIndex].content = `⚠️ ${e.message || '发送失败'}`
   } finally {
@@ -366,4 +473,64 @@ onMounted(async () => {
   font-size: 14px; line-height: 1; padding: 0 1px;
 }
 .chip-remove:hover { color: #dc2626; }
+
+.session-search { margin-bottom: 8px; }
+.chat-empty p { font-size: 13px; line-height: 1.6; }
+.starter-prompts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+.starter-prompts button {
+  border: 1px solid #e0e7ff; background: #f5f7ff; color: #4338ca;
+  padding: 7px 13px; border-radius: 999px; font-size: 12px; cursor: pointer;
+}
+.starter-prompts button:hover { background: #eef2ff; border-color: #a5b4fc; }
+.message-row { display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-start; }
+.message-row.user { flex-direction: row-reverse; }
+.msg-avatar {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+}
+.message-row.user .msg-avatar { background: linear-gradient(135deg, #0ea5e9, #2563eb); }
+.msg-main { max-width: min(780px, 82%); display: flex; flex-direction: column; min-width: 0; }
+.message-row.user .msg-main { align-items: flex-end; }
+.bubble {
+  max-width: 100%; padding: 11px 15px; border-radius: 4px 14px 14px 14px;
+  background: #f7f8fb; border: 1px solid #eef0f4; color: #303133;
+  font-size: 13.5px; line-height: 1.7; min-width: 0;
+}
+.message-row.user .bubble {
+  border-radius: 14px 4px 14px 14px; border-color: transparent;
+  background: linear-gradient(135deg, #4f46e5, #6366f1); color: #fff;
+}
+.bubble.streaming { border-color: #c7d2fe; box-shadow: 0 0 0 3px rgba(99, 102, 241, .06); }
+.md-body { word-break: break-word; }
+.md-body :deep(p) { margin: 0 0 8px; }
+.md-body :deep(p:last-child) { margin-bottom: 0; }
+.md-body :deep(pre) { margin: 8px 0; padding: 10px 12px; border-radius: 8px; background: #0f172a; color: #e2e8f0; overflow-x: auto; font-size: 12px; }
+.md-body :deep(code) { font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px; }
+.md-body :deep(:not(pre) > code) { background: #eef2ff; color: #4338ca; padding: 1px 5px; border-radius: 4px; }
+.md-body :deep(ul), .md-body :deep(ol) { padding-left: 20px; margin: 6px 0; }
+.md-body :deep(a) { color: #4f46e5; }
+.reasoning-box { margin-bottom: 8px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; overflow: hidden; }
+.reasoning-box summary { cursor: pointer; padding: 6px 10px; font-size: 11.5px; color: #6b7280; background: #fafafa; }
+.reasoning-text { padding: 8px 10px; font-size: 11.5px; line-height: 1.6; color: #6b7280; white-space: pre-wrap; max-height: 180px; overflow: auto; }
+.tool-panel { margin-top: 9px; border-top: 1px solid #eef0f4; padding-top: 7px; }
+.tool-panel-toggle {
+  width: 100%; border: none; background: transparent; color: #6b7280;
+  font-size: 11.5px; cursor: pointer; display: flex; justify-content: space-between; padding: 2px 0;
+}
+.tool-panel-toggle:hover { color: #4f46e5; }
+.tool-steps { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
+.tool-step { border: 1px solid #f0f2f5; border-radius: 7px; padding: 6px 8px; background: #fff; }
+.tool-step-name { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: #4b5563; font-family: 'Cascadia Code', Consolas, monospace; }
+.tool-pre { margin: 4px 0 0; padding: 7px 8px; border-radius: 5px; background: #f8fafc; color: #475569; font-size: 10.5px; line-height: 1.5; max-height: 140px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.tool-pre.err { color: #dc2626; background: #fef2f2; }
+.msg-meta { display: flex; gap: 10px; align-items: center; margin-top: 5px; font-size: 10.5px; color: #b0b5bd; opacity: .85; }
+.msg-meta button { border: none; background: transparent; color: #9ca3af; font-size: 10.5px; cursor: pointer; padding: 1px 4px; border-radius: 4px; }
+.msg-meta button:hover { color: #4f46e5; background: #eef2ff; }
+.typing { display: flex; align-items: center; gap: 4px; }
+.dot { width: 5px; height: 5px; border-radius: 50%; background: #818cf8; animation: blink 1.2s infinite; }
+.dot:nth-child(2) { animation-delay: .2s; }
+.dot:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
 </style>

@@ -1,137 +1,156 @@
 <template>
-  <div class="page-wrapper">
-    <div class="page-header"><h2>活动</h2></div>
+  <div class="page-wrapper activity-page">
+    <div class="page-header">
+      <div>
+        <h2>活动</h2>
+        <div class="muted">事件分布与内容，不再展示应用使用统计</div>
+      </div>
+      <el-button :icon="Refresh" :loading="loading" @click="loadStats">刷新</el-button>
+    </div>
 
-    <!-- Stats Cards -->
-    <el-row :gutter="16" style="margin-bottom:16px">
-      <el-col :span="6" v-for="s in statCards" :key="s.label">
-        <div class="stat-card">
-          <div class="stat-value">{{ s.value }}</div>
-          <div class="stat-label">{{ s.label }}</div>
-        </div>
-      </el-col>
-    </el-row>
-
-    <el-row :gutter="16" style="margin-bottom:16px">
-      <!-- App usage -->
-      <el-col :span="12">
-        <div class="page-card">
-          <div class="page-card-body">
-            <h3 style="font-size:14px;font-weight:600;color:#1a1a2e;margin:0 0 12px">应用使用时长</h3>
-            <div v-if="stats.app_minutes?.length" class="app-bars">
-              <div v-for="a in stats.app_minutes" :key="a.app" class="app-bar-row">
-                <span class="app-bar-name" :title="a.app">{{ friendlyApp(a.app) }}</span>
-                <div class="app-bar-track">
-                  <div class="app-bar-fill" :style="{ width: barWidth(a.minutes) + '%' }"></div>
-                </div>
-                <span class="app-bar-min">{{ a.minutes }} min</span>
-              </div>
-            </div>
-            <p v-else style="text-align:center;color:#909399;font-size:12px;padding:20px">暂无应用使用数据（需在桌面端开启「用户行为采集」）</p>
-          </div>
-        </div>
-      </el-col>
-
-      <!-- Event type distribution -->
-      <el-col :span="12">
-        <div class="page-card">
-          <div class="page-card-body">
-            <h3 style="font-size:14px;font-weight:600;color:#1a1a2e;margin:0 0 12px">事件类型分布</h3>
-            <div v-if="typeCountEntries.length" class="type-list">
-              <div v-for="t in typeCountEntries" :key="t.type" class="type-row">
-                <span class="type-label">{{ typeLabel(t.type) }}</span>
-                <span class="type-count">{{ t.count }}</span>
-              </div>
-            </div>
-            <p v-else style="text-align:center;color:#909399;font-size:12px;padding:20px">暂无事件</p>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
-
-    <!-- Event list -->
-    <div class="page-card">
-      <div class="page-card-body">
-        <div class="list-toolbar">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <el-select v-model="eventType" placeholder="全部类型" clearable size="small" style="width:160px" @change="page=1;loadEvents()">
-              <el-option v-for="t in eventTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
-            </el-select>
-            <el-select v-model="days" placeholder="时间范围" size="small" style="width:120px" @change="page=1;loadEvents()">
-              <el-option label="近 1 天" :value="1" />
-              <el-option label="近 7 天" :value="7" />
-              <el-option label="近 30 天" :value="30" />
-              <el-option label="全部" :value="0" />
-            </el-select>
-            <el-button size="small" :icon="Refresh" @click="loadAll" :loading="loading">刷新</el-button>
-          </div>
-          <span style="font-size:12px;color:#909399">共 {{ events.length }} 条</span>
-        </div>
-
-        <el-table :data="events" stripe size="small" v-loading="loading">
-          <el-table-column label="类型" width="130">
-            <template #default="{ row }">
-              <el-tag :type="tagType(row.event_type)" size="small">{{ typeLabel(row.event_type) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="summary" label="内容" min-width="220" show-overflow-tooltip />
-          <el-table-column label="详情" min-width="180">
-            <template #default="{ row }">
-              <span style="font-size:12px;color:#666">{{ detailText(row.details) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="时间" width="170">
-            <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
-          </el-table-column>
-        </el-table>
-
-        <div v-if="hasMore" style="text-align:center;padding:12px">
-          <el-button size="small" @click="loadMore" :loading="loadingMore">加载更多</el-button>
-        </div>
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-value">{{ stats.event_count ?? '—' }}</div>
+        <div class="summary-label">事件总数</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-value">{{ stats.type_count ?? '—' }}</div>
+        <div class="summary-label">事件类型</div>
+      </div>
+      <div class="summary-card summary-note">
+        <div class="summary-value small">{{ days }} 天</div>
+        <div class="summary-label">统计范围</div>
       </div>
     </div>
+
+    <div class="page-card block">
+      <div class="card-head">
+        <div>
+          <h3>事件类型分布</h3>
+          <span class="card-sub">按事件数量排序</span>
+        </div>
+        <el-select v-model="days" size="small" style="width:120px" @change="loadStats">
+          <el-option label="近 1 天" :value="1" />
+          <el-option label="近 7 天" :value="7" />
+          <el-option label="近 30 天" :value="30" />
+          <el-option label="全部" :value="90" />
+        </el-select>
+      </div>
+      <div class="card-body">
+        <div v-if="typeCountEntries.length" class="type-list">
+          <div v-for="t in typeCountEntries" :key="t.type" class="type-row">
+            <div class="type-row-head">
+              <span class="type-label">{{ typeLabel(t.type) }}</span>
+              <span class="type-count">{{ t.count }}</span>
+            </div>
+            <div class="type-track">
+              <div class="type-fill" :style="{ width: typeWidth(t.count) + '%' }"></div>
+            </div>
+          </div>
+        </div>
+        <p v-else class="empty-hint">暂无事件</p>
+      </div>
+    </div>
+
+    <div class="page-card block">
+      <div class="card-head">
+        <div>
+          <h3>最近事件</h3>
+          <span class="card-sub">只展示最近 6 条，完整内容请查看全部</span>
+        </div>
+        <el-button size="small" @click="openAll">查看全部</el-button>
+      </div>
+      <div class="card-body">
+        <div v-if="previewEvents.length" class="event-preview">
+          <div v-for="e in previewEvents" :key="e.id" class="event-row">
+            <el-tag :type="tagType(e.event_type)" size="small">{{ typeLabel(e.event_type) }}</el-tag>
+            <div class="event-main">
+              <div class="event-summary">{{ e.summary || typeLabel(e.event_type) }}</div>
+              <div class="event-detail">{{ detailText(e.details) }}</div>
+            </div>
+            <span class="event-time">{{ formatTime(e.created_at) }}</span>
+          </div>
+        </div>
+        <p v-else class="empty-hint">暂无事件</p>
+      </div>
+    </div>
+
+    <el-drawer v-model="drawerVisible" title="全部活动事件" size="72%" destroy-on-close>
+      <div class="drawer-toolbar">
+        <el-select v-model="eventType" placeholder="全部类型" clearable size="small" style="width:180px" @change="page = 1; loadPage()">
+          <el-option v-for="t in eventTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
+        </el-select>
+        <el-select v-model="drawerDays" placeholder="时间范围" size="small" style="width:120px" @change="page = 1; loadPage()">
+          <el-option label="近 1 天" :value="1" />
+          <el-option label="近 7 天" :value="7" />
+          <el-option label="近 30 天" :value="30" />
+          <el-option label="全部" :value="90" />
+        </el-select>
+        <el-button size="small" :icon="Refresh" @click="loadPage" :loading="pageLoading">刷新</el-button>
+        <span class="drawer-total">共 {{ total }} 条</span>
+      </div>
+
+      <el-table :data="pageEvents" stripe size="small" v-loading="pageLoading">
+        <el-table-column label="类型" width="140">
+          <template #default="{ row }">
+            <el-tag :type="tagType(row.event_type)" size="small">{{ typeLabel(row.event_type) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="summary" label="内容" min-width="220" show-overflow-tooltip />
+        <el-table-column label="详情" min-width="220">
+          <template #default="{ row }">
+            <span class="table-detail">{{ detailText(row.details) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="时间" width="170">
+          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        </el-table-column>
+      </el-table>
+
+      <div class="drawer-pager">
+        <el-pagination
+          v-model:current-page="page"
+          :page-size="pageSize"
+          :total="total"
+          layout="prev, pager, next, total"
+          @current-change="loadPage"
+        />
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import client from '@/api/client'
 import { Refresh } from '@element-plus/icons-vue'
 import { formatLocalDate, parseBackendDate } from '@/utils/date'
 
 const loading = ref(false)
-const loadingMore = ref(false)
-const events = ref<any[]>([])
-const eventType = ref('')
-const days = ref(7)
-const page = ref(1)
-const pageSize = 100
-const hasMore = ref(false)
+const pageLoading = ref(false)
 const stats = ref<any>({})
+const previewEvents = ref<any[]>([])
+const pageEvents = ref<any[]>([])
+const drawerVisible = ref(false)
+const days = ref(7)
+const drawerDays = ref(7)
+const eventType = ref('')
+const page = ref(1)
+const pageSize = 20
+const total = ref(0)
 
 const TYPE_LABELS: Record<string, string> = {
-  // 行为采集
   'app.used': '应用使用',
   'clipboard.copy': '剪贴板复制',
-  // 文件
   'file.uploaded': '文件上传', 'file.trashed': '文件删除',
   'file.renamed': '文件重命名', 'file.moved': '文件移动',
-  // 笔记
   'note.created': '笔记创建', 'note.updated': '笔记更新', 'note.deleted': '笔记删除',
-  // 待办
   'todo.created': '待办创建', 'todo.updated': '待办修改', 'todo.deleted': '待办删除',
-  // 日程
   'schedule.created': '日程创建', 'schedule.updated': '日程修改', 'schedule.deleted': '日程删除',
-  // 资讯源
   'sources.subscribed': '添加资讯源', 'sources.unsubscribed': '删除资讯源', 'sources.refreshed': '资讯源刷新',
   'sources.item.new': '资讯源新内容',
-  'rss.subscribed': '添加资讯源', 'rss.unsubscribed': '删除资讯源', 'rss.refreshed': '资讯源刷新',
-  'article.new': '资讯源新内容',
-  // 邮件
   'mail.received': '邮件收取',
-  // 音乐
   'playlist.created': '歌单创建', 'playlist.deleted': '歌单删除',
-  // 通知 / 其他
   'notifications.read': '通知已读', 'notifications.read-all': '通知全部已读',
   'mcp.tool.called': 'MCP 工具调用', 'mcp.call.created': 'MCP 工具调用',
   'mcp.servers.created': 'MCP 服务', 'mcp.servers.updated': 'MCP 服务', 'mcp.servers.deleted': 'MCP 服务',
@@ -149,9 +168,9 @@ const TYPE_LABELS: Record<string, string> = {
   'note.imported': '知识导入', 'note.restored': '笔记恢复', 'todo.completed': '待办完成',
   'search': '搜索', 'activities.created': '活动上报', 'briefing': '每日简报',
 }
+
 function typeLabel(t: string): string {
   if (TYPE_LABELS[t]) return TYPE_LABELS[t]
-  // Fallback: convert snake_case English to a readable title case.
   return t
     .split('.')
     .filter(Boolean)
@@ -161,18 +180,9 @@ function typeLabel(t: string): string {
 
 const eventTypeOptions = computed(() => {
   const set = new Set<string>()
-  const counts = stats.value?.type_counts || {}
-  Object.keys(counts).forEach((k: string) => set.add(k))
-  events.value.forEach((e: any) => e.event_type && set.add(e.event_type))
+  Object.keys(stats.value?.type_counts || {}).forEach((k) => set.add(k))
   return Array.from(set).sort().map((t) => ({ value: t, label: typeLabel(t) }))
 })
-
-const statCards = computed(() => [
-  { label: '总事件数', value: String(stats.value?.event_count ?? '—') },
-  { label: '应用总时长', value: stats.value?.total_minutes ? `${stats.value.total_minutes} min` : '—' },
-  { label: '剪贴板次数', value: String(stats.value?.clipboard_count ?? '—') },
-  { label: '最常用应用', value: friendlyApp(stats.value?.top_app ?? '—') as string },
-])
 
 const typeCountEntries = computed(() => {
   const counts = stats.value?.type_counts || {}
@@ -182,80 +192,9 @@ const typeCountEntries = computed(() => {
     .slice(0, 12)
 })
 
-function barWidth(minutes: number): number {
-  const max = Math.max(...(stats.value?.app_minutes || []).map((a: any) => a.minutes), 1)
-  return Math.round((minutes / max) * 100)
-}
-
-const APP_ALIASES: Record<string, string> = {
-  code: 'VSCode', 'code-insiders': 'VSCode', cursor: 'Cursor',
-  chrome: 'Chrome', msedge: 'Edge', firefox: 'Firefox', opera: 'Opera',
-  explorer: '资源管理器', wechat: '微信', qq: 'QQ', wecom: '企业微信',
-  dingtalk: '钉钉', feishu: '飞书', lark: '飞书',
-  devenv: 'Visual Studio', idea64: 'IntelliJ IDEA', pycharm64: 'PyCharm',
-  webstorm64: 'WebStorm', goland64: 'GoLand', studio64: 'Android Studio',
-  windowsterminal: '终端', cmd: '命令行', powershell: 'PowerShell',
-  node: 'Node.js', python: 'Python', java: 'Java', slack: 'Slack', teams: 'Teams', zoom: 'Zoom',
-}
-function friendlyApp(name: string): string {
-  return APP_ALIASES[String(name || '').toLowerCase()] || name
-}
-
-function detailText(d: any): string {
-  if (!d) return ''
-  const clip = (v: any, n = 60) => {
-    const text = String(v ?? '').replace(/\s+/g, ' ').trim()
-    return text.length > n ? `${text.slice(0, n)}…` : text
-  }
-  const parts: string[] = []
-  if (d.app) parts.push(friendlyApp(d.app))
-  if (d.title) parts.push(clip(d.title, 40))
-  if (d.start_time) parts.push(`开始 ${clip(formatLocalDate(d.start_time), 16)}`)
-  if (d.end_time) parts.push(`结束 ${clip(formatLocalDate(d.end_time), 16)}`)
-  if (d.due_date) parts.push(`截止 ${clip(formatLocalDate(d.due_date), 16)}`)
-  if (d.source) parts.push(`来源 ${clip(d.source, 12)}`)
-  if (d.filename) parts.push(`文件 ${clip(d.filename, 30)}`)
-  if (d.url) parts.push(`链接 ${clip(d.url, 40)}`)
-  if (d.content_length) parts.push(`长度 ${d.content_length}`)
-  if (d.tool_name) parts.push(`工具 ${d.tool_name}`)
-  if (typeof d.approved === 'boolean') parts.push(d.approved ? '已批准' : '已拒绝')
-  if (d.reason) parts.push(`原因：${clip(d.reason, 40)}`)
-  if (d.remember) parts.push('记住选择')
-  if (d.arguments_preview && typeof d.arguments_preview === 'object') {
-    const entries = Object.entries(d.arguments_preview).slice(0, 4).map(([key, value]) => {
-      if (value === '***') return `${key}=***`
-      if (value !== null && typeof value === 'object') return `${key}=…`
-      return `${key}=${clip(value, 24)}`
-    })
-    if (entries.length) parts.push(`参数 ${entries.join(', ')}`)
-  } else if (Array.isArray(d.argument_keys) && d.argument_keys.length) {
-    parts.push(`参数 ${d.argument_keys.slice(0, 6).join(', ')}`)
-  }
-  if (d.input) parts.push(`输入：${clip(d.input, 50)}`)
-  if (d.output) parts.push(`输出：${clip(d.output, 60)}`)
-  if (d.error) parts.push(`错误：${clip(d.error, 50)}`)
-  if (d.notes) parts.push(`备注：${clip(d.notes, 40)}`)
-  if (d.description) parts.push(`描述：${clip(d.description, 40)}`)
-  if (d.status) parts.push(`状态 ${d.status}`)
-  if (d.priority !== undefined && d.priority !== null) parts.push(`优先级 ${d.priority}`)
-  if (Array.isArray(d.tags) && d.tags.length) parts.push(`标签 ${d.tags.slice(0, 4).join(', ')}`)
-  if (d.changes && typeof d.changes === 'object') {
-    const keys = Object.keys(d.changes).slice(0, 6)
-    if (keys.length) parts.push(`变更 ${keys.join(', ')}`)
-  }
-  if (d.tokens_in || d.tokens_out) parts.push(`Token ${d.tokens_in || 0}/${d.tokens_out || 0}`)
-  if (d.minutes) parts.push(`${d.minutes} 分钟`)
-  if (d.length) parts.push(`长度 ${d.length}`)
-  if (d.size) parts.push(`大小 ${Math.max(1, Math.round(Number(d.size) / 1024))} KB`)
-  if (d.preview) parts.push(`「${clip(d.preview, 30)}」`)
-  if (d.method && d.path) parts.push(`${d.method} ${d.path}`)
-  if (d.query && typeof d.query === 'object') {
-    const query = Object.entries(d.query).slice(0, 3)
-      .map(([key, value]) => `${key}=${clip(value, 24)}`)
-      .join(' ')
-    if (query) parts.push(`查询 ${query}`)
-  }
-  return parts.join(' · ')
+function typeWidth(count: number): number {
+  const max = Math.max(...typeCountEntries.value.map((t) => t.count), 1)
+  return Math.max(4, Math.round((count / max) * 100))
 }
 
 function tagType(t: string): string {
@@ -274,69 +213,117 @@ function formatTime(iso: string) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-async function loadStats() {
-  try {
-    const r = await client.get('/activities/stats', { params: { days: days.value || 30 } })
-    stats.value = r.data || {}
-  } catch { stats.value = {} }
+function detailText(d: any): string {
+  if (!d) return ''
+  const clip = (v: any, n = 60) => {
+    const text = String(v ?? '').replace(/\s+/g, ' ').trim()
+    return text.length > n ? `${text.slice(0, n)}…` : text
+  }
+  const parts: string[] = []
+  if (d.title) parts.push(clip(d.title, 40))
+  if (d.start_time) parts.push(`开始 ${clip(formatLocalDate(d.start_time), 16)}`)
+  if (d.end_time) parts.push(`结束 ${clip(formatLocalDate(d.end_time), 16)}`)
+  if (d.due_date) parts.push(`截止 ${clip(formatLocalDate(d.due_date), 16)}`)
+  if (d.source) parts.push(`来源 ${clip(d.source, 12)}`)
+  if (d.filename) parts.push(`文件 ${clip(d.filename, 30)}`)
+  if (d.url) parts.push(`链接 ${clip(d.url, 40)}`)
+  if (d.tool_name) parts.push(`工具 ${d.tool_name}`)
+  if (d.reason) parts.push(`原因：${clip(d.reason, 40)}`)
+  if (d.input) parts.push(`输入：${clip(d.input, 50)}`)
+  if (d.output) parts.push(`输出：${clip(d.output, 60)}`)
+  if (d.error) parts.push(`错误：${clip(d.error, 50)}`)
+  if (d.notes) parts.push(`备注：${clip(d.notes, 40)}`)
+  if (d.description) parts.push(`描述：${clip(d.description, 40)}`)
+  if (d.status) parts.push(`状态 ${d.status}`)
+  if (d.minutes) parts.push(`${d.minutes} 分钟`)
+  if (d.preview) parts.push(`「${clip(d.preview, 30)}」`)
+  if (d.method && d.path) parts.push(`${d.method} ${d.path}`)
+  return parts.join(' · ')
 }
 
-async function loadEvents() {
+async function loadStats() {
   loading.value = true
   try {
-    const r = await client.get('/activities', {
-      params: {
-        limit: pageSize,
-        event_type: eventType.value || undefined,
-        days: days.value || undefined,
-      },
-    })
-    events.value = r.data || []
-    hasMore.value = events.value.length >= pageSize
-  } catch { events.value = [] } finally { loading.value = false }
+    const [statsRes, previewRes] = await Promise.all([
+      client.get('/activities/stats', { params: { days: days.value } }),
+      client.get('/activities/page', { params: { page: 1, page_size: 6, days: days.value } }),
+    ])
+    stats.value = statsRes.data || {}
+    previewEvents.value = previewRes.data?.items || []
+  } catch {
+    stats.value = {}
+    previewEvents.value = []
+  } finally {
+    loading.value = false
+  }
 }
 
-async function loadMore() {
-  if (loadingMore.value) return
-  loadingMore.value = true
-  try {
-    page.value += 1
-    const r = await client.get('/activities', {
-      params: {
-        limit: pageSize,
-        offset: (page.value - 1) * pageSize,
-        event_type: eventType.value || undefined,
-        days: days.value || undefined,
-      },
-    })
-    const more = r.data || []
-    events.value.push(...more)
-    hasMore.value = more.length >= pageSize
-  } catch { hasMore.value = false } finally { loadingMore.value = false }
-}
-
-async function loadAll() {
+function openAll() {
+  drawerVisible.value = true
   page.value = 1
-  await Promise.all([loadStats(), loadEvents()])
+  eventType.value = ''
+  drawerDays.value = days.value
+  loadPage()
 }
 
-onMounted(loadAll)
+async function loadPage() {
+  pageLoading.value = true
+  try {
+    const res = await client.get('/activities/page', {
+      params: {
+        page: page.value,
+        page_size: pageSize,
+        event_type: eventType.value || undefined,
+        days: drawerDays.value || undefined,
+      },
+    })
+    pageEvents.value = res.data?.items || []
+    total.value = Number(res.data?.total || 0)
+  } catch {
+    pageEvents.value = []
+    total.value = 0
+  } finally {
+    pageLoading.value = false
+  }
+}
+
+onMounted(loadStats)
 </script>
 
 <style scoped>
-.stat-card { background:#fff; border-radius:10px; border:1px solid var(--color-border); padding:20px; text-align:center; }
-.stat-value { font-size:26px; font-weight:700; color:#1a1a2e; }
-.stat-label { font-size:12px; color:#909399; margin-top:4px; }
-.list-toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
-.app-bars { display:flex; flex-direction:column; gap:8px; }
-.app-bar-row { display:flex; align-items:center; gap:8px; font-size:12px; }
-.app-bar-name { width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#333; }
-.app-bar-track { flex:1; height:10px; background:#eef0f4; border-radius:5px; overflow:hidden; }
-.app-bar-fill { height:100%; background:linear-gradient(90deg,#6366f1,#8b5cf6); border-radius:5px; transition:width .3s; }
-.app-bar-min { width:50px; text-align:right; color:#909399; }
-.type-list { display:flex; flex-direction:column; gap:6px; }
-.type-row { display:flex; justify-content:space-between; align-items:center; padding:4px 8px; border-radius:6px; font-size:12px; }
-.type-row:nth-child(odd) { background:#f8f9fa; }
-.type-label { color:#333; }
-.type-count { color:#6366f1; font-weight:600; }
+.activity-page { max-width: 1180px; }
+.muted { font-size: 12px; color: #909399; }
+.summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.summary-card { background: #fff; border: 1px solid var(--color-border); border-radius: 12px; padding: 16px 18px; }
+.summary-value { font-size: 26px; line-height: 1.1; font-weight: 700; color: #111827; }
+.summary-value.small { font-size: 20px; }
+.summary-label { margin-top: 5px; font-size: 12px; color: #909399; }
+.block { margin-bottom: 16px; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 0; }
+.card-head h3 { margin: 0; font-size: 14.5px; font-weight: 600; color: #111827; }
+.card-sub { display: block; margin-top: 4px; font-size: 11.5px; color: #9aa5b8; }
+.card-body { padding: 16px 20px 20px; }
+.type-list { display: flex; flex-direction: column; gap: 11px; }
+.type-row-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 4px; }
+.type-label { color: #4b5563; }
+.type-count { color: #4f46e5; font-weight: 700; font-variant-numeric: tabular-nums; }
+.type-track { height: 7px; border-radius: 5px; background: #eef0f4; overflow: hidden; }
+.type-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #6366f1, #8b5cf6); }
+.event-preview { display: flex; flex-direction: column; }
+.event-row { display: grid; grid-template-columns: 110px 1fr 150px; align-items: start; gap: 12px; padding: 11px 0; border-bottom: 1px dashed #f0f2f5; }
+.event-row:last-child { border-bottom: none; }
+.event-main { min-width: 0; }
+.event-summary { font-size: 13px; color: #303133; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-detail { margin-top: 3px; font-size: 11.5px; color: #909399; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-time { font-size: 11.5px; color: #a0a4ad; text-align: right; padding-top: 2px; }
+.empty-hint { margin: 0; padding: 28px 0; text-align: center; color: #909399; font-size: 12px; }
+.drawer-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.drawer-total { margin-left: auto; font-size: 12px; color: #909399; }
+.table-detail { font-size: 12px; color: #666; }
+.drawer-pager { display: flex; justify-content: flex-end; padding-top: 16px; }
+@media (max-width: 800px) {
+  .summary-grid { grid-template-columns: 1fr; }
+  .event-row { grid-template-columns: 1fr; gap: 5px; }
+  .event-time { text-align: left; }
+}
 </style>

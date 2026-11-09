@@ -103,3 +103,32 @@ async def test_calendar_event_callback_enqueues_job(monkeypatch):
     assert calls
     assert calls[0][0] == "schedule.external.apply"
     assert calls[0][1] == {"activity_id": 42}
+
+
+async def test_activity_page_and_distribution_stats(client):
+    token, _ = await _new_user(client)
+    r = await client.post(
+        "/api/activities",
+        json={"event_type": "note.created", "summary": "创建笔记", "details": {"title": "周报"}},
+        headers=auth(token),
+    )
+    assert r.status_code == 201, r.text
+    r = await client.post(
+        "/api/activities",
+        json={"event_type": "todo.created", "summary": "创建待办"},
+        headers=auth(token),
+    )
+    assert r.status_code == 201, r.text
+
+    r = await client.get("/api/activities/page", params={"page": 1, "page_size": 1}, headers=auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 2
+    assert len(body["items"]) == 1
+
+    r = await client.get("/api/activities/stats", params={"days": 7}, headers=auth(token))
+    assert r.status_code == 200, r.text
+    stats = r.json()
+    assert stats["event_count"] >= 2
+    assert "note.created" in stats["type_counts"]
+    assert "app_minutes" not in stats
