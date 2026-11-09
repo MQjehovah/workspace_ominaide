@@ -36,7 +36,7 @@ async def test_todo_event_note_management_tools(client, user_token):
         await db.refresh(event)
         todo_id, note_id, event_id = todo.id, note.id, event.id
 
-    from core.ai.mcp.tools import management
+    from ai.mcp.tools import management
 
     result = await management.todo_update(uid, {"todo_id": todo_id, "title": "新待办"})
     assert not result.isError
@@ -62,9 +62,9 @@ async def test_memory_routine_and_project_tools(client, user_token, tmp_path, mo
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
-    from core.bots.context import reset_current_bot_id, set_current_bot_id
-    from core.bots.memory import add_memory
-    from core.ai.mcp.tools import management
+    from ai.bots.context import reset_current_bot_id, set_current_bot_id
+    from ai.bots.memory import add_memory
+    from ai.mcp.tools import management
 
     mem = await add_memory(uid, bot_id, "测试记忆：喜欢深色模式")
     token = set_current_bot_id(bot_id)
@@ -107,7 +107,7 @@ async def test_memory_routine_and_project_tools(client, user_token, tmp_path, mo
 
 async def test_run_shell_tool(tmp_path, monkeypatch):
     from core.config.settings import settings
-    from core.ai.mcp.tools.system import run_shell
+    from ai.mcp.tools.system import run_shell
 
     monkeypatch.setattr(settings, "shell_admin_only", False)
     monkeypatch.setattr(settings, "shell_default_cwd", str(tmp_path))
@@ -118,7 +118,7 @@ async def test_run_shell_tool(tmp_path, monkeypatch):
 
 
 def test_risky_tools_require_approval():
-    from core.bots.policy import classify_tool, decide
+    from ai.bots.policy import classify_tool, decide
 
     assert classify_tool("ha_toggle") == "external"
     assert classify_tool("send_email") == "external"

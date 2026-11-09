@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from core.coding.models import CodingRun
 from core.paths import ensure_user_workspace, projects_root
-from core.bots.models import BotRun
+from ai.bots.models import BotRun
 from core.database.session import async_session
 from plugins.projects.backend.models import Project
 

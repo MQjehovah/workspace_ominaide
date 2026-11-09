@@ -1,8 +1,8 @@
 """MCP tool handlers for the Todo plugin."""
 
 import json
-from core.ai.mcp.core import MCPCallResponse, MCPContent
-from core.ai.mcp.tools.plugin_tools import register_plugin_tool_handler
+from ai.mcp.core import MCPCallResponse, MCPContent
+from ai.mcp.tools.plugin_tools import register_plugin_tool_handler
 
 
 async def create_todo_item(user_id: int, args: dict) -> MCPCallResponse:

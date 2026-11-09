@@ -244,7 +244,7 @@ async def _index_note_rag_locked(
         if chunks:
             embeddings: list[list[float] | None] = []
             try:
-                from core.ai.embeddings import generate_embedding_batch
+                from ai.embeddings import generate_embedding_batch
                 inputs = [
                     (c["context"] + "\n\n" + c["content"]).strip()
                     for c in chunks
@@ -578,7 +578,7 @@ async def hybrid_search(
     chunk_map: dict[int, dict[str, Any]] = {}
     emb_map: dict[int, list[float]] = {}
 
-    from core.ai.embeddings import generate_embedding
+    from ai.embeddings import generate_embedding
 
     for q in queries:
         vec = await generate_embedding(q)

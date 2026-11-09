@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select, func, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from minio import Minio
-from core.ai.indexer import index_content
+from ai.indexer import index_content
 from core.config.settings import settings
 from core.minio.client import minio_client, public_minio_url
 from plugins.files.backend.models import File
@@ -335,7 +335,7 @@ async def permanent_delete(db: AsyncSession, user_id: int, file_id: int):
 
     # Don't leave deleted files retrievable through semantic search.
     try:
-        from core.ai import vector_store
+        from ai import vector_store
 
         await vector_store.delete_source(user_id, "file", file_id)
     except Exception:

@@ -13,7 +13,7 @@ from sqlalchemy import select  # noqa: E402
 
 from core.auth.domain.models import User  # noqa: E402
 from core.database.session import async_session  # noqa: E402
-from core.people.service import backfill_user  # noqa: E402
+from ai.people.service import backfill_user  # noqa: E402
 
 
 async def main(user_id: int | None) -> None:

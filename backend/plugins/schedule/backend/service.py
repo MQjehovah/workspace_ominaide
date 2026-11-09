@@ -2,7 +2,7 @@ import asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-from core.ai.indexer import index_content
+from ai.indexer import index_content
 from core.timeutil import naive_local
 from plugins.schedule.backend.models import Event
 from plugins.schedule.backend.schemas import EventCreate, EventUpdate
@@ -91,7 +91,7 @@ async def delete_event(db: AsyncSession, user_id: int, event_id: int) -> bool:
     await db.delete(ev)
     await db.flush()
     try:
-        from core.ai import vector_store
+        from ai import vector_store
 
         await vector_store.delete_source(user_id, "event", event_id)
     except Exception:

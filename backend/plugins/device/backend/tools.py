@@ -7,8 +7,8 @@
 
 import json
 
-from core.ai.mcp.core import MCPCallResponse, MCPContent
-from core.ai.mcp.tools.plugin_tools import register_plugin_tool_handler
+from ai.mcp.core import MCPCallResponse, MCPContent
+from ai.mcp.tools.plugin_tools import register_plugin_tool_handler
 
 from . import ha
 

@@ -91,7 +91,7 @@ Web「关于我」页面：
 
 ## 注入
 
-`core/bots/memory.py::build_bot_context` 会追加：
+`ai/bots/memory.py::build_bot_context` 会追加：
 
 ```
 【长期记忆】

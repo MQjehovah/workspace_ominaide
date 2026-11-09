@@ -12,7 +12,7 @@ import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select
 
-from core.ai.indexer import index_content
+from ai.indexer import index_content
 from plugins.captures.backend.models import QuickCapture
 from core.config.settings import settings
 from core.database.session import async_session
@@ -29,7 +29,7 @@ def _clean(text: str, limit: int = 12000) -> str:
 
 
 def _validate_url(url: str) -> str:
-    from core.ai.mcp.tools.web import _validate_url as validate
+    from ai.mcp.tools.web import _validate_url as validate
 
     return validate(url)
 
@@ -173,7 +173,7 @@ async def analyze_capture(capture_id: int) -> dict:
             metadata={"link": f"/captures/{capture.id}"},
         )
         try:
-            from core.people import service as people_service
+            from ai.people import service as people_service
 
             for name in capture.people or []:
                 if name:

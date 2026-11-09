@@ -8,7 +8,7 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 
-from core.ai.indexer import index_content
+from ai.indexer import index_content
 from plugins.sources.backend.models import ContentItem, ContentSource
 from plugins.sources.backend.providers import ProviderError, get_provider
 

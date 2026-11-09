@@ -2,7 +2,7 @@
 
 
 def test_source_only_entities_are_external():
-    from core.memory_router import _is_external_entity
+    from ai.memory.router import _is_external_entity
 
     assert _is_external_entity({"sources": [{"type": "sources", "id": 1}]}) is True
     assert _is_external_entity({"sources": [{"type": "source_item", "id": 1}]}) is True
@@ -15,7 +15,7 @@ def test_source_only_entities_are_external():
 
 
 def test_bot_memory_uses_the_same_external_filter():
-    from core.bots.memory import _is_external_entity
+    from ai.bots.memory import _is_external_entity
 
     assert _is_external_entity({"sources": [{"type": "sources", "id": 1}]}) is True
     assert _is_external_entity({"sources": [{"type": "note", "id": 1}]}) is False

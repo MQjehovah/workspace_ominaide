@@ -21,7 +21,7 @@ async def _new_user(client):
 
 
 def test_compile_spec_compiles_prompt_and_validates_cron():
-    from core.automation.dsl import compile_spec
+    from ai.automation.dsl import compile_spec
 
     result = compile_spec({
         "name": "daily",
@@ -41,7 +41,7 @@ def test_compile_spec_compiles_prompt_and_validates_cron():
 
 
 def test_condition_evaluation():
-    from core.automation.dsl import evaluate_conditions
+    from ai.automation.dsl import evaluate_conditions
 
     spec = {
         "match": "all",
@@ -64,9 +64,9 @@ def test_condition_evaluation():
 async def test_manual_automation_executes_actions(client):
     token, uid = await _new_user(client)
 
-    from core.automation.executor import execute_automation
-    from core.bots.registry import get_or_create_default_bot
-    from core.bots.routines import create_routine
+    from ai.automation.executor import execute_automation
+    from ai.bots.registry import get_or_create_default_bot
+    from ai.bots.routines import create_routine
 
     bot = await get_or_create_default_bot(uid)
     routine = await create_routine(
@@ -99,9 +99,9 @@ async def test_manual_automation_executes_actions(client):
 async def test_event_condition_skips_and_is_idempotent(client):
     _, uid = await _new_user(client)
 
-    from core.automation.executor import execute_automation
-    from core.bots.registry import get_or_create_default_bot
-    from core.bots.routines import create_routine
+    from ai.automation.executor import execute_automation
+    from ai.bots.registry import get_or_create_default_bot
+    from ai.bots.routines import create_routine
 
     bot = await get_or_create_default_bot(uid)
     routine = await create_routine(
@@ -134,9 +134,9 @@ async def test_event_condition_skips_and_is_idempotent(client):
 async def test_skill_action_executes_skill(client):
     token, uid = await _new_user(client)
 
-    from core.automation.executor import execute_automation
-    from core.bots.registry import get_or_create_default_bot
-    from core.bots.routines import create_routine
+    from ai.automation.executor import execute_automation
+    from ai.bots.registry import get_or_create_default_bot
+    from ai.bots.routines import create_routine
 
     bot = await get_or_create_default_bot(uid)
     routine = await create_routine(

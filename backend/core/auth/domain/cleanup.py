@@ -12,12 +12,12 @@ import shutil
 from sqlalchemy import delete, select, update
 
 from core.auth.domain.models import User
-from core.bots.models import Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep
-from core.skills.models import BotSkill
-from core.automation.models import AutomationRun
+from ai.bots.models import Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep
+from ai.skills.models import BotSkill
+from ai.automation.models import AutomationRun
 from core.database.session import async_session
 from core.logging import get_logger
-from core.mcp_hub.models import McpServer, McpTool
+from ai.mcp_hub.models import McpServer, McpTool
 from core.objects.models import BusinessComment
 from core.paths import is_within, user_root, workspace_root
 from plugins.files.backend.models import File
@@ -38,7 +38,7 @@ async def _stop_runtime(user_id: int) -> None:
     """Cancel work that could write data while deletion is in progress."""
     # Active bot/coding runs poll the DB for cancellation.
     try:
-        from core.bots.runner import cancel_run
+        from ai.bots.runner import cancel_run
 
         async with async_session() as db:
             run_ids = list((await db.execute(
@@ -74,7 +74,7 @@ async def _stop_runtime(user_id: int) -> None:
 
     # Stop MCP child processes and remove their tools from the registry.
     try:
-        from core.mcp_hub.hub import mcp_hub
+        from ai.mcp_hub.hub import mcp_hub
 
         async with async_session() as db:
             server_ids = list((await db.execute(

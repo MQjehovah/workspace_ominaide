@@ -47,7 +47,7 @@ def test_non_iso_strings_untouched():
 
 
 def test_insights_local_hour_conversion():
-    from core.ai.insights import _local
+    from ai.insights import _local
 
     assert _local(datetime(2026, 11, 5, 8, 30)).hour == 16
     aware = datetime(2026, 11, 5, 8, 30, tzinfo=__import__("datetime").timezone.utc)

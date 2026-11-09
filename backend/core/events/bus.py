@@ -12,7 +12,7 @@ import json
 from typing import Callable, Awaitable
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.session import async_session
-from core.activities.models import UserActivity as UserEvent
+from activities.models import UserActivity as UserEvent
 
 EventHandler = Callable[[UserEvent], Awaitable[None]]
 _handlers: list[EventHandler] = []

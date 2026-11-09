@@ -14,17 +14,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config.settings import settings
 from core.database.session import get_db, async_session
 from core.auth.dependencies import get_current_user
-from core.ai.agent import run_agent, run_agent_stream
-from core.ai.clients import get_openai_client
-from core.bots import runner
-from core.bots.context import (
+from ai.agent import run_agent, run_agent_stream
+from ai.clients import get_openai_client
+from ai.bots import runner
+from ai.bots.context import (
     reset_current_bot_id,
     reset_current_session_id,
     set_current_bot_id,
     set_current_session_id,
 )
-from core.bots.memory import build_bot_context
-from core.bots.registry import BotNotFound, get_active_bot, get_or_create_default_bot
+from ai.bots.memory import build_bot_context
+from ai.bots.registry import BotNotFound, get_active_bot, get_or_create_default_bot
 from plugins.chat.backend.schemas import (
     ChatRequest, ChatResponse, ChatHistoryItem, TranslateRequest, TranslateResponse,
     AsrResponse, TtsRequest, SessionItem, SessionRename,
@@ -146,7 +146,7 @@ async def build_messages(
     )
     if persona and persona_text:
         messages.append({"role": "system", "content": persona_text})
-    from core.ai.mcp.gateway import gateway_instruction
+    from ai.mcp.gateway import gateway_instruction
 
     instruction = gateway_instruction()
     if instruction:
@@ -173,7 +173,7 @@ async def build_messages(
         timing["bot_context"] = time.monotonic() - t_ctx
     if ctx:
         messages.append({"role": "system", "content": ctx})
-    from core.skills.runtime import build_skill_context
+    from ai.skills.runtime import build_skill_context
 
     t_skill = time.monotonic()
     skill_ctx = await build_skill_context(bot)

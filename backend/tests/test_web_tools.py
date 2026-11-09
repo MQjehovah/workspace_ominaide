@@ -2,7 +2,7 @@ import base64
 
 import pytest
 
-from core.ai.mcp.tools.web import _unwrap_bing_url, _validate_url, parse_bing_results
+from ai.mcp.tools.web import _unwrap_bing_url, _validate_url, parse_bing_results
 
 
 def test_parse_bing_results():

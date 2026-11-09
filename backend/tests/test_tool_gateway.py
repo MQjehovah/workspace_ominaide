@@ -2,16 +2,16 @@
 
 import json
 
-from core.ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
-from core.ai.mcp.gateway import (
+from ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
+from ai.mcp.gateway import (
     DEFAULT_PINNED_TOOLS,
     display_target,
     select_exposed_tools,
     tool_call,
     tool_search,
 )
-from core.ai.mcp.registry import tool_registry
-from core.bots import policy
+from ai.mcp.registry import tool_registry
+from ai.bots import policy
 
 
 class DummyBot:
@@ -112,7 +112,7 @@ async def test_tool_call_risk_uses_underlying_tool():
 
 
 async def test_local_file_dispatches_by_op(monkeypatch):
-    from core.ai.mcp.tools import local as local_module
+    from ai.mcp.tools import local as local_module
 
     calls: list[str] = []
 
@@ -149,7 +149,7 @@ async def test_local_file_dispatches_by_op(monkeypatch):
 
 
 def test_exposure_never_includes_local_tools(monkeypatch):
-    from core.ai.mcp import gateway
+    from ai.mcp import gateway
 
     tools = [
         _fake_tool(name)
@@ -191,7 +191,7 @@ def test_exposure_respects_allowed_tools():
 
 
 def test_local_tools_are_local_source():
-    from core.ai.mcp.tools import local
+    from ai.mcp.tools import local
 
     assert local.TOOLS
     assert all(tool.source == "local" for tool, _ in local.TOOLS)
@@ -226,7 +226,7 @@ def test_display_target_unwraps_gateway_call():
 
 
 async def test_local_tools_only_via_machine_scope(monkeypatch):
-    from core.ai.mcp import gateway
+    from ai.mcp import gateway
 
     name = "local_shell"
 
@@ -260,7 +260,7 @@ async def test_local_tools_only_via_machine_scope(monkeypatch):
 
 
 async def test_local_mcp_search_and_call(monkeypatch):
-    from core.ai.mcp.tools import local as local_module
+    from ai.mcp.tools import local as local_module
     from core.wschannel import local_tools
 
     calls: list[tuple] = []

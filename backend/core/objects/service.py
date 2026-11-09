@@ -223,7 +223,7 @@ async def delete_comment(user_id: int, comment_id: int) -> bool:
         await db.commit()
 
     try:
-        from core.ai import vector_store
+        from ai import vector_store
 
         await vector_store.delete_source(user_id, "object_comment", comment_id)
     except Exception:
@@ -234,7 +234,7 @@ async def delete_comment(user_id: int, comment_id: int) -> bool:
 def _index_comment(user_id: int, row: BusinessComment, obj: dict) -> None:
     """Best-effort RAG indexing so the agent can recall saved materials."""
     try:
-        from core.ai.indexer import index_content
+        from ai.indexer import index_content
 
         title = f"{obj['title']} - {row.title or row.kind}"
         asyncio.create_task(index_content(

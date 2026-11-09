@@ -156,8 +156,8 @@ skill_call(skill_key, input)
 ## 相关代码
 
 ```text
-core/ai/mcp/gateway.py         搜索、调用、暴露策略
-core/ai/mcp/tools/register_core.py  注册 tool_search / tool_call
-core/bots/policy.py            解析底层工具风险
-core/bots/runner.py            只把暴露后的工具发给 LLM
+ai/mcp/gateway.py         搜索、调用、暴露策略
+ai/mcp/tools/register_core.py  注册 tool_search / tool_call
+ai/bots/policy.py            解析底层工具风险
+ai/bots/runner.py            只把暴露后的工具发给 LLM
 ```

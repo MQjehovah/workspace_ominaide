@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-from core.ai.mcp.core import MCPCallResponse
-from core.mcp_hub.hub import mcp_hub
+from ai.mcp.core import MCPCallResponse
+from ai.mcp_hub.hub import mcp_hub
 from plugins.dingtalk.backend.service import ensure_dingtalk_server
 
 

@@ -10,9 +10,9 @@ from datetime import datetime
 from sqlalchemy import select
 
 from core.config.settings import settings
-from core.ai.llm import llm_json
+from ai.llm import llm_json
 from core.database.session import async_session
-from core.ai.asr import AsrError, transcribe_minio_object
+from ai.asr import AsrError, transcribe_minio_object
 from plugins.meetings.backend.models import MeetingMinutesJob
 
 _tasks: set[asyncio.Task] = set()
@@ -246,7 +246,7 @@ async def _run_job(job_id: int) -> None:
             await db.commit()
 
         try:
-            from core.bots.registry import get_active_bot
+            from ai.bots.registry import get_active_bot
 
             bot = await get_active_bot(user_id)
         except Exception:

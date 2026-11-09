@@ -1,7 +1,7 @@
 """Local MCP gateway: discovery and calls use two stable Bot tools."""
 
-from core.ai.mcp.tools import local as local_tool
-from core.bots import policy
+from ai.mcp.tools import local as local_tool
+from ai.bots import policy
 from core.wschannel import local_tools
 
 

@@ -117,7 +117,7 @@ async def test_meeting_prep_collects_context(client):
 
 
 async def test_weekly_review_uses_daily_insights(client):
-    from core.ai.insight_models import DailyInsight
+    from ai.insight_models import DailyInsight
     from core.database.session import async_session
 
     token, user_id = await _new_user(client)
@@ -150,8 +150,8 @@ async def test_weekly_review_uses_daily_insights(client):
 async def test_dingtalk_items_read_synced_conversations(client):
     token, user_id = await _new_user(client)
     from core.database.session import async_session
-    from core.activities.models import UserActivity
-    from core.ai import context as ai_context
+    from activities.models import UserActivity
+    from ai import context as ai_context
 
     async with async_session() as db:
         db.add(UserActivity(
@@ -232,8 +232,8 @@ async def test_mark_all_mail_read(client):
 
 async def test_dingtalk_items_never_calls_the_cli(monkeypatch):
     """Workbench reads must not shell out to dws; the scheduler owns syncing."""
-    from core.ai import context as ai_context
-    from core.mcp_hub.hub import mcp_hub
+    from ai import context as ai_context
+    from ai.mcp_hub.hub import mcp_hub
 
     async def fail(*args, **kwargs):
         raise AssertionError("dingtalk collector must not call MCP/dws")
@@ -248,7 +248,7 @@ async def test_daily_brief_is_served_from_hourly_cache(client, monkeypatch):
     token, user_id = await _new_user(client)
     await _seed_sources(user_id, "briefcache")
 
-    from core.ai.scenarios import daily_brief as daily_brief_module
+    from ai.scenarios import daily_brief as daily_brief_module
 
     calls = 0
     original = daily_brief_module.daily_brief

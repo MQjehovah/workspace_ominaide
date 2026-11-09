@@ -1,8 +1,8 @@
 """MCP tools for the notes plugin (RAG search + cited Q&A)."""
 import json
 
-from core.ai.mcp.core import MCPCallResponse, MCPContent
-from core.ai.mcp.tools.plugin_tools import register_plugin_tool_handler
+from ai.mcp.core import MCPCallResponse, MCPContent
+from ai.mcp.tools.plugin_tools import register_plugin_tool_handler
 
 
 def _resp(payload: dict, is_error: bool = False) -> MCPCallResponse:

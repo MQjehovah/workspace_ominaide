@@ -5,9 +5,9 @@ Raw MCP tools stay internal. Only this allowlist reaches the global catalog.
 
 from __future__ import annotations
 
-from core.ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
-from core.ai.mcp.registry import tool_registry
-from core.bots import policy
+from ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
+from ai.mcp.registry import tool_registry
+from ai.bots import policy
 from plugins.dingtalk.backend import mcp
 from plugins.dingtalk.mcp_server.tools import TOOLS as MCP_TOOLS
 

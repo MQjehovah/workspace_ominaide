@@ -1,6 +1,6 @@
 """Subscribe to events and process them (indexing, entity extraction)."""
 from core.events.bus import subscribe
-from core.ai.indexer import index_content
+from ai.indexer import index_content
 from core.config.settings import settings
 
 
@@ -40,7 +40,7 @@ async def indexing_handler(event):
 async def entity_handler(event):
     if not settings.memory_layer_enabled or _skip_entities(event):
         return
-    from core.ai.indexer import extract_and_store_entities
+    from ai.indexer import extract_and_store_entities
     await extract_and_store_entities(
         user_id=event.user_id,
         content=str(event.details or ""),

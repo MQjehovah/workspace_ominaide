@@ -2,7 +2,7 @@
 
 import asyncio
 
-from core.ai.mcp.tools import local as local_tool
+from ai.mcp.tools import local as local_tool
 from core.wschannel import local_tools
 
 
@@ -110,7 +110,7 @@ async def test_local_shell_reports_desktop_error(monkeypatch):
 
 
 def test_local_shell_defers_approval_to_desktop():
-    from core.bots import policy
+    from ai.bots import policy
 
     risk, decision = policy.decide(None, "local_shell", {"command": "rm -rf /tmp/x"})
     assert risk == "exec"

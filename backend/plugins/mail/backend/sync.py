@@ -327,7 +327,7 @@ async def _after_ingest(user_id: int, message_id: int) -> None:
         except Exception:
             pass
         try:
-            from core.ai.indexer import index_content
+            from ai.indexer import index_content
 
             await index_content(
                 user_id=user_id,

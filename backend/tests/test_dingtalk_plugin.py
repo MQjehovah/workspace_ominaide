@@ -34,7 +34,7 @@ async def test_plugin_routes_are_mounted(client):
 
 async def test_private_mcp_is_hidden_from_global_catalog(client):
     from core.database.session import async_session
-    from core.mcp_hub.models import McpServer
+    from ai.mcp_hub.models import McpServer
     from plugins.dingtalk.backend.service import ensure_dingtalk_server
 
     token, user_id = await _new_user(client)
@@ -85,9 +85,9 @@ async def test_user_cannot_register_dingtalk_mcp(client):
 
 
 async def test_dingtalk_unread_count_controls_pending_state(client):
-    from core.ai import context as ai_context
+    from ai import context as ai_context
     from core.database.session import async_session
-    from core.activities.models import UserActivity
+    from activities.models import UserActivity
 
     _, user_id = await _new_user(client)
     async with async_session() as db:
@@ -159,7 +159,7 @@ async def test_conversation_ids_with_slashes_can_load_messages(client):
 
 async def test_mark_read_clears_local_unread_state(client, monkeypatch):
     from core.database.session import async_session
-    from core.activities.models import UserActivity
+    from activities.models import UserActivity
     from plugins.dingtalk.backend.models import DingTalkConversation
 
     from plugins.dingtalk.backend import read as dingtalk_read

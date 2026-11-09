@@ -174,7 +174,7 @@ async def test_non_admin_cannot_create_stdio_mcp(client, admin_token):
 async def test_non_admin_cannot_connect_existing_stdio(client, admin_token):
     token_b, user_b = await _new_user(client)
     from core.database.session import async_session
-    from core.mcp_hub.models import McpServer
+    from ai.mcp_hub.models import McpServer
 
     async with async_session() as db:
         row = McpServer(
@@ -204,7 +204,7 @@ async def test_shell_tool_is_admin_only(client, admin_token):
     token_b, user_b = await _new_user(client)
     admin_id = (await _me(client, admin_token))["id"]
 
-    from core.ai.mcp.tools.system import run_shell
+    from ai.mcp.tools.system import run_shell
 
     workdir = tempfile.gettempdir()
     denied = await run_shell(user_b, {"command": "echo no", "cwd": workdir})

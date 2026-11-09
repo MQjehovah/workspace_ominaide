@@ -171,7 +171,7 @@ def _register_plugin_jobs(plugin_name: str, plugin_dir: Path) -> None:
 
 
 def _register_plugin_tools(manifest: dict, plugin_name: str):
-    from core.ai.mcp.tools.plugin_tools import register_plugin_tools_from_manifest
+    from ai.mcp.tools.plugin_tools import register_plugin_tools_from_manifest
 
     register_plugin_tools_from_manifest(manifest, plugin_name)
     tools_path = PLUGINS_DIR / plugin_name / "backend" / "tools.py"

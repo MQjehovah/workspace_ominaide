@@ -108,7 +108,7 @@ GET  /api/plugins/dingtalk/messages?conversation_id=...
 ## 风险与权限
 
 - 外部工具的 risk 由 server 默认值 + 工具名推断，可在 UI 覆盖。
-- Bot 调用仍走现有 `core/bots/policy.py`；动态工具会注册到 `policy`，不会默认按 read 放过写操作。
+- Bot 调用仍走现有 `ai/bots/policy.py`；动态工具会注册到 `policy`，不会默认按 read 放过写操作。
 - 审计写入 `mcp_calls`，参数会截断，不记录 token。
 - 环境变量与 Headers 使用 `core.crypto` 加密存储，API 只返回 key 名。
 

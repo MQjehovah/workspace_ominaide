@@ -200,8 +200,8 @@ async def ai_draft(
     req: AiDraftRequest,
     user: dict = Depends(get_current_user),
 ):
-    from core.bots.registry import get_active_bot, get_or_create_default_bot
-    from core.skills.runtime import run_skill
+    from ai.bots.registry import get_active_bot, get_or_create_default_bot
+    from ai.skills.runtime import run_skill
 
     try:
         bot = (
@@ -341,7 +341,7 @@ async def report_mail_event(
 
     # Index for semantic search (AI can query via unified_search)
     try:
-        from core.ai.indexer import index_content
+        from ai.indexer import index_content
         content_src = (event.preview or "") + "\n" + (event.content or "")
         await index_content(
             user_id=user["id"],

@@ -22,7 +22,7 @@ from sqlalchemy import select
 
 from core.crypto import encrypt_secret
 from core.database.session import async_session
-from core.mcp_hub.models import McpServer
+from ai.mcp_hub.models import McpServer
 from core.paths import user_root
 from plugins.dingtalk.backend.paths import dingtalk_env, dingtalk_root, ensure_dingtalk_workspace
 
@@ -131,7 +131,7 @@ async def migrate_existing_servers() -> None:
 
 async def connect_dingtalk_server(user_id: int) -> None:
     try:
-        from core.mcp_hub.hub import mcp_hub
+        from ai.mcp_hub.hub import mcp_hub
 
         row = await ensure_dingtalk_server(user_id)
         await mcp_hub.connect_server(row.id, user_id)

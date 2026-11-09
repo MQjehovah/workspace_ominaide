@@ -24,7 +24,7 @@ async def _new_user(client) -> tuple[str, int]:
 
 async def test_text_extractor_reads_docx_body():
     import docx
-    from core.ai.text_extractor import extract_text
+    from ai.text_extractor import extract_text
 
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "季度预算.docx")
@@ -70,7 +70,7 @@ async def test_search_falls_back_to_keywords_without_embeddings(client):
 
 
 async def test_deleting_note_cleans_semantic_index(client, monkeypatch):
-    from core.ai import vector_store
+    from ai import vector_store
 
     token, _ = await _new_user(client)
     r = await client.post(

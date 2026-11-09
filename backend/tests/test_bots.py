@@ -114,8 +114,8 @@ async def test_memory_context_is_bot_scoped(client, user_token):
     )
     assert r.status_code == 200, r.text
 
-    from core.bots.memory import build_bot_context
-    from core.bots.registry import get_active_bot
+    from ai.bots.memory import build_bot_context
+    from ai.bots.registry import get_active_bot
 
     bot_a = await get_active_bot(uid, a["id"])
     bot_b = await get_active_bot(uid, b["id"])
@@ -138,7 +138,7 @@ async def test_switching_default_bot(client, user_token):
         )
     ).json()
 
-    from core.bots.registry import get_active_bot
+    from ai.bots.registry import get_active_bot
 
     active = await get_active_bot(uid, None)
     assert active.id == c["id"]
@@ -158,7 +158,7 @@ async def test_switching_default_bot(client, user_token):
 
 
 async def test_policy_classification_and_decisions():
-    from core.bots.policy import classify_tool, decide
+    from ai.bots.policy import classify_tool, decide
 
     assert classify_tool("search_files") == "read"
     assert classify_tool("create_schedule_event") == "write"
@@ -179,7 +179,7 @@ async def test_policy_classification_and_decisions():
 
 async def test_cron_next_run():
     from datetime import datetime
-    from core.bots.routines import cron_matches, next_run
+    from ai.bots.routines import cron_matches, next_run
 
     base = datetime(2026, 11, 4, 7, 29)
     assert next_run("30 7 * * *", base) == datetime(2026, 11, 4, 7, 30)
@@ -265,9 +265,9 @@ async def test_save_memory_tool_uses_bot_scope(client, user_token):
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
-    from core.ai.mcp.tools.knowledge import save_memory
-    from core.bots.context import reset_current_bot_id, set_current_bot_id
-    from core.bots.registry import get_active_bot
+    from ai.mcp.tools.knowledge import save_memory
+    from ai.bots.context import reset_current_bot_id, set_current_bot_id
+    from ai.bots.registry import get_active_bot
 
     bot = await get_active_bot(uid, bot_id)
     token = set_current_bot_id(bot.id)
@@ -290,7 +290,7 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
-    from core.bots.models import BotRun, BotRunStep
+    from ai.bots.models import BotRun, BotRunStep
     from core.coding.models import CodingRun
     from core.database.session import async_session
 
@@ -327,7 +327,7 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
         )
         await db.commit()
 
-    from core.ai.mcp.tools.coding import get_coding_run, list_coding_runs
+    from ai.mcp.tools.coding import get_coding_run, list_coding_runs
 
     result = await list_coding_runs(uid, {"limit": 5})
     assert not result.isError, result
@@ -353,9 +353,9 @@ async def test_coding_run_inherits_chat_session(client, user_token, monkeypatch)
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
-    from core.bots import runner
-    from core.bots.context import reset_current_session_id, set_current_session_id
-    from core.bots.registry import get_active_bot
+    from ai.bots import runner
+    from ai.bots.context import reset_current_session_id, set_current_session_id
+    from ai.bots.registry import get_active_bot
     from core.coding.service import create_coding_run
 
     monkeypatch.setattr(runner, "enqueue_run", lambda run_id: None)
@@ -373,8 +373,8 @@ async def test_recover_runs_fails_orphaned_running(client, user_token, monkeypat
     """A restart must close runs whose worker no longer exists."""
     from datetime import datetime
 
-    from core.bots import runner
-    from core.bots.models import BotRun
+    from ai.bots import runner
+    from ai.bots.models import BotRun
     from core.database.session import async_session
 
     me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
@@ -420,9 +420,9 @@ async def test_approvals_list_and_validation(client, user_token):
 
 async def test_run_approval_state_machine(client, user_token, monkeypatch):
     """A risky tool pauses the run; approving resumes and finishes it."""
-    from core.ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
-    from core.ai.mcp.registry import tool_registry
-    from core.bots import runner
+    from ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
+    from ai.mcp.registry import tool_registry
+    from ai.bots import runner
     from core.config.settings import settings
 
     async def fake_tool(user_id, args):

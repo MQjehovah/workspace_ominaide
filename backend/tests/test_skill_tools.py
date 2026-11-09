@@ -3,8 +3,8 @@
 import json
 from pathlib import Path
 
-from core.ai.mcp.tools import skills as skill_tools
-from core.skills.loader import SkillDefinition
+from ai.mcp.tools import skills as skill_tools
+from ai.skills.loader import SkillDefinition
 
 
 class DummyBot:
@@ -33,7 +33,7 @@ async def test_skill_search_finds_enabled_skill(monkeypatch):
         return [_skill()]
 
     monkeypatch.setattr(skill_tools, "_current_bot", fake_bot)
-    from core.skills import runtime
+    from ai.skills import runtime
 
     monkeypatch.setattr(runtime, "enabled_skills", fake_enabled)
 
@@ -52,7 +52,7 @@ async def test_skill_call_requires_enabled_key(monkeypatch):
         return [_skill()]
 
     monkeypatch.setattr(skill_tools, "_current_bot", fake_bot)
-    from core.skills import runtime
+    from ai.skills import runtime
 
     monkeypatch.setattr(runtime, "enabled_skills", fake_enabled)
 
@@ -77,7 +77,7 @@ async def test_skill_call_runs_handler(monkeypatch):
 
     monkeypatch.setattr(skill_tools, "_current_bot", fake_bot)
     monkeypatch.setattr(skill_tools, "run_skill_tool", fake_run)
-    from core.skills import runtime
+    from ai.skills import runtime
 
     monkeypatch.setattr(runtime, "enabled_skills", fake_enabled)
 

@@ -20,8 +20,8 @@ async def create_coding_run(
     parent_run_id: int | None = None,
     session_id: str | None = None,
 ):
-    from core.bots import runner
-    from core.bots.context import get_current_session_id
+    from ai.bots import runner
+    from ai.bots.context import get_current_session_id
 
     session_id = session_id or get_current_session_id()
     run = await runner.create_run(

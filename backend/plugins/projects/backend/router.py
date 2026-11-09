@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.auth.dependencies import get_current_user
-from core.bots.registry import get_or_create_default_bot
-from core.bots.schemas import RunOut
+from ai.bots.registry import get_or_create_default_bot
+from ai.bots.schemas import RunOut
 from core.coding.service import create_coding_run
 from plugins.projects.backend import service
 from plugins.projects.backend.schemas import (

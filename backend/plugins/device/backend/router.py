@@ -198,7 +198,7 @@ async def trigger_briefing(
     user: dict = Depends(get_current_user),
 ):
     """Manual trigger for testing the proactive morning brief."""
-    from core.skills.brief_cache import send_briefing
+    from ai.skills.brief_cache import send_briefing
     asyncio.create_task(send_briefing(user["id"]))
     return {"ok": True, "detail": "briefing task started"}
 
@@ -466,7 +466,7 @@ async def report_gesture(req: GestureReport, user: dict = Depends(get_current_us
         return {"ok": False, "detail": "duplicate gesture ignored", "label": label}
     _gesture_last[key] = now
 
-    from core.ai.mcp.tools.plugin_tools import get_plugin_handler
+    from ai.mcp.tools.plugin_tools import get_plugin_handler
     handler = get_plugin_handler(action.get("tool", ""))
     if handler is None:
         return {"ok": False, "detail": f"MCP tool '{action.get('tool')}' not registered"}

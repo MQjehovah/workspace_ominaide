@@ -30,7 +30,7 @@ async def _new_user(client) -> tuple[str, int]:
 async def _add_activity(user_id: int, day: date, hour: int = 10, event_type: str = "app.used",
                         summary: str = "", details: dict | None = None) -> int:
     from core.database.session import async_session
-    from core.activities.models import UserActivity
+    from activities.models import UserActivity
 
     async with async_session() as db:
         e = UserActivity(
@@ -96,7 +96,7 @@ async def _add_event(user_id: int, day: date, title: str, hour: int = 9) -> int:
 
 
 async def test_daily_insight_model_enforces_one_row_per_user_day(client):
-    from core.ai.insight_models import DailyInsight
+    from ai.insight_models import DailyInsight
     from core.database.session import async_session
 
     _, user_id = await _new_user(client)
@@ -123,7 +123,7 @@ async def test_daily_insight_model_enforces_one_row_per_user_day(client):
 
 
 async def test_collect_day_data_is_scoped_to_user_and_day(client):
-    from core.ai.daily_insights import collect_day_data
+    from ai.daily_insights import collect_day_data
 
     _, user_a = await _new_user(client)
     _, user_b = await _new_user(client)
@@ -166,7 +166,7 @@ async def test_collect_day_data_is_scoped_to_user_and_day(client):
 
 
 async def test_generate_daily_insight_is_idempotent_and_falls_back_without_llm(client):
-    from core.ai.daily_insights import generate_daily_insight
+    from ai.daily_insights import generate_daily_insight
     from core.database.session import async_session
     from sqlalchemy import func, select
 
@@ -194,7 +194,7 @@ async def test_generate_daily_insight_is_idempotent_and_falls_back_without_llm(c
 
 
 async def test_generate_daily_insight_returns_none_without_data(client):
-    from core.ai.daily_insights import generate_daily_insight
+    from ai.daily_insights import generate_daily_insight
 
     _, user_id = await _new_user(client)
     result = await generate_daily_insight(user_id, date(2020, 1, 1))
@@ -202,7 +202,7 @@ async def test_generate_daily_insight_returns_none_without_data(client):
 
 
 async def test_insights_api_requires_auth_and_scopes_to_user(client):
-    from core.ai.daily_insights import generate_daily_insight
+    from ai.daily_insights import generate_daily_insight
 
     token_a, user_a = await _new_user(client)
     token_b, _ = await _new_user(client)
@@ -231,7 +231,7 @@ async def test_insights_api_requires_auth_and_scopes_to_user(client):
 
 
 async def test_ensure_daily_insight_backfills_yesterday(client):
-    from core.ai.daily_insights import ensure_daily_insight
+    from ai.daily_insights import ensure_daily_insight
 
     _, user_id = await _new_user(client)
     yesterday = date.today() - timedelta(days=1)
@@ -246,8 +246,8 @@ async def test_ensure_daily_insight_backfills_yesterday(client):
 
 
 async def test_bot_context_includes_recent_daily_review(client):
-    from core.ai.daily_insights import generate_daily_insight
-    from core.bots.memory import build_bot_context
+    from ai.daily_insights import generate_daily_insight
+    from ai.bots.memory import build_bot_context
 
     _, user_id = await _new_user(client)
     day = date.today()

@@ -37,7 +37,7 @@ async def test_activity_analysis_produces_cached_suggestions(client):
     )
     assert r.status_code in (200, 201), r.text
 
-    from core.insights.service import analyze_user
+    from ai.activity_insights.service import analyze_user
 
     result = await analyze_user(user_id)
     assert result["created"] >= 1
@@ -51,7 +51,7 @@ async def test_execute_suggestion_creates_todo(client):
     token, user_id = await _new_user(client)
 
     from core.database.session import async_session
-    from core.insights.models import ActivitySuggestion
+    from ai.activity_insights.models import ActivitySuggestion
 
     async with async_session() as db:
         row = ActivitySuggestion(
@@ -84,7 +84,7 @@ async def test_execute_suggestion_creates_todo(client):
 
 
 async def test_calendar_event_callback_enqueues_job(monkeypatch):
-    from core.activities.models import UserActivity
+    from activities.models import UserActivity
     from plugins.schedule.backend import external_sync
 
     calls = []

@@ -3,7 +3,7 @@ import io
 from docx import Document
 from pptx import Presentation
 
-from core.ai.mcp.tools.documents import (
+from ai.mcp.tools.documents import (
     _safe_filename,
     build_pptx_bytes,
     build_word_bytes,

@@ -9,9 +9,9 @@ from sqlalchemy import select
 
 from core.database.session import async_session
 from core.events.bus import record_event
-from core.activities.models import UserActivity
+from activities.models import UserActivity
 from core.logging import get_logger
-from core.mcp_hub.models import McpServer
+from ai.mcp_hub.models import McpServer
 from core.timeutil import naive_local
 from plugins.dingtalk.backend import mcp
 from plugins.dingtalk.backend.models import DingTalkConversation, DingTalkMessage

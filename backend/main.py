@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
-from core.activities.middleware import ActivityMiddleware
+from activities.middleware import ActivityMiddleware
 from core.config.settings import settings as app_settings
 from core.logging import configure_logging, get_logger
 from core.observability.context import get_trace_id
@@ -16,8 +16,8 @@ log = get_logger("omniaide")
 async def lifespan(app: FastAPI):
     from core.minio.client import ensure_buckets
     from core.plugin.registry import discover_plugins
-    from core.ai.mcp.tools.register_core import register_core_tools
-    from core.ai.mcp.tools.register_ai import register_ai_tools
+    from ai.mcp.tools.register_core import register_core_tools
+    from ai.mcp.tools.register_ai import register_ai_tools
     from core.events.bus import worker_loop
     from core.events.workers import register_workers
     from core.database.session import engine
@@ -32,28 +32,28 @@ async def lifespan(app: FastAPI):
     import plugins.notes.backend.models  # noqa
     import plugins.mail.backend.models  # noqa
     import plugins.music.backend.models  # noqa
-    import core.activities.models  # noqa
+    import activities.models  # noqa
     import plugins.notifications.backend.models  # noqa
     import plugins.chat.backend.models  # noqa
     import core.coding.models  # noqa
     import plugins.projects.backend.models  # noqa
     import plugins.schedule.backend.models  # noqa
-    import core.bots.models  # noqa
-    import core.automation.models  # noqa
+    import ai.bots.models  # noqa
+    import ai.automation.models  # noqa
     import plugins.captures.backend.models  # noqa
-    import core.people.models  # noqa
+    import ai.people.models  # noqa
     import plugins.meetings.backend.models  # noqa
-    import core.skills.models  # noqa
+    import ai.skills.models  # noqa
     import core.observability.models  # noqa
     import core.jobs.models  # noqa
-    import core.graph.models  # noqa
-    import core.ai.insight_models  # noqa
-    import core.mcp_hub.models  # noqa
+    import ai.graph.models  # noqa
+    import ai.insight_models  # noqa
+    import ai.mcp_hub.models  # noqa
     import core.wschannel.models  # noqa
     import plugins.oauth.backend.models  # noqa
     import plugins.dingtalk.backend.models  # noqa
-    import core.insights.models  # noqa
-    import core.memory_models  # noqa
+    import ai.activity_insights.models  # noqa
+    import ai.memory.models  # noqa
     import plugins.sources.backend.models  # noqa
     import core.objects.models  # noqa
     async with engine.begin() as conn:
@@ -63,8 +63,8 @@ async def lifespan(app: FastAPI):
     await ensure_schema_migrations()
 
     # Every user gets a default ``main`` bot. Existing rows stay readable.
-    from core.bots.registry import seed_default_bots
-    from core.bots.routines import register_event_handler, routine_loop
+    from ai.bots.registry import seed_default_bots
+    from ai.bots.routines import register_event_handler, routine_loop
 
     await seed_default_bots()
     register_event_handler()
@@ -78,8 +78,8 @@ async def lifespan(app: FastAPI):
     start_jobs_workers()
     await ensure_buckets()
     await discover_plugins(app)
-    from core.insights.jobs import JOBS as INSIGHT_JOBS
-    from core.skills.jobs import JOBS as BRIEF_JOBS
+    from ai.activity_insights.jobs import JOBS as INSIGHT_JOBS
+    from ai.skills.jobs import JOBS as BRIEF_JOBS
 
     for job in [*BRIEF_JOBS, *INSIGHT_JOBS]:
         periodic_scheduler.register(job)
@@ -87,15 +87,15 @@ async def lifespan(app: FastAPI):
     register_core_tools()
     register_ai_tools()
 
-    from core.mcp_hub.hub import mcp_hub
+    from ai.mcp_hub.hub import mcp_hub
 
     await mcp_hub.startup()
 
-    from core.bots.runner import recover_runs
+    from ai.bots.runner import recover_runs
 
     await recover_runs()
     routine_task = asyncio.create_task(routine_loop())
-    from core.ai.clients import warm_voice_clients
+    from ai.clients import warm_voice_clients
     warm_task = asyncio.create_task(warm_voice_clients())
     yield
     await periodic_scheduler.stop()
@@ -166,7 +166,7 @@ app.add_middleware(TraceMiddleware)
 from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)
 
-from core.people.router import router as people_router
+from ai.people.router import router as people_router
 app.include_router(people_router)
 
 from core.wschannel import router as host_channel_router
@@ -181,31 +181,31 @@ app.include_router(marketplace_router)
 # All business plugins now have a manifest and are mounted by
 # core.plugin.registry.discover_plugins during startup.
 
-from core.ai.mcp.router import router as mcp_router
+from ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)
 
-from core.mcp_hub.router import router as mcp_hub_router
+from ai.mcp_hub.router import router as mcp_hub_router
 app.include_router(mcp_hub_router)
 
-from core.bots.router import router as bots_router
-from core.bots.router import runs_router, approvals_router
+from ai.bots.router import router as bots_router
+from ai.bots.router import runs_router, approvals_router
 app.include_router(bots_router)
 app.include_router(runs_router)
 app.include_router(approvals_router)
 
-from core.bots.automation_router import router as automation_router
+from ai.bots.automation_router import router as automation_router
 app.include_router(automation_router)
 
-from core.ai.search_router import router as search_router
+from ai.search_router import router as search_router
 app.include_router(search_router)
 
-from core.insights.router import router as activity_insights_router
+from ai.activity_insights.router import router as activity_insights_router
 app.include_router(activity_insights_router)
 
-from core.ai.insights_router import router as insights_router
+from ai.insights_router import router as insights_router
 app.include_router(insights_router)
 
-from core.memory_router import router as memory_router
+from ai.memory.router import router as memory_router
 app.include_router(memory_router)
 
 from core.observability.router import router as metrics_router
@@ -214,21 +214,21 @@ app.include_router(metrics_router)
 from core.jobs.router import router as jobs_router
 app.include_router(jobs_router)
 
-from core.graph.router import router as graph_router, context_router
+from ai.graph.router import router as graph_router, context_router
 app.include_router(graph_router)
 app.include_router(context_router)
 
-from core.agent.router import router as agent_router
+from ai.agent_router import router as agent_router
 app.include_router(agent_router)
 
 from core.workbench.router import router as workbench_router
 app.include_router(workbench_router)
 
-from core.skills.router import router as skills_router, bots_router as bot_skills_router
+from ai.skills.router import router as skills_router, bots_router as bot_skills_router
 app.include_router(skills_router)
 app.include_router(bot_skills_router)
 
-from core.activities.router import router as activities_router
+from activities.router import router as activities_router
 app.include_router(activities_router)
 
 from core.objects.router import router as objects_router

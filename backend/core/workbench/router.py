@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
 from core.auth.dependencies import get_current_user
-from core.ai.context import schedule_items, todo_items
+from ai.context import schedule_items, todo_items
 from core.database.session import async_session
 
 router = APIRouter(prefix="/api/workbench", tags=["workbench"])

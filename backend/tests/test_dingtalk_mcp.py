@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from core.mcp_hub.client import StdioMcpConnection
+from ai.mcp_hub.client import StdioMcpConnection
 
 
 def test_dingtalk_tool_catalog():

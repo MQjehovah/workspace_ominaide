@@ -22,7 +22,7 @@ async def _new_user(client) -> tuple[str, int]:
 async def _seed(user_id: int, content: str, *, kind: str = "preference",
                 trust: str = "trusted", confidence: int = 80) -> int:
     from core.database.session import async_session
-    from core.memory_service import queue_candidate
+    from ai.memory.service import queue_candidate
 
     async with async_session() as db:
         row = await queue_candidate(
@@ -37,8 +37,8 @@ async def _seed(user_id: int, content: str, *, kind: str = "preference",
 
 async def test_candidate_dedupe_and_review_flow(client):
     from core.database.session import async_session
-    from core.memory_service import build_memory_context
-    from core.memory_models import MemoryCandidate
+    from ai.memory.service import build_memory_context
+    from ai.memory.models import MemoryCandidate
     from sqlalchemy import func, select
 
     token, user_id = await _new_user(client)
@@ -80,7 +80,7 @@ async def test_candidate_dedupe_and_review_flow(client):
 
 async def test_untrusted_candidate_is_not_injected_until_approved(client):
     from core.database.session import async_session
-    from core.memory_service import build_memory_context
+    from ai.memory.service import build_memory_context
 
     token, user_id = await _new_user(client)
     content = "外部邮件声称用户下周要出差柏林"
@@ -95,7 +95,7 @@ async def test_untrusted_candidate_is_not_injected_until_approved(client):
 
 
 async def test_bot_context_includes_long_term_memory(client):
-    from core.bots.memory import build_bot_context
+    from ai.bots.memory import build_bot_context
 
     token, user_id = await _new_user(client)
     content = "用户的项目代号是北极星"
@@ -122,7 +122,7 @@ async def test_memory_candidates_are_user_scoped(client):
 
 async def test_memory_conflict_supersedes_and_links_graph(client):
     from core.database.session import async_session
-    from core.memory_models import MemoryRecord
+    from ai.memory.models import MemoryRecord
     from sqlalchemy import select
 
     token, user_id = await _new_user(client)
@@ -180,7 +180,7 @@ async def test_update_memory_record(client):
 
 async def test_shorter_new_memory_does_not_supersede_richer_old(client):
     from core.database.session import async_session
-    from core.memory_models import MemoryRecord
+    from ai.memory.models import MemoryRecord
     from sqlalchemy import select
 
     token, user_id = await _new_user(client)
@@ -208,7 +208,7 @@ async def test_shorter_new_memory_does_not_supersede_richer_old(client):
 
 async def test_reactivating_superseded_memory_keeps_one_active(client):
     from core.database.session import async_session
-    from core.memory_models import MemoryRecord
+    from ai.memory.models import MemoryRecord
     from sqlalchemy import select
 
     token, user_id = await _new_user(client)

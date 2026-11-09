@@ -47,17 +47,17 @@ class _FakeMinio:
 
 
 async def _seed_user_data(user_id: int) -> None:
-    from core.ai.insight_models import DailyInsight
-    from core.automation.models import AutomationRun
-    from core.bots.models import (
+    from ai.insight_models import DailyInsight
+    from ai.automation.models import AutomationRun
+    from ai.bots.models import (
         Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
     )
     from core.coding.models import CodingRun
-    from core.skills.models import BotSkill
+    from ai.skills.models import BotSkill
     from core.database.session import async_session
-    from core.activities.models import UserActivity
+    from activities.models import UserActivity
     from core.jobs.models import BackgroundJob
-    from core.mcp_hub.models import McpServer, McpTool
+    from ai.mcp_hub.models import McpServer, McpTool
     from core.objects.models import BusinessComment
     from core.observability.models import RequestTrace
     from plugins.files.backend.models import File
@@ -188,18 +188,18 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
 
     from sqlalchemy import select
 
-    from core.ai.insight_models import DailyInsight
+    from ai.insight_models import DailyInsight
     from core.auth.domain.models import User
-    from core.automation.models import AutomationRun
-    from core.bots.models import (
+    from ai.automation.models import AutomationRun
+    from ai.bots.models import (
         Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
     )
     from core.coding.models import CodingRun
-    from core.skills.models import BotSkill
+    from ai.skills.models import BotSkill
     from core.database.session import async_session
-    from core.activities.models import UserActivity
+    from activities.models import UserActivity
     from core.jobs.models import BackgroundJob
-    from core.mcp_hub.models import McpServer, McpTool
+    from ai.mcp_hub.models import McpServer, McpTool
     from core.observability.models import RequestTrace
     from plugins.files.backend.models import File
     from plugins.music.backend.models import Playlist, PlaylistItem
