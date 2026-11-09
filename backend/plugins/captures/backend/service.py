@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy import select
 
 from core.ai.indexer import index_content
-from core.captures.models import QuickCapture
+from plugins.captures.backend.models import QuickCapture
 from core.config.settings import settings
 from core.database.session import async_session
 from core.logging import get_logger

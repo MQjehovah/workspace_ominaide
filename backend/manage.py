@@ -26,7 +26,7 @@ import core.skills.models  # noqa
 import plugins.meetings.backend.models  # noqa
 import core.bots.models  # noqa
 import core.automation.models  # noqa
-import core.captures.models  # noqa
+import plugins.captures.backend.models  # noqa
 import core.people.models  # noqa
 import core.coding.models  # noqa
 import plugins.schedule.backend.models  # noqa

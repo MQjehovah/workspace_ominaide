@@ -400,7 +400,7 @@ async def backfill_user(user_id: int) -> dict:
 
         captures = []
         try:
-            from core.captures.models import QuickCapture
+            from plugins.captures.backend.models import QuickCapture
             captures = list((await db.execute(
                 select(QuickCapture).where(QuickCapture.user_id == user_id)
             )).scalars().all())

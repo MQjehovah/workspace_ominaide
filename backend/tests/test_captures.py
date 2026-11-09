@@ -37,15 +37,15 @@ async def test_text_capture_analyze_and_convert(client, monkeypatch):
         }
 
     monkeypatch.setattr("core.jobs.service.enqueue", no_enqueue)
-    monkeypatch.setattr("core.captures.service._llm_analyze", fake_analyze)
+    monkeypatch.setattr("plugins.captures.backend.service._llm_analyze", fake_analyze)
 
-    from core.captures.service import analyze_capture, convert_capture, create_capture
+    from plugins.captures.backend.service import analyze_capture, convert_capture, create_capture
 
     capture = await create_capture(uid, kind="text", text="这是一条随手记")
     result = await analyze_capture(capture.id)
     assert result["status"] == "ready", result
 
-    from core.captures.service import get_capture
+    from plugins.captures.backend.service import get_capture
     row = await get_capture(uid, capture.id)
     assert row.summary == "采集摘要"
     assert row.tags == ["测试"]
@@ -62,7 +62,7 @@ async def test_capture_user_scope(client, monkeypatch):
         return None
 
     monkeypatch.setattr("core.jobs.service.enqueue", no_enqueue)
-    from core.captures.service import create_capture, get_capture
+    from plugins.captures.backend.service import create_capture, get_capture
 
     capture = await create_capture(uid_a, kind="text", text="A 的随手记")
     assert await get_capture(uid_b, capture.id) is None

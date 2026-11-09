@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     import plugins.schedule.backend.models  # noqa
     import core.bots.models  # noqa
     import core.automation.models  # noqa
-    import core.captures.models  # noqa
+    import plugins.captures.backend.models  # noqa
     import core.people.models  # noqa
     import plugins.meetings.backend.models  # noqa
     import core.skills.models  # noqa
@@ -73,8 +73,6 @@ async def lifespan(app: FastAPI):
     worker_task = asyncio.create_task(worker_loop())
     from core.auth.domain.cleanup import register_cleanup_handlers
     register_cleanup_handlers()
-    from core.captures.service import register_capture_handlers
-    register_capture_handlers()
     from core.scheduler import scheduler as periodic_scheduler
     from core.jobs.service import start_workers as start_jobs_workers
     start_jobs_workers()
@@ -167,9 +165,6 @@ app.add_middleware(TraceMiddleware)
 
 from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)
-
-from core.captures.router import router as captures_router
-app.include_router(captures_router)
 
 from core.people.router import router as people_router
 app.include_router(people_router)

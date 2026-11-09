@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 
 from core.auth.dependencies import get_current_user
-from core.captures import service
+from plugins.captures.backend import service
 from core.database.session import async_session
 
 router = APIRouter(prefix="/api/captures", tags=["captures"])

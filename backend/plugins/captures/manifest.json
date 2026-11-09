@@ -1,0 +1,12 @@
+{
+  "id": "captures",
+  "name": "captures",
+  "version": "1.0.0",
+  "title": "随手记",
+  "description": "收集链接、文章、图片和文本，调用 AI 分析并可转换为笔记、待办或日程",
+  "icon": "Collection",
+  "permissions": [],
+  "routes": {
+    "main": "/captures"
+  }
+}
