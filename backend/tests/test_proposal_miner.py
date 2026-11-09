@@ -87,6 +87,35 @@ async def test_memory_without_situation_is_rejected(client):
     assert result["created"] == 0
 
 
+async def test_memory_write_enqueues_mining_job(client, monkeypatch):
+    token, user_id = await _new_user(client)
+    from ai.memory import service as memory_service
+    from ai.memory.models import MemoryCandidate
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        candidate = MemoryCandidate(
+            user_id=user_id,
+            kind="fact",
+            content="测试记忆",
+            normalized="测试记忆",
+            confidence=90,
+        )
+        db.add(candidate)
+        await db.commit()
+        await db.refresh(candidate)
+        candidate_id = candidate.id
+
+    calls = []
+
+    async def fake_enqueue(target_user_id):
+        calls.append(target_user_id)
+
+    monkeypatch.setattr("ai.cognition.jobs.enqueue_mine_user", fake_enqueue)
+    await memory_service.approve_candidate(user_id, candidate_id)
+    assert calls == [user_id]
+
+
 async def test_proposal_link_action_returns_url(client):
     from ai.cognition.proposals import _execute_action
 

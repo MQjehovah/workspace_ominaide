@@ -372,6 +372,12 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
         cand.reviewed_at = datetime.utcnow()
         await db.commit()
         await _index_record(user_id, record)
+        try:
+            from ai.cognition.jobs import enqueue_mine_user
+
+            await enqueue_mine_user(user_id)
+        except Exception as e:
+            log.warning(f"[memory] mining enqueue failed: {e}")
         return record
 
 

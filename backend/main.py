@@ -82,8 +82,9 @@ async def lifespan(app: FastAPI):
     from ai.insights.activity_jobs import JOBS as INSIGHT_JOBS
     from ai.skills.jobs import JOBS as BRIEF_JOBS
     from ai.memory.jobs import JOBS as MEMORY_JOBS
+    from ai.cognition.jobs import JOBS as COGNITION_JOBS
 
-    for job in [*BRIEF_JOBS, *INSIGHT_JOBS, *MEMORY_JOBS]:
+    for job in [*BRIEF_JOBS, *INSIGHT_JOBS, *MEMORY_JOBS, *COGNITION_JOBS]:
         periodic_scheduler.register(job)
     periodic_scheduler.start()
     register_core_tools()
