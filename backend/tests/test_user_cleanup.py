@@ -67,7 +67,7 @@ async def _seed_user_data(user_id: int) -> None:
     from plugins.projects.backend.models import Project
     from plugins.schedule.backend.models import Event
     from plugins.sources.backend.models import ContentItem, ContentSource
-    from plugins.sync.backend.models import SyncEvent, SyncFolder
+    from plugins.files.backend.sync_models import SyncEvent, SyncFolder
     from plugins.todo.backend.models import PluginTodoItem
 
     async with async_session() as db:
@@ -208,7 +208,7 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
     from plugins.projects.backend.models import Project
     from plugins.schedule.backend.models import Event
     from plugins.sources.backend.models import ContentItem, ContentSource
-    from plugins.sync.backend.models import SyncEvent, SyncFolder
+    from plugins.files.backend.sync_models import SyncEvent, SyncFolder
     from plugins.todo.backend.models import PluginTodoItem
 
     async with async_session() as db:

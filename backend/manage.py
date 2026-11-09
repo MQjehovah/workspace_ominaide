@@ -5,7 +5,7 @@ from core.database.base import Base
 import core.plugin.models  # noqa
 import core.auth.domain.models  # noqa
 import plugins.files.backend.models  # noqa
-import plugins.sync.backend.models  # noqa
+import plugins.files.backend.sync_models  # noqa
 import plugins.todo.backend.models  # noqa
 import plugins.notes.backend.models  # noqa
 import plugins.music.backend.models  # noqa

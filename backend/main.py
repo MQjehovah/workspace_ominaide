@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     import core.plugin.models  # noqa
     import core.auth.domain.models  # noqa
     import plugins.files.backend.models  # noqa
-    import plugins.sync.backend.models  # noqa
+    import plugins.files.backend.sync_models  # noqa
     import plugins.todo.backend.models  # noqa
     import plugins.notes.backend.models  # noqa
     import plugins.mail.backend.models  # noqa
@@ -253,7 +253,7 @@ async def sync_websocket(websocket: WebSocket, folder_id: int):
 
     from core.database.session import async_session
     from sqlalchemy import select
-    from plugins.sync.backend.models import SyncFolder
+    from plugins.files.backend.sync_models import SyncFolder
 
     async with async_session() as db:
         result = await db.execute(
@@ -264,17 +264,17 @@ async def sync_websocket(websocket: WebSocket, folder_id: int):
             await websocket.close(code=4003)
             return
 
-        from plugins.sync.backend.websocket_manager import manager
+        from plugins.files.backend.sync_ws import manager
         await manager.connect(websocket, user_id, folder_id)
         try:
             while True:
                 data = await websocket.receive_json()
                 if data.get("type") == "sync_ack":
-                    from plugins.sync.backend.service import mark_synced
+                    from plugins.files.backend.sync_service import mark_synced
                     await mark_synced(db, user_id, data.get("event_id"))
                     await db.commit()
                 elif data.get("type") == "conflict":
-                    from plugins.sync.backend.service import mark_conflicted
+                    from plugins.files.backend.sync_service import mark_conflicted
                     await mark_conflicted(db, user_id, data.get("event_id"))
                     await db.commit()
         except WebSocketDisconnect:

@@ -473,3 +473,6 @@ async def move_file(
         return FileResponse.model_validate(file_record)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+# File sync routes are mounted from the files plugin.
+from plugins.files.backend.sync_router import router as sync_router  # noqa: E402,F401

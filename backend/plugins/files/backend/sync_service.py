@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from plugins.sync.backend.models import SyncEvent
-from plugins.sync.backend.websocket_manager import manager
+from plugins.files.backend.sync_models import SyncEvent
+from plugins.files.backend.sync_ws import manager
 from core.database.redis import get_redis
 
 
@@ -59,7 +59,7 @@ async def notify_file_change(
     file_size: int | None = None,
 ) -> int:
     """Fan a file change out to every enabled sync folder that contains it."""
-    from plugins.sync.backend.models import SyncFolder
+    from plugins.files.backend.sync_models import SyncFolder
 
     folders = (await db.execute(
         select(SyncFolder).where(

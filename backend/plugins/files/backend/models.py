@@ -20,3 +20,7 @@ class File(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime, nullable=True)
+
+
+# File sync tables live with the files plugin.
+from plugins.files.backend import sync_models  # noqa: E402,F401

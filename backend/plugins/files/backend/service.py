@@ -39,7 +39,7 @@ async def _emit_sync_change(
 ) -> None:
     """Publish a change to enabled sync folders (best-effort, never blocks files)."""
     try:
-        from plugins.sync.backend.service import notify_file_change
+        from plugins.files.backend.sync_service import notify_file_change
 
         await notify_file_change(
             db,

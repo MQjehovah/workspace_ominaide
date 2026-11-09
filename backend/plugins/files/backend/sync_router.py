@@ -5,7 +5,7 @@ from core.database.session import get_db
 from core.auth.dependencies import get_current_user
 from datetime import datetime
 
-from plugins.sync.backend.schemas import (
+from plugins.files.backend.sync_schemas import (
     SyncEventResponse,
     SyncEventListResponse,
     SyncFolderResponse,
@@ -16,8 +16,8 @@ from plugins.sync.backend.schemas import (
     SyncSettingResponse,
     SyncSettingUpdate,
 )
-from plugins.sync.backend.models import SyncFolder, SyncEvent, SyncSetting
-from plugins.sync.backend.service import get_sync_events, mark_synced, mark_conflicted
+from plugins.files.backend.sync_models import SyncFolder, SyncEvent, SyncSetting
+from plugins.files.backend.sync_service import get_sync_events, mark_synced, mark_conflicted
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 
