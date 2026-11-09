@@ -53,6 +53,7 @@ async def run_agent(
     model: str | None = None,
     temperature: float = 0.7,
     bot=None,
+    session_id: str | None = None,
 ) -> str:
     """Non-streaming agent loop (kept for backward compat)."""
     client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
@@ -85,6 +86,7 @@ async def run_agent(
                 tc.function.name,
                 func_args,
                 bot=bot,
+                session_id=session_id,
             )
             content = _serialize_result(result)
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": content})
@@ -100,6 +102,7 @@ async def run_agent_stream(
     model: str | None = None,
     temperature: float = 0.7,
     bot=None,
+    session_id: str | None = None,
 ):
     """Streaming agent: yields SSE-formatted strings."""
     client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
@@ -209,6 +212,7 @@ async def run_agent_stream(
                 name,
                 func_args,
                 bot=bot,
+                session_id=session_id,
             )
             content = _serialize_result(result)
             is_err = bool(getattr(result, "isError", False) or getattr(result, "is_error", False))

@@ -71,16 +71,19 @@ class BotMemory(Base):
         return f"<BotMemory id={self.id} bot_id={self.bot_id} kind={self.kind}>"
 
 
-class BotRun(Base):
+class Run(Base):
     """One persisted unit of work. A run may contain several agent turns."""
 
-    __tablename__ = "bot_runs"
+    __tablename__ = "runs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     bot_id = Column(Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     routine_id = Column(Integer, ForeignKey("bot_routines.id", ondelete="SET NULL"), nullable=True, index=True)
-    parent_run_id = Column(Integer, ForeignKey("bot_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    goal_id = Column(Integer, ForeignKey("goals.id", ondelete="SET NULL"), nullable=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
+    agent_profile_key = Column(String(64), nullable=True, index=True)
+    parent_run_id = Column(Integer, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True)
     session_id = Column(String(64), nullable=True, index=True)
     trigger = Column(String(20), default="api", nullable=False)
     status = Column(String(24), default="queued", nullable=False, index=True)
@@ -98,16 +101,16 @@ class BotRun(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     def __repr__(self):
-        return f"<BotRun id={self.id} bot_id={self.bot_id} status={self.status}>"
+        return f"<Run id={self.id} bot_id={self.bot_id} status={self.status}>"
 
 
-class BotRunStep(Base):
+class RunStep(Base):
     """Audit trail for a run: tool calls, approvals and outcomes."""
 
-    __tablename__ = "bot_run_steps"
+    __tablename__ = "run_steps"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    run_id = Column(Integer, ForeignKey("bot_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True)
     seq = Column(Integer, default=0)
     type = Column(String(20), default="tool")
     tool_name = Column(String(100), nullable=True)
@@ -117,7 +120,7 @@ class BotRunStep(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     def __repr__(self):
-        return f"<BotRunStep run={self.run_id} seq={self.seq} {self.type}>"
+        return f"<RunStep run={self.run_id} seq={self.seq} {self.type}>"
 
 
 class BotRoutine(Base):
@@ -149,13 +152,13 @@ class BotRoutine(Base):
         return f"<BotRoutine id={self.id} bot_id={self.bot_id} name={self.name}>"
 
 
-class BotApproval(Base):
+class Approval(Base):
     """A pending human decision for a risky tool call."""
 
-    __tablename__ = "bot_approvals"
+    __tablename__ = "approvals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    run_id = Column(Integer, ForeignKey("bot_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True)
     bot_id = Column(Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     tool_name = Column(String(100), nullable=False)
@@ -168,4 +171,4 @@ class BotApproval(Base):
     decided_at = Column(DateTime, nullable=True)
 
     def __repr__(self):
-        return f"<BotApproval id={self.id} run={self.run_id} status={self.status}>"
+        return f"<Approval id={self.id} run={self.run_id} status={self.status}>"

@@ -12,7 +12,7 @@ import shutil
 from sqlalchemy import delete, select, update
 
 from core.auth.domain.models import User
-from ai.bots.models import Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep
+from ai.bots.models import Bot, Approval, BotMemory, BotRoutine, Run, RunStep
 from ai.skills.models import BotSkill
 from ai.automation.models import AutomationRun
 from core.database.session import async_session
@@ -42,9 +42,9 @@ async def _stop_runtime(user_id: int) -> None:
 
         async with async_session() as db:
             run_ids = list((await db.execute(
-                select(BotRun.id).where(
-                    BotRun.user_id == user_id,
-                    BotRun.status.notin_(("done", "failed", "cancelled")),
+                select(Run.id).where(
+                    Run.user_id == user_id,
+                    Run.status.notin_(("done", "failed", "cancelled")),
                 )
             )).scalars().all())
         for run_id in run_ids:
@@ -190,8 +190,8 @@ async def _delete_db_rows(user_id: int) -> None:
     async with async_session() as db:
         # Break self/optional references before deleting parents.
         await db.execute(
-            update(BotRun)
-            .where(BotRun.user_id == user_id)
+            update(Run)
+            .where(Run.user_id == user_id)
             .values(parent_run_id=None, routine_id=None)
         )
         await db.execute(
@@ -204,22 +204,22 @@ async def _delete_db_rows(user_id: int) -> None:
         # explicitly keeps the order safe even if a child table was added
         # without a cascade or the generic loop changes.
         await db.execute(
-            delete(BotApproval).where(BotApproval.user_id == user_id)
+            delete(Approval).where(Approval.user_id == user_id)
         )
         await db.execute(
             delete(AutomationRun).where(AutomationRun.user_id == user_id)
         )
         await db.execute(
-            delete(BotRunStep).where(
-                BotRunStep.run_id.in_(
-                    select(BotRun.id).where(BotRun.user_id == user_id)
+            delete(RunStep).where(
+                RunStep.run_id.in_(
+                    select(Run.id).where(Run.user_id == user_id)
                 )
             )
         )
         await db.execute(delete(BotSkill).where(BotSkill.user_id == user_id))
         await db.execute(delete(BotMemory).where(BotMemory.user_id == user_id))
         await db.execute(delete(BotRoutine).where(BotRoutine.user_id == user_id))
-        await db.execute(delete(BotRun).where(BotRun.user_id == user_id))
+        await db.execute(delete(Run).where(Run.user_id == user_id))
         await db.execute(delete(Bot).where(Bot.user_id == user_id))
         await db.execute(
             delete(McpTool).where(

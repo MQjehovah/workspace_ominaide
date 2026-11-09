@@ -64,6 +64,8 @@ async def find_grants(
     capability_key: str,
     *,
     bot_id: int | None = None,
+    goal_id: int | None = None,
+    session_id: str | None = None,
     agent_profile_key: str | None = None,
 ) -> list[CapabilityGrant]:
     now = datetime.now()
@@ -74,6 +76,8 @@ async def find_grants(
             CapabilityGrant.decision.in_(("allow", "deny")),
             or_(CapabilityGrant.expires_at.is_(None), CapabilityGrant.expires_at > now),
             or_(CapabilityGrant.bot_id.is_(None), CapabilityGrant.bot_id == bot_id),
+            or_(CapabilityGrant.goal_id.is_(None), CapabilityGrant.goal_id == goal_id),
+            or_(CapabilityGrant.session_id.is_(None), CapabilityGrant.session_id == session_id),
             or_(
                 CapabilityGrant.agent_profile_key.is_(None),
                 CapabilityGrant.agent_profile_key == agent_profile_key,
@@ -88,12 +92,26 @@ async def authorize(
     arguments: dict | None = None,
     *,
     bot=None,
+    goal_id: int | None = None,
+    session_id: str | None = None,
     agent_profile_key: str | None = None,
     run_id: int | None = None,
 ) -> AuthorizationResult:
     bot = await _resolve_bot(user_id, bot)
     key = normalize_capability_key(name, arguments)
     capability = describe_capability(key, bot)
+    if agent_profile_key:
+        from ai.cognition.agent_profiles import get_profile
+
+        profile = get_profile(agent_profile_key)
+        if profile is not None and profile.read_only and capability.risk not in ("read", "suggest"):
+            return AuthorizationResult(
+                capability_key=key,
+                capability=capability,
+                risk=capability.risk,
+                decision="deny",
+                reason=f"AgentProfile {agent_profile_key} 只允许只读操作",
+            )
     risk, decision = policy.decide(bot, name, arguments)
 
     if decision == "deny":
@@ -109,6 +127,8 @@ async def authorize(
         user_id,
         key,
         bot_id=getattr(bot, "id", None),
+        goal_id=goal_id,
+        session_id=session_id,
         agent_profile_key=agent_profile_key,
     )
     for grant in grants:
@@ -156,10 +176,14 @@ async def authorized_tool_call(
     arguments: dict | None = None,
     *,
     bot=None,
+    goal_id: int | None = None,
+    session_id: str | None = None,
 ) -> MCPCallResponse:
     """Authorize and execute one tool call (used by chat / direct MCP API)."""
     args = arguments or {}
-    auth = await authorize(user_id, name, args, bot=bot)
+    auth = await authorize(
+        user_id, name, args, bot=bot, goal_id=goal_id, session_id=session_id
+    )
     if auth.decision == "deny":
         return MCPCallResponse(
             isError=True,
@@ -176,7 +200,18 @@ async def authorized_tool_call(
             )],
         )
     req = type("Req", (), {"name": name, "arguments": args})()
-    return await tool_registry.call(user_id, req)
+    result = await tool_registry.call(user_id, req)
+    if auth.grant is not None and auth.grant.scope == "once" and not getattr(result, "isError", False):
+        await consume_grant(auth.grant.id)
+    return result
+
+
+async def consume_grant(grant_id: int) -> None:
+    async with async_session() as db:
+        row = await db.get(CapabilityGrant, grant_id)
+        if row is not None:
+            await db.delete(row)
+            await db.commit()
 
 
 async def create_grant(
@@ -186,6 +221,8 @@ async def create_grant(
     decision: str = "allow",
     scope: str = "always",
     bot_id: int | None = None,
+    goal_id: int | None = None,
+    session_id: str | None = None,
     agent_profile_key: str | None = None,
     constraints: dict | None = None,
     expires_at: datetime | None = None,
@@ -200,6 +237,8 @@ async def create_grant(
         row = CapabilityGrant(
             user_id=user_id,
             bot_id=bot_id,
+            goal_id=goal_id,
+            session_id=session_id,
             agent_profile_key=agent_profile_key,
             capability_key=capability_key[:160],
             decision=decision,

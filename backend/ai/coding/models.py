@@ -4,13 +4,13 @@ from core.database.base import Base
 
 
 class CodingRun(Base):
-    """Coding-specific extension for one generic ``bot_runs`` row."""
+    """Coding-specific extension for one generic ``runs`` row."""
 
     __tablename__ = "coding_runs"
 
     run_id = Column(
         Integer,
-        ForeignKey("bot_runs.id", ondelete="CASCADE"),
+        ForeignKey("runs.id", ondelete="CASCADE"),
         primary_key=True,
     )
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)

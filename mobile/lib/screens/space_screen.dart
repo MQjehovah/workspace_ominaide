@@ -15,6 +15,7 @@ import 'device_screen.dart';
 import 'machine_screen.dart';
 import 'dingtalk_conversations_screen.dart';
 import 'files_screen.dart';
+import 'goals_screen.dart';
 import 'insights_screen.dart';
 import 'mail_screen.dart';
 import 'meeting_minutes_screen.dart';
@@ -250,6 +251,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       'dingtalk' => const DingTalkConversationsScreen(),
       'notifications' => const NotificationsScreen(),
       'schedule' => const ScheduleScreen(),
+      'goals' => const GoalsScreen(),
       'minutes' => const MeetingMinutesScreen(),
       'agent' => const AgentTasksScreen(),
       'todo' => const TodoScreen(),

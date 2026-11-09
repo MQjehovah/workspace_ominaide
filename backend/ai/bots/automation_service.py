@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 
 from ai.bots import routines as routine_service
 from ai.automation.models import AutomationRun
-from ai.bots.models import Bot, BotApproval, BotRoutine, BotRun
+from ai.bots.models import Bot, Approval, BotRoutine, Run
 from ai.bots.routine_templates import get_template, list_templates
 from core.config.settings import settings
 from core.database.session import async_session
@@ -334,21 +334,21 @@ async def overview(user_id: int) -> dict:
             )
         )).scalar() or 0
         run_rows = (await db.execute(
-            select(BotRun.status, func.count(BotRun.id)).where(
-                BotRun.user_id == user_id, BotRun.created_at >= since
-            ).group_by(BotRun.status)
+            select(Run.status, func.count(Run.id)).where(
+                Run.user_id == user_id, Run.created_at >= since
+            ).group_by(Run.status)
         )).all()
         pending_approvals = (await db.execute(
-            select(func.count(BotApproval.id)).where(
-                BotApproval.user_id == user_id, BotApproval.status == "pending"
+            select(func.count(Approval.id)).where(
+                Approval.user_id == user_id, Approval.status == "pending"
             )
         )).scalar() or 0
         recent = list((await db.execute(
-            select(BotRun).where(
-                BotRun.user_id == user_id,
-                BotRun.routine_id != None,
-                BotRun.created_at >= since,
-            ).order_by(BotRun.id.desc()).limit(10)
+            select(Run).where(
+                Run.user_id == user_id,
+                Run.routine_id != None,
+                Run.created_at >= since,
+            ).order_by(Run.id.desc()).limit(10)
         )).scalars().all())
     return {
         "routines_total": routines_total,

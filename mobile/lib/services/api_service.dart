@@ -1432,6 +1432,46 @@ class ApiService {
     return res.statusCode == 200;
   }
 
+  Future<List<Map<String, dynamic>>> listGoals() async {
+    final res = await get('/cognition/goals?status=all&limit=100');
+    if (res.statusCode != 200) return [];
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<Map<String, dynamic>?> createGoal({
+    required String title,
+    String description = '',
+  }) async {
+    final res = await post('/cognition/goals', {
+      'title': title,
+      if (description.trim().isNotEmpty) 'description': description.trim(),
+    });
+    if (res.statusCode != 201) return null;
+    return _asMap(decodeJson(res));
+  }
+
+  Future<List<Map<String, dynamic>>> listGoalTasks(int goalId) async {
+    final res = await get('/cognition/goals/$goalId/tasks');
+    if (res.statusCode != 200) return [];
+    return _asMapList(decodeJson(res));
+  }
+
+  Future<bool> planGoal(int goalId) async {
+    final res = await post('/cognition/goals/$goalId/plan', const {});
+    return res.statusCode == 200;
+  }
+
+  Future<Map<String, dynamic>?> tickGoal(int goalId) async {
+    final res = await post('/cognition/goals/$goalId/tick', const {});
+    if (res.statusCode != 200) return null;
+    return _asMap(decodeJson(res));
+  }
+
+  Future<bool> verifyTask(int taskId) async {
+    final res = await post('/cognition/tasks/$taskId/verify', const {});
+    return res.statusCode == 200;
+  }
+
   // -- Agent tasks --
   Future<List<Map<String, dynamic>>> listAgentTasks({int limit = 50}) async {
     final res = await get('/agent/tasks?limit=$limit');

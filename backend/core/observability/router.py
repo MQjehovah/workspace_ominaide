@@ -9,7 +9,7 @@ from core.auth.dependencies import get_current_user
 from core.database.session import async_session
 from core.jobs.models import BackgroundJob
 from core.observability.models import RequestTrace
-from ai.bots.models import BotApproval, BotRun
+from ai.bots.models import Approval, Run
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -144,32 +144,32 @@ async def metrics(
 
         run_rows = (
             await db.execute(
-                select(BotRun.status, func.count())
-                .where(BotRun.user_id == user_id, BotRun.created_at >= since)
-                .group_by(BotRun.status)
+                select(Run.status, func.count())
+                .where(Run.user_id == user_id, Run.created_at >= since)
+                .group_by(Run.status)
             )
         ).all()
         runs_active = (
             await db.execute(
-                select(func.count()).select_from(BotRun).where(
-                    BotRun.user_id == user_id,
-                    BotRun.status.in_(("queued", "running", "waiting_approval")),
+                select(func.count()).select_from(Run).where(
+                    Run.user_id == user_id,
+                    Run.status.in_(("queued", "running", "waiting_approval")),
                 )
             )
         ).scalar() or 0
         recent_failed_runs = (
             await db.execute(
-                select(BotRun.id, BotRun.input, BotRun.status, BotRun.error, BotRun.created_at)
-                .where(BotRun.user_id == user_id, BotRun.status == "failed")
-                .order_by(BotRun.created_at.desc())
+                select(Run.id, Run.input, Run.status, Run.error, Run.created_at)
+                .where(Run.user_id == user_id, Run.status == "failed")
+                .order_by(Run.created_at.desc())
                 .limit(5)
             )
         ).all()
         approvals_pending = (
             await db.execute(
-                select(func.count()).select_from(BotApproval).where(
-                    BotApproval.user_id == user_id,
-                    BotApproval.status == "pending",
+                select(func.count()).select_from(Approval).where(
+                    Approval.user_id == user_id,
+                    Approval.status == "pending",
                 )
             )
         ).scalar() or 0

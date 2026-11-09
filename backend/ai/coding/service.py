@@ -1,6 +1,6 @@
 """Coding run creation and lookup.
 
-The generic ``bot_runs`` row owns lifecycle/audit; ``coding_runs`` owns the
+The generic ``runs`` row owns lifecycle/audit; ``coding_runs`` owns the
 coding-specific project/branch/engine fields.
 """
 from sqlalchemy import select

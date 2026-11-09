@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from ai.bots import registry
 from ai.bots.context import get_current_run_id, get_current_session_id
-from ai.bots.models import Bot, BotRun
+from ai.bots.models import Bot, Run
 from core.database.session import async_session
 from ai.skills.handlers import HANDLERS, SkillContext
 from ai.skills.loader import SkillDefinition, get_skill, list_skills
@@ -126,7 +126,7 @@ async def run_skill(
     session_id = session_id or get_current_session_id()
 
     async with async_session() as db:
-        run = BotRun(
+        run = Run(
             bot_id=bot.id,
             user_id=user_id,
             parent_run_id=parent_run_id,
@@ -153,7 +153,7 @@ async def run_skill(
         )
     except Exception as exc:
         async with async_session() as db:
-            row = await db.get(BotRun, run_id)
+            row = await db.get(Run, run_id)
             if row is not None:
                 row.status = "failed"
                 row.error = str(exc)[:4000]
@@ -164,7 +164,7 @@ async def run_skill(
         raise SkillError(str(exc)) from exc
 
     async with async_session() as db:
-        row = await db.get(BotRun, run_id)
+        row = await db.get(Run, run_id)
         if row is not None:
             row.status = "done"
             row.output = json.dumps(output, ensure_ascii=False)[:200000]

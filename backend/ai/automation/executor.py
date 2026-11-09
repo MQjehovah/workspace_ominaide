@@ -1,7 +1,7 @@
 """Execute unified BotRoutine automations.
 
 One trigger -> one AutomationRun -> ordered actions. Deterministic actions run
-without an LLM; an ``agent`` action dispatches a BotRun.
+without an LLM; an ``agent`` action dispatches a Run.
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from ai.coding.models import CodingRun
 from core.paths import ensure_user_workspace, projects_root
-from ai.bots.models import BotRun
+from ai.bots.models import Run
 from core.database.session import async_session
 from plugins.projects.backend.models import Project
 
@@ -149,13 +149,13 @@ async def list_project_runs(
     async with async_session() as db:
         rows = (
             await db.execute(
-                select(BotRun, CodingRun)
-                .join(CodingRun, CodingRun.run_id == BotRun.id)
+                select(Run, CodingRun)
+                .join(CodingRun, CodingRun.run_id == Run.id)
                 .where(
-                    BotRun.user_id == user_id,
+                    Run.user_id == user_id,
                     CodingRun.project_path == project_path,
                 )
-                .order_by(BotRun.id.desc())
+                .order_by(Run.id.desc())
                 .limit(limit)
             )
         ).all()
@@ -166,17 +166,17 @@ async def list_all_coding_runs(user_id: int, limit: int = 20) -> list[dict]:
     async with async_session() as db:
         rows = (
             await db.execute(
-                select(BotRun, CodingRun)
-                .join(CodingRun, CodingRun.run_id == BotRun.id)
-                .where(BotRun.user_id == user_id)
-                .order_by(BotRun.id.desc())
+                select(Run, CodingRun)
+                .join(CodingRun, CodingRun.run_id == Run.id)
+                .where(Run.user_id == user_id)
+                .order_by(Run.id.desc())
                 .limit(limit)
             )
         ).all()
         return [_run_dict(run, coding) for run, coding in rows]
 
 
-def _run_dict(run: BotRun, coding: CodingRun) -> dict:
+def _run_dict(run: Run, coding: CodingRun) -> dict:
     return {
         "id": run.id,
         "status": run.status,

@@ -50,7 +50,7 @@ async def _seed_user_data(user_id: int) -> None:
     from ai.insights.review_models import DailyInsight
     from ai.automation.models import AutomationRun
     from ai.bots.models import (
-        Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
+        Bot, Approval, BotMemory, BotRoutine, Run, RunStep,
     )
     from ai.coding.models import CodingRun
     from ai.skills.models import BotSkill
@@ -75,13 +75,13 @@ async def _seed_user_data(user_id: int) -> None:
         db.add(bot)
         await db.flush()
 
-        run = BotRun(bot_id=bot.id, user_id=user_id, status="done", input="hello")
+        run = Run(bot_id=bot.id, user_id=user_id, status="done", input="hello")
         db.add(run)
         await db.flush()
-        db.add(BotRunStep(run_id=run.id, seq=1, type="tool", tool_name="x"))
+        db.add(RunStep(run_id=run.id, seq=1, type="tool", tool_name="x"))
         db.add(BotMemory(bot_id=bot.id, user_id=user_id, content="m"))
         db.add(BotSkill(bot_id=bot.id, user_id=user_id, skill_key="daily-brief"))
-        db.add(BotApproval(
+        db.add(Approval(
             run_id=run.id, bot_id=bot.id, user_id=user_id,
             tool_name="local_shell", risk_level="exec",
         ))
@@ -192,7 +192,7 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
     from core.auth.domain.models import User
     from ai.automation.models import AutomationRun
     from ai.bots.models import (
-        Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
+        Bot, Approval, BotMemory, BotRoutine, Run, RunStep,
     )
     from ai.coding.models import CodingRun
     from ai.skills.models import BotSkill
@@ -216,7 +216,7 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
             select(User.id).where(User.id == user_id)
         )).scalar_one_or_none() is None
         for model in (
-            Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
+            Bot, Approval, BotMemory, BotRoutine, Run, RunStep,
             BotSkill, AutomationRun, CodingRun, McpServer, McpTool,
             File, Playlist, PlaylistItem, ContentSource, ContentItem,
             SyncFolder, SyncEvent, Project, PluginNote, PluginTodoItem,
@@ -227,9 +227,9 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
                 count = (await db.execute(
                     select(model).where(model.user_id == user_id)
                 )).scalars().all()
-            elif model is BotRunStep:
+            elif model is RunStep:
                 run_ids = (await db.execute(
-                    select(BotRun.id).where(BotRun.user_id == user_id)
+                    select(Run.id).where(Run.user_id == user_id)
                 )).scalars().all()
                 count = (await db.execute(
                     select(model).where(model.run_id.in_(run_ids or [0]))

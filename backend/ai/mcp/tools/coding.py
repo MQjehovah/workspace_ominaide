@@ -87,7 +87,7 @@ async def list_coding_projects(user_id: int, args: dict) -> MCPCallResponse:
 
 
 async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
-    from ai.bots.models import BotRun
+    from ai.bots.models import Run
     from ai.coding.models import CodingRun
     from core.database.session import async_session
 
@@ -96,10 +96,10 @@ async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
         rows = list(
             (
                 await db.execute(
-                    select(BotRun, CodingRun)
-                    .join(CodingRun, CodingRun.run_id == BotRun.id)
-                    .where(BotRun.user_id == user_id)
-                    .order_by(BotRun.id.desc())
+                    select(Run, CodingRun)
+                    .join(CodingRun, CodingRun.run_id == Run.id)
+                    .where(Run.user_id == user_id)
+                    .order_by(Run.id.desc())
                     .limit(limit)
                 )
             ).all()
@@ -120,7 +120,7 @@ async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
 
 async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
     """Read one Coding Run's full output, error and steps."""
-    from ai.bots.models import BotRun, BotRunStep
+    from ai.bots.models import Run, RunStep
     from ai.coding.models import CodingRun
     from core.database.session import async_session
 
@@ -134,9 +134,9 @@ async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
     async with async_session() as db:
         row = (
             await db.execute(
-                select(BotRun, CodingRun)
-                .join(CodingRun, CodingRun.run_id == BotRun.id)
-                .where(BotRun.id == run_id, BotRun.user_id == user_id)
+                select(Run, CodingRun)
+                .join(CodingRun, CodingRun.run_id == Run.id)
+                .where(Run.id == run_id, Run.user_id == user_id)
             )
         ).first()
         if row is None:
@@ -145,9 +145,9 @@ async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
         steps = list(
             (
                 await db.execute(
-                    select(BotRunStep)
-                    .where(BotRunStep.run_id == run_id)
-                    .order_by(BotRunStep.seq.asc())
+                    select(RunStep)
+                    .where(RunStep.run_id == run_id)
+                    .order_by(RunStep.seq.asc())
                 )
             ).scalars().all()
         )

@@ -1,6 +1,6 @@
 """Persistent bot runner.
 
-A ``BotRun`` is the unit of work. Execution happens in a background asyncio
+A ``Run`` is the unit of work. Execution happens in a background asyncio
 task, writes its state to MySQL/SQLite, and streams through polling so a
 disconnected client can reconnect without losing the task.
 
@@ -39,7 +39,7 @@ from ai.bots.context import (
     set_current_session_id,
 )
 from ai.bots.memory import build_bot_context
-from ai.bots.models import Bot, BotApproval, BotRun, BotRunStep
+from ai.bots.models import Bot, Approval, Run, RunStep
 from core.config.settings import settings
 from core.database.session import async_session
 
@@ -80,25 +80,31 @@ async def create_run(
     messages: list[dict] | None = None,
     trigger: str = "api",
     routine_id: int | None = None,
+    goal_id: int | None = None,
+    task_id: int | None = None,
+    agent_profile_key: str | None = None,
     parent_run_id: int | None = None,
     session_id: str | None = None,
     idempotency_key: str | None = None,
     auto_start: bool = True,
-) -> BotRun:
+) -> Run:
     async with async_session() as db:
         if idempotency_key:
             existing = (
                 await db.execute(
-                    select(BotRun).where(BotRun.idempotency_key == idempotency_key)
+                    select(Run).where(Run.idempotency_key == idempotency_key)
                 )
             ).scalar_one_or_none()
             if existing is not None:
                 return existing
 
-        run = BotRun(
+        run = Run(
             bot_id=bot.id,
             user_id=user_id,
             routine_id=routine_id,
+            goal_id=goal_id,
+            task_id=task_id,
+            agent_profile_key=agent_profile_key,
             parent_run_id=parent_run_id,
             session_id=session_id,
             trigger=trigger,
@@ -157,7 +163,9 @@ async def _execute(run_id: int) -> None:
             return
 
     if not messages:
-        messages = await _default_messages(run.user_id, bot, run.input or "")
+        messages = await _default_messages(
+            run.user_id, bot, run.input or "", run.agent_profile_key
+        )
 
     await _mark_running(run.id, run.started_at)
 
@@ -170,7 +178,7 @@ async def _execute(run_id: int) -> None:
     await _loop(run, bot, messages, seq)
 
 
-async def _execute_coding(run: BotRun, bot: Bot, coding) -> None:
+async def _execute_coding(run: Run, bot: Bot, coding) -> None:
     from ai.coding.engine import run_coding
 
     await _mark_running(run.id, run.started_at)
@@ -223,10 +231,19 @@ async def _execute_coding(run: BotRun, bot: Bot, coding) -> None:
     )
 
 
-async def _loop(run: BotRun, bot: Bot, messages: list[dict], seq: int) -> None:
+async def _loop(run: Run, bot: Bot, messages: list[dict], seq: int) -> None:
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
     all_tools = tool_registry.get_tools(user_id=run.user_id)
-    tools = _to_openai_tools(select_exposed_tools(all_tools, bot))
+    from ai.cognition.agent_profiles import get_profile, scoped_tools
+
+    profile = get_profile(run.agent_profile_key)
+    tools = _to_openai_tools(
+        select_exposed_tools(
+            all_tools,
+            bot,
+            allowed=scoped_tools(bot, profile) if profile is not None else None,
+        )
+    )
 
     max_turns = min(int(bot.max_turns or settings.bot_run_max_turns), 100)
     deadline = _now() + timedelta(seconds=max(60, settings.bot_run_timeout_seconds))
@@ -353,7 +370,7 @@ async def _stream_completion(
 
 
 async def _execute_tool_calls(
-    run: BotRun,
+    run: Run,
     bot: Bot,
     messages: list[dict],
     tool_calls: list[dict],
@@ -369,7 +386,10 @@ async def _execute_tool_calls(
             name,
             tc["arguments"],
             bot=bot,
+            goal_id=run.goal_id,
+            session_id=run.session_id,
             run_id=run.id,
+            agent_profile_key=run.agent_profile_key,
         )
         risk = auth.risk
         decision = (
@@ -417,6 +437,10 @@ async def _execute_tool_calls(
             run.id, seq, "tool", display_name, display_args, "", "running"
         )
         text, is_err = await _call_tool(run, name, tc["arguments"])
+        if auth.grant is not None and auth.grant.scope == "once" and not is_err:
+            from ai.cognition.authorization import consume_grant
+
+            await consume_grant(auth.grant.id)
         messages.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
         await _update_step(
             step_id, result=text, status="error" if is_err else "ok"
@@ -427,7 +451,7 @@ async def _execute_tool_calls(
 
 
 async def _resume_pending(
-    run: BotRun,
+    run: Run,
     bot: Bot,
     messages: list[dict],
     pending: dict,
@@ -462,7 +486,7 @@ async def _resume_pending(
     return await _execute_tool_calls(run, bot, messages, tool_calls, idx + 1, seq)
 
 
-async def _call_tool(run: BotRun, name: str, arguments: dict) -> tuple[str, bool]:
+async def _call_tool(run: Run, name: str, arguments: dict) -> tuple[str, bool]:
     req = type("Req", (), {"name": name, "arguments": arguments})()
     token = set_current_bot_id(run.bot_id)
     run_token = set_current_run_id(run.id)
@@ -478,11 +502,22 @@ async def _call_tool(run: BotRun, name: str, arguments: dict) -> tuple[str, bool
     return text, is_err
 
 
-async def _default_messages(user_id: int, bot: Bot, prompt: str) -> list[dict]:
+async def _default_messages(
+    user_id: int,
+    bot: Bot,
+    prompt: str,
+    agent_profile_key: str | None = None,
+) -> list[dict]:
     messages = []
     persona = bot.system_prompt or settings.assistant_system_prompt
     if persona:
         messages.append({"role": "system", "content": persona})
+    if agent_profile_key:
+        from ai.cognition.agent_profiles import get_profile
+
+        profile = get_profile(agent_profile_key)
+        if profile is not None:
+            messages.append({"role": "system", "content": profile.system_prompt})
     instruction = gateway_instruction()
     if instruction:
         messages.append({"role": "system", "content": instruction})
@@ -511,10 +546,10 @@ async def _coding_run(run_id: int):
         return None
 
 
-async def _load_run_bot(run_id: int) -> tuple[BotRun | None, Bot | None]:
+async def _load_run_bot(run_id: int) -> tuple[Run | None, Bot | None]:
     async with async_session() as db:
         run = (
-            await db.execute(select(BotRun).where(BotRun.id == run_id))
+            await db.execute(select(Run).where(Run.id == run_id))
         ).scalar_one_or_none()
         if run is None:
             return None, None
@@ -525,15 +560,15 @@ async def _load_run_bot(run_id: int) -> tuple[BotRun | None, Bot | None]:
 
 
 async def _create_approval(
-    run: BotRun,
+    run: Run,
     tc: dict,
     risk: str,
     reason: str,
     *,
     capability_key: str | None = None,
-) -> BotApproval:
+) -> Approval:
     async with async_session() as db:
-        approval = BotApproval(
+        approval = Approval(
             run_id=run.id,
             bot_id=run.bot_id,
             user_id=run.user_id,
@@ -550,13 +585,13 @@ async def _create_approval(
         return approval
 
 
-async def _load_approval(approval_id) -> BotApproval | None:
+async def _load_approval(approval_id) -> Approval | None:
     if not approval_id:
         return None
     async with async_session() as db:
         return (
             await db.execute(
-                select(BotApproval).where(BotApproval.id == int(approval_id))
+                select(Approval).where(Approval.id == int(approval_id))
             )
         ).scalar_one_or_none()
 
@@ -564,8 +599,8 @@ async def _load_approval(approval_id) -> BotApproval | None:
 async def _mark_running(run_id: int, started_at) -> None:
     async with async_session() as db:
         await db.execute(
-            update(BotRun)
-            .where(BotRun.id == run_id)
+            update(Run)
+            .where(Run.id == run_id)
             .values(
                 status="running",
                 started_at=started_at or _now(),
@@ -580,7 +615,7 @@ async def _mark_running(run_id: int, started_at) -> None:
 async def _heartbeat(run_id: int) -> None:
     async with async_session() as db:
         await db.execute(
-            update(BotRun).where(BotRun.id == run_id).values(heartbeat_at=_now())
+            update(Run).where(Run.id == run_id).values(heartbeat_at=_now())
         )
         await db.commit()
 
@@ -588,7 +623,7 @@ async def _heartbeat(run_id: int) -> None:
 async def _set_partial(run_id: int, text: str) -> None:
     async with async_session() as db:
         await db.execute(
-            update(BotRun).where(BotRun.id == run_id).values(partial=text)
+            update(Run).where(Run.id == run_id).values(partial=text)
         )
         await db.commit()
 
@@ -596,8 +631,8 @@ async def _set_partial(run_id: int, text: str) -> None:
 async def _set_status(run_id: int, status: str) -> None:
     async with async_session() as db:
         await db.execute(
-            update(BotRun)
-            .where(BotRun.id == run_id)
+            update(Run)
+            .where(Run.id == run_id)
             .values(status=status, heartbeat_at=_now())
         )
         await db.commit()
@@ -606,8 +641,8 @@ async def _set_status(run_id: int, status: str) -> None:
 async def _save_checkpoint(run_id: int, checkpoint: dict) -> None:
     async with async_session() as db:
         await db.execute(
-            update(BotRun)
-            .where(BotRun.id == run_id)
+            update(Run)
+            .where(Run.id == run_id)
             .values(checkpoint=checkpoint, heartbeat_at=_now())
         )
         await db.commit()
@@ -623,7 +658,7 @@ async def _add_step(
     status: str,
 ) -> int:
     async with async_session() as db:
-        row = BotRunStep(
+        row = RunStep(
             run_id=run_id,
             seq=seq,
             type=type_,
@@ -645,7 +680,7 @@ async def _update_step(
     status: str = "ok",
 ) -> None:
     async with async_session() as db:
-        row = await db.get(BotRunStep, step_id)
+        row = await db.get(RunStep, step_id)
         if row is None:
             return
         if result is not None:
@@ -657,7 +692,7 @@ async def _update_step(
 async def _cancelled(run_id: int) -> bool:
     async with async_session() as db:
         status = (
-            await db.execute(select(BotRun.status).where(BotRun.id == run_id))
+            await db.execute(select(Run.status).where(Run.id == run_id))
         ).scalar_one_or_none()
         return status == "cancelled"
 
@@ -671,7 +706,7 @@ async def _finalize(
 ) -> None:
     async with async_session() as db:
         run = (
-            await db.execute(select(BotRun).where(BotRun.id == run_id))
+            await db.execute(select(Run).where(Run.id == run_id))
         ).scalar_one_or_none()
         if run is None:
             return
@@ -701,7 +736,7 @@ async def _finalize(
             await _emit_run_finished(run)
 
 
-async def _broadcast_chat_reply(run: BotRun) -> None:
+async def _broadcast_chat_reply(run: Run) -> None:
     """Push asynchronous replies (e.g. delegated coding runs) to open chats."""
     try:
         from core.wschannel.hub import host_channel
@@ -721,7 +756,7 @@ async def _broadcast_chat_reply(run: BotRun) -> None:
         log.warning(f"[bots.runner] broadcast chat reply failed: {e}")
 
 
-async def _save_chat_reply(run: BotRun) -> None:
+async def _save_chat_reply(run: Run) -> None:
     """Append the run's final answer to the originating chat session."""
     try:
         from plugins.chat.backend.router import save_message
@@ -737,7 +772,7 @@ async def _save_chat_reply(run: BotRun) -> None:
         log.warning(f"[bots.runner] save chat reply failed: {e}")
 
 
-async def _emit_run_finished(run: BotRun) -> None:
+async def _emit_run_finished(run: Run) -> None:
     """Publish bot.run.finished so an event-triggered routine can summarise it."""
     try:
         from core.events.bus import record_event
@@ -772,7 +807,7 @@ async def _emit_run_finished(run: BotRun) -> None:
 # Notifications
 # ---------------------------------------------------------------------------
 
-async def _notify_approval(run: BotRun, approval: BotApproval, reason: str) -> None:
+async def _notify_approval(run: Run, approval: Approval, reason: str) -> None:
     title = "🔐 需要审批"
     body = f"{approval.tool_name}：{reason}"
     try:
@@ -809,30 +844,30 @@ async def _notify_approval(run: BotRun, approval: BotApproval, reason: str) -> N
 # Public queries / control
 # ---------------------------------------------------------------------------
 
-async def list_runs(user_id: int, bot_id: int | None = None, limit: int = 50) -> list[BotRun]:
+async def list_runs(user_id: int, bot_id: int | None = None, limit: int = 50) -> list[Run]:
     async with async_session() as db:
-        q = select(BotRun).where(BotRun.user_id == user_id)
+        q = select(Run).where(Run.user_id == user_id)
         if bot_id is not None:
-            q = q.where(BotRun.bot_id == bot_id)
-        q = q.order_by(BotRun.id.desc()).limit(limit)
+            q = q.where(Run.bot_id == bot_id)
+        q = q.order_by(Run.id.desc()).limit(limit)
         return list((await db.execute(q)).scalars().all())
 
 
-async def get_run(user_id: int, run_id: int) -> BotRun | None:
+async def get_run(user_id: int, run_id: int) -> Run | None:
     async with async_session() as db:
         return (
             await db.execute(
-                select(BotRun).where(BotRun.id == run_id, BotRun.user_id == user_id)
+                select(Run).where(Run.id == run_id, Run.user_id == user_id)
             )
         ).scalar_one_or_none()
 
 
-async def list_steps(run_id: int, after_id: int = 0) -> list[BotRunStep]:
+async def list_steps(run_id: int, after_id: int = 0) -> list[RunStep]:
     async with async_session() as db:
-        q = select(BotRunStep).where(BotRunStep.run_id == run_id)
+        q = select(RunStep).where(RunStep.run_id == run_id)
         if after_id:
-            q = q.where(BotRunStep.id > after_id)
-        q = q.order_by(BotRunStep.id.asc())
+            q = q.where(RunStep.id > after_id)
+        q = q.order_by(RunStep.id.asc())
         return list((await db.execute(q)).scalars().all())
 
 
@@ -840,7 +875,7 @@ async def cancel_run(user_id: int, run_id: int) -> bool:
     async with async_session() as db:
         run = (
             await db.execute(
-                select(BotRun).where(BotRun.id == run_id, BotRun.user_id == user_id)
+                select(Run).where(Run.id == run_id, Run.user_id == user_id)
             )
         ).scalar_one_or_none()
         if run is None:
@@ -851,8 +886,8 @@ async def cancel_run(user_id: int, run_id: int) -> bool:
         run.finished_at = _now()
         run.partial = None
         await db.execute(
-            update(BotApproval)
-            .where(BotApproval.run_id == run_id, BotApproval.status == "pending")
+            update(Approval)
+            .where(Approval.run_id == run_id, Approval.status == "pending")
             .values(status="expired", decided_at=_now())
         )
         await db.commit()
@@ -879,7 +914,7 @@ async def stream_run(run_id: int, user_id: int):
         async with async_session() as db:
             run = (
                 await db.execute(
-                    select(BotRun).where(BotRun.id == run_id, BotRun.user_id == user_id)
+                    select(Run).where(Run.id == run_id, Run.user_id == user_id)
                 )
             ).scalar_one_or_none()
             if run is None:
@@ -888,28 +923,28 @@ async def stream_run(run_id: int, user_id: int):
             steps = list(
                 (
                     await db.execute(
-                        select(BotRunStep)
-                        .where(BotRunStep.run_id == run_id)
-                        .order_by(BotRunStep.id.asc())
+                        select(RunStep)
+                        .where(RunStep.run_id == run_id)
+                        .order_by(RunStep.id.asc())
                     )
                 ).scalars().all()
             )
             latest_approval_id = (
                 await db.execute(
-                    select(BotApproval.id)
-                    .where(BotApproval.run_id == run_id)
-                    .order_by(BotApproval.id.desc())
+                    select(Approval.id)
+                    .where(Approval.run_id == run_id)
+                    .order_by(Approval.id.desc())
                     .limit(1)
                 )
             ).scalar_one_or_none()
             pending_approval = (
                 await db.execute(
-                    select(BotApproval)
+                    select(Approval)
                     .where(
-                        BotApproval.run_id == run_id,
-                        BotApproval.status == "pending",
+                        Approval.run_id == run_id,
+                        Approval.status == "pending",
                     )
-                    .order_by(BotApproval.id.desc())
+                    .order_by(Approval.id.desc())
                     .limit(1)
                 )
             ).scalar_one_or_none()
@@ -1013,8 +1048,8 @@ async def recover_runs() -> None:
         # This deployment has a single backend process. Any run still marked
         # running at startup lost its worker, even if its heartbeat is recent.
         await db.execute(
-            update(BotRun)
-            .where(BotRun.status == "running")
+            update(Run)
+            .where(Run.status == "running")
             .values(
                 status="failed",
                 error="interrupted by backend restart; please retry",
@@ -1025,9 +1060,9 @@ async def recover_runs() -> None:
         waiting = list(
             (
                 await db.execute(
-                    select(BotRun).where(
-                        BotRun.status == "waiting_approval",
-                        BotRun.created_at < old_approval_cutoff,
+                    select(Run).where(
+                        Run.status == "waiting_approval",
+                        Run.created_at < old_approval_cutoff,
                     )
                 )
             ).scalars().all()
@@ -1037,13 +1072,13 @@ async def recover_runs() -> None:
             run.error = "approval timeout"
             run.finished_at = now
             await db.execute(
-                update(BotApproval)
-                .where(BotApproval.run_id == run.id, BotApproval.status == "pending")
+                update(Approval)
+                .where(Approval.run_id == run.id, Approval.status == "pending")
                 .values(status="expired", decided_at=now)
             )
         queued = list(
             (
-                await db.execute(select(BotRun.id).where(BotRun.status == "queued"))
+                await db.execute(select(Run.id).where(Run.status == "queued"))
             ).scalars().all()
         )
         await db.commit()

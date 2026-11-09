@@ -53,6 +53,41 @@ async def ensure_schema_migrations():
                 "WHERE name = 'rss'"
             ))
 
+        # BotRun/BotRunStep/BotApproval -> Run/RunStep/Approval.
+        # create_all has already created the new tables, so copy rows once.
+        if "bot_runs" in table_names and "runs" in table_names:
+            await conn.execute(text(
+                "INSERT INTO runs (id, bot_id, user_id, routine_id, parent_run_id, "
+                "session_id, trigger, status, input, output, error, partial, "
+                "tokens_in, tokens_out, idempotency_key, checkpoint, started_at, "
+                "finished_at, heartbeat_at, created_at) "
+                "SELECT id, bot_id, user_id, routine_id, parent_run_id, "
+                "session_id, trigger, status, input, output, error, partial, "
+                "tokens_in, tokens_out, idempotency_key, checkpoint, started_at, "
+                "finished_at, heartbeat_at, created_at FROM bot_runs "
+                "WHERE NOT EXISTS (SELECT 1 FROM runs r WHERE r.id = bot_runs.id)"
+            ))
+        if "bot_run_steps" in table_names and "run_steps" in table_names:
+            await conn.execute(text(
+                "INSERT INTO run_steps (id, run_id, seq, type, tool_name, arguments, "
+                "result, status, created_at) "
+                "SELECT id, run_id, seq, type, tool_name, arguments, result, status, "
+                "created_at FROM bot_run_steps "
+                "WHERE NOT EXISTS (SELECT 1 FROM run_steps s WHERE s.id = bot_run_steps.id)"
+            ))
+        if "bot_approvals" in table_names and "approvals" in table_names:
+            await conn.execute(text(
+                "INSERT INTO approvals (id, run_id, bot_id, user_id, tool_name, "
+                "arguments, risk_level, status, reason, created_at, decided_at) "
+                "SELECT id, run_id, bot_id, user_id, tool_name, arguments, "
+                "risk_level, status, reason, created_at, decided_at FROM bot_approvals "
+                "WHERE NOT EXISTS (SELECT 1 FROM approvals a WHERE a.id = bot_approvals.id)"
+            ))
+        for old in ("bot_approvals", "bot_run_steps", "bot_runs"):
+            if old in table_names:
+                await conn.execute(text(f"DROP TABLE {old}"))
+                table_names.discard(old)
+
     def _needed_columns(sync_conn) -> list[str]:
         inspector = inspect(sync_conn)
         result = []
@@ -101,10 +136,16 @@ async def ensure_schema_migrations():
                 result.append("bot_routines_last_error")
             if "run_count" not in cols:
                 result.append("bot_routines_run_count")
-        if "bot_runs" in table_names:
-            cols = {c["name"] for c in inspector.get_columns("bot_runs")}
+        if "runs" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("runs")}
             if "parent_run_id" not in cols:
-                result.append("bot_runs_parent")
+                result.append("runs_parent")
+            if "goal_id" not in cols:
+                result.append("runs_goal")
+            if "task_id" not in cols:
+                result.append("runs_task")
+            if "agent_profile_key" not in cols:
+                result.append("runs_agent_profile")
         if "bots" in table_names:
             cols = {c["name"] for c in inspector.get_columns("bots")}
             if "pinned_tools" not in cols:
@@ -125,10 +166,28 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("activity_suggestions")}
             if "proposed_action" not in cols:
                 result.append("activity_suggestions_proposed_action")
-        if "bot_approvals" in table_names:
-            cols = {c["name"] for c in inspector.get_columns("bot_approvals")}
+        if "approvals" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("approvals")}
             if "capability_key" not in cols:
-                result.append("bot_approvals_capability_key")
+                result.append("approvals_capability_key")
+        if "capability_grants" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("capability_grants")}
+            if "goal_id" not in cols:
+                result.append("grants_goal")
+            if "session_id" not in cols:
+                result.append("grants_session")
+        if "memory_records" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("memory_records")}
+            if "salience" not in cols:
+                result.append("memory_salience")
+            if "provenance" not in cols:
+                result.append("memory_provenance")
+            if "sensitivity" not in cols:
+                result.append("memory_sensitivity")
+            if "expires_at" not in cols:
+                result.append("memory_expires")
+            if "last_accessed_at" not in cols:
+                result.append("memory_last_accessed")
 
         if "projects" in table_names:
             cols = {c["name"] for c in inspector.get_columns("projects")}
@@ -195,8 +254,14 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN bot_id INTEGER NULL"))
             elif table == "user_profiles":
                 await conn.execute(text("ALTER TABLE user_profiles ADD COLUMN developer TEXT NULL"))
-            elif table == "bot_runs_parent":
-                await conn.execute(text("ALTER TABLE bot_runs ADD COLUMN parent_run_id INTEGER NULL"))
+            elif table == "runs_parent":
+                await conn.execute(text("ALTER TABLE runs ADD COLUMN parent_run_id INTEGER NULL"))
+            elif table == "runs_goal":
+                await conn.execute(text("ALTER TABLE runs ADD COLUMN goal_id INTEGER NULL"))
+            elif table == "runs_task":
+                await conn.execute(text("ALTER TABLE runs ADD COLUMN task_id INTEGER NULL"))
+            elif table == "runs_agent_profile":
+                await conn.execute(text("ALTER TABLE runs ADD COLUMN agent_profile_key VARCHAR(64) NULL"))
             elif table == "bots_pinned_tools":
                 await conn.execute(text("ALTER TABLE bots ADD COLUMN pinned_tools JSON NULL"))
             elif table == "mcp_servers_owner_plugin":
@@ -205,8 +270,22 @@ async def ensure_schema_migrations():
                 await conn.execute(text(f"ALTER TABLE mcp_servers ADD COLUMN expose_tools BOOLEAN DEFAULT {bool_true}"))
             elif table == "activity_suggestions_proposed_action":
                 await conn.execute(text("ALTER TABLE activity_suggestions ADD COLUMN proposed_action JSON NULL"))
-            elif table == "bot_approvals_capability_key":
-                await conn.execute(text("ALTER TABLE bot_approvals ADD COLUMN capability_key VARCHAR(160) NULL"))
+            elif table == "approvals_capability_key":
+                await conn.execute(text("ALTER TABLE approvals ADD COLUMN capability_key VARCHAR(160) NULL"))
+            elif table == "grants_goal":
+                await conn.execute(text("ALTER TABLE capability_grants ADD COLUMN goal_id INTEGER NULL"))
+            elif table == "grants_session":
+                await conn.execute(text("ALTER TABLE capability_grants ADD COLUMN session_id VARCHAR(64) NULL"))
+            elif table == "memory_salience":
+                await conn.execute(text("ALTER TABLE memory_records ADD COLUMN salience INTEGER DEFAULT 50"))
+            elif table == "memory_provenance":
+                await conn.execute(text("ALTER TABLE memory_records ADD COLUMN provenance JSON NULL"))
+            elif table == "memory_sensitivity":
+                await conn.execute(text("ALTER TABLE memory_records ADD COLUMN sensitivity VARCHAR(20) DEFAULT 'private'"))
+            elif table == "memory_expires":
+                await conn.execute(text("ALTER TABLE memory_records ADD COLUMN expires_at TIMESTAMP NULL"))
+            elif table == "memory_last_accessed":
+                await conn.execute(text("ALTER TABLE memory_records ADD COLUMN last_accessed_at TIMESTAMP NULL"))
             elif table == "request_traces_tokens_in":
                 await conn.execute(text("ALTER TABLE request_traces ADD COLUMN tokens_in INTEGER DEFAULT 0"))
             elif table == "request_traces_tokens_out":

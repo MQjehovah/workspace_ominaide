@@ -152,6 +152,17 @@ async def build_messages(
     instruction = gateway_instruction()
     if instruction:
         messages.append({"role": "system", "content": instruction})
+    from ai.cognition.situation import situation_prompt
+
+    t_situation = time.monotonic()
+    situation = await situation_prompt(user_id)
+    if timing is not None:
+        timing["situation"] = time.monotonic() - t_situation
+    if situation:
+        messages.append({
+            "role": "system",
+            "content": "当前用户情境：\n" + situation,
+        })
     if req.machine_id:
         from core.wschannel.hub import host_channel
 
@@ -380,6 +391,7 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
                 model=bot.model,
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
                 bot=bot,
+                    session_id=session_id,
             )
         finally:
             reset_current_session_id(session_token)
@@ -422,6 +434,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
                     model=bot.model,
                     temperature=bot.temperature if bot.temperature is not None else 0.7,
                     bot=bot,
+                    session_id=session_id,
                 ):
                     await queue.put(event)
             except Exception as e:
@@ -660,6 +673,7 @@ async def voice(
                 model=bot.model,
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
                 bot=bot,
+                    session_id=session_id,
             )
         finally:
             reset_current_session_id(session_token)
@@ -806,6 +820,7 @@ async def voice_stream(
                     model=bot.model,
                     temperature=bot.temperature if bot.temperature is not None else 0.7,
                     bot=bot,
+                    session_id=session_id,
                 )
             ):
                 typ = ev.get("type")

@@ -80,8 +80,9 @@ async def lifespan(app: FastAPI):
     await discover_plugins(app)
     from ai.insights.activity_jobs import JOBS as INSIGHT_JOBS
     from ai.skills.jobs import JOBS as BRIEF_JOBS
+    from ai.memory.jobs import JOBS as MEMORY_JOBS
 
-    for job in [*BRIEF_JOBS, *INSIGHT_JOBS]:
+    for job in [*BRIEF_JOBS, *INSIGHT_JOBS, *MEMORY_JOBS]:
         periodic_scheduler.register(job)
     periodic_scheduler.start()
     register_core_tools()
@@ -199,9 +200,22 @@ app.include_router(automation_router)
 from ai.retrieval.search_router import router as search_router
 app.include_router(search_router)
 
-from ai.cognition.router import proposals_router, capabilities_router
+from ai.cognition.router import (
+    proposals_router,
+    capabilities_router,
+    situation_router,
+    goals_router,
+    workspaces_router,
+    tasks_router,
+    agent_profiles_router,
+)
 app.include_router(proposals_router)
 app.include_router(capabilities_router)
+app.include_router(situation_router)
+app.include_router(goals_router)
+app.include_router(workspaces_router)
+app.include_router(tasks_router)
+app.include_router(agent_profiles_router)
 
 from ai.insights.reviews_router import router as insights_router
 app.include_router(insights_router)

@@ -27,6 +27,12 @@ const router = createRouter({
           component: () => import('@/views/BotConsole.vue')
         },
         {
+          path: 'cognition',
+          name: 'Cognition',
+          meta: { title: '协同' },
+          component: () => import('@/views/Cognition.vue')
+        },
+        {
           path: 'activities',
           name: 'Activity',
           meta: { title: '活动' },

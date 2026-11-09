@@ -91,6 +91,9 @@ class RunOut(BaseModel):
     bot_id: int
     user_id: int
     routine_id: int | None = None
+    goal_id: int | None = None
+    task_id: int | None = None
+    agent_profile_key: str | None = None
     session_id: str | None = None
     trigger: str
     status: str

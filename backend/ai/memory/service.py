@@ -397,8 +397,11 @@ async def list_records(user_id: int, query: str = "", limit: int = 100):
             like = f"%{query}%"
             q = q.where(MemoryRecord.content.ilike(like))
         rows = list((await db.execute(
-            q.order_by(MemoryRecord.importance.desc(), MemoryRecord.updated_at.desc())
-            .limit(max(1, min(limit, 300)))
+            q.order_by(
+                MemoryRecord.salience.desc(),
+                MemoryRecord.importance.desc(),
+                MemoryRecord.updated_at.desc(),
+            ).limit(max(1, min(limit, 300)))
         )).scalars().all())
     return rows
 
@@ -516,7 +519,11 @@ async def _touch_records(user_id: int, ids: list[int]) -> None:
                     MemoryRecord.user_id == user_id,
                     MemoryRecord.id.in_(ids),
                 )
-                .values(use_count=MemoryRecord.use_count + 1, last_used_at=datetime.utcnow())
+                .values(
+                    use_count=MemoryRecord.use_count + 1,
+                    last_used_at=datetime.utcnow(),
+                    last_accessed_at=datetime.utcnow(),
+                )
             )
             await db.commit()
     except Exception:

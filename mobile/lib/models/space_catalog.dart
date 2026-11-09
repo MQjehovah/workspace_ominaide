@@ -71,6 +71,12 @@ List<SpaceGroupSpec> buildSpaceCatalog({
       items: [
         _item('schedule', '日程', Icons.event_outlined, blue, scheduleCount),
         const SpaceItemSpec(
+          key: 'goals',
+          label: '目标',
+          icon: Icons.flag_outlined,
+          color: purple,
+        ),
+        const SpaceItemSpec(
           key: 'minutes',
           label: '录音纪要',
           icon: Icons.mic_rounded,

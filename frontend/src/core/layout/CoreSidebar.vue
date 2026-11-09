@@ -18,6 +18,10 @@
         <el-icon><DataAnalysis /></el-icon>
         <span>仪表盘</span>
       </el-menu-item>
+      <el-menu-item index="/cognition">
+        <el-icon><Connection /></el-icon>
+        <span>协同</span>
+      </el-menu-item>
       <el-menu-item index="/activities">
         <el-icon><TrendCharts /></el-icon>
         <span>活动</span>

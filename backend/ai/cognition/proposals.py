@@ -121,6 +121,26 @@ async def create_proposal(
             expires_at=expires_at,
         )
         db.add(row)
+        await db.flush()
+        if channel in ("notification", "voice"):
+            try:
+                from plugins.notifications.backend.service import create_notification
+
+                await create_notification(
+                    db,
+                    user_id,
+                    title[:200],
+                    (reason or "")[:500] or None,
+                    "proposal",
+                    "/proposals",
+                    actions=[
+                        {"key": "accept", "label": "接受", "kind": "proposal_accept", "proposal_id": row.id},
+                        {"key": "dismiss", "label": "忽略", "kind": "proposal_dismiss", "proposal_id": row.id},
+                    ],
+                    dedupe_key=dedupe_key or f"proposal:{row.id}",
+                )
+            except Exception as exc:
+                log.warning(f"[proposal] notification failed: {exc}")
         await db.commit()
         await db.refresh(row)
         return row
@@ -201,6 +221,24 @@ async def _execute_action(
         )
         return {"action": kind, "status": "executed", "todo_id": todo.id}
 
+    if kind == "create_goal":
+        from ai.cognition.models import Goal
+
+        goal = Goal(
+            user_id=user_id,
+            bot_id=row.bot_id,
+            title=str(payload.get("title") or row.title)[:200],
+            description=str(payload.get("description") or row.reason or ""),
+            status="draft",
+            priority=int(payload.get("priority") or 50),
+            context={"proposal_id": row.id, **(payload.get("context") or {})},
+            success_criteria=payload.get("success_criteria"),
+            created_by="proposal",
+        )
+        db.add(goal)
+        await db.flush()
+        return {"action": kind, "status": "executed", "goal_id": goal.id}
+
     if kind in ("link", "open", "none", ""):
         return {"action": kind or "none", "status": "accepted"}
 
@@ -253,7 +291,20 @@ async def act_proposal(
                 else:
                     result["status"] = row.status
             else:
-                result.update(status=row.status, action="none")
+                from ai.cognition.models import Goal
+
+                goal = Goal(
+                    user_id=user_id,
+                    bot_id=row.bot_id,
+                    title=row.title,
+                    description=row.reason,
+                    status="draft",
+                    context={"proposal_id": row.id},
+                    created_by="proposal",
+                )
+                db.add(goal)
+                await db.flush()
+                result.update(status=row.status, action="create_goal", goal_id=goal.id)
             if action == "execute":
                 result["requested"] = "execute"
         else:

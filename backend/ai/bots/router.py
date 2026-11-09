@@ -10,7 +10,7 @@ from core.auth.dependencies import get_current_user
 from ai.bots import registry, runner
 from ai.bots import routines as routine_service
 from ai.bots.memory import add_memory, delete_memory, list_memories
-from ai.bots.models import BotApproval, BotRun
+from ai.bots.models import Approval, Run
 from ai.bots.schemas import (
     ApprovalDecision,
     ApprovalOut,
@@ -163,7 +163,7 @@ async def create_bot_run(
 
 
 @router.get("/{bot_id}/runs", response_model=list[RunOut])
-async def list_bot_runs(
+async def list_runs(
     bot_id: int,
     limit: int = Query(50, ge=1, le=200),
     user: dict = Depends(get_current_user),
@@ -314,10 +314,10 @@ async def list_approvals(
     user: dict = Depends(get_current_user),
 ):
     async with async_session() as db:
-        q = select(BotApproval).where(BotApproval.user_id == user["id"])
+        q = select(Approval).where(Approval.user_id == user["id"])
         if status and status != "all":
-            q = q.where(BotApproval.status == status)
-        q = q.order_by(BotApproval.id.desc()).limit(limit)
+            q = q.where(Approval.status == status)
+        q = q.order_by(Approval.id.desc()).limit(limit)
         return list((await db.execute(q)).scalars().all())
 
 
@@ -331,9 +331,9 @@ async def decide_approval(
     async with async_session() as db:
         approval = (
             await db.execute(
-                select(BotApproval).where(
-                    BotApproval.id == approval_id,
-                    BotApproval.user_id == user["id"],
+                select(Approval).where(
+                    Approval.id == approval_id,
+                    Approval.user_id == user["id"],
                 )
             )
         ).scalar_one_or_none()
@@ -368,7 +368,7 @@ async def decide_approval(
             ))
 
         run = (
-            await db.execute(select(BotRun).where(BotRun.id == approval.run_id))
+            await db.execute(select(Run).where(Run.id == approval.run_id))
         ).scalar_one_or_none()
         if run is not None and run.status in ("waiting_approval", "queued"):
             run.status = "queued"

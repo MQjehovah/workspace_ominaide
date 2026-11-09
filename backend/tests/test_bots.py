@@ -284,18 +284,18 @@ async def test_save_memory_tool_uses_bot_scope(client, user_token):
 
 
 async def test_list_coding_runs_reads_extension_fields(client, user_token):
-    """Coding metadata lives in coding_runs, not on the generic BotRun."""
+    """Coding metadata lives in coding_runs, not on the generic Run."""
     me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
     uid = me["id"]
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
-    from ai.bots.models import BotRun, BotRunStep
+    from ai.bots.models import Run, RunStep
     from ai.coding.models import CodingRun
     from core.database.session import async_session
 
     async with async_session() as db:
-        run = BotRun(
+        run = Run(
             bot_id=bot_id,
             user_id=uid,
             trigger="coding",
@@ -316,7 +316,7 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
             )
         )
         db.add(
-            BotRunStep(
+            RunStep(
                 run_id=run.id,
                 seq=1,
                 type="tool",
@@ -374,7 +374,7 @@ async def test_recover_runs_fails_orphaned_running(client, user_token, monkeypat
     from datetime import datetime
 
     from ai.bots import runner
-    from ai.bots.models import BotRun
+    from ai.bots.models import Run
     from core.database.session import async_session
 
     me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
@@ -383,7 +383,7 @@ async def test_recover_runs_fails_orphaned_running(client, user_token, monkeypat
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
     async with async_session() as db:
-        run = BotRun(
+        run = Run(
             bot_id=bot_id,
             user_id=uid,
             trigger="coding",
