@@ -83,10 +83,64 @@ async def ensure_schema_migrations():
                 "risk_level, status, reason, created_at, decided_at FROM bot_approvals "
                 "WHERE NOT EXISTS (SELECT 1 FROM approvals a WHERE a.id = bot_approvals.id)"
             ))
+        # Other tables may still reference bot_runs (for example coding_runs
+        # used to point at bot_runs before it moved to the generic runs table).
+        # Drop those constraints before dropping the legacy tables.
+        if "bot_runs" in table_names and dialect in ("postgresql", "mysql"):
+            def _dependent_foreign_keys(sync_conn):
+                inspector = inspect(sync_conn)
+                found = []
+                for table in inspector.get_table_names():
+                    if table in ("bot_runs", "bot_run_steps", "bot_approvals"):
+                        continue
+                    for fk in inspector.get_foreign_keys(table):
+                        if fk.get("referred_table") == "bot_runs" and fk.get("name"):
+                            found.append((table, fk["name"]))
+                return found
+
+            for table, constraint in await conn.run_sync(_dependent_foreign_keys):
+                if dialect == "mysql":
+                    await conn.execute(text(
+                        f"ALTER TABLE `{table}` DROP FOREIGN KEY `{constraint}`"
+                    ))
+                else:
+                    await conn.execute(text(
+                        f'ALTER TABLE "{table}" DROP CONSTRAINT "{constraint}"'
+                    ))
+
         for old in ("bot_approvals", "bot_run_steps", "bot_runs"):
             if old in table_names:
                 await conn.execute(text(f"DROP TABLE {old}"))
                 table_names.discard(old)
+
+        # Re-attach coding_runs to the new runs table with the same cascade
+        # semantics. NOT VALID keeps existing rows untouched if any orphaned
+        # run ids were left behind by the legacy tables.
+        if dialect == "postgresql" and "coding_runs" in table_names:
+            def _coding_run_fk_target(sync_conn):
+                inspector = inspect(sync_conn)
+                for fk in inspector.get_foreign_keys("coding_runs"):
+                    if fk.get("referred_table") == "runs":
+                        return True
+                return False
+
+            if not await conn.run_sync(_coding_run_fk_target):
+                await conn.execute(text(
+                    "ALTER TABLE coding_runs ADD CONSTRAINT coding_runs_run_id_fkey "
+                    "FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE NOT VALID"
+                ))
+
+        # Copying explicit ids does not advance PostgreSQL sequences. Move them
+        # past the highest copied id so new runs/steps/approvals do not collide.
+        if dialect == "postgresql":
+            for table in ("runs", "run_steps", "approvals"):
+                if table not in table_names:
+                    continue
+                await conn.execute(text(
+                    f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+                    f"COALESCE((SELECT MAX(id) FROM {table}), 1), "
+                    f"(SELECT COUNT(*) > 0 FROM {table}))"
+                ))
 
     def _needed_columns(sync_conn) -> list[str]:
         inspector = inspect(sync_conn)
