@@ -100,6 +100,7 @@
 | Skills | 技能加载、启用、`run_skill` |
 | Memory | 档案、长期记忆、关系、实体图谱、人物索引、向量记忆 |
 | Automation | DSL、执行器、定时/触发 |
+| ASR | 语音转写能力（`core/ai/asr.py`），供会议等插件调用 |
 | 场景能力 | 每日简报、会议准备、周报、回复草稿、活动洞察 |
 
 AI 的场景能力通过 Skills 暴露。技能是入口，不是实现；实现放在 `core/ai/scenarios/` 或对应 AI 能力模块，避免再造一个 Chief-of-Staff 业务层。
