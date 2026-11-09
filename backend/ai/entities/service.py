@@ -77,10 +77,11 @@ async def resolve_entity(
 
     for entity in entities:
         if normalize_name(entity.canonical_name) == normalized:
-            await _ensure_alias(
-                db, user_id, entity.id, entity.type, raw, alias_type,
-                source, confidence,
-            )
+            if alias_type == "name":
+                await _ensure_alias(
+                    db, user_id, entity.id, entity.type, raw, alias_type,
+                    source, confidence,
+                )
             return entity
 
     if not create:

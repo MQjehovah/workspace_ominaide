@@ -178,6 +178,8 @@ async def create_proposal(
             )).scalars().all()
         )
         for existing in recent:
+            if source == "memory":
+                continue
             if _similarity(existing.title, title) >= 0.86:
                 _apply_update(
                     existing,
