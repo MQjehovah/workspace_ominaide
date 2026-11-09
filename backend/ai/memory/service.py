@@ -48,6 +48,7 @@ async def queue_candidate(
     source_type: str = "chat",
     source_id: int | None = None,
     source_ref: dict | None = None,
+    data: dict | None = None,
     trust: str = "trusted",
     bot_id: int | None = None,
 ) -> MemoryCandidate | None:
@@ -55,7 +56,10 @@ async def queue_candidate(
     norm = _normalize(content)
     if len(norm) < 6:
         return None
-    kind = kind if kind in ("fact", "preference", "commitment", "relationship", "project") else "fact"
+    kind = kind if kind in (
+        "fact", "preference", "commitment", "relationship", "project",
+        "open_loop", "decision", "date", "lesson", "recurring_topic",
+    ) else "fact"
     confidence = max(0, min(int(confidence), 100))
 
     existing_record = (await db.execute(
@@ -84,6 +88,8 @@ async def queue_candidate(
         if source_ref:
             sources.append(source_ref)
         existing.source_ref = sources[-20:]
+        if isinstance(data, dict):
+            existing.data = {**(existing.data or {}), **data}
         await db.flush()
         return existing
 
@@ -97,6 +103,7 @@ async def queue_candidate(
         source_type=source_type,
         source_id=source_id,
         source_ref=[source_ref] if source_ref else None,
+        data=data if isinstance(data, dict) else None,
         trust=trust,
         status="pending",
     )
@@ -339,6 +346,7 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
                 source_type=cand.source_type,
                 source_id=cand.source_id,
                 sources=_loads(cand.source_ref),
+                data=cand.data,
                 status="active",
                 valid_from=datetime.utcnow(),
             )
@@ -350,6 +358,8 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
             sources = _loads(record.sources)
             sources.extend(_loads(cand.source_ref))
             record.sources = sources[-20:]
+            if isinstance(cand.data, dict):
+                record.data = {**(record.data or {}), **cand.data}
         await _supersede_conflicts(db, user_id, cand, record.id)
         await _link_edges(db, user_id, record)
         try:

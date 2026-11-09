@@ -40,6 +40,8 @@ class Proposal(Base):
     actions = Column(JSON, nullable=True)
     status = Column(String(24), nullable=False, default="new", index=True)
     channel = Column(String(20), nullable=False, default="now")
+    source = Column(String(20), nullable=False, default="activity", index=True)
+    quality_score = Column(Float, nullable=False, default=0.0)
     dedupe_key = Column(String(200), nullable=True, index=True)
     expires_at = Column(DateTime, nullable=True, index=True)
     snooze_until = Column(DateTime, nullable=True, index=True)

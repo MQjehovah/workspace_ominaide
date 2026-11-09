@@ -59,6 +59,7 @@ async def propose_memory(user_id: int, args: dict) -> MCPCallResponse:
                 confidence = int(item.get("confidence") or 60)
             except (TypeError, ValueError):
                 confidence = 60
+            data = item.get("data") if isinstance(item.get("data"), dict) else None
             row = await queue_candidate(
                 db, user_id,
                 str(item.get("kind") or "fact"),
@@ -67,6 +68,7 @@ async def propose_memory(user_id: int, args: dict) -> MCPCallResponse:
                 source_type=source_type,
                 source_id=source_id,
                 source_ref=source_ref,
+                data=data,
                 trust=trust,
                 bot_id=bot_id,
             )

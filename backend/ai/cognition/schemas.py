@@ -18,6 +18,8 @@ class ProposalOut(BaseModel):
     primary_action: dict | None = None
     status: str
     channel: str
+    source: str = "activity"
+    quality_score: float = 0.0
     dedupe_key: str | None = None
     expires_at: datetime | None = None
     snooze_until: datetime | None = None

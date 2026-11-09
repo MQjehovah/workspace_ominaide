@@ -23,6 +23,7 @@ class MemoryCandidate(Base):
     source_type = Column(String(32), default="chat")
     source_id = Column(Integer, nullable=True)
     source_ref = Column(JSON, nullable=True)
+    data = Column(JSON, nullable=True)
     trust = Column(String(20), default="trusted")  # trusted | untrusted
     status = Column(String(20), default="pending", index=True)  # pending/approved/rejected/merged
     reason = Column(Text, nullable=True)
@@ -46,6 +47,7 @@ class MemoryRecord(Base):
     source_type = Column(String(32), default="chat")
     source_id = Column(Integer, nullable=True)
     sources = Column(JSON, nullable=True)
+    data = Column(JSON, nullable=True)
     status = Column(String(20), default="active", index=True)  # active/superseded/deleted
     valid_from = Column(DateTime, nullable=True)
     valid_to = Column(DateTime, nullable=True)

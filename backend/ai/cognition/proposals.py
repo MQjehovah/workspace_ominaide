@@ -72,6 +72,8 @@ def _out(row: Proposal) -> dict:
         "primary_action": _primary(actions),
         "status": row.status,
         "channel": row.channel,
+        "source": getattr(row, "source", "activity") or "activity",
+        "quality_score": float(getattr(row, "quality_score", 0.0) or 0.0),
         "dedupe_key": row.dedupe_key,
         "expires_at": row.expires_at,
         "snooze_until": row.snooze_until,
@@ -91,6 +93,8 @@ def _apply_update(
     confidence: float,
     actions: list[dict],
     channel: str,
+    source: str,
+    quality_score: float,
     expires_at: datetime | None,
 ) -> None:
     row.title = title[:200]
@@ -99,6 +103,11 @@ def _apply_update(
     row.confidence = max(float(row.confidence or 0), float(confidence))
     row.actions = actions
     row.channel = channel
+    row.source = source[:20]
+    row.quality_score = max(
+        float(getattr(row, "quality_score", 0.0) or 0.0),
+        float(quality_score or 0.0),
+    )
     row.expires_at = expires_at
 
 
@@ -114,6 +123,8 @@ async def create_proposal(
     actions: list[dict] | None = None,
     action: dict | None = None,
     channel: str = "now",
+    source: str = "activity",
+    quality_score: float = 0.0,
     dedupe_key: str | None = None,
     expires_at: datetime | None = None,
 ) -> Proposal:
@@ -143,6 +154,8 @@ async def create_proposal(
                     confidence=confidence,
                     actions=normalized,
                     channel=channel,
+                    source=source,
+                    quality_score=quality_score,
                     expires_at=expires_at,
                 )
                 await db.commit()
@@ -174,6 +187,8 @@ async def create_proposal(
                     confidence=confidence,
                     actions=normalized,
                     channel=channel,
+                    source=source,
+                    quality_score=quality_score,
                     expires_at=expires_at,
                 )
                 await db.commit()
@@ -191,6 +206,8 @@ async def create_proposal(
             actions=normalized,
             status="new",
             channel=channel,
+            source=source[:20],
+            quality_score=float(quality_score or 0.0),
             dedupe_key=dedupe_key,
             expires_at=expires_at,
         )
@@ -356,7 +373,11 @@ async def _execute_action(
         return {"action": kind, "status": "executed", "goal_id": goal.id}
 
     if kind in ("link", "open", "none", ""):
-        return {"action": kind or "none", "status": "accepted"}
+        result = {"action": kind or "none", "status": "accepted"}
+        link = payload.get("link") or payload.get("url")
+        if link:
+            result["link"] = str(link)[:500]
+        return result
 
     # Other action kinds are recorded but not auto-executed in this phase.
     return {"action": kind, "status": "accepted", "note": "action kind not executed"}
