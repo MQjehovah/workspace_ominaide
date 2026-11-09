@@ -126,8 +126,12 @@
             <div v-if="activitySuggestions.length" class="suggestion-list">
               <div v-for="s in activitySuggestions" :key="s.id" class="suggestion-item">
                 <div class="suggestion-main">
-                  <div class="suggestion-title">{{ s.title }}</div>
+                  <div class="suggestion-title">
+                    {{ s.title }}
+                    <el-tag size="small" style="margin-left:6px">{{ s.source === 'memory' ? '记忆' : '提醒' }}</el-tag>
+                  </div>
                   <div v-if="s.reason" class="suggestion-reason">{{ s.reason }}</div>
+                  <div v-if="s.evidence?.quote" class="suggestion-reason">“{{ s.evidence.quote }}”</div>
                 </div>
                 <div class="suggestion-actions">
                   <el-button link type="primary" size="small" @click="acceptProposal(s)">
@@ -339,8 +343,9 @@ async function toggleTodo(t: any) {
 
 async function acceptProposal(s: any) {
   try {
-    await client.post(`/proposals/${s.id}/act`, { action: 'accept' })
+    const { data } = await client.post(`/proposals/${s.id}/act`, { action: 'accept' })
     activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
+    if (data?.link) router.push(data.link)
   } catch { }
 }
 

@@ -55,8 +55,12 @@
           </div>
           <div v-for="p in proposals" :key="p.id" class="proposal">
             <div>
-              <div class="proposal-title">{{ p.title }}</div>
+              <div class="proposal-title">
+                {{ p.title }}
+                <el-tag size="small" style="margin-left:6px">{{ p.source === 'memory' ? '记忆' : '提醒' }}</el-tag>
+              </div>
               <div class="muted">{{ p.reason }}</div>
+              <div v-if="p.evidence?.quote" class="muted">“{{ p.evidence.quote }}”</div>
               <div class="muted">置信度 {{ (p.confidence * 100).toFixed(0) }}% · {{ p.status }}</div>
             </div>
             <div>
@@ -245,9 +249,12 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import client from '@/api/client'
+
+const router = useRouter()
 
 const tab = ref('now')
 const loading = reactive({ now: false, proposals: false })
@@ -281,8 +288,11 @@ async function loadProposals() {
   try { proposals.value = (await client.get('/proposals', { params: { status: proposalStatus.value, limit: 50 } })).data.items || [] } finally { loading.proposals = false }
 }
 async function actProposal(p: any, action: string) {
-  await client.post(`/proposals/${p.id}/act`, { action })
+  const res = await client.post(`/proposals/${p.id}/act`, { action })
   ElMessage.success('已处理')
+  if (action === 'accept' && res.data?.link) {
+    router.push(res.data.link)
+  }
   await loadProposals()
 }
 async function loadGoals() {
