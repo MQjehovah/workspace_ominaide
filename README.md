@@ -180,17 +180,20 @@ npm run dev
 
 ```
 ├── backend/           # FastAPI 后端
-│   ├── core/          # 核心模块（auth / mcp / ai / database / plugin）
+│   ├── ai/            # AI 域（agent / bots / skills / mcp / memory / insights / ...）
+│   ├── activities/    # Activities 域（活动采集、存储、查询）
+│   ├── app/           # 应用模块（objects / workbench）
+│   ├── core/          # 内核（auth / database / events / jobs / plugin / ...）
 │   ├── plugins/       # 后端业务插件
 │   │   ├── chat/      # AI 对话
-│   │   ├── files/     # 文件管理
+│   │   ├── files/     # 文件管理 + 文件同步
 │   │   ├── music/     # 歌单
 │   │   ├── notes/     # 笔记
-│   │   ├── sources/    # 资讯源（RSS / GitHub Trending）
+│   │   ├── sources/   # 资讯源（RSS / GitHub Trending）
+│   │   ├── captures/  # 随手记
+│   │   ├── meetings/  # 会议纪要
 │   │   ├── schedule/  # 日程
-│   │   ├── sync/      # 同步
 │   │   └── ...
-│   └── desktop_plugins/ # 桌面端插件市场仓库
 ├── desktop/           # Electron 桌面端
 │   ├── plugins/       # 内置桌面插件
 │   │   ├── assistant/  # AI 助理

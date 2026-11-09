@@ -225,6 +225,7 @@ backend/
 - [x] 会议纪要迁入 `plugins/meetings`，ASR 保留在 `ai/speech/asr.py`
 - [x] 文件同步并回 `plugins/files`
 - [x] Web「关于我」改为「记忆」，「能力中心」改为「运行看板」
+- [x] 删除未使用的 `backend/mcp_servers` 和 `backend/desktop_plugins`
 - [ ] AI 读插件表改为 context provider 注册
 - [ ] `events` 持久化改为 Activities 订阅
 
