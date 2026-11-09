@@ -197,7 +197,22 @@ backend/
 2. **events 直接写 Activities 表**  
    `core/events/bus.py` 目前直接写 `user_activities`。目标方向是总线只负责 publish/subscribe，由 Activities 订阅并持久化。
 
-## 7. 验证
+## 7. 落地状态
+
+- [x] `events` 只保留总线、worker 和 recorder
+- [x] 活动模型、路由、中间件、参数预览迁入 `core/activities`
+- [x] 删除 `core/connectors` 和 `SyncState`
+- [x] 解散 `core/cos`：确定性 triage 删除，LLM 能力进入 AI 场景和 Skills
+- [x] 删除 Inbox 后端与移动端收件箱，工作台建议改为读取每日简报 `prompts`
+- [x] 上下文组装收口为 `core/ai/context.py`，LLM 调用收口为 `core/ai/llm.py`
+- [x] 随手记迁入 `plugins/captures`
+- [x] 会议纪要迁入 `plugins/meetings`，ASR 保留在 `core/ai/asr.py`
+- [x] 文件同步并回 `plugins/files`
+- [x] Web「关于我」改为「记忆」，「能力中心」改为「运行看板」
+- [ ] AI 读插件表改为 context provider 注册
+- [ ] `events` 持久化改为 Activities 订阅
+
+## 8. 验证
 
 改动模块边界后至少运行：
 

@@ -67,7 +67,7 @@
                          │ HTTPS + WebSocket
                   ┌──────▼──────────────────┐
                   │   FastAPI 后端            │
-                  │   · 13 个业务插件         │
+                  │   · 16 个业务插件         │
                   │   · MCP 工具注册中心      │
                   │   · WebSocket 通知        │
                   └──────┬──────────────────┘
@@ -86,6 +86,8 @@
                   │  MCP Function Calling   │
                   └─────────────────────────┘
 ```
+
+模块归属、依赖方向和新增模块规则见 [docs/architecture.md](docs/architecture.md)。
 
 ## 技术栈
 
