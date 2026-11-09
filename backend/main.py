@@ -191,9 +191,6 @@ app.include_router(marketplace_router)
 from core.ai.mcp.router import router as mcp_router
 app.include_router(mcp_router)
 
-from core.connectors.router import router as connectors_router
-app.include_router(connectors_router)
-
 from core.mcp_hub.router import router as mcp_hub_router
 app.include_router(mcp_hub_router)
 

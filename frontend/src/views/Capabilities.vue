@@ -100,21 +100,6 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="连接器" name="connectors">
-        <div class="page-card">
-          <div class="page-card-body">
-            <el-table :data="connectors" size="small" stripe v-loading="loading.connectors">
-              <el-table-column prop="title" label="连接器" width="150" />
-              <el-table-column prop="connector" label="Key" width="120" />
-              <el-table-column prop="status" label="状态" width="100" />
-              <el-table-column prop="cursor" label="同步游标" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="last_sync_at" label="最后同步" width="180" />
-              <el-table-column prop="error" label="错误" min-width="200" show-overflow-tooltip />
-            </el-table>
-          </div>
-        </div>
-      </el-tab-pane>
-
       <el-tab-pane label="上下文调试" name="context">
         <div class="page-card">
           <div class="page-card-body">
@@ -172,7 +157,7 @@ import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 
 const tab = ref('metrics')
-const loading = reactive({ metrics: false, jobs: false, agent: false, connectors: false, context: false, automation: false })
+const loading = reactive({ metrics: false, jobs: false, agent: false, context: false, automation: false })
 const metrics = ref<any>({ by_kind: {}, slowest: [] })
 const jobs = ref<any[]>([])
 const jobStatus = ref('')
@@ -181,7 +166,6 @@ const creating = ref(false)
 const tasks = ref<any[]>([])
 const taskDialog = ref(false)
 const taskDetail = ref<any>(null)
-const connectors = ref<any[]>([])
 const contextQuery = ref('')
 const contextItems = ref<any[]>([])
 const automationText = ref(JSON.stringify({
@@ -250,10 +234,6 @@ async function cancelTask(row: any) {
   ElMessage.success('已取消')
   await loadTasks()
 }
-async function loadConnectors() {
-  loading.connectors = true
-  try { connectors.value = (await client.get('/connectors')).data.items || [] } finally { loading.connectors = false }
-}
 async function runContext() {
   loading.context = true
   try {
@@ -269,7 +249,7 @@ async function validateAutomation() {
   } finally { loading.automation = false }
 }
 async function refreshAll() {
-  await Promise.all([loadMetrics(), loadJobs(), loadTasks(), loadConnectors()])
+  await Promise.all([loadMetrics(), loadJobs(), loadTasks()])
 }
 onMounted(refreshAll)
 </script>

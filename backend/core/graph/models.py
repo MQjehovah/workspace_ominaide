@@ -6,7 +6,6 @@ from sqlalchemy import (
     Integer,
     JSON,
     String,
-    Text,
     UniqueConstraint,
     func,
 )
@@ -42,19 +41,3 @@ class EntityLink(Base):
     meta = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
 
-
-class SyncState(Base):
-    __tablename__ = "sync_states"
-    __table_args__ = (
-        UniqueConstraint("user_id", "connector", name="uq_sync_state_user_connector"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False, index=True)
-    connector = Column(String(60), nullable=False, index=True)
-    cursor = Column(String(500), nullable=True)
-    status = Column(String(20), nullable=False, default="idle")
-    error = Column(Text, nullable=True)
-    last_sync_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

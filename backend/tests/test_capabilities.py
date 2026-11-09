@@ -1,4 +1,4 @@
-"""Capabilities: persistent jobs, graph/context, cursor pagination, connectors."""
+"""Capabilities: persistent jobs, graph/context and cursor pagination."""
 
 import asyncio
 import random
@@ -57,7 +57,7 @@ async def test_background_job_lifecycle(client):
     assert job_id in seen
 
 
-async def test_graph_context_and_connectors(client):
+async def test_graph_context(client):
     token, user_id = await _new_user(client)
 
     from core.database.session import async_session
@@ -102,19 +102,6 @@ async def test_graph_context_and_connectors(client):
     body = r.json()
     assert body["count"] >= 1
     assert body["items"][0]["citation"].startswith("note:")
-
-    r = await client.get("/api/connectors", headers=auth(token))
-    assert r.status_code == 200, r.text
-    assert any(item["connector"] == "mail" for item in r.json()["items"])
-
-    r = await client.put(
-        "/api/connectors/mail",
-        json={"cursor": "abc", "status": "ok"},
-        headers=auth(token),
-    )
-    assert r.status_code == 200, r.text
-    assert r.json()["cursor"] == "abc"
-
 
 async def test_cursor_pagination_helpers():
     from core.pagination import decode_int_cursor, encode_cursor
