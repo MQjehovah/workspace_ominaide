@@ -100,7 +100,7 @@
 | Skills | 技能加载、启用、`run_skill` |
 | Memory | 档案、长期记忆、关系、实体图谱、人物索引、向量记忆 |
 | Automation | DSL、执行器、定时/触发 |
-| ASR | 语音转写能力（`ai/asr.py`），供会议等插件调用 |
+| ASR | 语音转写能力（`ai/speech/asr.py`），供会议等插件调用 |
 | 场景能力 | 每日简报、会议准备、周报、回复草稿、活动洞察 |
 
 AI 的场景能力通过 Skills 暴露。技能是入口，不是实现；实现放在 `ai/scenarios/` 或对应 AI 能力模块，避免再造一个 Chief-of-Staff 业务层。
@@ -153,22 +153,23 @@ Activities 只负责活动数据，不生成简报、不做分析。简报和洞
 ```
 backend/
 ├─ ai/                    # AI 域
-│  ├─ agent.py            # Agent 执行循环
-│  ├─ agent_router.py     # /api/agent
+│  ├─ agent/              # Agent 执行循环 + /api/agent
 │  ├─ bots/               # Bot / Run / Routine
-│  ├─ skills/             # 技能运行时
+│  ├─ skills/             # 技能运行时 + builtin SKILL.md
 │  ├─ mcp/                # 内置工具 + Gateway
 │  ├─ mcp_hub/            # 外部 MCP Server
 │  ├─ automation/         # DSL、执行器
 │  ├─ memory/             # 长期记忆、候选、审核
-│  ├─ graph/              # 实体关系边
-│  ├─ people/             # 人物索引
-│  ├─ activity_insights/  # 活动洞察
+│  │  ├─ models.py service.py router.py
+│  │  ├─ graph/           # 实体关系边
+│  │  └─ people/          # 人物索引
+│  ├─ insights/           # 每日回顾、周报、活动建议
 │  ├─ scenarios/          # 每日简报、会议准备、回复草稿
-│  ├─ context.py          # AI 上下文组装
-│  ├─ llm.py              # LLM 公共调用
-│  ├─ asr.py              # 语音转写
-│  └─ clients/embeddings/indexer/vector_store/...
+│  ├─ llm/                # 模型客户端、JSON 调用、Embedding
+│  ├─ retrieval/          # 索引、向量库、语义搜索
+│  ├─ speech/             # ASR
+│  ├─ coding/             # 编码代理
+│  └─ context.py          # AI 上下文组装
 │
 ├─ activities/            # Activities 域
 │  ├─ middleware.py       # HTTP 写操作采集
@@ -176,13 +177,14 @@ backend/
 │  ├─ router.py           # /api/activities
 │  └─ preview.py          # 活动参数预览
 │
-├─ core/                  # 内核运行域 + 应用模块
+├─ app/                   # 应用/产品模块
+│  ├─ objects/            # 全局对象与搜索
+│  └─ workbench/          # 工作台聚合
+│
+├─ core/                  # 内核运行域
 │  ├─ events/             # 事件总线与 worker
 │  ├─ auth/ database/ config/ jobs/ scheduler/ observability/
-│  ├─ plugin/ wschannel/ minio/
-│  ├─ objects/            # 全局对象与搜索
-│  ├─ workbench/          # 工作台聚合
-│  └─ coding/             # 编码相关
+│  └─ plugin/ wschannel/ minio/
 │
 ├─ plugins/
 │  ├─ captures/           # 随手记
@@ -220,7 +222,7 @@ backend/
 - [x] 删除 Inbox 后端与移动端收件箱，工作台建议改为读取每日简报 `prompts`
 - [x] 上下文组装收口为 `ai/context.py`，LLM 调用收口为 `ai/llm.py`
 - [x] 随手记迁入 `plugins/captures`
-- [x] 会议纪要迁入 `plugins/meetings`，ASR 保留在 `ai/asr.py`
+- [x] 会议纪要迁入 `plugins/meetings`，ASR 保留在 `ai/speech/asr.py`
 - [x] 文件同步并回 `plugins/files`
 - [x] Web「关于我」改为「记忆」，「能力中心」改为「运行看板」
 - [ ] AI 读插件表改为 context provider 注册

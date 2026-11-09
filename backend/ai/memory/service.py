@@ -267,7 +267,7 @@ async def _index_record(user_id: int, record: MemoryRecord) -> None:
     if not _vector_backend_available():
         return
     try:
-        from ai.indexer import index_content
+        from ai.retrieval.indexer import index_content
 
         await index_content(
             user_id,
@@ -416,7 +416,7 @@ async def forget_record(user_id: int, record_id: int) -> bool:
         row.valid_to = datetime.utcnow()
         await db.commit()
     try:
-        from ai import vector_store
+        from ai.retrieval import vector_store
 
         await vector_store.delete_source(user_id, "memory", record_id)
     except Exception:
@@ -478,8 +478,8 @@ async def _vector_records(
 ) -> list[MemoryRecord]:
     if not _vector_backend_available():
         return []
-    from ai.embeddings import generate_embedding
-    from ai import vector_store
+    from ai.llm.embeddings import generate_embedding
+    from ai.retrieval import vector_store
 
     if vec is None:
         vec = await generate_embedding(query)

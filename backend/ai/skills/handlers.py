@@ -56,7 +56,7 @@ async def _meeting_prepare(ctx: SkillContext) -> dict:
 
 
 async def _daily_review(ctx: SkillContext) -> dict:
-    from ai.daily_insights import generate_daily_insight
+    from ai.insights.daily import generate_daily_insight
 
     day = date.today()
     raw_day = ctx.input.get("day")
@@ -92,7 +92,7 @@ async def _daily_review(ctx: SkillContext) -> dict:
 
 
 async def _weekly_review(ctx: SkillContext) -> dict:
-    from ai.weekly_reviews import generate_weekly_review
+    from ai.insights.weekly import generate_weekly_review
 
     try:
         weeks = max(1, min(int(ctx.input.get("weeks") or 1), 4))

@@ -12,7 +12,7 @@ import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select
 
-from ai.indexer import index_content
+from ai.retrieval.indexer import index_content
 from plugins.captures.backend.models import QuickCapture
 from core.config.settings import settings
 from core.database.session import async_session
@@ -173,7 +173,7 @@ async def analyze_capture(capture_id: int) -> dict:
             metadata={"link": f"/captures/{capture.id}"},
         )
         try:
-            from ai.people import service as people_service
+            from ai.memory.people import service as people_service
 
             for name in capture.people or []:
                 if name:

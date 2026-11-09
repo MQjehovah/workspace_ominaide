@@ -33,7 +33,7 @@ def _confirmation(message: str, **fields) -> MCPCallResponse:
 
 async def find_schedule_events(user_id: int, args: dict) -> MCPCallResponse:
     from core.database.session import async_session
-    from core.objects.registry import resolve_object
+    from app.objects.registry import resolve_object
     from core.timeutil import naive_local
     from plugins.schedule.backend.models import Event
 
@@ -68,7 +68,7 @@ async def find_schedule_events(user_id: int, args: dict) -> MCPCallResponse:
 
 
 async def get_schedule_event(user_id: int, args: dict) -> MCPCallResponse:
-    from core.objects.registry import resolve_object
+    from app.objects.registry import resolve_object
 
     try:
         event_id = int(args.get("event_id"))

@@ -14,12 +14,12 @@ import core.database.redis  # noqa
 import activities.models  # noqa
 import plugins.notifications.backend.models  # noqa
 import plugins.chat.backend.models  # noqa
-import core.objects.models  # noqa
+import app.objects.models  # noqa
 import plugins.sources.backend.models  # noqa
 import ai.memory.models  # noqa
 import ai.mcp_hub.models  # noqa
-import ai.insight_models  # noqa
-import ai.graph.models  # noqa
+import ai.insights.review_models  # noqa
+import ai.memory.graph.models  # noqa
 import core.jobs.models  # noqa
 import core.observability.models  # noqa
 import ai.skills.models  # noqa
@@ -27,8 +27,8 @@ import plugins.meetings.backend.models  # noqa
 import ai.bots.models  # noqa
 import ai.automation.models  # noqa
 import plugins.captures.backend.models  # noqa
-import ai.people.models  # noqa
-import core.coding.models  # noqa
+import ai.memory.people.models  # noqa
+import ai.coding.models  # noqa
 import plugins.schedule.backend.models  # noqa
 import plugins.projects.backend.models  # noqa
 

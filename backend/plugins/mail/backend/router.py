@@ -341,7 +341,7 @@ async def report_mail_event(
 
     # Index for semantic search (AI can query via unified_search)
     try:
-        from ai.indexer import index_content
+        from ai.retrieval.indexer import index_content
         content_src = (event.preview or "") + "\n" + (event.content or "")
         await index_content(
             user_id=user["id"],

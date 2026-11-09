@@ -1,6 +1,6 @@
 """Coding capability tools exposed to every Bot.
 
-The coding runtime lives in ``core.coding``; this module only creates child
+The coding runtime lives in ``ai.coding``; this module only creates child
 Runs and lists projects/runs. It deliberately has no dependency on a business
 plugin.
 """
@@ -34,7 +34,7 @@ def _resolve_project(user_id: int, project: str) -> Path:
 async def delegate_coding(user_id: int, args: dict) -> MCPCallResponse:
     from ai.bots.context import get_current_bot_id, get_current_run_id
     from ai.bots.registry import get_active_bot, get_or_create_default_bot
-    from core.coding.service import create_coding_run
+    from ai.coding.service import create_coding_run
 
     project = (args.get("project") or "").strip()
     instruction = (args.get("instruction") or "").strip()
@@ -75,7 +75,7 @@ async def delegate_coding(user_id: int, args: dict) -> MCPCallResponse:
 
 
 async def list_coding_projects(user_id: int, args: dict) -> MCPCallResponse:
-    from core.coding.workspace import list_projects
+    from ai.coding.workspace import list_projects
 
     projects = list_projects(str(projects_root(user_id)))
     if not projects:
@@ -88,7 +88,7 @@ async def list_coding_projects(user_id: int, args: dict) -> MCPCallResponse:
 
 async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
     from ai.bots.models import BotRun
-    from core.coding.models import CodingRun
+    from ai.coding.models import CodingRun
     from core.database.session import async_session
 
     limit = min(int(args.get("limit") or 10), 50)
@@ -121,7 +121,7 @@ async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
 async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
     """Read one Coding Run's full output, error and steps."""
     from ai.bots.models import BotRun, BotRunStep
-    from core.coding.models import CodingRun
+    from ai.coding.models import CodingRun
     from core.database.session import async_session
 
     try:

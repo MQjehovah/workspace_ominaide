@@ -12,7 +12,7 @@ from sqlalchemy import select
 from core.config.settings import settings
 from ai.llm import llm_json
 from core.database.session import async_session
-from ai.asr import AsrError, transcribe_minio_object
+from ai.speech.asr import AsrError, transcribe_minio_object
 from plugins.meetings.backend.models import MeetingMinutesJob
 
 _tasks: set[asyncio.Task] = set()

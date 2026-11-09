@@ -1,7 +1,7 @@
 import asyncio
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from ai.indexer import index_content
+from ai.retrieval.indexer import index_content
 from plugins.notes.backend.models import PluginNote
 from plugins.notes.backend.schemas import NoteCreate, NoteUpdate
 from plugins.notes.backend.content_text import note_content_to_text
@@ -242,7 +242,7 @@ async def delete_note(db: AsyncSession, user_id: int, note_id: int):
             await db.delete(obj)
             await db.flush()
     try:
-        from ai import vector_store
+        from ai.retrieval import vector_store
 
         for nid in all_ids:
             await vector_store.delete_source(user_id, "note", nid)

@@ -21,7 +21,7 @@ def _err(message: str) -> MCPCallResponse:
 
 
 async def search_business_objects(user_id: int, args: dict) -> MCPCallResponse:
-    from core.objects.registry import search_objects
+    from app.objects.registry import search_objects
 
     items = await search_objects(
         user_id,
@@ -33,8 +33,8 @@ async def search_business_objects(user_id: int, args: dict) -> MCPCallResponse:
 
 
 async def get_business_object(user_id: int, args: dict) -> MCPCallResponse:
-    from core.objects.registry import resolve_object
-    from core.objects.service import comment_out, list_comments
+    from app.objects.registry import resolve_object
+    from app.objects.service import comment_out, list_comments
 
     object_type = str(args.get("type") or "").strip()
     try:
@@ -52,7 +52,7 @@ async def get_business_object(user_id: int, args: dict) -> MCPCallResponse:
 
 
 async def list_business_comments(user_id: int, args: dict) -> MCPCallResponse:
-    from core.objects.service import comment_out, list_comments
+    from app.objects.service import comment_out, list_comments
 
     object_type = str(args.get("type") or "").strip()
     try:
@@ -70,7 +70,7 @@ async def list_business_comments(user_id: int, args: dict) -> MCPCallResponse:
 
 async def comment_business_object(user_id: int, args: dict) -> MCPCallResponse:
     from ai.bots.context import get_current_session_id
-    from core.objects.service import ObjectCommentError, create_comment
+    from app.objects.service import ObjectCommentError, create_comment
 
     object_type = str(args.get("type") or "").strip()
     try:
@@ -105,7 +105,7 @@ async def comment_business_object(user_id: int, args: dict) -> MCPCallResponse:
 
 
 async def update_business_comment(user_id: int, args: dict) -> MCPCallResponse:
-    from core.objects.service import ObjectCommentError, update_comment
+    from app.objects.service import ObjectCommentError, update_comment
 
     try:
         comment_id = int(args.get("comment_id"))
@@ -127,7 +127,7 @@ async def update_business_comment(user_id: int, args: dict) -> MCPCallResponse:
 
 
 async def delete_business_comment(user_id: int, args: dict) -> MCPCallResponse:
-    from core.objects.service import delete_comment
+    from app.objects.service import delete_comment
 
     try:
         comment_id = int(args.get("comment_id"))

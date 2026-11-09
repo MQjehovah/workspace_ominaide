@@ -18,7 +18,7 @@ async def _uid(client):
 
 async def test_people_timeline_and_merge(client):
     uid = await _uid(client)
-    from ai.people import service
+    from ai.memory.people import service
 
     person = await service.upsert_person(uid, "张三", email="zhang@example.com")
     await service.add_mention(
@@ -47,7 +47,7 @@ async def test_people_timeline_and_merge(client):
 async def test_people_are_user_scoped(client):
     uid_a = await _uid(client)
     uid_b = await _uid(client)
-    from ai.people import service
+    from ai.memory.people import service
 
     person = await service.upsert_person(uid_a, "王五")
     assert await service.get_person(uid_b, person.id) is None

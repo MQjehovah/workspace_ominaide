@@ -224,7 +224,7 @@ async def delete_bot(user_id: int, bot_id: int, purge: bool = False) -> None:
         )
         for mem in memories:
             try:
-                from ai import vector_store
+                from ai.retrieval import vector_store
                 await vector_store.delete("entities", f"mem_{bot_id}_{mem.id}")
             except Exception:
                 pass

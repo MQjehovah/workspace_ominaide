@@ -47,18 +47,18 @@ class _FakeMinio:
 
 
 async def _seed_user_data(user_id: int) -> None:
-    from ai.insight_models import DailyInsight
+    from ai.insights.review_models import DailyInsight
     from ai.automation.models import AutomationRun
     from ai.bots.models import (
         Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
     )
-    from core.coding.models import CodingRun
+    from ai.coding.models import CodingRun
     from ai.skills.models import BotSkill
     from core.database.session import async_session
     from activities.models import UserActivity
     from core.jobs.models import BackgroundJob
     from ai.mcp_hub.models import McpServer, McpTool
-    from core.objects.models import BusinessComment
+    from app.objects.models import BusinessComment
     from core.observability.models import RequestTrace
     from plugins.files.backend.models import File
     from plugins.music.backend.models import Playlist, PlaylistItem
@@ -188,13 +188,13 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
 
     from sqlalchemy import select
 
-    from ai.insight_models import DailyInsight
+    from ai.insights.review_models import DailyInsight
     from core.auth.domain.models import User
     from ai.automation.models import AutomationRun
     from ai.bots.models import (
         Bot, BotApproval, BotMemory, BotRoutine, BotRun, BotRunStep,
     )
-    from core.coding.models import CodingRun
+    from ai.coding.models import CodingRun
     from ai.skills.models import BotSkill
     from core.database.session import async_session
     from activities.models import UserActivity

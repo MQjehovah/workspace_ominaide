@@ -97,8 +97,8 @@ async def search_knowledge(user_id: int, args: dict) -> MCPCallResponse:
         return _err("data layer disabled")
 
     try:
-        from ai.embeddings import generate_embedding
-        from ai import vector_store
+        from ai.llm.embeddings import generate_embedding
+        from ai.retrieval import vector_store
 
         vec = await generate_embedding(query)
         if not vec:
@@ -145,8 +145,8 @@ async def save_memory(user_id: int, args: dict) -> MCPCallResponse:
 
     # Legacy path: no bot scope (e.g. direct MCP call). Kept for compatibility.
     try:
-        from ai.embeddings import generate_embedding
-        from ai import vector_store
+        from ai.llm.embeddings import generate_embedding
+        from ai.retrieval import vector_store
         from datetime import datetime
 
         vec = await generate_embedding(fact)

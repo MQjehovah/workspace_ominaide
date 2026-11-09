@@ -11,7 +11,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from ai.graph.service import build_context
+from ai.memory.graph.service import build_context
 
 CASES = Path(__file__).parent / "cases"
 

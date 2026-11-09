@@ -13,7 +13,7 @@ async def search_files(user_id: int, args: dict) -> MCPCallResponse:
     results = []
 
     try:
-        from ai.qdrant_index import search_similar
+        from ai.retrieval.qdrant_index import search_similar
         semantic_results = await search_similar(
             user_id=user_id,
             query=query,

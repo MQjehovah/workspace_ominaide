@@ -78,8 +78,8 @@ async def add_memory(
 
     # Vector mirror is best-effort: the DB row is the source of truth.
     try:
-        from ai.embeddings import generate_embedding
-        from ai import vector_store
+        from ai.llm.embeddings import generate_embedding
+        from ai.retrieval import vector_store
 
         vec = await generate_embedding(content)
         if vec:
@@ -135,7 +135,7 @@ async def delete_memory(user_id: int, bot_id: int, memory_id: int) -> bool:
         await db.commit()
 
     try:
-        from ai import vector_store
+        from ai.retrieval import vector_store
         await vector_store.delete("entities", f"mem_{bot_id}_{memory_id}")
     except Exception:
         pass
@@ -185,8 +185,8 @@ async def search_memories(
 
     if query and settings.memory_layer_enabled:
         try:
-            from ai.embeddings import generate_embedding
-            from ai import vector_store
+            from ai.llm.embeddings import generate_embedding
+            from ai.retrieval import vector_store
 
             if vec is None:
                 vec = await generate_embedding(query)
@@ -280,7 +280,7 @@ async def _profile_block(user_id: int) -> str | None:
 async def _insight_block(user_id: int) -> str | None:
     """Recent daily reviews, so the assistant remembers what just happened."""
     try:
-        from ai.daily_insights import build_insight_context
+        from ai.insights.daily import build_insight_context
 
         return await build_insight_context(user_id, days=2)
     except Exception:
@@ -327,7 +327,7 @@ async def build_bot_context(
     if query and settings.memory_layer_enabled:
         t = time.monotonic()
         try:
-            from ai.embeddings import generate_embedding
+            from ai.llm.embeddings import generate_embedding
 
             vec = await generate_embedding(query)
         except Exception:
@@ -366,8 +366,8 @@ async def _entities_block(user_id: int, query: str, vec: list[float] | None = No
     if not (query and settings.memory_layer_enabled):
         return None
     try:
-        from ai.embeddings import generate_embedding
-        from ai import vector_store
+        from ai.llm.embeddings import generate_embedding
+        from ai.retrieval import vector_store
 
         if vec is None:
             vec = await generate_embedding(query)
@@ -399,8 +399,8 @@ async def _legacy_memories(
     if not (query and settings.memory_layer_enabled):
         return []
     try:
-        from ai.embeddings import generate_embedding
-        from ai import vector_store
+        from ai.llm.embeddings import generate_embedding
+        from ai.retrieval import vector_store
 
         if vec is None:
             vec = await generate_embedding(query)

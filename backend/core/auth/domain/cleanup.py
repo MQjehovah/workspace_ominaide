@@ -18,7 +18,7 @@ from ai.automation.models import AutomationRun
 from core.database.session import async_session
 from core.logging import get_logger
 from ai.mcp_hub.models import McpServer, McpTool
-from core.objects.models import BusinessComment
+from app.objects.models import BusinessComment
 from core.paths import is_within, user_root, workspace_root
 from plugins.files.backend.models import File
 from plugins.music.backend.models import Playlist, PlaylistItem

@@ -152,8 +152,8 @@ async def confirm_upload(
 
 async def index_file_for_search(file_record, user_id: int):
     try:
-        from ai.qdrant_index import index_file
-        from ai.text_extractor import extract_text
+        from ai.retrieval.qdrant_index import index_file
+        from ai.retrieval.text_extractor import extract_text
         from core.minio.client import minio_client
         import tempfile, os
 

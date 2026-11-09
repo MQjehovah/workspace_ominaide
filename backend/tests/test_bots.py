@@ -291,7 +291,7 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
     from ai.bots.models import BotRun, BotRunStep
-    from core.coding.models import CodingRun
+    from ai.coding.models import CodingRun
     from core.database.session import async_session
 
     async with async_session() as db:
@@ -356,7 +356,7 @@ async def test_coding_run_inherits_chat_session(client, user_token, monkeypatch)
     from ai.bots import runner
     from ai.bots.context import reset_current_session_id, set_current_session_id
     from ai.bots.registry import get_active_bot
-    from core.coding.service import create_coding_run
+    from ai.coding.service import create_coding_run
 
     monkeypatch.setattr(runner, "enqueue_run", lambda run_id: None)
     bot = await get_active_bot(uid, bot_id)

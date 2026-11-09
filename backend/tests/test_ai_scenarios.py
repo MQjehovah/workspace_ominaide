@@ -117,7 +117,7 @@ async def test_meeting_prep_collects_context(client):
 
 
 async def test_weekly_review_uses_daily_insights(client):
-    from ai.insight_models import DailyInsight
+    from ai.insights.review_models import DailyInsight
     from core.database.session import async_session
 
     token, user_id = await _new_user(client)

@@ -78,7 +78,7 @@ async def test_business_object_search_and_threaded_comments(client, admin_token)
 
 async def test_chat_context_block_includes_object(client, admin_token):
     from core.auth.jwt import decode_access_token
-    from core.objects.registry import build_context_block
+    from app.objects.registry import build_context_block
 
     note = await client.post(
         "/api/plugins/notes",

@@ -35,27 +35,27 @@ async def lifespan(app: FastAPI):
     import activities.models  # noqa
     import plugins.notifications.backend.models  # noqa
     import plugins.chat.backend.models  # noqa
-    import core.coding.models  # noqa
+    import ai.coding.models  # noqa
     import plugins.projects.backend.models  # noqa
     import plugins.schedule.backend.models  # noqa
     import ai.bots.models  # noqa
     import ai.automation.models  # noqa
     import plugins.captures.backend.models  # noqa
-    import ai.people.models  # noqa
+    import ai.memory.people.models  # noqa
     import plugins.meetings.backend.models  # noqa
     import ai.skills.models  # noqa
     import core.observability.models  # noqa
     import core.jobs.models  # noqa
-    import ai.graph.models  # noqa
-    import ai.insight_models  # noqa
+    import ai.memory.graph.models  # noqa
+    import ai.insights.review_models  # noqa
     import ai.mcp_hub.models  # noqa
     import core.wschannel.models  # noqa
     import plugins.oauth.backend.models  # noqa
     import plugins.dingtalk.backend.models  # noqa
-    import ai.activity_insights.models  # noqa
+    import ai.insights.activity_models  # noqa
     import ai.memory.models  # noqa
     import plugins.sources.backend.models  # noqa
-    import core.objects.models  # noqa
+    from app.objects import models as _object_models  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
     start_jobs_workers()
     await ensure_buckets()
     await discover_plugins(app)
-    from ai.activity_insights.jobs import JOBS as INSIGHT_JOBS
+    from ai.insights.activity_jobs import JOBS as INSIGHT_JOBS
     from ai.skills.jobs import JOBS as BRIEF_JOBS
 
     for job in [*BRIEF_JOBS, *INSIGHT_JOBS]:
@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
 
     await recover_runs()
     routine_task = asyncio.create_task(routine_loop())
-    from ai.clients import warm_voice_clients
+    from ai.llm.clients import warm_voice_clients
     warm_task = asyncio.create_task(warm_voice_clients())
     yield
     await periodic_scheduler.stop()
@@ -166,7 +166,7 @@ app.add_middleware(TraceMiddleware)
 from core.auth.domain.router import router as auth_router
 app.include_router(auth_router)
 
-from ai.people.router import router as people_router
+from ai.memory.people.router import router as people_router
 app.include_router(people_router)
 
 from core.wschannel import router as host_channel_router
@@ -196,13 +196,13 @@ app.include_router(approvals_router)
 from ai.bots.automation_router import router as automation_router
 app.include_router(automation_router)
 
-from ai.search_router import router as search_router
+from ai.retrieval.search_router import router as search_router
 app.include_router(search_router)
 
-from ai.activity_insights.router import router as activity_insights_router
+from ai.insights.activity_router import router as activity_insights_router
 app.include_router(activity_insights_router)
 
-from ai.insights_router import router as insights_router
+from ai.insights.reviews_router import router as insights_router
 app.include_router(insights_router)
 
 from ai.memory.router import router as memory_router
@@ -214,14 +214,14 @@ app.include_router(metrics_router)
 from core.jobs.router import router as jobs_router
 app.include_router(jobs_router)
 
-from ai.graph.router import router as graph_router, context_router
+from ai.memory.graph.router import router as graph_router, context_router
 app.include_router(graph_router)
 app.include_router(context_router)
 
-from ai.agent_router import router as agent_router
+from ai.agent.router import router as agent_router
 app.include_router(agent_router)
 
-from core.workbench.router import router as workbench_router
+from app.workbench.router import router as workbench_router
 app.include_router(workbench_router)
 
 from ai.skills.router import router as skills_router, bots_router as bot_skills_router
@@ -231,7 +231,7 @@ app.include_router(bot_skills_router)
 from activities.router import router as activities_router
 app.include_router(activities_router)
 
-from core.objects.router import router as objects_router
+from app.objects.router import router as objects_router
 app.include_router(objects_router)
 
 

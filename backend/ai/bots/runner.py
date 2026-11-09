@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from openai import AsyncOpenAI
 from sqlalchemy import select, update
 
-from ai.agent import _serialize_result, _to_openai_tools
+from ai.agent.loop import _serialize_result, _to_openai_tools
 from ai.mcp.gateway import (
     display_target,
     gateway_instruction,
@@ -170,7 +170,7 @@ async def _execute(run_id: int) -> None:
 
 
 async def _execute_coding(run: BotRun, bot: Bot, coding) -> None:
-    from core.coding.engine import run_coding
+    from ai.coding.engine import run_coding
 
     await _mark_running(run.id, run.started_at)
     seq = 0
@@ -486,7 +486,7 @@ async def _default_messages(user_id: int, bot: Bot, prompt: str) -> list[dict]:
 
 async def _coding_run(run_id: int):
     try:
-        from core.coding.service import get_coding_run
+        from ai.coding.service import get_coding_run
 
         return await get_coding_run(run_id)
     except Exception:

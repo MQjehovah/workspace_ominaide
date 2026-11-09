@@ -307,7 +307,7 @@ async def test_project_default_path_and_git_fields(tmp_path, monkeypatch):
 
 
 async def test_coding_project_context_snapshot(tmp_path):
-    from core.coding.context import build_project_context
+    from ai.coding.context import build_project_context
 
     (tmp_path / "AGENTS.md").write_text("Run pytest before committing.", encoding="utf-8")
     src = tmp_path / "src"
@@ -350,7 +350,7 @@ def _git_out(path, *args) -> str:
 
 
 async def test_delivery_branches_commits_and_skips_sensitive(tmp_path):
-    from core.coding.delivery import deliver
+    from ai.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -382,7 +382,7 @@ async def test_delivery_branches_commits_and_skips_sensitive(tmp_path):
 
 
 async def test_delivery_stops_when_verify_fails(tmp_path):
-    from core.coding.delivery import deliver
+    from ai.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -402,7 +402,7 @@ async def test_delivery_stops_when_verify_fails(tmp_path):
 
 
 def test_git_gate_blocks_push_and_commit_by_default():
-    from core.coding.workspace import git_policy_violation
+    from ai.coding.workspace import git_policy_violation
 
     blocked = [
         "git push",
@@ -420,7 +420,7 @@ def test_git_gate_blocks_push_and_commit_by_default():
 
 
 def test_git_gate_blocks_force_and_protected_branch_even_when_allowed():
-    from core.coding.workspace import git_policy_violation
+    from ai.coding.workspace import git_policy_violation
 
     # push is permitted, but never destructive and never straight to main.
     assert git_policy_violation("git push --force origin feature", allow_commit=True, allow_push=True)
@@ -436,7 +436,7 @@ def test_git_gate_blocks_force_and_protected_branch_even_when_allowed():
 
 
 def test_git_gate_allows_read_only_and_non_git_commands():
-    from core.coding.workspace import git_policy_violation
+    from ai.coding.workspace import git_policy_violation
 
     for command in [
         "git status",
@@ -450,7 +450,7 @@ def test_git_gate_allows_read_only_and_non_git_commands():
 
 
 def test_git_gate_blocks_alias_override():
-    from core.coding.workspace import git_policy_violation
+    from ai.coding.workspace import git_policy_violation
 
     assert git_policy_violation(
         "git -c alias.p=push p origin main", allow_commit=True, allow_push=False
@@ -458,7 +458,7 @@ def test_git_gate_blocks_alias_override():
 
 
 def test_sensitive_reference_detection():
-    from core.coding.workspace import contains_sensitive_reference
+    from ai.coding.workspace import contains_sensitive_reference
 
     for command in [
         "cat .env",
@@ -481,7 +481,7 @@ def test_sensitive_reference_detection():
 
 
 def test_sandbox_env_excludes_backend_secrets(monkeypatch):
-    from core.coding import workspace
+    from ai.coding import workspace
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://secret")
     monkeypatch.setenv("LLM_API_KEY", "sk-secret")
@@ -497,7 +497,7 @@ def test_sandbox_env_excludes_backend_secrets(monkeypatch):
 
 
 async def test_run_command_fails_closed_without_sandbox_user(tmp_path, monkeypatch):
-    from core.coding import workspace
+    from ai.coding import workspace
 
     monkeypatch.setattr(workspace, "_euid", lambda: 0)
     monkeypatch.setattr(workspace.settings, "coding_sandbox_enabled", True)
@@ -509,7 +509,7 @@ async def test_run_command_fails_closed_without_sandbox_user(tmp_path, monkeypat
 
 
 async def test_run_command_rejects_gated_git_and_reports_sandbox(tmp_path):
-    from core.coding import workspace
+    from ai.coding import workspace
 
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
     denied = await workspace.run_command(str(tmp_path), {"command": "git push origin main"})
@@ -529,7 +529,7 @@ async def test_run_command_rejects_gated_git_and_reports_sandbox(tmp_path):
 async def test_delivery_ignores_repo_hooks_and_restores_config(tmp_path):
     import os
 
-    from core.coding.delivery import deliver
+    from ai.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -557,7 +557,7 @@ async def test_delivery_ignores_repo_hooks_and_restores_config(tmp_path):
 
 
 async def test_delivery_rejects_exec_remote(tmp_path):
-    from core.coding.delivery import deliver
+    from ai.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -580,7 +580,7 @@ async def test_delivery_rejects_exec_remote(tmp_path):
 async def test_delivery_rejects_symlinked_git_dir(tmp_path):
     import os
 
-    from core.coding.delivery import deliver
+    from ai.coding.delivery import deliver
 
     repo = tmp_path / "repo"
     repo.mkdir()

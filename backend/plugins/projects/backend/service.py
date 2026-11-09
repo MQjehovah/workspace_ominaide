@@ -4,7 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from core.coding.models import CodingRun
+from ai.coding.models import CodingRun
 from core.paths import ensure_user_workspace, projects_root
 from ai.bots.models import BotRun
 from core.database.session import async_session

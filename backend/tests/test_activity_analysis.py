@@ -37,7 +37,7 @@ async def test_activity_analysis_produces_cached_suggestions(client):
     )
     assert r.status_code in (200, 201), r.text
 
-    from ai.activity_insights.service import analyze_user
+    from ai.insights.activity_service import analyze_user
 
     result = await analyze_user(user_id)
     assert result["created"] >= 1
@@ -51,7 +51,7 @@ async def test_execute_suggestion_creates_todo(client):
     token, user_id = await _new_user(client)
 
     from core.database.session import async_session
-    from ai.activity_insights.models import ActivitySuggestion
+    from ai.insights.activity_models import ActivitySuggestion
 
     async with async_session() as db:
         row = ActivitySuggestion(

@@ -154,8 +154,8 @@ async def unified_search_tool(user_id: int, args: dict) -> dict:
     q = args.get("q", "")
     if not q:
         return {"results": []}
-    from ai.embeddings import generate_embedding
-    from ai import vector_store
+    from ai.llm.embeddings import generate_embedding
+    from ai.retrieval import vector_store
     vector = await generate_embedding(q)
     if vector is None:
         return {"results": []}

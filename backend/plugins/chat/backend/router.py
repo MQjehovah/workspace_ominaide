@@ -14,8 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config.settings import settings
 from core.database.session import get_db, async_session
 from core.auth.dependencies import get_current_user
-from ai.agent import run_agent, run_agent_stream
-from ai.clients import get_openai_client
+from ai.agent.loop import run_agent, run_agent_stream
+from ai.llm.clients import get_openai_client
 from ai.bots import runner
 from ai.bots.context import (
     reset_current_bot_id,
@@ -182,7 +182,7 @@ async def build_messages(
     if skill_ctx:
         messages.append({"role": "system", "content": skill_ctx})
     if req.context_refs:
-        from core.objects.registry import build_context_block
+        from app.objects.registry import build_context_block
 
         block = await build_context_block(
             user_id,

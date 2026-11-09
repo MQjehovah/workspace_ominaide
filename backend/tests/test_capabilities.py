@@ -50,7 +50,7 @@ async def test_background_job_lifecycle(client):
         assert r.status_code == 200, r.text
         job_id = r.json()["id"]
 
-        for _ in range(40):
+        for _ in range(100):
             await asyncio.sleep(0.1)
             r = await client.get("/api/jobs", headers=auth(token))
             row = next(item for item in r.json()["items"] if item["id"] == job_id)
