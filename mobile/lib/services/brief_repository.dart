@@ -1,4 +1,4 @@
-import '../models/cos_models.dart';
+import '../models/brief_models.dart';
 import 'api_service.dart';
 import 'bot_selection_service.dart';
 
@@ -6,7 +6,7 @@ import 'bot_selection_service.dart';
 ///
 /// Workbench and 空间 both read the brief; without this they fire the same
 /// aggregation twice on every cold start.
-class CosRepository {
+class BriefRepository {
   static const _ttl = Duration(seconds: 60);
 
   DailyBrief? _brief;
@@ -14,8 +14,8 @@ class CosRepository {
   int? _briefBotId;
   Future<DailyBrief?>? _briefFuture;
 
-  static final CosRepository instance = CosRepository._();
-  CosRepository._();
+  static final BriefRepository instance = BriefRepository._();
+  BriefRepository._();
 
   Future<DailyBrief?> getDailyBrief({bool force = false}) {
     final botId = BotSelectionService().botId;
@@ -57,4 +57,4 @@ class CosRepository {
   }
 }
 
-final cosRepository = CosRepository.instance;
+final briefRepository = BriefRepository.instance;

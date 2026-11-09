@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/chat_session.dart';
-import '../models/cos_models.dart';
+import '../models/brief_models.dart';
 import '../models/file_item.dart';
 import '../services/api_service.dart';
 import '../services/bot_selection_service.dart';
-import '../services/cos_repository.dart';
+import '../services/brief_repository.dart';
 import '../services/event_time.dart';
 import '../services/local_cache_service.dart';
 import '../services/refresh_bus.dart';
@@ -140,7 +140,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     final api = ApiService();
     // The backend serves the daily brief from its hourly cache, so start it in
     // parallel; it still never blocks the first paint.
-    final briefFuture = _safe(cosRepository.getDailyBrief(force: force));
+    final briefFuture = _safe(briefRepository.getDailyBrief(force: force));
 
     // Fast, cheap calls first: these unblock the whole workbench.
     final results = await Future.wait<dynamic>([

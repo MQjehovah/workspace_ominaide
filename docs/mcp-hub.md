@@ -5,7 +5,7 @@ OmniAide 把 Home Assistant、钉钉、Playwright 等能力统一为 MCP Server�
 ## 分层
 
 ```
-Bot / CoS / Web Chat / 桌面 Agent
+Bot / AI 场景 / Web Chat / 桌面 Agent
               │
        /api/mcp/tools · /api/mcp/call
               │

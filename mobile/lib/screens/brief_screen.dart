@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/cos_models.dart';
+import '../models/brief_models.dart';
 import '../services/api_service.dart';
 import '../services/bot_selection_service.dart';
 import '../theme/app_theme.dart';

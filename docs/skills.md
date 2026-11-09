@@ -67,9 +67,7 @@ GET  /api/skills/{key}
 POST /api/skills/{key}/run             {bot_id, input}
 GET  /api/bots/{bot_id}/skills
 PUT  /api/bots/{bot_id}/skills/{key}   {enabled}
-
-GET  /api/inbox/groups
 POST /api/plugins/mail/messages/{id}/ai-draft
 ```
 
-旧的 `/api/cos/*` 已删除，不提供兼容层。
+AI 场景统一通过 Skills 暴露。旧的 `/api/cos/*` 和 `/api/inbox/*` 已删除，不提供兼容层。

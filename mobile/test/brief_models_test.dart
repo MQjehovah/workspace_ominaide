@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:omniaide_mobile/models/cos_models.dart';
+import 'package:omniaide_mobile/models/brief_models.dart';
 
 void main() {
   test('parses a daily brief', () {

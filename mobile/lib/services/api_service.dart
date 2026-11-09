@@ -5,7 +5,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/file_item.dart';
 import '../models/chat_session.dart';
-import '../models/cos_models.dart';
+import '../models/brief_models.dart';
 import 'chat_stream_stub.dart'
     if (dart.library.html) 'chat_stream_web.dart'
     if (dart.library.io) 'chat_stream_io.dart';

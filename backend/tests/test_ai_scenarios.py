@@ -9,7 +9,7 @@ async def _new_user(client):
     import string
 
     suffix = "".join(random.choices(string.ascii_lowercase, k=8))
-    username = f"cos_{suffix}"
+    username = f"ai_{suffix}"
     r = await client.post(
         "/api/auth/register",
         json={"username": username, "email": f"{username}@example.com", "password": "testpass123"},
