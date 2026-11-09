@@ -45,3 +45,5 @@ backend/data/device_firmware/
 
 # Visual brainstorming scratch
 .superpowers/
+
+backend/data/evals/

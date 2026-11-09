@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
+from difflib import SequenceMatcher
 from typing import Any
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, select, update
 
 from ai.cognition.models import Proposal, ProposalFeedback
 from core.database.session import async_session
@@ -14,6 +16,19 @@ from core.logging import get_logger
 log = get_logger(__name__)
 
 OPEN_STATUSES = ("new", "seen", "snoozed")
+_NON_WORD = re.compile(r"[\s\W_]+", re.UNICODE)
+
+
+def _normalize_title(value: str | None) -> str:
+    return _NON_WORD.sub("", (value or "").lower())
+
+
+def _similarity(left: str | None, right: str | None) -> float:
+    a = _normalize_title(left)
+    b = _normalize_title(right)
+    if len(a) < 6 or len(b) < 6:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio()
 
 
 def _normalize_actions(
@@ -67,6 +82,26 @@ def _out(row: Proposal) -> dict:
     }
 
 
+def _apply_update(
+    row: Proposal,
+    *,
+    title: str,
+    reason: str | None,
+    evidence: dict | None,
+    confidence: float,
+    actions: list[dict],
+    channel: str,
+    expires_at: datetime | None,
+) -> None:
+    row.title = title[:200]
+    row.reason = (reason or "")[:500] or None
+    row.evidence = evidence
+    row.confidence = max(float(row.confidence or 0), float(confidence))
+    row.actions = actions
+    row.channel = channel
+    row.expires_at = expires_at
+
+
 async def create_proposal(
     user_id: int,
     *,
@@ -84,6 +119,11 @@ async def create_proposal(
 ) -> Proposal:
     normalized = _normalize_actions(actions, action)
     async with async_session() as db:
+        from ai.cognition.interruptions import decide_channel
+
+        channel, interruption = await decide_channel(db, user_id, channel)
+        if interruption:
+            evidence = {**(evidence or {}), "interruption": interruption}
         if dedupe_key:
             existing = (
                 await db.execute(
@@ -95,13 +135,47 @@ async def create_proposal(
                 )
             ).scalar_one_or_none()
             if existing is not None:
-                existing.title = title[:200]
-                existing.reason = (reason or "")[:500] or None
-                existing.evidence = evidence
-                existing.confidence = float(confidence)
-                existing.actions = normalized
-                existing.channel = channel
-                existing.expires_at = expires_at
+                _apply_update(
+                    existing,
+                    title=title,
+                    reason=reason,
+                    evidence=evidence,
+                    confidence=confidence,
+                    actions=normalized,
+                    channel=channel,
+                    expires_at=expires_at,
+                )
+                await db.commit()
+                await db.refresh(existing)
+                return existing
+
+        # Semantic dedupe: merge near-identical open proposals even when the
+        # caller cannot supply a stable dedupe_key.
+        recent = list(
+            (await db.execute(
+                select(Proposal)
+                .where(
+                    Proposal.user_id == user_id,
+                    Proposal.kind == kind[:24],
+                    Proposal.status.in_(OPEN_STATUSES),
+                    Proposal.created_at >= datetime.now() - timedelta(days=7),
+                )
+                .order_by(Proposal.id.desc())
+                .limit(20)
+            )).scalars().all()
+        )
+        for existing in recent:
+            if _similarity(existing.title, title) >= 0.86:
+                _apply_update(
+                    existing,
+                    title=title,
+                    reason=reason,
+                    evidence=evidence,
+                    confidence=confidence,
+                    actions=normalized,
+                    channel=channel,
+                    expires_at=expires_at,
+                )
                 await db.commit()
                 await db.refresh(existing)
                 return existing
@@ -161,6 +235,30 @@ async def expire_old(user_id: int) -> None:
         await db.commit()
 
 
+async def _feedback_weights(db, user_id: int) -> dict[str, float]:
+    """Per-kind preference from the last 90 days of feedback."""
+    cutoff = datetime.now() - timedelta(days=90)
+    rows = list((await db.execute(
+        select(Proposal.kind, ProposalFeedback.action, func.count())
+        .join(Proposal, Proposal.id == ProposalFeedback.proposal_id)
+        .where(
+            ProposalFeedback.user_id == user_id,
+            ProposalFeedback.created_at >= cutoff,
+        )
+        .group_by(Proposal.kind, ProposalFeedback.action)
+    )).all())
+    stats: dict[str, list[int]] = {}
+    for kind, action, count in rows:
+        bucket = stats.setdefault(str(kind), [0, 0])
+        bucket[0] += int(count)
+        if action in ("accept", "execute"):
+            bucket[1] += int(count)
+    return {
+        kind: (positive + 1) / (total + 2) - 0.5
+        for kind, (total, positive) in stats.items()
+    }
+
+
 async def list_proposals(
     user_id: int,
     *,
@@ -169,6 +267,7 @@ async def list_proposals(
 ) -> list[dict]:
     await expire_old(user_id)
     async with async_session() as db:
+        weights = await _feedback_weights(db, user_id)
         q = select(Proposal).where(Proposal.user_id == user_id)
         if status == "open":
             q = q.where(Proposal.status.in_(OPEN_STATUSES))
@@ -177,10 +276,27 @@ async def list_proposals(
         rows = list(
             (await db.execute(
                 q.order_by(Proposal.created_at.desc(), Proposal.id.desc())
-                .limit(max(1, min(limit, 100)))
+                .limit(max(1, min(limit * 3, 200)))
             )).scalars().all()
         )
-    return [_out(row) for row in rows]
+
+    now = datetime.now()
+
+    def score(row: Proposal) -> float:
+        age_hours = max(
+            0.0,
+            (now - (row.created_at or now)).total_seconds() / 3600,
+        )
+        recency = max(0.0, 1.0 - age_hours / 72)
+        return (
+            float(row.confidence or 0.5) * 0.6
+            + weights.get(str(row.kind), 0.0) * 0.3
+            + recency * 0.1
+            + (0.05 if row.status == "new" else 0.0)
+        )
+
+    rows.sort(key=score, reverse=True)
+    return [_out(row) for row in rows[: max(1, min(limit, 100))]]
 
 
 async def get_proposal(user_id: int, proposal_id: int) -> dict | None:

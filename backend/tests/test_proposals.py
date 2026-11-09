@@ -161,12 +161,34 @@ async def test_goal_and_task_crud(client):
     assert r.status_code == 200, r.text
     assert r.json()["goal_id"] == goal_id
 
+    r = await client.post(
+        f"/api/cognition/workspaces/{workspace_id}/items",
+        json={"type": "comment", "content": {"text": "先确认预算"}},
+        headers=auth(token),
+    )
+    assert r.status_code == 201, r.text
+    item_id = r.json()["id"]
+
+    r = await client.patch(
+        f"/api/cognition/workspaces/{workspace_id}/items/{item_id}",
+        json={"content": {"text": "先确认预算再发邮件"}},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["content"]["text"] == "先确认预算再发邮件"
+
     r = await client.get(
         f"/api/cognition/workspaces/{workspace_id}/export",
         headers=auth(token),
     )
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("application/zip")
+
+    r = await client.delete(
+        f"/api/cognition/workspaces/{workspace_id}/items/{item_id}",
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
 
     r = await client.post(
         f"/api/cognition/goals/{goal_id}/tasks",
@@ -244,6 +266,40 @@ async def test_proposal_accept_without_action_creates_goal(client):
     r = await client.get(f"/api/cognition/goals/{goal_id}", headers=auth(token))
     assert r.status_code == 200, r.text
     assert r.json()["title"] == "跟进客户"
+
+
+async def test_proposal_semantic_dedupe(client):
+    token, user_id = await _new_user(client)
+    from ai.cognition.proposals import create_proposal
+
+    first = await create_proposal(
+        user_id, kind="follow_up", title="跟进客户预算确认", channel="now"
+    )
+    second = await create_proposal(
+        user_id, kind="follow_up", title="跟进客户预算的确认。", channel="now"
+    )
+    assert first.id == second.id
+
+
+async def test_proposal_interruption_downgrades_in_quiet_hours(client, monkeypatch):
+    from core.config.settings import settings
+
+    monkeypatch.setattr(settings, "proposal_quiet_hours", "00:00-23:59")
+    token, user_id = await _new_user(client)
+    from ai.cognition.proposals import create_proposal
+
+    row = await create_proposal(
+        user_id, kind="follow_up", title="该发通知的提案", channel="notification"
+    )
+    assert row.channel == "now"
+    assert row.evidence["interruption"]["deferred"] == "quiet_hours"
+
+
+async def test_cognition_golden_paths(client):
+    token, user_id = await _new_user(client)
+    from evals.cognition import run
+
+    assert await run(user_id) == 0
 
 
 async def test_situation_now(client):

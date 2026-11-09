@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import 'goals_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -93,7 +94,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     Navigator.pop(c);
                     final result = await api.actOnNotification(id, (a['key'] ?? a['kind']).toString());
                     if (!mounted) return;
-                    if (result['todo_id'] != null) {
+                    if (result['proposal'] != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已处理提案')));
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const GoalsScreen()),
+                      );
+                    } else if (result['todo_id'] != null) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已完成待办')));
                     } else if (result['scheduled_at'] != null) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已稍后提醒')));

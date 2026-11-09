@@ -446,6 +446,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
 
         producer = asyncio.create_task(produce())
         sent_done = False
+        pending_approval = False
         try:
             while True:
                 try:
@@ -462,8 +463,12 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
                         payload = json.loads(event[6:].strip())
                         if payload.get("type") == "token":
                             reply_parts.append(payload.get("content", ""))
+                        elif payload.get("type") == "approval_required":
+                            pending_approval = True
                         elif payload.get("type") == "done":
                             sent_done = True
+                            if payload.get("pending_approval"):
+                                pending_approval = True
                     except Exception:
                         pass
                 yield event
@@ -478,9 +483,11 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
                     pass
             reset_current_session_id(session_token)
             reset_current_bot_id(token)
-            await save_message(
-                user["id"], "assistant", "".join(reply_parts), session_id, bot=bot
-            )
+            # Approval runs persist their own final answer after the decision.
+            if not pending_approval:
+                await save_message(
+                    user["id"], "assistant", "".join(reply_parts), session_id, bot=bot
+                )
 
     return StreamingResponse(
         event_stream(),

@@ -151,6 +151,13 @@ contextBridge.exposeInMainWorld('mqbox', {
     installFolder: () => ipcRenderer.invoke('skills:install-folder'),
     installUrl: (url: string) => ipcRenderer.invoke('skills:install-url', url),
   },
+  cognition: {
+    onHandoff: (callback: (msg: any) => void) => {
+      const handler = (_: any, msg: any) => callback(msg)
+      ipcRenderer.on('cognition:handoff', handler)
+      return () => ipcRenderer.removeListener('cognition:handoff', handler)
+    },
+  },
   agent: {
     start: (req: any) => ipcRenderer.invoke('agent:start', req),
     abort: (sessionId: string) => ipcRenderer.invoke('agent:abort', sessionId),

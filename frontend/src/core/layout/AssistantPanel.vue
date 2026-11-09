@@ -101,7 +101,7 @@ const bodyRef = ref<HTMLDivElement | null>(null)
 const bots = ref<{ id: number; name: string; avatar?: string; is_default?: boolean }[]>([])
 const currentBotId = ref<number | null>(null)
 const BOT_KEY = 'assistant_bot_id'
-const approvals = ref<{ id: number; tool_name: string; reason?: string }[]>([])
+const approvals = ref<{ id: number; tool_name: string; reason?: string; run_id?: number }[]>([])
 let approvalTimer: ReturnType<typeof setInterval> | null = null
 
 
@@ -133,6 +133,7 @@ async function loadApprovals() {
 }
 
 async function decide(id: number, approved: boolean, remember = false) {
+  const approval = approvals.value.find((item) => item.id === id)
   try {
     const token = localStorage.getItem('token') || ''
     const r = await fetch(apiUrl(`/approvals/${id}/decision`), {
@@ -145,8 +146,63 @@ async function decide(id: number, approved: boolean, remember = false) {
       throw new Error(err?.detail || `审批失败 (${r.status})`)
     }
     await loadApprovals()
+    if (approval?.run_id) await watchRun(Number(approval.run_id))
   } catch (e: any) {
     ElMessage.error(e.message || '审批失败')
+  }
+}
+
+async function watchRun(runId: number) {
+  const token = localStorage.getItem('token') || ''
+  const replyIndex = messages.value.push({ role: 'assistant', content: '' }) - 1
+  loading.value = true
+  scrollBottom()
+  try {
+    const resp = await fetch(apiUrl(`/runs/${runId}/stream`), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!resp.ok) throw new Error(`读取运行结果失败 (${resp.status})`)
+    const reader = resp.body?.getReader()
+    const decoder = new TextDecoder()
+    let reply = ''
+    let buffer = ''
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const events = buffer.split('\n\n')
+        buffer = events.pop() || ''
+        for (const ev of events) {
+          if (!ev.startsWith('data: ')) continue
+          try {
+            const payload = JSON.parse(ev.slice(6))
+            if (payload.type === 'token') {
+              reply += payload.content || ''
+              messages.value[replyIndex].content = reply
+              scrollBottom()
+            } else if (payload.type === 'approval_required' || payload.type === 'approval') {
+              await loadApprovals()
+              ElMessage.warning(`需要确认：${payload.tool || '工具调用'}`)
+            } else if (payload.type === 'done') {
+              const final = payload.reply || reply
+              if (final) messages.value[replyIndex].content = final
+              if (payload.error) ElMessage.error(payload.error)
+              scrollBottom()
+            } else if (payload.type === 'error') {
+              ElMessage.error(payload.content || 'AI 请求出错')
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    }
+    if (!messages.value[replyIndex]?.content) messages.value.splice(replyIndex, 1)
+  } catch (e: any) {
+    messages.value.splice(replyIndex, 1)
+    ElMessage.error(e.message || '继续执行失败')
+  } finally {
+    loading.value = false
+    scrollBottom()
   }
 }
 

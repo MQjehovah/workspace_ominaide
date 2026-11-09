@@ -16,6 +16,7 @@ const WebSocket: any = require('ws')
  */
 
 type InboundDispatcher = (channel: string, msg: any) => void
+type HandoffHandler = (msg: any) => void
 
 let ws: any = null
 let reconnectTimer: any = null
@@ -23,6 +24,7 @@ let pingTimer: any = null
 let lastSignature: string = ''
 let machineId = ''
 let dispatcher: InboundDispatcher | null = null
+let handoffHandler: HandoffHandler | null = null
 let openHandler: (() => void) | null = null
 const queue: any[] = []
 
@@ -34,6 +36,10 @@ export function setInboundDispatcher(fn: InboundDispatcher): void {
 
 export function setChannelOpenHandler(fn: () => void): void {
   openHandler = fn
+}
+
+export function setHandoffHandler(fn: HandoffHandler): void {
+  handoffHandler = fn
 }
 
 export function channelSend(channel: string, msg: Record<string, unknown>): void {
@@ -124,6 +130,14 @@ function handleInbound(data: any): void {
       const title = msg.title || '通知'
       const body = msg.body || ''
       if (title || body) new Notification({ title, body, silent: false }).show()
+      return
+    }
+    if (msg.channel === 'cognition.handoff' || msg.type === 'cognition.handoff') {
+      const note = String(msg.note || '').trim()
+      const body = note || (msg.goal_id ? `目标 #${msg.goal_id}` : '请在桌面继续处理')
+      new Notification({ title: '已接力到桌面', body, silent: false }).show()
+      try { handoffHandler?.(msg) } catch { /* ignore */ }
+      if (dispatcher) dispatcher('cognition.handoff', msg)
       return
     }
     if (msg.channel && dispatcher) dispatcher(String(msg.channel), msg)

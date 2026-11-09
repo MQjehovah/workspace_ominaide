@@ -26,6 +26,7 @@ from ai.cognition.schemas import (
     TaskUpdate,
     WorkspaceArtifactCreate,
     WorkspaceItemCreate,
+    WorkspaceItemUpdate,
 )
 from ai.cognition import workspace as workspace_service
 from ai.cognition.handoff import handoff
@@ -60,6 +61,13 @@ async def now(
     user: dict = Depends(get_current_user),
 ):
     return await get_situation(user["id"], force=refresh)
+
+
+@situation_router.get("/evals")
+async def evals_report(user: dict = Depends(get_current_user)):
+    from evals.cognition import load_report
+
+    return load_report()
 
 
 @situation_router.post("/handoff")
@@ -249,6 +257,34 @@ async def workspace_add_item(
     if row is None:
         raise HTTPException(404, detail="Workspace not found")
     return row
+
+
+@workspaces_router.patch("/{workspace_id}/items/{item_id}")
+async def workspace_update_item(
+    workspace_id: int,
+    item_id: int,
+    payload: WorkspaceItemUpdate,
+    user: dict = Depends(get_current_user),
+):
+    values = payload.model_dump(exclude_unset=True)
+    row = await workspace_service.update_item(
+        user["id"], workspace_id, item_id, **values
+    )
+    if row is None:
+        raise HTTPException(404, detail="Workspace item not found")
+    return row
+
+
+@workspaces_router.delete("/{workspace_id}/items/{item_id}")
+async def workspace_delete_item(
+    workspace_id: int,
+    item_id: int,
+    user: dict = Depends(get_current_user),
+):
+    ok = await workspace_service.delete_item(user["id"], workspace_id, item_id)
+    if not ok:
+        raise HTTPException(404, detail="Workspace item not found")
+    return {"deleted": True}
 
 
 @workspaces_router.post("/{workspace_id}/artifacts", status_code=201)

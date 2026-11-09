@@ -589,6 +589,7 @@ async function decideApproval(approval: any, approved: boolean, remember: boolea
     await client.post(`/approvals/${approval.id}/decision`, { approved, remember })
     approvals.value = approvals.value.filter((item) => item.id !== approval.id)
     ElMessage.success(approved ? (remember ? '已允许并记住' : '已允许') : '已拒绝')
+    await resumeApprovedRun(approval)
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || '审批失败')
   }
@@ -615,6 +616,156 @@ function retryMessage(index: number) {
   messages.value = messages.value.slice(0, index)
   input.value = text
   send(true)
+}
+
+async function consumeRun(
+  rid: number,
+  replyIndex: number,
+  setStage: (value: string) => void,
+) {
+  const token = localStorage.getItem('token') || ''
+  const streamResp = await fetch(apiUrl(`/runs/${rid}/stream`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!streamResp.ok) throw new Error(`读取结果失败 (${streamResp.status})`)
+
+  const reader = streamResp.body?.getReader()
+  const decoder = new TextDecoder()
+  let reply = ''
+  let buffer = ''
+  if (!reader) return
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split('\n\n')
+    buffer = events.pop() || ''
+    for (const ev of events) {
+      if (!ev.startsWith('data: ')) continue
+      try {
+        const payload = JSON.parse(ev.slice(6))
+        const message = messages.value[replyIndex]
+        if (!message) continue
+        if (payload.type === 'run_started') {
+          runId.value = payload.run_id || runId.value
+          setStage('开始执行')
+        } else if (payload.type === 'run_status') {
+          const labels: Record<string, string> = {
+            running: '执行中',
+            waiting_approval: '等待审批',
+            done: '已完成',
+            completed: '已完成',
+            failed: '运行失败',
+            cancelled: '已停止',
+          }
+          setStage(labels[payload.status] || payload.status || '执行中')
+        } else if (payload.type === 'step') {
+          const step = upsertStep(message, payload)
+          if (step) {
+            setStage(step.status === 'running' ? `执行中 · ${step.name}` : `完成 · ${step.name}`)
+          }
+          scrollBottom()
+        } else if (payload.type === 'token') {
+          reply += payload.content || ''
+          message.content = reply
+          setStage('正在生成回复')
+          scrollBottom()
+        } else if (payload.type === 'reasoning') {
+          message.reasoning += payload.content || ''
+          setStage('正在思考分析')
+          scrollBottom()
+        } else if (payload.type === 'tool_call') {
+          const step = upsertStep(message, {
+            step_id: `live-${message.steps.length + 1}`,
+            tool: payload.name || 'tool',
+            arguments: payload.arguments,
+            status: 'running',
+          })
+          setStage(`正在执行 · ${step.name}`)
+          scrollBottom()
+        } else if (payload.type === 'tool_result') {
+          const name = payload.tool || payload.name || '工具'
+          const step = upsertStep(message, {
+            step_id: `live-${message.steps.length}`,
+            tool: name,
+            content: payload.content || '',
+            status: payload.error ? 'error' : 'done',
+          })
+          setStage(step.status === 'running' ? `执行中 · ${name}` : `完成 · ${name}`)
+          scrollBottom()
+        } else if (payload.type === 'approval') {
+          upsertApproval(payload)
+          setStage(`等待审批 · ${payload.tool || '工具'}`)
+        } else if (payload.type === 'approval_required') {
+          upsertApproval(payload)
+          setStage(`等待审批 · ${payload.tool || '工具'}`)
+        } else if (payload.type === 'done') {
+          message.content = payload.reply || reply || message.content || '（无回复）'
+          message.pending = false
+          message.elapsed = elapsed.value
+          if (payload.error) {
+            message.error = payload.error
+            ElMessage.error(payload.error)
+          } else if (payload.status === 'cancelled') {
+            setStage('已停止')
+          }
+          await loadSessions()
+          await loadApprovals()
+        } else if (payload.type === 'error') {
+          message.error = payload.content || 'AI 请求出错'
+          setStage('运行失败')
+        }
+      } catch { /* ignore malformed event */ }
+    }
+  }
+  const message = messages.value[replyIndex]
+  if (message && !message.content) message.content = '（无回复）'
+}
+
+async function resumeApprovedRun(approval: any) {
+  const rid = Number(approval.run_id || 0)
+  if (!rid) return
+  const now = new Date().toISOString()
+  const replyIndex = messages.value.push({
+    id: `a-${Date.now()}`,
+    role: 'assistant',
+    content: '',
+    steps: [],
+    stepsOpen: true,
+    reasoning: '',
+    reasoningOpen: true,
+    pending: true,
+    stage: '继续执行',
+    error: '',
+    elapsed: 0,
+    createdAt: now,
+  }) - 1
+  const setStage = (value: string) => {
+    stage.value = value
+    const message = messages.value[replyIndex]
+    if (message) message.stage = value
+  }
+  loading.value = true
+  startRunClock()
+  runId.value = rid
+  scrollBottom()
+  try {
+    await consumeRun(rid, replyIndex, setStage)
+  } catch (e: any) {
+    ElMessage.error(e.message || '继续执行失败')
+  } finally {
+    const message = messages.value[replyIndex]
+    if (message) {
+      message.pending = false
+      if (!message.elapsed) message.elapsed = elapsed.value
+    }
+    loading.value = false
+    stopRunClock()
+    stage.value = ''
+    runId.value = null
+    scrollBottom()
+  }
 }
 
 async function send(reuseUser = false) {
@@ -684,103 +835,7 @@ async function send(reuseUser = false) {
     }
     const run = await resp.json()
     runId.value = run.run_id || null
-    const streamResp = await fetch(apiUrl(`/runs/${run.run_id}/stream`), {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!streamResp.ok) throw new Error(`读取结果失败 (${streamResp.status})`)
-
-    const reader = streamResp.body?.getReader()
-    const decoder = new TextDecoder()
-    let reply = ''
-    let buffer = ''
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const events = buffer.split('\n\n')
-        buffer = events.pop() || ''
-        for (const ev of events) {
-          if (!ev.startsWith('data: ')) continue
-          try {
-            const payload = JSON.parse(ev.slice(6))
-            const message = messages.value[replyIndex]
-            if (!message) continue
-            if (payload.type === 'run_started') {
-              runId.value = payload.run_id || runId.value
-              setStage('开始执行')
-            } else if (payload.type === 'run_status') {
-              const labels: Record<string, string> = {
-                running: '执行中',
-                waiting_approval: '等待审批',
-                done: '已完成',
-                completed: '已完成',
-                failed: '运行失败',
-                cancelled: '已停止',
-              }
-              setStage(labels[payload.status] || payload.status || '执行中')
-            } else if (payload.type === 'step') {
-              const step = upsertStep(message, payload)
-              if (step) {
-                setStage(step.status === 'running' ? `执行中 · ${step.name}` : `完成 · ${step.name}`)
-              }
-              scrollBottom()
-            } else if (payload.type === 'token') {
-              reply += payload.content || ''
-              message.content = reply
-              setStage('正在生成回复')
-              scrollBottom()
-            } else if (payload.type === 'reasoning') {
-              message.reasoning += payload.content || ''
-              setStage('正在思考分析')
-              scrollBottom()
-            } else if (payload.type === 'tool_call') {
-              const step = upsertStep(message, {
-                step_id: `live-${message.steps.length + 1}`,
-                tool: payload.name || 'tool',
-                arguments: payload.arguments,
-                status: 'running',
-              })
-              setStage(`正在执行 · ${step.name}`)
-              scrollBottom()
-            } else if (payload.type === 'tool_result') {
-              const name = payload.tool || payload.name || '工具'
-              const step = upsertStep(message, {
-                step_id: `live-${message.steps.length}`,
-                tool: name,
-                content: payload.content || '',
-                status: payload.error ? 'error' : 'done',
-              })
-              setStage(step.status === 'running' ? `执行中 · ${name}` : `完成 · ${name}`)
-              scrollBottom()
-            } else if (payload.type === 'approval') {
-              upsertApproval(payload)
-              setStage(`等待审批 · ${payload.tool || '工具'}`)
-            } else if (payload.type === 'approval_required') {
-              loadApprovals()
-              setStage(`等待审批 · ${payload.tool || '工具'}`)
-            } else if (payload.type === 'done') {
-              message.content = payload.reply || reply || message.content || '（无回复）'
-              message.pending = false
-              message.elapsed = elapsed.value
-              if (payload.error) {
-                message.error = payload.error
-                ElMessage.error(payload.error)
-              } else if (payload.status === 'cancelled') {
-                setStage('已停止')
-              }
-              await loadSessions()
-              await loadApprovals()
-            } else if (payload.type === 'error') {
-              message.error = payload.content || 'AI 请求出错'
-              setStage('运行失败')
-            }
-          } catch { /* ignore malformed event */ }
-        }
-      }
-    }
-    const message = messages.value[replyIndex]
-    if (message && !message.content) message.content = '（无回复）'
+    await consumeRun(run.run_id, replyIndex, setStage)
   } catch (e: any) {
     const message = messages.value[replyIndex]
     if (message) {

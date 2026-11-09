@@ -154,6 +154,14 @@ class WorkspaceItemCreate(BaseModel):
     created_by: str | None = None
 
 
+class WorkspaceItemUpdate(BaseModel):
+    type: str | None = None
+    key: str | None = None
+    content: dict | list | str | int | float | bool | None = None
+    source: str | None = None
+    confidence: float | None = None
+
+
 class WorkspaceArtifactCreate(BaseModel):
     file_id: int | None = None
     kind: str = "draft"

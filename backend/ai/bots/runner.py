@@ -123,6 +123,97 @@ async def create_run(
     return run
 
 
+async def create_approval_run(
+    user_id: int,
+    bot: Bot,
+    *,
+    messages: list[dict],
+    tool_calls: list[dict],
+    index: int,
+    name: str,
+    arguments: dict,
+    capability_key: str,
+    risk: str,
+    reason: str,
+    session_id: str | None = None,
+    goal_id: int | None = None,
+    task_id: int | None = None,
+    agent_profile_key: str | None = None,
+) -> tuple[Run, Approval]:
+    """Persist a chat tool call that needs approval as a resumable Run.
+
+    Approving the returned approval enqueues the run; ``_execute`` resumes from
+    the checkpoint, executes the tool call, and finishes the chat answer.
+    """
+    prompt = ""
+    for item in reversed(messages):
+        if item.get("role") == "user" and item.get("content"):
+            prompt = str(item["content"])
+            break
+
+    async with async_session() as db:
+        run = Run(
+            bot_id=bot.id,
+            user_id=user_id,
+            goal_id=goal_id,
+            task_id=task_id,
+            agent_profile_key=agent_profile_key,
+            session_id=session_id,
+            trigger="chat",
+            status="waiting_approval",
+            input=prompt[:20000],
+            checkpoint={
+                "messages": messages,
+                "seq": 0,
+                "pending": {
+                    "tool_calls": tool_calls,
+                    "index": index,
+                    "approval_id": None,
+                },
+            },
+            heartbeat_at=_now(),
+        )
+        db.add(run)
+        await db.flush()
+
+        approval = Approval(
+            run_id=run.id,
+            bot_id=run.bot_id,
+            user_id=user_id,
+            tool_name=name,
+            capability_key=capability_key,
+            arguments=arguments,
+            risk_level=risk,
+            status="pending",
+            reason=reason,
+        )
+        db.add(approval)
+        await db.flush()
+
+        checkpoint = dict(run.checkpoint)
+        checkpoint["pending"] = {
+            "tool_calls": tool_calls,
+            "index": index,
+            "approval_id": approval.id,
+        }
+        run.checkpoint = checkpoint
+        db.add(RunStep(
+            run_id=run.id,
+            seq=0,
+            type="approval",
+            tool_name=name,
+            arguments=arguments,
+            result=reason,
+            status="pending",
+        ))
+        await db.commit()
+        await db.refresh(run)
+        await db.refresh(approval)
+
+    await _notify_approval(run, approval, reason)
+    return run, approval
+
+
 async def execute_run(run_id: int) -> None:
     """Entry point used by enqueue/recovery. Safe against double-execution."""
     if run_id in _active:
@@ -726,7 +817,7 @@ async def _finalize(
     if status == "done":
         if run.session_id and run.output:
             await _save_chat_reply(run)
-            if await _coding_run(run.id) is not None:
+            if run.trigger == "chat" or await _coding_run(run.id) is not None:
                 await _broadcast_chat_reply(run)
         # Routines never auto-notify: the model must call send_notification
         # when it decides the user should be interrupted.

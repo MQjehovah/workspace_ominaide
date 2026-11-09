@@ -115,6 +115,48 @@ async def test_notification_actions_are_user_scoped(client):
     assert r.json()["link"] == "/notes"
 
 
+async def test_notification_proposal_action_accepts_and_creates_goal(client):
+    from ai.cognition.models import Proposal
+    from core.database.session import async_session
+
+    token, user_id = await _new_user(client)
+    async with async_session() as db:
+        proposal = Proposal(
+            user_id=user_id,
+            kind="follow_up",
+            title="通知里接受提案",
+            status="new",
+        )
+        db.add(proposal)
+        await db.commit()
+        await db.refresh(proposal)
+        proposal_id = proposal.id
+
+    nid = await _create_notification(
+        user_id,
+        [{
+            "key": "accept",
+            "label": "接受",
+            "kind": "proposal_accept",
+            "proposal_id": proposal_id,
+        }],
+        title="可执行提案",
+        type_="proposal",
+    )
+
+    r = await client.post(
+        f"/api/notifications/{nid}/action",
+        json={"action": "accept"},
+        headers=auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["proposal"]["goal_id"]
+
+    r = await client.get("/api/proposals", params={"status": "all"}, headers=auth(token))
+    row = next(p for p in r.json()["items"] if p["id"] == proposal_id)
+    assert row["status"] == "accepted"
+
+
 async def test_todo_deadline_creates_actionable_reminder_once(client):
     from plugins.todo.backend.reminders import check_todo_reminders
     from core.database.session import async_session

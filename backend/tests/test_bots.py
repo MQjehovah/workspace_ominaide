@@ -52,6 +52,54 @@ async def test_bot_crud_and_scoping(client, user_token, admin_token):
     assert r.status_code == 404
 
 
+async def test_chat_approval_run_is_created_and_resumable(client, user_token):
+    from ai.bots import runner
+    from ai.bots.models import Bot, Run
+    from core.database.session import async_session
+
+    r = await client.get("/api/bots", headers=auth(user_token))
+    main = next(b for b in r.json() if b["is_default"])
+
+    async with async_session() as db:
+        bot = await db.get(Bot, main["id"])
+        user_id = bot.user_id
+
+    run, approval = await runner.create_approval_run(
+        user_id,
+        bot,
+        messages=[{"role": "user", "content": "帮我发一封邮件"}],
+        tool_calls=[{
+            "id": "call_1",
+            "name": "send_email",
+            "arguments": {"to": ["eval@example.com"]},
+        }],
+        index=0,
+        name="send_email",
+        arguments={"to": ["eval@example.com"]},
+        capability_key="send_email",
+        risk="exec",
+        reason="需要确认收件人",
+        session_id="approval-session",
+    )
+    assert run.status == "waiting_approval"
+    assert approval.status == "pending"
+    assert run.checkpoint["pending"]["approval_id"] == approval.id
+
+    r = await client.post(
+        f"/api/approvals/{approval.id}/decision",
+        json={"approved": True, "remember": False},
+        headers=auth(user_token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "approved"
+
+    async with async_session() as db:
+        fresh = await db.get(Run, run.id)
+        assert fresh.status in ("queued", "running", "failed", "done")
+        if fresh.status != "queued":
+            await client.post(f"/api/runs/{run.id}/cancel", headers=auth(user_token))
+
+
 async def test_default_bot_cannot_be_deleted(client, user_token):
     r = await client.get("/api/bots", headers=auth(user_token))
     main = next(b for b in r.json() if b["is_default"])

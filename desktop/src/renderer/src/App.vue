@@ -49,6 +49,9 @@ onMounted(async () => {
     ready.value = true
     setupAudioListeners()
     setupRemoteWs()
+    window.mqbox.cognition?.onHandoff((msg: any) => {
+      window.dispatchEvent(new CustomEvent('omniaide:cognition-handoff', { detail: msg }))
+    })
     // Auto-reconnect WS if host was enabled
     checkRemoteAutoConnect()
   } catch (e: any) { error.value = String(e) }

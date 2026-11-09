@@ -121,6 +121,23 @@ async def act_on_notification(
         await db.flush()
         return {"message": "Todo completed", "todo_id": todo_id}
 
+    if kind in ("proposal_accept", "proposal_dismiss"):
+        from ai.cognition.proposals import act_proposal
+
+        proposal_id = int(action.get("proposal_id") or 0)
+        if not proposal_id:
+            raise HTTPException(status_code=400, detail="Missing proposal")
+        result = await act_proposal(
+            user["id"],
+            proposal_id,
+            action="accept" if kind == "proposal_accept" else "dismiss",
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        n.read = True
+        await db.flush()
+        return {"message": "Proposal handled", "proposal": result, "link": "/cognition"}
+
     if kind == "snooze":
         minutes = max(1, min(int(action.get("minutes") or 10), 24 * 60))
         n.scheduled_at = datetime.now() + timedelta(minutes=minutes)

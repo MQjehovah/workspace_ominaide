@@ -30,6 +30,16 @@ from ai.mcp.registry import tool_registry
 from core.database.session import async_session
 
 
+class ApprovalRequired(Exception):
+    """Raised by chat when a tool call needs a persisted approval run."""
+
+    def __init__(self, auth: "AuthorizationResult", name: str, arguments: dict | None):
+        super().__init__(auth.reason)
+        self.auth = auth
+        self.name = name
+        self.arguments = arguments or {}
+
+
 @dataclass
 class AuthorizationResult:
     capability_key: str
@@ -178,6 +188,7 @@ async def authorized_tool_call(
     bot=None,
     goal_id: int | None = None,
     session_id: str | None = None,
+    raise_on_approval: bool = False,
 ) -> MCPCallResponse:
     """Authorize and execute one tool call (used by chat / direct MCP API)."""
     args = arguments or {}
@@ -190,6 +201,8 @@ async def authorized_tool_call(
             content=[MCPContent(text=f"已拒绝：{auth.reason}")],
         )
     if auth.requires_approval:
+        if raise_on_approval:
+            raise ApprovalRequired(auth, name, args)
         return MCPCallResponse(
             isError=True,
             content=[MCPContent(

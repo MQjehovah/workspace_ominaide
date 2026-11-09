@@ -346,6 +346,10 @@ async def decide_approval(
         approval.reason = payload.reason
         approval.decided_at = datetime.utcnow()
 
+        run = (
+            await db.execute(select(Run).where(Run.id == approval.run_id))
+        ).scalar_one_or_none()
+
         if payload.approved and payload.remember:
             from datetime import timedelta
 
@@ -357,6 +361,12 @@ async def decide_approval(
                 expires_at = datetime.utcnow() + timedelta(minutes=5)
             elif scope == "day":
                 expires_at = datetime.utcnow() + timedelta(days=1)
+            grant_scope = {}
+            if run is not None:
+                if scope == "goal":
+                    grant_scope["goal_id"] = run.goal_id
+                elif scope == "session":
+                    grant_scope["session_id"] = run.session_id
             db.add(CapabilityGrant(
                 user_id=user["id"],
                 bot_id=approval.bot_id,
@@ -365,11 +375,9 @@ async def decide_approval(
                 scope=scope,
                 constraints={"approval_id": approval.id},
                 expires_at=expires_at,
+                **grant_scope,
             ))
 
-        run = (
-            await db.execute(select(Run).where(Run.id == approval.run_id))
-        ).scalar_one_or_none()
         if run is not None and run.status in ("waiting_approval", "queued"):
             run.status = "queued"
             run_id = run.id

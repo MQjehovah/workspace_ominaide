@@ -132,6 +132,68 @@ async def add_item(
         }
 
 
+async def update_item(
+    user_id: int,
+    workspace_id: int,
+    item_id: int,
+    **values,
+) -> dict | None:
+    async with async_session() as db:
+        workspace = (await db.execute(
+            select(Workspace).where(
+                Workspace.id == workspace_id,
+                Workspace.user_id == user_id,
+            )
+        )).scalar_one_or_none()
+        if workspace is None:
+            return None
+        row = (await db.execute(
+            select(WorkspaceItem).where(
+                WorkspaceItem.id == item_id,
+                WorkspaceItem.workspace_id == workspace_id,
+            )
+        )).scalar_one_or_none()
+        if row is None:
+            return None
+        for key, value in values.items():
+            if hasattr(row, key):
+                setattr(row, key, value)
+        await db.commit()
+        await db.refresh(row)
+        return {
+            "id": row.id,
+            "type": row.type,
+            "key": row.key,
+            "content": row.content,
+            "source": row.source,
+            "confidence": row.confidence,
+            "created_by": row.created_by,
+        }
+
+
+async def delete_item(user_id: int, workspace_id: int, item_id: int) -> bool:
+    async with async_session() as db:
+        workspace = (await db.execute(
+            select(Workspace).where(
+                Workspace.id == workspace_id,
+                Workspace.user_id == user_id,
+            )
+        )).scalar_one_or_none()
+        if workspace is None:
+            return False
+        row = (await db.execute(
+            select(WorkspaceItem).where(
+                WorkspaceItem.id == item_id,
+                WorkspaceItem.workspace_id == workspace_id,
+            )
+        )).scalar_one_or_none()
+        if row is None:
+            return False
+        await db.delete(row)
+        await db.commit()
+        return True
+
+
 async def add_artifact(
     user_id: int,
     workspace_id: int,

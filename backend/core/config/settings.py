@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     # Daily memory agent auto-approves candidates at or above this confidence.
     memory_auto_approve_threshold: int = 85
     intelligence_layer_enabled: bool = True
+    # Proactive interruption policy for notifications/voice proposals.
+    proposal_notify_daily_limit: int = 8
+    proposal_quiet_hours: str = "22:00-08:00"
     # Every user gets an isolated runtime directory: <workspace_root>/<user_id>.
     # projects/ holds coding projects, dingtalk/ holds that user's DWS config and
     # token store. Keep workspace_root on the mounted data volume.

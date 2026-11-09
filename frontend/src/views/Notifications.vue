@@ -114,7 +114,10 @@ function openLink() {
 async function runAction(n: any, action: any) {
   try {
     const { data } = await client.post(`/notifications/${n.id}/action`, { action: action.key })
-    if (data?.todo_id) ElMessage.success('已完成待办')
+    if (data?.proposal) {
+      ElMessage.success('已处理提案')
+      router.push('/cognition')
+    } else if (data?.todo_id) ElMessage.success('已完成待办')
     else if (data?.scheduled_at) ElMessage.success('已稍后提醒')
     else if (data?.link) {
       if (/^https?:\/\//.test(data.link)) window.open(data.link, '_blank')

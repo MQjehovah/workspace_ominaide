@@ -11,6 +11,7 @@ import { openPluginWindow, closeAllPluginWindows } from './windows/plugin-window
 import { registerMcpIpc } from './mcp/ipc'
 import { initMcpManager, disposeAll } from './mcp/mcp-manager'
 import { registerUpdaterIpc } from './updater'
+import { setHandoffHandler } from './backendChannel'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
@@ -65,6 +66,15 @@ function showMainPanel() {
     startSync()
   })
 }
+
+setHandoffHandler((msg) => {
+  showMainPanel()
+  const send = () => {
+    try { mainPanel?.webContents.send('cognition:handoff', msg) } catch { /* ignore */ }
+  }
+  if (mainPanel && !mainPanel.webContents.isLoading()) send()
+  else mainPanel?.webContents.once('did-finish-load', send)
+})
 
 function showQuickCapture() {
   getConfig().then(cfg => {

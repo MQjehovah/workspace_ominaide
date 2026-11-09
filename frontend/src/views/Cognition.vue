@@ -114,6 +114,64 @@
         </div>
       </el-tab-pane>
 
+      <el-tab-pane label="Agent" name="agents">
+        <div class="page-card">
+          <h3>Agent 模板</h3>
+          <p class="muted">Agent 是执行主体；只读模板不能执行写操作。角色级授权只影响该角色的调用。</p>
+          <div class="agent-grid">
+            <div v-for="a in agentProfiles" :key="a.key" class="agent-card">
+              <div class="proposal-title">
+                {{ a.title }}
+                <el-tag size="small" :type="a.read_only ? 'info' : 'success'">
+                  {{ a.read_only ? '只读' : '可执行' }}
+                </el-tag>
+              </div>
+              <div class="muted">{{ a.key }} · 最多 {{ a.max_turns }} 轮</div>
+              <div class="muted">{{ a.acceptance_hint }}</div>
+              <el-button size="small" style="margin-top:8px" @click="grantForProfile(a)">
+                添加该角色授权
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="评估" name="evals">
+        <div class="grid" style="margin-bottom:14px">
+          <div class="page-card">
+            <h3>通过率</h3>
+            <p style="font-size:26px;font-weight:700">{{ ((evalReport.metrics?.pass_rate || 0) * 100).toFixed(1) }}%</p>
+            <p class="muted">{{ evalReport.metrics?.passed || 0 }} / {{ evalReport.metrics?.total || 0 }}</p>
+          </div>
+          <div class="page-card">
+            <h3>平均耗时</h3>
+            <p style="font-size:26px;font-weight:700">{{ evalReport.metrics?.avg_ms || 0 }}ms</p>
+            <p class="muted">p95 {{ evalReport.metrics?.p95_ms || 0 }}ms</p>
+          </div>
+          <div class="page-card">
+            <h3>最近运行</h3>
+            <p>{{ evalReport.generated_at || '还没有运行评估' }}</p>
+            <p class="muted">python -m evals.cognition --user-id &lt;id&gt;</p>
+          </div>
+        </div>
+        <div class="page-card">
+          <el-table :data="evalReport.cases || []" size="small" stripe>
+            <el-table-column prop="category" label="类别" width="120" />
+            <el-table-column prop="name" label="用例" min-width="220" />
+            <el-table-column label="结果" width="80">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.ok ? 'success' : 'danger'">
+                  {{ row.ok ? '通过' : '失败' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="duration_ms" label="耗时(ms)" width="100" />
+            <el-table-column prop="detail" label="详情" min-width="220" />
+          </el-table>
+          <el-empty v-if="!(evalReport.cases || []).length" description="还没有评估报告" />
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="授权" name="grants">
         <div class="page-card" style="margin-bottom:14px">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -123,6 +181,9 @@
               <el-option label="今天" value="day" />
               <el-option label="一直" value="always" />
             </el-select>
+            <el-select v-model="grantProfile" clearable placeholder="角色（可选）" style="width:140px">
+              <el-option v-for="a in agentProfiles" :key="a.key" :label="a.title" :value="a.key" />
+            </el-select>
             <el-button type="primary" @click="addGrant">添加授权</el-button>
           </div>
         </div>
@@ -131,6 +192,7 @@
             <el-table-column prop="capability_key" label="能力" min-width="220" />
             <el-table-column prop="decision" label="决定" width="90" />
             <el-table-column prop="scope" label="范围" width="90" />
+            <el-table-column prop="agent_profile_key" label="角色" width="110" />
             <el-table-column prop="expires_at" label="过期" width="180" />
             <el-table-column label="" width="80">
               <template #default="{ row }">
@@ -142,6 +204,42 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="workspaceVisible" title="工作区" width="min(760px, 94vw)">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <el-input v-model="newItemType" placeholder="类型" style="width:110px" />
+        <el-input v-model="newItemContent" placeholder="记录或评论" style="flex:1;min-width:220px" />
+        <el-button type="primary" @click="addWorkspaceItem">添加</el-button>
+      </div>
+      <el-table :data="workspace?.items || []" size="small" stripe>
+        <el-table-column prop="type" label="类型" width="90" />
+        <el-table-column label="内容" min-width="260">
+          <template #default="{ row }">
+            <el-input
+              v-if="editingItemId === row.id"
+              v-model="editingContent"
+              size="small"
+              @keyup.enter="saveItem(row)"
+            />
+            <span v-else>{{ itemText(row) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_by" label="来源" width="110" />
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <template v-if="editingItemId === row.id">
+              <el-button link type="primary" size="small" @click="saveItem(row)">保存</el-button>
+              <el-button link size="small" @click="editingItemId = 0">取消</el-button>
+            </template>
+            <template v-else>
+              <el-button link size="small" @click="startEdit(row)">编辑</el-button>
+              <el-button link type="danger" size="small" @click="deleteItem(row)">删除</el-button>
+            </template>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!(workspace?.items || []).length" description="工作区还没有记录" />
+    </el-dialog>
   </div>
 </template>
 
@@ -164,6 +262,15 @@ const goalDescription = ref('')
 const grants = ref<any[]>([])
 const grantKey = ref('')
 const grantScope = ref('always')
+const grantProfile = ref('')
+const agentProfiles = ref<any[]>([])
+const workspaceVisible = ref(false)
+const workspace = ref<any>(null)
+const newItemType = ref('comment')
+const newItemContent = ref('')
+const editingItemId = ref(0)
+const editingContent = ref('')
+const evalReport = ref<any>({})
 
 async function loadNow() {
   loading.now = true
@@ -211,10 +318,49 @@ async function verifyTask(t: any) {
   ElMessage.success('已验收')
   if (selectedGoal.value) await selectGoal(selectedGoal.value)
 }
+function itemText(row: any) {
+  const content = row?.content
+  if (typeof content === 'string') return content
+  if (content && typeof content === 'object') {
+    return content.text ? String(content.text) : JSON.stringify(content)
+  }
+  return ''
+}
 async function openWorkspace(g: any) {
   if (!g.workspace_id) return
-  const res = await client.get(`/cognition/workspaces/${g.workspace_id}`)
-  ElMessage.info(`工作区 ${res.data.id}：${(res.data.items || []).length} 条记录`)
+  workspace.value = (await client.get(`/cognition/workspaces/${g.workspace_id}`)).data
+  workspaceVisible.value = true
+}
+async function refreshWorkspace() {
+  if (!workspace.value?.id) return
+  workspace.value = (await client.get(`/cognition/workspaces/${workspace.value.id}`)).data
+}
+async function addWorkspaceItem() {
+  if (!workspace.value?.id || !newItemContent.value.trim()) return
+  await client.post(`/cognition/workspaces/${workspace.value.id}/items`, {
+    type: newItemType.value || 'comment',
+    content: { text: newItemContent.value.trim() },
+    created_by: 'user',
+  })
+  newItemContent.value = ''
+  await refreshWorkspace()
+}
+function startEdit(row: any) {
+  editingItemId.value = row.id
+  editingContent.value = itemText(row)
+}
+async function saveItem(row: any) {
+  if (!workspace.value?.id) return
+  await client.patch(`/cognition/workspaces/${workspace.value.id}/items/${row.id}`, {
+    content: { text: editingContent.value },
+  })
+  editingItemId.value = 0
+  await refreshWorkspace()
+}
+async function deleteItem(row: any) {
+  if (!workspace.value?.id) return
+  await client.delete(`/cognition/workspaces/${workspace.value.id}/items/${row.id}`)
+  await refreshWorkspace()
 }
 async function exportWorkspace(g: any) {
   if (!g.workspace_id) return
@@ -223,9 +369,21 @@ async function exportWorkspace(g: any) {
 async function loadGrants() {
   grants.value = (await client.get('/capabilities/grants')).data
 }
+async function loadAgentProfiles() {
+  agentProfiles.value = (await client.get('/cognition/agent-profiles')).data
+}
+function grantForProfile(profile: any) {
+  grantProfile.value = profile.key
+  tab.value = 'grants'
+  ElMessage.info(`请填写能力，授权将只作用于 ${profile.title} 角色`)
+}
 async function addGrant() {
   if (!grantKey.value.trim()) return
-  await client.post('/capabilities/grants', { capability_key: grantKey.value.trim(), scope: grantScope.value })
+  await client.post('/capabilities/grants', {
+    capability_key: grantKey.value.trim(),
+    scope: grantScope.value,
+    agent_profile_key: grantProfile.value || undefined,
+  })
   grantKey.value = ''
   await loadGrants()
 }
@@ -233,8 +391,18 @@ async function removeGrant(row: any) {
   await client.delete(`/capabilities/grants/${row.id}`)
   await loadGrants()
 }
+async function loadEvals() {
+  evalReport.value = (await client.get('/cognition/evals')).data
+}
 async function refreshAll() {
-  await Promise.all([loadNow(), loadProposals(), loadGoals(), loadGrants()])
+  await Promise.all([
+    loadNow(),
+    loadProposals(),
+    loadGoals(),
+    loadGrants(),
+    loadAgentProfiles(),
+    loadEvals(),
+  ])
 }
 onMounted(refreshAll)
 </script>
@@ -249,5 +417,7 @@ onMounted(refreshAll)
 .goal-layout { display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
 .goal { padding: 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
 .goal:hover, .goal.active { background: #f5f7ff; border-color: #dbe3ff; }
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+.agent-card { border: 1px solid #e6e8ef; border-radius: 10px; padding: 12px; }
 @media (max-width: 900px) { .goal-layout { grid-template-columns: 1fr; } }
 </style>
