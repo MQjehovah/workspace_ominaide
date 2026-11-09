@@ -477,10 +477,13 @@ async def test_run_approval_state_machine(client, user_token, monkeypatch):
     )
     assert r.status_code == 200
 
-    bot_after = (
-        await client.get(f"/api/bots/{bot_id}", headers=auth(user_token))
+    grants = (
+        await client.get("/api/capabilities/grants", headers=auth(user_token))
     ).json()
-    assert bot_after["risk_policy"]["tools"]["shell.exec"] == "auto"
+    assert any(
+        g["capability_key"] == "shell.exec" and g["decision"] == "allow"
+        for g in grants
+    )
 
     await runner.execute_run(run_id)
     r = await client.get(f"/api/runs/{run_id}", headers=auth(user_token))

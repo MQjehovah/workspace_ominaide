@@ -42,7 +42,7 @@ async def test_activity_analysis_produces_cached_suggestions(client):
     result = await analyze_user(user_id)
     assert result["created"] >= 1
 
-    r = await client.get("/api/insights/suggestions", headers=auth(token))
+    r = await client.get("/api/proposals", headers=auth(token))
     assert r.status_code == 200, r.text
     assert r.json()["items"]
 
@@ -51,20 +51,22 @@ async def test_execute_suggestion_creates_todo(client):
     token, user_id = await _new_user(client)
 
     from core.database.session import async_session
-    from ai.insights.activity_models import ActivitySuggestion
+    from ai.cognition.models import Proposal
 
     async with async_session() as db:
-        row = ActivitySuggestion(
+        row = Proposal(
             user_id=user_id,
             kind="todo",
             title="准备产品评审",
             reason="会议将至",
             confidence=0.8,
             status="new",
-            proposed_action={
-                "type": "create_todo",
+            actions=[{
+                "key": "create_todo",
+                "label": "执行",
+                "kind": "create_todo",
                 "payload": {"title": "准备产品评审", "priority": 1},
-            },
+            }],
         )
         db.add(row)
         await db.commit()
@@ -72,7 +74,8 @@ async def test_execute_suggestion_creates_todo(client):
         suggestion_id = row.id
 
     r = await client.post(
-        f"/api/insights/suggestions/{suggestion_id}/execute",
+        f"/api/proposals/{suggestion_id}/act",
+        json={"action": "execute"},
         headers=auth(token),
     )
     assert r.status_code == 200, r.text

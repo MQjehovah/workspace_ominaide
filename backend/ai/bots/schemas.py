@@ -192,6 +192,7 @@ class ApprovalOut(BaseModel):
     bot_id: int
     user_id: int
     tool_name: str
+    capability_key: str | None = None
     arguments: dict | None = None
     risk_level: str
     status: str
@@ -206,3 +207,4 @@ class ApprovalDecision(BaseModel):
     approved: bool
     reason: str | None = None
     remember: bool = False
+    scope: str = "always"

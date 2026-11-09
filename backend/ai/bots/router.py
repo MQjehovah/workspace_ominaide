@@ -347,21 +347,25 @@ async def decide_approval(
         approval.decided_at = datetime.utcnow()
 
         if payload.approved and payload.remember:
-            from ai.bots.models import Bot
+            from datetime import timedelta
 
-            bot = (
-                await db.execute(
-                    select(Bot).where(
-                        Bot.id == approval.bot_id, Bot.user_id == user["id"]
-                    )
-                )
-            ).scalar_one_or_none()
-            if bot is not None:
-                risk_policy = dict(bot.risk_policy or {})
-                tools = dict(risk_policy.get("tools") or {})
-                tools[approval.tool_name] = "auto"
-                risk_policy["tools"] = tools
-                bot.risk_policy = risk_policy
+            from ai.cognition.models import CapabilityGrant
+
+            scope = payload.scope if payload.scope in ("once", "goal", "session", "day", "always") else "always"
+            expires_at = None
+            if scope == "once":
+                expires_at = datetime.utcnow() + timedelta(minutes=5)
+            elif scope == "day":
+                expires_at = datetime.utcnow() + timedelta(days=1)
+            db.add(CapabilityGrant(
+                user_id=user["id"],
+                bot_id=approval.bot_id,
+                capability_key=(approval.capability_key or approval.tool_name)[:160],
+                decision="allow",
+                scope=scope,
+                constraints={"approval_id": approval.id},
+                expires_at=expires_at,
+            ))
 
         run = (
             await db.execute(select(BotRun).where(BotRun.id == approval.run_id))

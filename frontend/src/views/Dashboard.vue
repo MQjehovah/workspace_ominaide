@@ -118,8 +118,8 @@
         <div class="page-card block">
           <div class="card-head">
             <div>
-              <h3>活动建议</h3>
-              <span class="card-sub">由最近活动定时提取</span>
+              <h3>提案</h3>
+              <span class="card-sub">由最近活动与目标生成</span>
             </div>
           </div>
           <div class="card-body">
@@ -130,16 +130,16 @@
                   <div v-if="s.reason" class="suggestion-reason">{{ s.reason }}</div>
                 </div>
                 <div class="suggestion-actions">
-                  <el-button link type="primary" size="small" @click="acceptSuggestion(s)">
-                    {{ s.proposed_action?.type === 'create_todo' ? '执行' : '建待办' }}
+                  <el-button link type="primary" size="small" @click="acceptProposal(s)">
+                    {{ s.primary_action?.kind === 'create_todo' ? '执行' : '接受' }}
                   </el-button>
-                  <el-button link size="small" @click="dismissSuggestion(s)">忽略</el-button>
+                  <el-button link size="small" @click="dismissProposal(s)">忽略</el-button>
                 </div>
               </div>
             </div>
             <div v-else class="empty">
               <el-icon :size="28"><Promotion /></el-icon>
-              <p>暂时没有新的建议，系统会定时整理。</p>
+              <p>暂时没有新的提案，系统会定时整理。</p>
             </div>
           </div>
         </div>
@@ -320,7 +320,7 @@ async function loadAll() {
       events.value = Array.isArray(r.data) ? r.data : []
     }),
 
-    client.get('/insights/suggestions', { params: { limit: 6 } }).then(r => {
+    client.get('/proposals', { params: { status: 'new', limit: 6 } }).then(r => {
       activitySuggestions.value = r.data?.items || []
     }),
 
@@ -337,25 +337,16 @@ async function toggleTodo(t: any) {
   } catch { }
 }
 
-async function acceptSuggestion(s: any) {
+async function acceptProposal(s: any) {
   try {
-    if (s.proposed_action?.type === 'create_todo') {
-      await client.post(`/insights/suggestions/${s.id}/execute`)
-    } else {
-      await client.post('/plugins/todo/items', {
-        title: s.title || '处理活动建议',
-        description: s.reason || '',
-        priority: 1,
-      })
-      await client.post(`/insights/suggestions/${s.id}/accept`)
-    }
+    await client.post(`/proposals/${s.id}/act`, { action: 'accept' })
     activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
   } catch { }
 }
 
-async function dismissSuggestion(s: any) {
+async function dismissProposal(s: any) {
   try {
-    await client.post(`/insights/suggestions/${s.id}/dismiss`)
+    await client.post(`/proposals/${s.id}/act`, { action: 'dismiss' })
     activitySuggestions.value = activitySuggestions.value.filter(x => x.id !== s.id)
   } catch { }
 }

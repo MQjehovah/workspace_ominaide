@@ -125,6 +125,10 @@ async def ensure_schema_migrations():
             cols = {c["name"] for c in inspector.get_columns("activity_suggestions")}
             if "proposed_action" not in cols:
                 result.append("activity_suggestions_proposed_action")
+        if "bot_approvals" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("bot_approvals")}
+            if "capability_key" not in cols:
+                result.append("bot_approvals_capability_key")
 
         if "projects" in table_names:
             cols = {c["name"] for c in inspector.get_columns("projects")}
@@ -201,6 +205,8 @@ async def ensure_schema_migrations():
                 await conn.execute(text(f"ALTER TABLE mcp_servers ADD COLUMN expose_tools BOOLEAN DEFAULT {bool_true}"))
             elif table == "activity_suggestions_proposed_action":
                 await conn.execute(text("ALTER TABLE activity_suggestions ADD COLUMN proposed_action JSON NULL"))
+            elif table == "bot_approvals_capability_key":
+                await conn.execute(text("ALTER TABLE bot_approvals ADD COLUMN capability_key VARCHAR(160) NULL"))
             elif table == "request_traces_tokens_in":
                 await conn.execute(text("ALTER TABLE request_traces ADD COLUMN tokens_in INTEGER DEFAULT 0"))
             elif table == "request_traces_tokens_out":
@@ -248,3 +254,53 @@ async def ensure_schema_migrations():
                 ))
             elif table == "plugin_notes":
                 await conn.execute(text("ALTER TABLE plugin_notes MODIFY content LONGTEXT NULL"))
+
+    # One-time migration: activity_suggestions -> proposals.
+    async with engine.begin() as conn:
+        table_names = set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
+        if "activity_suggestions" in table_names and "proposals" in table_names:
+            from sqlalchemy import insert
+            from ai.cognition.models import Proposal
+
+            rows = (await conn.execute(text("SELECT * FROM activity_suggestions"))).mappings().all()
+            for row in rows:
+                raw_action = row.get("proposed_action")
+                if isinstance(raw_action, str):
+                    try:
+                        import json as _json
+                        raw_action = _json.loads(raw_action)
+                    except Exception:
+                        raw_action = None
+                actions = []
+                if isinstance(raw_action, dict):
+                    kind = str(raw_action.get("type") or "none")[:40]
+                    actions = [{
+                        "key": kind,
+                        "label": "",
+                        "kind": kind,
+                        "payload": raw_action.get("payload") or {},
+                    }]
+                evidence = {}
+                raw_events = row.get("source_event_ids")
+                if isinstance(raw_events, str):
+                    try:
+                        import json as _json
+                        raw_events = _json.loads(raw_events)
+                    except Exception:
+                        raw_events = None
+                if raw_events:
+                    evidence["source_event_ids"] = raw_events
+                await conn.execute(insert(Proposal).values(
+                    user_id=row["user_id"],
+                    bot_id=None,
+                    kind=(row.get("kind") or "follow_up")[:24],
+                    title=(row.get("title") or "")[:200],
+                    reason=(row.get("reason") or "")[:500] or None,
+                    evidence=evidence or None,
+                    confidence=float(row.get("confidence") or 0.5),
+                    actions=actions,
+                    status=row.get("status") or "new",
+                    channel="now",
+                ))
+            await conn.execute(text("DROP TABLE activity_suggestions"))
+

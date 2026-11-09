@@ -379,6 +379,7 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
                 max_turns=bot.max_turns or 60,
                 model=bot.model,
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
+                bot=bot,
             )
         finally:
             reset_current_session_id(session_token)
@@ -420,6 +421,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
                     max_turns=bot.max_turns or 60,
                     model=bot.model,
                     temperature=bot.temperature if bot.temperature is not None else 0.7,
+                    bot=bot,
                 ):
                     await queue.put(event)
             except Exception as e:
@@ -657,6 +659,7 @@ async def voice(
                 max_turns=bot.max_turns or 60,
                 model=bot.model,
                 temperature=bot.temperature if bot.temperature is not None else 0.7,
+                bot=bot,
             )
         finally:
             reset_current_session_id(session_token)
@@ -802,6 +805,7 @@ async def voice_stream(
                     max_turns=bot.max_turns or 60,
                     model=bot.model,
                     temperature=bot.temperature if bot.temperature is not None else 0.7,
+                    bot=bot,
                 )
             ):
                 typ = ev.get("type")

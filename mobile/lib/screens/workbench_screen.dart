@@ -36,7 +36,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   DailyBrief? _brief;
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _todos = [];
-  List<Map<String, dynamic>> _activitySuggestions = [];
+  List<Map<String, dynamic>> _proposals = [];
   List<FileItem> _files = [];
   List<Map<String, dynamic>> _notes = [];
   List<Map<String, dynamic>> _projects = [];
@@ -146,7 +146,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     final results = await Future.wait<dynamic>([
       _safe(api.getWorkbenchSummary()),
       _safe(api.getMe()),
-      _safe(api.getActivitySuggestions()),
+      _safe(api.getProposals()),
     ]);
     if (!mounted || token != _loadToken) return;
 
@@ -160,12 +160,12 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     if (!mounted || token != _loadToken) return;
 
     final me = results[1] as Map<String, dynamic>?;
-    final activitySuggestions =
+    final proposals =
         (results[2] as List<Map<String, dynamic>>?) ?? const [];
     setState(() {
       _error = results[0] == null && summary.isEmpty;
       _applySummary(summary);
-      _activitySuggestions = activitySuggestions;
+      _proposals = proposals;
       _name = (me?['display_name'] ?? me?['username'] ?? '').toString();
       _loading = false;
       _briefLoading = true;
@@ -193,48 +193,39 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     }
   }
 
-  Future<void> _acceptActivitySuggestion(Map<String, dynamic> item) async {
+  Future<void> _acceptProposal(Map<String, dynamic> item) async {
     final id = item['id'];
     if (id is! int) return;
     try {
-      final action = item['proposed_action'];
-      final hasAction = action is Map && action['type'] == 'create_todo';
-      if (hasAction) {
-        final ok = await ApiService().executeActivitySuggestion(id);
-        if (!ok) throw Exception('执行失败');
-      } else {
-        await ApiService().createTodoItem({
-          'title': (item['title'] ?? '处理活动建议').toString(),
-          'description': (item['reason'] ?? '').toString(),
-          'priority': 1,
-        });
-        await ApiService().acceptActivitySuggestion(id);
-      }
+      final action = item['primary_action'];
+      final hasAction = action is Map && action['kind'] == 'create_todo';
+      final ok = await ApiService().actProposal(id, hasAction ? 'execute' : 'accept');
+      if (!ok) throw Exception('处理失败');
       if (!mounted) return;
       setState(() {
-        _activitySuggestions =
-            _activitySuggestions.where((e) => e['id'] != id).toList();
+        _proposals =
+            _proposals.where((e) => e['id'] != id).toList();
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已处理建议')),
+        const SnackBar(content: Text('已处理提案')),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('创建待办失败: $e')),
+        SnackBar(content: Text('处理提案失败: $e')),
       );
     }
   }
 
-  Future<void> _dismissActivitySuggestion(Map<String, dynamic> item) async {
+  Future<void> _dismissProposal(Map<String, dynamic> item) async {
     final id = item['id'];
     if (id is! int) return;
     try {
-      await ApiService().dismissActivitySuggestion(id);
+      await ApiService().actProposal(id, 'dismiss');
       if (!mounted) return;
       setState(() {
-        _activitySuggestions =
-            _activitySuggestions.where((e) => e['id'] != id).toList();
+        _proposals =
+            _proposals.where((e) => e['id'] != id).toList();
       });
     } catch (_) {
       // Keep the item when the request fails.
@@ -365,7 +356,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                     const SizedBox(height: 9),
                     _buildTodayCard(palette),
                     const SizedBox(height: 9),
-                    _buildActivitySuggestionsCard(palette),
+                    _buildProposalsCard(palette),
                     const SizedBox(height: 9),
                     _buildRecentCard(palette),
                   ],
@@ -736,8 +727,8 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   }
 
   bool _suggestionHasAction(Map<String, dynamic> item) {
-    final action = item['proposed_action'];
-    return action is Map && action['type'] == 'create_todo';
+    final action = item['primary_action'];
+    return action is Map && action['kind'] == 'create_todo';
   }
 
   Future<void> _showActivityActions(Map<String, dynamic> item) async {
@@ -806,13 +797,13 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     );
     if (!mounted || choice == null) return;
     if (choice == 'primary') {
-      await _acceptActivitySuggestion(item);
+      await _acceptProposal(item);
     } else if (choice == 'dismiss') {
-      await _dismissActivitySuggestion(item);
+      await _dismissProposal(item);
     }
   }
 
-  Widget _activitySuggestionCard(AppPalette palette, Map<String, dynamic> item) {
+  Widget _proposalCard(AppPalette palette, Map<String, dynamic> item) {
     final kind = (item['kind'] ?? 'follow_up').toString();
     final title = (item['title'] ?? '').toString();
     final reason = (item['reason'] ?? '').toString();
@@ -921,7 +912,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
       );
   }
 
-  Widget _buildActivitySuggestionsCard(AppPalette palette) {
+  Widget _buildProposalsCard(AppPalette palette) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -940,7 +931,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                 ),
               ),
               const Spacer(),
-              if (_activitySuggestions.isNotEmpty)
+              if (_proposals.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
@@ -948,7 +939,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${_activitySuggestions.length} 条',
+                    '${_proposals.length} 条',
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
@@ -968,7 +959,7 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        if (_activitySuggestions.isEmpty)
+        if (_proposals.isEmpty)
           AppCard(
             child: Row(
               children: [
@@ -984,10 +975,10 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
             ),
           )
         else
-          for (final item in _activitySuggestions.take(6))
+          for (final item in _proposals.take(6))
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: _activitySuggestionCard(palette, item),
+              child: _proposalCard(palette, item),
             ),
       ],
     );

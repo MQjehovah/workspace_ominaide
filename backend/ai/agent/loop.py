@@ -3,6 +3,7 @@ import json
 from ai.llm.usage import record_chat_usage, tracked_create
 from core.config.settings import settings
 from ai.llm.clients import get_openai_client
+from ai.cognition.authorization import authorized_tool_call
 from ai.mcp.gateway import select_exposed_tools
 from ai.mcp.registry import tool_registry
 
@@ -51,6 +52,7 @@ async def run_agent(
     max_turns: int = 60,
     model: str | None = None,
     temperature: float = 0.7,
+    bot=None,
 ) -> str:
     """Non-streaming agent loop (kept for backward compat)."""
     client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
@@ -78,9 +80,11 @@ async def run_agent(
                 func_args = json.loads(tc.function.arguments)
             except json.JSONDecodeError:
                 func_args = {}
-            result = await tool_registry.call(
+            result = await authorized_tool_call(
                 user_id,
-                type("Req", (), {"name": tc.function.name, "arguments": func_args})(),
+                tc.function.name,
+                func_args,
+                bot=bot,
             )
             content = _serialize_result(result)
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": content})
@@ -95,6 +99,7 @@ async def run_agent_stream(
     max_turns: int = 60,
     model: str | None = None,
     temperature: float = 0.7,
+    bot=None,
 ):
     """Streaming agent: yields SSE-formatted strings."""
     client = get_openai_client(settings.llm_base_url, settings.llm_api_key)
@@ -199,9 +204,11 @@ async def run_agent_stream(
             name = tc["function"]["name"]
             yield f"data: {json.dumps({'type': 'tool_call', 'name': name, 'arguments': func_args}, ensure_ascii=False)}\n\n"
 
-            result = await tool_registry.call(
+            result = await authorized_tool_call(
                 user_id,
-                type("Req", (), {"name": name, "arguments": func_args})(),
+                name,
+                func_args,
+                bot=bot,
             )
             content = _serialize_result(result)
             is_err = bool(getattr(result, "isError", False) or getattr(result, "is_error", False))

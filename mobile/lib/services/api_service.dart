@@ -1419,26 +1419,16 @@ class ApiService {
     return _asMap(decodeJson(res));
   }
 
-  Future<List<Map<String, dynamic>>> getActivitySuggestions({
+  Future<List<Map<String, dynamic>>> getProposals({
     int limit = 6,
   }) async {
-    final res = await get('/insights/suggestions?limit=$limit');
+    final res = await get('/proposals?status=new&limit=$limit');
     if (res.statusCode != 200) return [];
     return _asMapList(decodeJson(res)['items']);
   }
 
-  Future<bool> acceptActivitySuggestion(int id) async {
-    final res = await post('/insights/suggestions/$id/accept', const {});
-    return res.statusCode == 200;
-  }
-
-  Future<bool> dismissActivitySuggestion(int id) async {
-    final res = await post('/insights/suggestions/$id/dismiss', const {});
-    return res.statusCode == 200;
-  }
-
-  Future<bool> executeActivitySuggestion(int id) async {
-    final res = await post('/insights/suggestions/$id/execute', const {});
+  Future<bool> actProposal(int id, String action) async {
+    final res = await post('/proposals/$id/act', {'action': action});
     return res.statusCode == 200;
   }
 

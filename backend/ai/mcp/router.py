@@ -1,10 +1,11 @@
 
 from core.logging import get_logger
 log = get_logger(__name__)
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 import time
 
 from core.auth.dependencies import get_current_user
+from ai.cognition.authorization import authorize
 from ai.mcp.registry import tool_registry
 from ai.mcp.core import MCPCallRequest
 
@@ -24,6 +25,12 @@ async def call_tool(
     user: dict = Depends(get_current_user),
 ):
     """MCP: Call a tool with arguments and get results."""
+    auth = await authorize(user["id"], req.name, req.arguments)
+    if auth.decision == "deny":
+        raise HTTPException(status_code=403, detail=auth.reason)
+    if auth.requires_approval:
+        raise HTTPException(status_code=409, detail=auth.reason)
+
     started = time.perf_counter()
     result = await tool_registry.call(user["id"], req)
     elapsed_ms = int((time.perf_counter() - started) * 1000)

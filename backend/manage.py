@@ -17,6 +17,7 @@ import plugins.chat.backend.models  # noqa
 import app.objects.models  # noqa
 import plugins.sources.backend.models  # noqa
 import ai.memory.models  # noqa
+import ai.cognition.models  # noqa
 import ai.mcp_hub.models  # noqa
 import ai.insights.review_models  # noqa
 import ai.memory.graph.models  # noqa

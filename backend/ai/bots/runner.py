@@ -29,7 +29,7 @@ from ai.mcp.gateway import (
     select_exposed_tools,
 )
 from ai.mcp.registry import tool_registry
-from ai.bots import policy
+from ai.cognition.authorization import authorize
 from ai.bots.context import (
     reset_current_bot_id,
     reset_current_run_id,
@@ -364,7 +364,19 @@ async def _execute_tool_calls(
         tc = tool_calls[i]
         name = tc["name"]
         display_name, display_args = display_target(name, tc["arguments"])
-        risk, decision = policy.decide(bot, name, tc["arguments"])
+        auth = await authorize(
+            run.user_id,
+            name,
+            tc["arguments"],
+            bot=bot,
+            run_id=run.id,
+        )
+        risk = auth.risk
+        decision = (
+            "deny" if auth.decision == "deny"
+            else "ask" if auth.requires_approval
+            else "auto"
+        )
 
         if decision == "deny":
             text = f"工具 {display_name} 被当前 Bot 的策略拒绝执行。"
@@ -374,12 +386,13 @@ async def _execute_tool_calls(
             continue
 
         if decision == "ask":
-            reason = f"{display_name} 属于 {risk} 风险级别，需要用户确认。"
+            reason = auth.reason or f"{display_name} 属于 {risk} 风险级别，需要用户确认。"
             approval = await _create_approval(
                 run,
                 {"id": tc["id"], "name": display_name, "arguments": display_args},
                 risk,
                 reason,
+                capability_key=auth.capability_key,
             )
             await _save_checkpoint(
                 run.id,
@@ -512,7 +525,12 @@ async def _load_run_bot(run_id: int) -> tuple[BotRun | None, Bot | None]:
 
 
 async def _create_approval(
-    run: BotRun, tc: dict, risk: str, reason: str
+    run: BotRun,
+    tc: dict,
+    risk: str,
+    reason: str,
+    *,
+    capability_key: str | None = None,
 ) -> BotApproval:
     async with async_session() as db:
         approval = BotApproval(
@@ -520,6 +538,7 @@ async def _create_approval(
             bot_id=run.bot_id,
             user_id=run.user_id,
             tool_name=tc["name"],
+            capability_key=capability_key,
             arguments=tc["arguments"],
             risk_level=risk,
             status="pending",

@@ -9,13 +9,13 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from core.config.settings import settings
 from ai.context import build_context
+from ai.cognition.proposals import create_proposal, expire_old
 from core.database.session import async_session
 from activities.models import UserActivity
-from ai.insights.activity_models import ActivitySuggestion
 from core.logging import get_logger
 
 log = get_logger(__name__)
@@ -224,34 +224,37 @@ async def analyze_user(user_id: int) -> dict:
         items = _fallback(context, activities)
 
     source_ids = [row.id for row in activities[:60]]
+    await expire_old(user_id)
     created = 0
-    async with async_session() as db:
-        await db.execute(
-            update(ActivitySuggestion)
-            .where(
-                ActivitySuggestion.user_id == user_id,
-                ActivitySuggestion.status == "new",
-            )
-            .values(status="expired")
+    for item in items[:5]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        action = _sanitize_action(item.get("action"))
+        actions = []
+        if action:
+            kind = str(action.get("type") or "none")
+            actions.append({
+                "key": kind,
+                "label": "",
+                "kind": kind,
+                "payload": action.get("payload") or {},
+            })
+        await create_proposal(
+            user_id,
+            kind=str(item.get("kind") or "follow_up")[:24],
+            title=title,
+            reason=str(item.get("reason") or "")[:500] or None,
+            evidence={"source_event_ids": source_ids},
+            confidence=float(item.get("confidence") or 0.5),
+            actions=actions,
+            channel="now",
+            dedupe_key=f"activity:{user_id}:{title[:120]}",
+            expires_at=datetime.now() + timedelta(days=7),
         )
-        for item in items[:5]:
-            if not isinstance(item, dict):
-                continue
-            title = str(item.get("title") or "").strip()
-            if not title:
-                continue
-            db.add(ActivitySuggestion(
-                user_id=user_id,
-                kind=str(item.get("kind") or "follow_up")[:20],
-                title=title[:200],
-                reason=str(item.get("reason") or "")[:500] or None,
-                confidence=float(item.get("confidence") or 0.5),
-                source_event_ids=source_ids,
-                proposed_action=_sanitize_action(item.get("action")),
-                expires_at=datetime.now() + timedelta(days=7),
-            ))
-            created += 1
-        await db.commit()
+        created += 1
     return {"user_id": user_id, "created": created, "activities": len(activities)}
 
 
@@ -267,81 +270,3 @@ async def enqueue_activity_analyses() -> dict:
             idempotency_key=f"analysis:{user_id}:{bucket}",
         )
     return {"users": len(user_ids), "bucket": bucket}
-
-
-async def list_suggestions(user_id: int, limit: int = 20) -> list[dict]:
-    async with async_session() as db:
-        rows = list((await db.execute(
-            select(ActivitySuggestion)
-            .where(
-                ActivitySuggestion.user_id == user_id,
-                ActivitySuggestion.status == "new",
-            )
-            .order_by(ActivitySuggestion.created_at.desc())
-            .limit(max(1, min(limit, 50)))
-        )).scalars().all())
-    return [
-        {
-            "id": row.id,
-            "kind": row.kind,
-            "title": row.title,
-            "reason": row.reason,
-            "confidence": row.confidence,
-            "proposed_action": row.proposed_action,
-            "created_at": row.created_at.isoformat() if row.created_at else None,
-        }
-        for row in rows
-    ]
-
-
-async def set_status(user_id: int, suggestion_id: int, status: str) -> bool:
-    async with async_session() as db:
-        row = (await db.execute(
-            select(ActivitySuggestion).where(
-                ActivitySuggestion.id == suggestion_id,
-                ActivitySuggestion.user_id == user_id,
-            )
-        )).scalar_one_or_none()
-        if row is None:
-            return False
-        row.status = status
-        await db.commit()
-        return True
-
-
-async def execute_suggestion(user_id: int, suggestion_id: int) -> dict | None:
-    async with async_session() as db:
-        row = (await db.execute(
-            select(ActivitySuggestion).where(
-                ActivitySuggestion.id == suggestion_id,
-                ActivitySuggestion.user_id == user_id,
-            )
-        )).scalar_one_or_none()
-        if row is None:
-            return None
-        action = row.proposed_action if isinstance(row.proposed_action, dict) else {}
-        action_type = str(action.get("type") or "")
-        if action_type != "create_todo":
-            return {"status": "no_action", "suggestion_id": suggestion_id}
-        payload = action.get("payload") or {}
-        from plugins.todo.backend.schemas import TodoCreate
-        from plugins.todo.backend.service import create_todo
-
-        todo = await create_todo(
-            db,
-            user_id,
-            TodoCreate(
-                title=str(payload.get("title") or row.title)[:200],
-                description=str(payload.get("description") or row.reason or "")[:500] or None,
-                priority=int(payload.get("priority") or 1),
-                due_date=payload.get("due_date"),
-            ),
-        )
-        row.status = "executed"
-        await db.commit()
-        return {
-            "status": "executed",
-            "suggestion_id": suggestion_id,
-            "action": action_type,
-            "todo_id": todo.id,
-        }

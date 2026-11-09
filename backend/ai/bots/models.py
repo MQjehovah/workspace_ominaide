@@ -159,6 +159,7 @@ class BotApproval(Base):
     bot_id = Column(Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     tool_name = Column(String(100), nullable=False)
+    capability_key = Column(String(160), nullable=True, index=True)
     arguments = Column(JSON, nullable=True)
     risk_level = Column(String(20), default="exec")
     status = Column(String(20), default="pending", index=True)

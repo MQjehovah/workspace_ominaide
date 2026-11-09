@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
     import core.wschannel.models  # noqa
     import plugins.oauth.backend.models  # noqa
     import plugins.dingtalk.backend.models  # noqa
-    import ai.insights.activity_models  # noqa
+    import ai.cognition.models  # noqa
     import ai.memory.models  # noqa
     import plugins.sources.backend.models  # noqa
     from app.objects import models as _object_models  # noqa: F401
@@ -199,8 +199,9 @@ app.include_router(automation_router)
 from ai.retrieval.search_router import router as search_router
 app.include_router(search_router)
 
-from ai.insights.activity_router import router as activity_insights_router
-app.include_router(activity_insights_router)
+from ai.cognition.router import proposals_router, capabilities_router
+app.include_router(proposals_router)
+app.include_router(capabilities_router)
 
 from ai.insights.reviews_router import router as insights_router
 app.include_router(insights_router)
