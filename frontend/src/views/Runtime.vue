@@ -5,26 +5,101 @@
         <h2>运行看板</h2>
         <p style="color:#909399;font-size:13px;margin-top:4px">指标、任务、Agent、上下文调试</p>
       </div>
-      <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
+      <div class="header-actions">
+        <el-select v-model="hours" size="small" style="width:130px" @change="loadMetrics">
+          <el-option label="近 6 小时" :value="6" />
+          <el-option label="近 24 小时" :value="24" />
+          <el-option label="近 3 天" :value="72" />
+          <el-option label="近 7 天" :value="168" />
+        </el-select>
+        <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
+      </div>
     </div>
 
     <el-tabs v-model="tab" class="cap-tabs">
       <el-tab-pane label="运行指标" name="metrics">
-        <div class="token-grid" v-loading="loading.metrics">
+        <div class="overview-grid" v-loading="loading.metrics">
+          <div class="overview-card">
+            <div class="overview-label">请求总数</div>
+            <div class="overview-value">{{ formatNumber(metrics.overview?.requests) }}</div>
+            <div class="overview-sub">近 {{ hours }} 小时</div>
+          </div>
+          <div class="overview-card">
+            <div class="overview-label">错误率</div>
+            <div class="overview-value" :class="{ danger: (metrics.overview?.error_rate || 0) > 0.05 }">
+              {{ ((metrics.overview?.error_rate || 0) * 100).toFixed(1) }}%
+            </div>
+            <div class="overview-sub">{{ formatNumber(metrics.overview?.errors) }} 次错误</div>
+          </div>
+          <div class="overview-card">
+            <div class="overview-label">P95 延迟</div>
+            <div class="overview-value">{{ formatNumber(metrics.overview?.p95_ms) }}<small>ms</small></div>
+            <div class="overview-sub">P50 {{ formatNumber(metrics.overview?.p50_ms) }} ms</div>
+          </div>
+          <div class="overview-card accent">
+            <div class="overview-label">LLM Token</div>
+            <div class="overview-value">{{ formatNumber(metrics.overview?.tokens) }}</div>
+            <div class="overview-sub">{{ formatNumber(metrics.overview?.llm_calls) }} 次调用</div>
+          </div>
+          <div class="overview-card">
+            <div class="overview-label">活跃后台任务</div>
+            <div class="overview-value">{{ formatNumber(metrics.overview?.jobs_active) }}</div>
+            <div class="overview-sub">排队 + 运行中</div>
+          </div>
+          <div class="overview-card">
+            <div class="overview-label">活跃 Agent</div>
+            <div class="overview-value">{{ formatNumber(metrics.overview?.agents_active) }}</div>
+            <div class="overview-sub">{{ formatNumber(metrics.overview?.approvals_pending) }} 个待审批</div>
+          </div>
+        </div>
+
+        <div class="token-grid" v-loading="loading.metrics" style="margin-top:14px">
           <div class="token-card primary">
             <div class="token-label">LLM 总 Token</div>
             <div class="token-value">{{ formatNumber(metrics.tokens?.total) }}</div>
             <div class="token-sub">输入 {{ formatNumber(metrics.tokens?.input) }} · 输出 {{ formatNumber(metrics.tokens?.output) }}</div>
           </div>
           <div class="token-card">
-            <div class="token-label">LLM 调用次数</div>
-            <div class="token-value">{{ formatNumber(metrics.by_kind?.llm?.count) }}</div>
-            <div class="token-sub">p95 {{ metrics.by_kind?.llm?.p95_ms || 0 }} ms</div>
-          </div>
-          <div class="token-card">
             <div class="token-label">平均每次 Token</div>
             <div class="token-value">{{ formatNumber(avgTokens) }}</div>
             <div class="token-sub">输入 + 输出 / 调用次数</div>
+          </div>
+          <div class="token-card">
+            <div class="token-label">LLM 调用</div>
+            <div class="token-value">{{ formatNumber(metrics.overview?.llm_calls) }}</div>
+            <div class="token-sub">p95 {{ formatNumber(metrics.by_kind?.llm?.p95_ms) }} ms</div>
+          </div>
+        </div>
+
+        <div class="page-card timeline-card" v-if="metrics.timeline?.length">
+          <div class="page-card-body">
+            <div class="timeline-head">
+              <div>
+                <h4>请求与 Token 趋势</h4>
+                <span class="muted">按小时聚合</span>
+              </div>
+              <span class="timeline-total">请求 {{ formatNumber(metrics.overview?.requests) }} · Token {{ formatNumber(metrics.overview?.tokens) }}</span>
+            </div>
+            <div class="timeline-chart">
+              <div v-for="(point, index) in metrics.timeline" :key="point.hour" class="bar-col">
+                <div class="bar-stack">
+                  <div class="bar request" :style="{ height: requestHeight(point.requests) + '%' }" :title="`${point.hour} 请求 ${point.requests}`"></div>
+                </div>
+                <div class="bar-label" v-if="hours <= 24 || index % 6 === 0">{{ point.hour.slice(11, 13) }}</div>
+              </div>
+            </div>
+            <div class="timeline-chart token-chart">
+              <div v-for="(point, index) in metrics.timeline" :key="`t-${point.hour}`" class="bar-col">
+                <div class="bar-stack">
+                  <div class="bar token" :style="{ height: tokenHeight(point.tokens) + '%' }" :title="`${point.hour} Token ${point.tokens}`"></div>
+                </div>
+                <div class="bar-label" v-if="hours <= 24 || index % 6 === 0">{{ point.hour.slice(11, 13) }}</div>
+              </div>
+            </div>
+            <div class="timeline-legend">
+              <span><i class="legend request"></i>请求量</span>
+              <span><i class="legend token"></i>LLM Token</span>
+            </div>
           </div>
         </div>
 
@@ -44,6 +119,26 @@
               </el-table-column>
               <el-table-column label="调用" width="100">
                 <template #default="{ row }">{{ formatNumber(row.calls) }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+
+        <div class="page-card" style="margin-top:14px" v-if="metrics.top_names?.length">
+          <div class="page-card-body">
+            <h4 style="margin:0 0 10px">调用排行</h4>
+            <el-table :data="metrics.top_names" size="small" stripe>
+              <el-table-column prop="kind" label="类型" width="90" />
+              <el-table-column prop="name" label="名称" min-width="260" show-overflow-tooltip />
+              <el-table-column prop="count" label="次数" width="100" />
+              <el-table-column label="错误率" width="110">
+                <template #default="{ row }">{{ (row.error_rate * 100).toFixed(1) }}%</template>
+              </el-table-column>
+              <el-table-column label="P95" width="110">
+                <template #default="{ row }">{{ row.p95_ms }} ms</template>
+              </el-table-column>
+              <el-table-column label="Token" width="120">
+                <template #default="{ row }">{{ formatNumber(row.tokens) }}</template>
               </el-table-column>
             </el-table>
           </div>
@@ -77,6 +172,12 @@
       </el-tab-pane>
 
       <el-tab-pane label="后台任务" name="jobs">
+        <div class="mini-grid">
+          <div v-for="item in jobSummary" :key="item.key" class="mini-card">
+            <div class="mini-label">{{ item.label }}</div>
+            <div class="mini-value" :class="item.className">{{ formatNumber(item.value) }}</div>
+          </div>
+        </div>
         <div class="page-card">
           <div class="page-card-body">
             <div style="display:flex;gap:10px;margin-bottom:12px">
@@ -114,6 +215,12 @@
       </el-tab-pane>
 
       <el-tab-pane label="Agent 任务" name="agent">
+        <div class="mini-grid">
+          <div v-for="item in agentSummary" :key="item.key" class="mini-card">
+            <div class="mini-label">{{ item.label }}</div>
+            <div class="mini-value" :class="item.className">{{ formatNumber(item.value) }}</div>
+          </div>
+        </div>
         <div class="page-card">
           <div class="page-card-body">
             <div style="display:flex;gap:10px;margin-bottom:12px">
@@ -196,8 +303,9 @@ import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 
 const tab = ref('metrics')
+const hours = ref(24)
 const loading = reactive({ metrics: false, jobs: false, agent: false, context: false, automation: false })
-const metrics = ref<any>({ by_kind: {}, slowest: [], tokens: {} })
+const metrics = ref<any>({ by_kind: {}, slowest: [], tokens: {}, overview: {}, timeline: [], top_names: [], jobs: {}, agents: {} })
 const jobs = ref<any[]>([])
 const jobStatus = ref('')
 const goal = ref('')
@@ -221,6 +329,38 @@ function formatNumber(value: any) {
   return Number.isFinite(number) ? number.toLocaleString('zh-CN') : '0'
 }
 
+const jobSummary = computed(() => {
+  const j = metrics.value?.jobs || {}
+  return [
+    { key: 'queued', label: '排队', value: j.queued, className: '' },
+    { key: 'running', label: '运行中', value: j.running, className: 'warn' },
+    { key: 'done', label: '完成', value: j.done, className: 'ok' },
+    { key: 'failed', label: '失败', value: j.failed, className: 'danger' },
+    { key: 'dead', label: '死信', value: j.dead, className: 'danger' },
+  ]
+})
+
+const agentSummary = computed(() => {
+  const a = metrics.value?.agents || {}
+  return [
+    { key: 'active', label: '活跃', value: a.active, className: 'warn' },
+    { key: 'done', label: '完成', value: a.done, className: 'ok' },
+    { key: 'failed', label: '失败', value: a.failed, className: 'danger' },
+    { key: 'waiting', label: '待审批', value: a.waiting_approval, className: 'warn' },
+    { key: 'queued', label: '排队', value: a.queued, className: '' },
+  ]
+})
+
+const maxRequests = computed(() => Math.max(...(metrics.value?.timeline || []).map((p: any) => p.requests), 1))
+const maxTokens = computed(() => Math.max(...(metrics.value?.timeline || []).map((p: any) => p.tokens), 1))
+
+function requestHeight(value: number) {
+  return Math.max(2, Math.round((value / maxRequests.value) * 100))
+}
+function tokenHeight(value: number) {
+  return Math.max(2, Math.round((value / maxTokens.value) * 100))
+}
+
 const avgTokens = computed(() => {
   const calls = Number(metrics.value?.by_kind?.llm?.count || 0)
   const total = Number(metrics.value?.tokens?.total || 0)
@@ -239,7 +379,7 @@ function jobTag(status: string) {
 
 async function loadMetrics() {
   loading.metrics = true
-  try { metrics.value = (await client.get('/metrics')).data } finally { loading.metrics = false }
+  try { metrics.value = (await client.get('/metrics', { params: { hours: hours.value } })).data } finally { loading.metrics = false }
 }
 async function loadJobs() {
   loading.jobs = true
@@ -319,4 +459,42 @@ onMounted(refreshAll)
 .metric-sub { font-size: 11px; color: #909399; margin-top: 4px; }
 .json-box { margin-top: 12px; background: #f5f7fa; border-radius: 8px; padding: 12px; font-size: 12px; overflow: auto; max-height: 420px; }
 @media (max-width: 900px) { .token-grid { grid-template-columns: 1fr; } }
+
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.overview-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.overview-card { background: #fff; border: 1px solid #ebeef5; border-radius: 12px; padding: 14px; }
+.overview-card.accent { background: linear-gradient(135deg, #eef2ff, #f5f3ff); border-color: #ddd6fe; }
+.overview-label { font-size: 11px; color: #909399; }
+.overview-value { margin-top: 4px; font-size: 24px; font-weight: 800; color: #1f2937; font-variant-numeric: tabular-nums; }
+.overview-value small { font-size: 11px; font-weight: 500; color: #909399; margin-left: 2px; }
+.overview-value.danger { color: #dc2626; }
+.overview-card.accent .overview-value { color: #4338ca; }
+.overview-sub { margin-top: 3px; font-size: 10.5px; color: #a0a6b3; }
+.timeline-card { margin-top: 14px; }
+.timeline-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.timeline-head h4 { margin: 0; font-size: 14px; color: #303133; }
+.timeline-total { font-size: 12px; color: #909399; }
+.timeline-chart { display: flex; align-items: flex-end; gap: 3px; height: 100px; padding-top: 10px; }
+.token-chart { height: 72px; margin-top: 10px; }
+.bar-col { flex: 1; min-width: 2px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+.bar-stack { width: 100%; height: 100%; display: flex; align-items: flex-end; }
+.bar { width: 100%; min-height: 2px; border-radius: 3px 3px 1px 1px; transition: height .2s; }
+.bar.request { background: linear-gradient(180deg, #60a5fa, #6366f1); }
+.bar.token { background: linear-gradient(180deg, #c084fc, #8b5cf6); }
+.bar-label { font-size: 8px; color: #a0a6b3; margin-top: 3px; height: 10px; }
+.timeline-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: #909399; }
+.timeline-legend span { display: flex; align-items: center; gap: 5px; }
+.legend { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.legend.request { background: #6366f1; }
+.legend.token { background: #8b5cf6; }
+.mini-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.mini-card { background: #fff; border: 1px solid #ebeef5; border-radius: 10px; padding: 12px; }
+.mini-label { font-size: 11px; color: #909399; }
+.mini-value { font-size: 22px; font-weight: 800; margin-top: 3px; color: #303133; }
+.mini-value.ok { color: #059669; }
+.mini-value.warn { color: #d97706; }
+.mini-value.danger { color: #dc2626; }
+.muted { color: #909399; font-size: 11px; }
+@media (max-width: 1100px) { .overview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .overview-grid, .mini-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
