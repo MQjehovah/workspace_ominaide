@@ -50,10 +50,6 @@
         <el-icon><Document /></el-icon>
         <span>笔记</span>
       </el-menu-item>
-      <el-menu-item index="/device">
-        <el-icon><Cellphone /></el-icon>
-        <span>设备</span>
-      </el-menu-item>
       <el-menu-item index="/projects">
         <el-icon><Cpu /></el-icon>
         <span>项目</span>
@@ -65,13 +61,17 @@
         <el-icon><ChatDotRound /></el-icon>
         <span>助手管理</span>
       </el-menu-item>
-      <el-menu-item v-if="isAdmin" index="/admin/users">
-        <el-icon><User /></el-icon>
-        <span>用户管理</span>
+      <el-menu-item index="/device">
+        <el-icon><Cellphone /></el-icon>
+        <span>设备端</span>
       </el-menu-item>
       <el-menu-item v-if="isAdmin" index="/admin/desktop">
         <el-icon><Monitor /></el-icon>
         <span>桌面端</span>
+      </el-menu-item>
+      <el-menu-item v-if="isAdmin" index="/admin/users">
+        <el-icon><User /></el-icon>
+        <span>用户管理</span>
       </el-menu-item>
       <el-menu-item v-if="isAdmin" index="/admin/runtime">
         <el-icon><Odometer /></el-icon>
