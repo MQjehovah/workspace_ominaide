@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from core.database.session import async_session
 from core.events.bus import record_event
-from core.events.models import UserActivity
+from core.activities.models import UserActivity
 from core.logging import get_logger
 from core.mcp_hub.models import McpServer
 from core.timeutil import naive_local

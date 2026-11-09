@@ -11,7 +11,7 @@ import plugins.notes.backend.models  # noqa
 import plugins.music.backend.models  # noqa
 import plugins.mail.backend.models  # noqa
 import core.database.redis  # noqa
-import core.events.models  # noqa
+import core.activities.models  # noqa
 import plugins.notifications.backend.models  # noqa
 import plugins.chat.backend.models  # noqa
 import core.objects.models  # noqa

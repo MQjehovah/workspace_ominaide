@@ -252,7 +252,7 @@ async def dingtalk_items(
     changes. Request handlers must never launch the dws CLI: the sync owns that
     work, and the workbench must stay fast (the CLI takes seconds).
     """
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
 
     # The scheduler syncs once a day; keep the latest day (two days of slack)
     # so a missed sync does not empty the inbox. Keyword search looks wider.

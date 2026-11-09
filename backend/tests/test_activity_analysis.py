@@ -84,7 +84,7 @@ async def test_execute_suggestion_creates_todo(client):
 
 
 async def test_calendar_event_callback_enqueues_job(monkeypatch):
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
     from plugins.schedule.backend import external_sync
 
     calls = []

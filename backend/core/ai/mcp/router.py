@@ -38,7 +38,7 @@ async def call_tool(
     try:
         from core.database.session import async_session
         from core.events.bus import record_event
-        from core.events.preview import preview_arguments
+        from core.activities.preview import preview_arguments
 
         is_error = bool(payload.get("isError"))
         keys = sorted(str(k) for k in (req.arguments or {}).keys())[:20]

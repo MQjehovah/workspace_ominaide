@@ -172,7 +172,7 @@ async def list_activities(user_id: int, args: dict) -> dict:
     entity_type = args.get("entity_type")
     days = int(args.get("days", 7) or 7)
     async with async_session() as db:
-        from core.events.models import UserActivity
+        from core.activities.models import UserActivity
         from sqlalchemy import desc
         q = select(UserActivity).where(UserActivity.user_id == user_id)
         if event_type:
@@ -200,7 +200,7 @@ async def activity_stats(user_id: int, args: dict) -> dict:
     days = int(args.get("days", 7) or 7)
     since = datetime.utcnow() - timedelta(days=days)
     async with async_session() as db:
-        from core.events.models import UserActivity
+        from core.activities.models import UserActivity
         from sqlalchemy import func
         r = await db.execute(
             select(UserActivity).where(

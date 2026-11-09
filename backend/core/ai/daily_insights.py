@@ -45,7 +45,7 @@ async def collect_day_data(user_id: int, day: date) -> dict:
     Only rows belonging to ``user_id`` and falling inside the day are read.
     """
     from core.database.session import async_session
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
     from plugins.chat.backend.models import ChatMessage
     from plugins.schedule.backend.models import Event
     from plugins.todo.backend.models import PluginTodoItem

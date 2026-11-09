@@ -30,7 +30,7 @@ async def _new_user(client) -> tuple[str, int]:
 async def _add_activity(user_id: int, day: date, hour: int = 10, event_type: str = "app.used",
                         summary: str = "", details: dict | None = None) -> int:
     from core.database.session import async_session
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
 
     async with async_session() as db:
         e = UserActivity(

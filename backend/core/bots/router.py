@@ -372,7 +372,7 @@ async def decide_approval(
 
         try:
             from core.events.bus import record_event
-            from core.events.preview import preview_arguments
+            from core.activities.preview import preview_arguments
 
             approved = bool(payload.approved)
             await record_event(

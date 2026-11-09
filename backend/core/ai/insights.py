@@ -35,7 +35,7 @@ async def discover_insights(user_id: int):
         return
     from sqlalchemy import select, func
     from core.database.session import async_session
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
     from plugins.schedule.backend.models import Event
     from core.auth.domain.models import UserProfile
     import json as _json

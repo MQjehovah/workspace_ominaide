@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from core.database.session import get_db
 from core.auth.dependencies import get_current_user
-from core.events.models import UserActivity
+from core.activities.models import UserActivity
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 

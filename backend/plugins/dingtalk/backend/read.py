@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from core.database.session import async_session
-from core.events.models import UserActivity
+from core.activities.models import UserActivity
 from core.logging import get_logger
 from plugins.dingtalk.backend import mcp
 from plugins.dingtalk.backend.models import DingTalkConversation

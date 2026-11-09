@@ -87,7 +87,7 @@ async def test_user_cannot_register_dingtalk_mcp(client):
 async def test_dingtalk_unread_count_controls_pending_state(client):
     from core.cos import collectors
     from core.database.session import async_session
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
 
     _, user_id = await _new_user(client)
     async with async_session() as db:
@@ -159,7 +159,7 @@ async def test_conversation_ids_with_slashes_can_load_messages(client):
 
 async def test_mark_read_clears_local_unread_state(client, monkeypatch):
     from core.database.session import async_session
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
     from plugins.dingtalk.backend.models import DingTalkConversation
 
     from plugins.dingtalk.backend import read as dingtalk_read

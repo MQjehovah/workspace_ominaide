@@ -188,7 +188,7 @@ async def test_weekly_review_uses_daily_insights(client):
 async def test_dingtalk_items_read_synced_conversations(client):
     token, user_id = await _new_user(client)
     from core.database.session import async_session
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
     from core.cos import collectors
 
     async with async_session() as db:

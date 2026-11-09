@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
-from core.events.middleware import ActivityMiddleware
+from core.activities.middleware import ActivityMiddleware
 from core.config.settings import settings as app_settings
 from core.logging import configure_logging, get_logger
 from core.observability.context import get_trace_id
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     import plugins.notes.backend.models  # noqa
     import plugins.mail.backend.models  # noqa
     import plugins.music.backend.models  # noqa
-    import core.events.models  # noqa
+    import core.activities.models  # noqa
     import plugins.notifications.backend.models  # noqa
     import plugins.chat.backend.models  # noqa
     import core.coding.models  # noqa
@@ -244,7 +244,7 @@ from core.skills.router import router as skills_router, bots_router as bot_skill
 app.include_router(skills_router)
 app.include_router(bot_skills_router)
 
-from core.events.router import router as activities_router
+from core.activities.router import router as activities_router
 app.include_router(activities_router)
 
 from core.objects.router import router as objects_router

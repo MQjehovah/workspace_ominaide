@@ -14,7 +14,7 @@ from sqlalchemy import select, update
 from core.config.settings import settings
 from core.cos.context import build_context
 from core.database.session import async_session
-from core.events.models import UserActivity
+from core.activities.models import UserActivity
 from core.insights.models import ActivitySuggestion
 from core.logging import get_logger
 

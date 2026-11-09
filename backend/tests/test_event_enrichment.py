@@ -2,7 +2,7 @@
 
 
 def test_argument_preview_redacts_and_bounds():
-    from core.events.preview import preview_arguments
+    from core.activities.preview import preview_arguments
 
     preview = preview_arguments({
         "query": "x" * 300,
@@ -17,7 +17,7 @@ def test_argument_preview_redacts_and_bounds():
 
 
 def test_generic_activity_summaries_are_specific():
-    from core.events.middleware import _derive_event_type, _make_summary
+    from core.activities.middleware import _derive_event_type, _make_summary
 
     event_type = _derive_event_type("POST", "/api/bots/1/routines/2/run")
     assert _make_summary("POST", "/api/bots/1/routines/2/run", event_type) == "运行 Bot 例行任务"

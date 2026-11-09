@@ -55,7 +55,7 @@ async def _seed_user_data(user_id: int) -> None:
     from core.coding.models import CodingRun
     from core.skills.models import BotSkill
     from core.database.session import async_session
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
     from core.jobs.models import BackgroundJob
     from core.mcp_hub.models import McpServer, McpTool
     from core.objects.models import BusinessComment
@@ -197,7 +197,7 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
     from core.coding.models import CodingRun
     from core.skills.models import BotSkill
     from core.database.session import async_session
-    from core.events.models import UserActivity
+    from core.activities.models import UserActivity
     from core.jobs.models import BackgroundJob
     from core.mcp_hub.models import McpServer, McpTool
     from core.observability.models import RequestTrace
