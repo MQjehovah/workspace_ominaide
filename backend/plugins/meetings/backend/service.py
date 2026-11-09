@@ -12,8 +12,8 @@ from sqlalchemy import select
 from core.config.settings import settings
 from core.ai.llm import llm_json
 from core.database.session import async_session
-from core.meetings.asr import AsrError, transcribe_minio_object
-from core.meetings.models import MeetingMinutesJob
+from core.ai.asr import AsrError, transcribe_minio_object
+from plugins.meetings.backend.models import MeetingMinutesJob
 
 _tasks: set[asyncio.Task] = set()
 _semaphore: asyncio.Semaphore | None = None

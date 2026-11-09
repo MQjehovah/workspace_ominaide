@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.dependencies import get_current_user
 from core.database.session import get_db
-from core.meetings.models import MeetingMinutesJob
-from core.meetings.service import delete_job, schedule_job
+from plugins.meetings.backend.models import MeetingMinutesJob
+from plugins.meetings.backend.service import delete_job, schedule_job
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 

@@ -50,7 +50,7 @@ async def test_create_list_and_delete_meeting_minutes(client, monkeypatch):
     token, user_id = await _new_user(client)
     file_id = await _seed_audio(user_id)
 
-    from core.meetings import router as meetings_router
+    from plugins.meetings.backend import router as meetings_router
 
     scheduled: list[int] = []
     monkeypatch.setattr(meetings_router, "schedule_job", scheduled.append)
@@ -97,8 +97,8 @@ async def test_meeting_job_produces_note(client, monkeypatch):
     file_id = await _seed_audio(user_id)
 
     from core.database.session import async_session
-    from core.meetings.models import MeetingMinutesJob
-    from core.meetings import service as meetings_service
+    from plugins.meetings.backend.models import MeetingMinutesJob
+    from plugins.meetings.backend import service as meetings_service
 
     async with async_session() as db:
         job = MeetingMinutesJob(

@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
     import core.automation.models  # noqa
     import core.captures.models  # noqa
     import core.people.models  # noqa
-    import core.meetings.models  # noqa
+    import plugins.meetings.backend.models  # noqa
     import core.skills.models  # noqa
     import core.observability.models  # noqa
     import core.jobs.models  # noqa
@@ -94,10 +94,8 @@ async def lifespan(app: FastAPI):
     await mcp_hub.startup()
 
     from core.bots.runner import recover_runs
-    from core.meetings.service import recover_pending_jobs
 
     await recover_runs()
-    await recover_pending_jobs()
     routine_task = asyncio.create_task(routine_loop())
     from core.ai.clients import warm_voice_clients
     warm_task = asyncio.create_task(warm_voice_clients())
@@ -227,9 +225,6 @@ app.include_router(context_router)
 
 from core.agent.router import router as agent_router
 app.include_router(agent_router)
-
-from core.meetings.router import router as meetings_router
-app.include_router(meetings_router)
 
 from core.workbench.router import router as workbench_router
 app.include_router(workbench_router)

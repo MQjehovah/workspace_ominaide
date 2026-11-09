@@ -1,4 +1,5 @@
 import json
+import sys
 import zipfile
 import shutil
 import importlib.util
@@ -97,6 +98,9 @@ async def _register_plugin_routes(app: FastAPI, name: str, plugin_dir: Path):
     if not (spec and spec.loader):
         return
     module = importlib.util.module_from_spec(spec)
+    # Keep one module instance per plugin so imports and the mounted router
+    # share the same objects (monkeypatching, module-level state, etc.).
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
 
     mounted: set[int] = set()
@@ -138,6 +142,7 @@ async def _run_plugin_lifecycle(plugin_name: str, plugin_dir: Path, hook: str) -
     if not (spec and spec.loader):
         return
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     fn = getattr(module, hook, None)
     if callable(fn):
@@ -156,6 +161,7 @@ def _register_plugin_jobs(plugin_name: str, plugin_dir: Path) -> None:
     if not (spec and spec.loader):
         return
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     from core.scheduler import scheduler
 
@@ -174,6 +180,7 @@ def _register_plugin_tools(manifest: dict, plugin_name: str):
         spec = importlib.util.spec_from_file_location(module_name, tools_path)
         if spec and spec.loader:
             module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
             spec.loader.exec_module(module)
             register = getattr(module, "register", None)
             if callable(register):

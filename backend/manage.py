@@ -23,7 +23,7 @@ import core.graph.models  # noqa
 import core.jobs.models  # noqa
 import core.observability.models  # noqa
 import core.skills.models  # noqa
-import core.meetings.models  # noqa
+import plugins.meetings.backend.models  # noqa
 import core.bots.models  # noqa
 import core.automation.models  # noqa
 import core.captures.models  # noqa

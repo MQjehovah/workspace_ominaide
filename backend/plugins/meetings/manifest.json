@@ -1,0 +1,12 @@
+{
+  "id": "meetings",
+  "name": "meetings",
+  "version": "1.0.0",
+  "title": "会议",
+  "description": "会议音频转写与纪要",
+  "icon": "Microphone",
+  "permissions": [],
+  "routes": {
+    "main": "/meetings"
+  }
+}

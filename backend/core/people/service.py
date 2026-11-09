@@ -345,7 +345,7 @@ async def merge_people(user_id: int, primary_id: int, duplicate_id: int) -> bool
 
 async def backfill_user(user_id: int) -> dict:
     """Rebuild the people index for one user from existing records."""
-    from core.meetings.models import MeetingMinutesJob
+    from plugins.meetings.backend.models import MeetingMinutesJob
     from core.memory_models import MemoryRecord
     from plugins.files.backend.models import File
     from plugins.mail.backend.models import MailMessage

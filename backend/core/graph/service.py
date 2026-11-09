@@ -125,7 +125,7 @@ async def object_title(user_id: int, object_type: str, object_id: int) -> dict |
                 else None
             )
         if object_type == "meeting":
-            from core.meetings.models import MeetingMinutesJob
+            from plugins.meetings.backend.models import MeetingMinutesJob
 
             row = await db.get(MeetingMinutesJob, object_id)
             return (
@@ -190,7 +190,7 @@ async def build_context(
             from plugins.mail.backend.models import MailMessage
             from plugins.schedule.backend.models import Event
             from plugins.todo.backend.models import PluginTodoItem
-            from core.meetings.models import MeetingMinutesJob
+            from plugins.meetings.backend.models import MeetingMinutesJob
 
             notes = (
                 await db.execute(
