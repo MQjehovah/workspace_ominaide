@@ -18,7 +18,7 @@
             <div class="session-title">{{ s.title || '未命名对话' }}</div>
             <div class="session-time">{{ formatTime(s.updated_at) }}</div>
           </div>
-          <el-button link size="small" @click.stop="removeSession(s.session_id)">删</el-button>
+          <button type="button" class="session-del" title="删除会话" @click.stop="removeSession(s.session_id)">×</button>
         </div>
         <div v-if="sessions.length === 0" class="pane-empty">还没有会话</div>
       </aside>
@@ -566,4 +566,35 @@ onMounted(async () => {
 .composer .el-input { flex: 1; }
 .composer :deep(.el-textarea__inner) { border: none; box-shadow: none; background: transparent; padding: 4px 6px; font-size: 13.5px; }
 .context-bar { padding-top: 8px; }
+
+.session-row { position: relative; padding-right: 30px; }
+.session-del {
+  position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px; border: none; border-radius: 6px;
+  background: transparent; color: #b0b7c3; font-size: 16px; line-height: 18px;
+  cursor: pointer; opacity: 0; transition: opacity .15s, background .15s, color .15s;
+}
+.session-row:hover .session-del, .session-row.active .session-del { opacity: 1; }
+.session-del:hover { background: #fee2e2; color: #dc2626; }
+.session-row.active .session-title { color: #3730a3; font-weight: 600; }
+.message-row { margin-bottom: 26px; }
+.bubble { font-size: 13.5px; line-height: 1.8; padding: 12px 16px; }
+.message-row.assistant .bubble { background: #fff; border-color: #e8edf5; }
+.md-body :deep(h1), .md-body :deep(h2), .md-body :deep(h3), .md-body :deep(h4) { margin: 14px 0 7px; line-height: 1.4; color: #111827; }
+.md-body :deep(h1) { font-size: 17px; }
+.md-body :deep(h2) { font-size: 15.5px; }
+.md-body :deep(h3) { font-size: 14.5px; }
+.md-body :deep(blockquote) { margin: 8px 0; padding: 6px 12px; border-left: 3px solid #c7d2fe; color: #6b7280; background: #f8faff; }
+.md-body :deep(table) { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 12px; }
+.md-body :deep(th), .md-body :deep(td) { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; }
+.md-body :deep(th) { background: #f8fafc; }
+.md-body :deep(hr) { border: none; border-top: 1px solid #eef0f4; margin: 12px 0; }
+.msg-meta { opacity: 0; transition: opacity .15s; }
+.message-row:hover .msg-meta { opacity: 1; }
+@media (max-width: 900px) {
+  .chat-layout { grid-template-columns: 1fr; height: auto; }
+  .session-pane { display: none; }
+  .message-pane { min-height: calc(100vh - 120px); }
+  .msg-main { max-width: 92%; }
+}
 </style>
