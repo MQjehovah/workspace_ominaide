@@ -49,6 +49,20 @@ async def test_resolve_entity_by_email_alias(client):
         assert first.id == second.id
 
 
+async def test_same_name_can_belong_to_two_entity_types(client):
+    token, user_id = await _new_user(client)
+    from ai.entities.service import resolve_entity
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        person = await resolve_entity(db, user_id, "person", "张三")
+        project = await resolve_entity(db, user_id, "project", "张三")
+        await db.commit()
+    assert person.id != project.id
+    assert person.type == "person"
+    assert project.type == "project"
+
+
 async def test_mention_and_relation_are_user_scoped(client):
     token, user_id = await _new_user(client)
     from ai.entities.service import add_mention, add_relation, resolve_entity
@@ -134,6 +148,56 @@ async def test_memory_edges_backfill_is_idempotent(client):
     second = await backfill_memory_edges()
     assert first["mentions_created"] >= 1
     assert second["mentions_created"] == 0
+
+    from sqlalchemy import select
+    from ai.entities.models import Entity, EntityMention
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        entity = (await db.execute(
+            select(Entity).where(
+                Entity.user_id == user_id,
+                Entity.type == "person",
+                Entity.canonical_name == "张三",
+            )
+        )).scalar_one()
+        mention = (await db.execute(
+            select(EntityMention).where(
+                EntityMention.user_id == user_id,
+                EntityMention.entity_id == entity.id,
+                EntityMention.source_type == "memory",
+            )
+        )).scalar_one()
+        assert mention.source_id == memory.id
+        assert "张三" in (mention.quote or "")
+
+
+async def test_entity_reads_are_user_scoped(client):
+    token_a, user_a = await _new_user(client)
+    token_b, user_b = await _new_user(client)
+    from ai.entities.service import (
+        add_mention,
+        mentions_for_entities,
+        related_entities,
+        resolve_entity,
+    )
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        person = await resolve_entity(db, user_a, "person", "隔离张三")
+        project = await resolve_entity(db, user_a, "project", "隔离项目")
+        from ai.entities.service import add_relation
+
+        await add_relation(db, user_a, person.id, project.id, "owns")
+        await add_mention(
+            db, user_a, person.id,
+            source_type="memory", source_id=99, quote="隔离测试",
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        assert await mentions_for_entities(db, user_b, [person.id]) == []
+        assert await related_entities(db, user_b, [person.id]) == []
 
 
 async def test_entity_tables_and_user_isolation(client):

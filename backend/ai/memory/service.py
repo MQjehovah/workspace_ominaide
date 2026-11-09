@@ -365,7 +365,8 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
         try:
             from ai.entities.extract import attach_memory_entities
 
-            await attach_memory_entities(db, user_id, record)
+            async with db.begin_nested():
+                await attach_memory_entities(db, user_id, record)
         except Exception as e:
             log.warning(f"[memory] entity attach failed: {e}")
         cand.status = "approved"
@@ -428,6 +429,23 @@ async def list_records(user_id: int, query: str = "", limit: int = 100):
     return rows
 
 
+async def _close_memory_proposals(user_id: int, memory_id: int) -> None:
+    from ai.cognition.models import Proposal
+
+    async with async_session() as db:
+        await db.execute(
+            update(Proposal)
+            .where(
+                Proposal.user_id == user_id,
+                Proposal.source == "memory",
+                Proposal.status.in_(("new", "seen", "snoozed", "accepted", "executing")),
+                Proposal.dedupe_key.like(f"memory:{memory_id}:%"),
+            )
+            .values(status="expired")
+        )
+        await db.commit()
+
+
 async def forget_record(user_id: int, record_id: int) -> bool:
     async with async_session() as db:
         row = (await db.execute(
@@ -441,6 +459,7 @@ async def forget_record(user_id: int, record_id: int) -> bool:
         row.status = "deleted"
         row.valid_to = datetime.utcnow()
         await db.commit()
+    await _close_memory_proposals(user_id, record_id)
     try:
         from ai.retrieval import vector_store
 
@@ -452,7 +471,7 @@ async def forget_record(user_id: int, record_id: int) -> bool:
 
 async def update_record(
     user_id: int, record_id: int, content: str | None = None,
-    importance: int | None = None,
+    importance: int | None = None, state: str | None = None,
 ) -> MemoryRecord | None:
     async with async_session() as db:
         row = (await db.execute(
@@ -480,6 +499,8 @@ async def update_record(
             row.normalized = new_norm
         if importance is not None:
             row.importance = max(0, min(int(importance), 100))
+        if state:
+            row.data = {**(row.data or {}), "state": str(state)[:20]}
         try:
             await db.commit()
         except Exception as e:
@@ -495,6 +516,8 @@ async def update_record(
         ))
         await _link_edges(db, user_id, row)
         await db.commit()
+    if state and state != "open":
+        await _close_memory_proposals(user_id, record_id)
     await _index_record(user_id, row)
     return row
 

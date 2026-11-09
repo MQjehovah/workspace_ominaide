@@ -78,7 +78,8 @@ async def resolve_entity(
     for entity in entities:
         if normalize_name(entity.canonical_name) == normalized:
             await _ensure_alias(
-                db, user_id, entity.id, raw, alias_type, source, confidence
+                db, user_id, entity.id, entity.type, raw, alias_type,
+                source, confidence,
             )
             return entity
 
@@ -93,6 +94,7 @@ async def _ensure_alias(
     db,
     user_id: int,
     entity_id: int,
+    entity_type: str,
     alias: str,
     alias_type: str,
     source: str | None,
@@ -104,6 +106,7 @@ async def _ensure_alias(
             EntityAlias.entity_id == entity_id,
             EntityAlias.alias == alias[:300],
             EntityAlias.alias_type == alias_type,
+            EntityAlias.entity_type == entity_type,
         )
     )).scalar_one_or_none()
     if existing is not None:
@@ -113,6 +116,7 @@ async def _ensure_alias(
         entity_id=entity_id,
         alias=alias[:300],
         alias_type=alias_type,
+        entity_type=entity_type,
         source=source,
         confidence=float(confidence),
     )
@@ -139,7 +143,8 @@ async def _create_entity(
     db.add(entity)
     await db.flush()
     await _ensure_alias(
-        db, user_id, entity.id, name, alias_type, source, confidence
+        db, user_id, entity.id, entity_type, name, alias_type,
+        source, confidence,
     )
     return entity
 

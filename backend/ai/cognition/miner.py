@@ -6,6 +6,7 @@ Situation-only reminders stay in the existing activity pipeline.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -15,7 +16,7 @@ from ai.cognition.models import Proposal
 from ai.cognition.proposals import create_proposal
 from ai.cognition.quality import evaluate
 from ai.cognition.situation import get_situation
-from ai.entities.service import normalize_name
+from ai.entities.service import normalize_name, resolve_entity
 from ai.memory.models import MemoryRecord
 from core.database.session import async_session
 from core.logging import get_logger
@@ -23,6 +24,7 @@ from core.logging import get_logger
 log = get_logger(__name__)
 
 OPEN_PROPOSAL_STATUSES = ("new", "seen", "snoozed", "accepted", "executing")
+_locks: dict[int, asyncio.Lock] = {}
 
 
 @dataclass
@@ -82,7 +84,7 @@ def _matches_text(text: str | None, names: list[str]) -> bool:
 
 def _quote(memory: MemoryRecord) -> str:
     data = memory.data if isinstance(memory.data, dict) else {}
-    return str(data.get("quote") or memory.content or "")[:200]
+    return str(data.get("quote") or "")[:200]
 
 
 def _base_evidence(memory: MemoryRecord, rule: str) -> dict:
@@ -90,6 +92,7 @@ def _base_evidence(memory: MemoryRecord, rule: str) -> dict:
         "memory_id": memory.id,
         "quote": _quote(memory),
         "state": "open",
+        "sensitivity": getattr(memory, "sensitivity", None),
         "rule": rule,
     }
 
@@ -97,17 +100,28 @@ def _base_evidence(memory: MemoryRecord, rule: str) -> dict:
 def _commitment_event_candidate(
     memory: MemoryRecord,
     snapshot: dict,
+    memory_entity_ids: set[int],
 ) -> MiningCandidate | None:
     names = _memory_names(memory)
     if not names:
         return None
     now = datetime.now()
     horizon = now + timedelta(hours=48)
+    situation_entities = snapshot.get("entities") or []
     for event in snapshot.get("calendar") or []:
         when = _event_time(event)
         if when is None or when < now - timedelta(hours=1) or when > horizon:
             continue
-        if not _matches_text(str(event.get("title") or ""), names):
+        event_id = _int_id(event.get("id"))
+        entity_match = any(
+            row.get("source_type") == "event"
+            and row.get("source_id") == event_id
+            and row.get("entity_id") in memory_entity_ids
+            for row in situation_entities
+        )
+        if not entity_match and not _matches_text(
+            str(event.get("title") or ""), names
+        ):
             continue
         due = when.isoformat(timespec="minutes")
         return MiningCandidate(
@@ -271,8 +285,35 @@ async def _duplicate(db, user_id: int, candidate: MiningCandidate) -> bool:
     return False
 
 
+async def _memory_entity_ids(db, user_id: int, memories: list[MemoryRecord]) -> dict[int, set[int]]:
+    result: dict[int, set[int]] = {}
+    for memory in memories:
+        data = memory.data if isinstance(memory.data, dict) else {}
+        ids: set[int] = set()
+        for entity_type, key in (
+            ("person", "person"),
+            ("project", "project"),
+            ("topic", "topic"),
+        ):
+            name = str(data.get(key) or "").strip()
+            if not name:
+                continue
+            entity = await resolve_entity(
+                db, user_id, entity_type, name, source="memory"
+            )
+            if entity is not None:
+                ids.add(entity.id)
+        result[memory.id] = ids
+    return result
+
+
 async def mine_user(user_id: int) -> dict:
-    snapshot = await get_situation(user_id, force=True)
+    lock = _locks.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        return await _mine_user_locked(user_id)
+
+
+async def _mine_user_locked(user_id: int) -> dict:
     async with async_session() as db:
         memories = list((await db.execute(
             select(MemoryRecord).where(
@@ -281,7 +322,11 @@ async def mine_user(user_id: int) -> dict:
                 MemoryRecord.kind.in_(("commitment", "open_loop")),
             )
         )).scalars().all())
+        entity_ids = await _memory_entity_ids(db, user_id, memories)
+        await db.commit()
 
+    snapshot = await get_situation(user_id, force=True)
+    async with async_session() as db:
         created = 0
         rejected = 0
         candidates = 0
@@ -291,7 +336,9 @@ async def mine_user(user_id: int) -> dict:
                 continue
             proposals: list[MiningCandidate] = []
             if memory.kind == "commitment":
-                event_candidate = _commitment_event_candidate(memory, snapshot)
+                event_candidate = _commitment_event_candidate(
+                    memory, snapshot, entity_ids.get(memory.id, set())
+                )
                 if event_candidate is not None:
                     proposals.append(event_candidate)
                 due_candidate = _commitment_due_candidate(memory)

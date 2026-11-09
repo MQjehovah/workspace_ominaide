@@ -36,6 +36,7 @@ async def _add_alias(
     db,
     user_id: int,
     entity_id: int,
+    entity_type: str,
     alias: str | None,
     alias_type: str,
     source: str,
@@ -49,6 +50,7 @@ async def _add_alias(
             EntityAlias.entity_id == entity_id,
             EntityAlias.alias == value[:300],
             EntityAlias.alias_type == alias_type,
+            EntityAlias.entity_type == entity_type,
         )
     )).scalar_one_or_none()
     if existing is None:
@@ -57,6 +59,7 @@ async def _add_alias(
             entity_id=entity_id,
             alias=value[:300],
             alias_type=alias_type,
+            entity_type=entity_type,
             source=source,
             confidence=1.0,
         ))
@@ -82,10 +85,12 @@ async def seed_from_profile(db, user_id: int) -> dict:
         if entity is None:
             continue
         await _add_alias(
-            db, user_id, entity.id, contact.get("email"), "email", "profile"
+            db, user_id, entity.id, entity.type,
+            contact.get("email"), "email", "profile",
         )
         await _add_alias(
-            db, user_id, entity.id, contact.get("phone"), "phone", "profile"
+            db, user_id, entity.id, entity.type,
+            contact.get("phone"), "phone", "profile",
         )
     for project in _loads(profile.projects):
         if not isinstance(project, dict):

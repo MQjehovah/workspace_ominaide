@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 
-from ai.entities.extract import attach_memory_entities
 from ai.entities.models import EntityMention
-from ai.entities.service import resolve_entity
+from ai.entities.service import add_mention, resolve_entity
 from ai.memory.models import MemoryEdge, MemoryRecord
 from core.database.session import async_session
 
@@ -41,15 +40,15 @@ async def backfill_memory_edges() -> dict:
                 )
             )).scalar_one() or 0)
             if before == 0:
-                await attach_memory_entities(db, edge.user_id, record)
-                after = int((await db.execute(
-                    select(func.count()).select_from(EntityMention).where(
-                        EntityMention.user_id == edge.user_id,
-                        EntityMention.entity_id == entity.id,
-                        EntityMention.source_type == "memory",
-                        EntityMention.source_id == record.id,
-                    )
-                )).scalar_one() or 0)
-                created += max(0, after - before)
+                await add_mention(
+                    db,
+                    edge.user_id,
+                    entity.id,
+                    source_type="memory",
+                    source_id=record.id,
+                    quote=str(record.content or "")[:300],
+                    role="mentions",
+                )
+                created += 1
         await db.commit()
     return {"edges": len(edges), "mentions_created": created}

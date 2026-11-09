@@ -207,6 +207,7 @@ class CandidateApprove(BaseModel):
 class RecordUpdate(BaseModel):
     content: str | None = None
     importance: int | None = None
+    state: str | None = None
 
 
 @router.get("/candidates")
@@ -306,7 +307,9 @@ async def update_record(
     from ai.memory.service import update_record as update
 
     try:
-        row = await update(user["id"], record_id, req.content, req.importance)
+        row = await update(
+            user["id"], record_id, req.content, req.importance, req.state
+        )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     if row is None:

@@ -56,7 +56,11 @@ class EntityAlias(Base):
     __tablename__ = "entity_aliases"
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "alias", "alias_type", name="uq_entity_alias"
+            "user_id",
+            "alias",
+            "alias_type",
+            "entity_type",
+            name="uq_entity_alias",
         ),
         Index("ix_entity_aliases_entity", "entity_id"),
     )
@@ -76,6 +80,8 @@ class EntityAlias(Base):
     alias = Column(String(300), nullable=False)
     # name / email / phone / dingtalk / nickname
     alias_type = Column(String(24), nullable=False, default="name")
+    # person / organization / project / topic / goal
+    entity_type = Column(String(32), nullable=False, default="person")
     source = Column(String(60), nullable=True)
     confidence = Column(Float, nullable=False, default=1.0)
     created_at = Column(DateTime, server_default=func.now())

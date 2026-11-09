@@ -1137,16 +1137,16 @@ mobile/lib/services/api_service.dart
 
 - [ ] ? Bot ????????????
 
-## 16. ?? v2?Memory x Situation?P0 ????
+## 16. 提案 v2：Memory × Situation（P0 已完成）
 
-?????[2026-11-09-proposal-mining-v2.md](2026-11-09-proposal-mining-v2.md)
+实现计划：[2026-11-09-proposal-mining-v2.md](2026-11-09-proposal-mining-v2.md)
 
-- [x] ????? `entities` / `entity_aliases` / `entity_mentions` / `entity_relations`
-- [x] `memory_edges` ???????
-- [x] Situation ????
-- [x] `MemoryRecord.data` ????person/project/topic/due_at/state/quote?
-- [x] Memory x Situation ???????
-- [x] ??????????? Job
-- [x] ?????????????
+- [x] 统一实体层 `entities` / `entity_aliases` / `entity_mentions` / `entity_relations`
+- [x] `memory_edges` 回填为实体提及，并接入启动任务
+- [x] Situation 实体索引
+- [x] `MemoryRecord.data` 结构化（person/project/topic/due_at/state/quote）
+- [x] Memory × Situation 挖掘器与质量门
+- [x] 记忆写入后自动触发挖掘 Job
+- [x] 提案来源与原文证据展示
 
-P1/P2?`entity_links` ????????2 ????topic/goal ???????????
+P1/P2（`entity_links` 迁移、同人识别、2 跳检索、topic/goal 实体）见实现计划末尾。

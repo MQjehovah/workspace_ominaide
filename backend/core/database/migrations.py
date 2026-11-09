@@ -242,6 +242,22 @@ async def ensure_schema_migrations():
                 result.append("memory_expires")
             if "last_accessed_at" not in cols:
                 result.append("memory_last_accessed")
+            if "data" not in cols:
+                result.append("memory_records_data")
+        if "memory_candidates" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("memory_candidates")}
+            if "data" not in cols:
+                result.append("memory_candidates_data")
+        if "proposals" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("proposals")}
+            if "source" not in cols:
+                result.append("proposals_source")
+            if "quality_score" not in cols:
+                result.append("proposals_quality")
+        if "entity_aliases" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("entity_aliases")}
+            if "entity_type" not in cols:
+                result.append("entity_alias_type")
 
         if "projects" in table_names:
             cols = {c["name"] for c in inspector.get_columns("projects")}
@@ -340,6 +356,16 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE memory_records ADD COLUMN expires_at TIMESTAMP NULL"))
             elif table == "memory_last_accessed":
                 await conn.execute(text("ALTER TABLE memory_records ADD COLUMN last_accessed_at TIMESTAMP NULL"))
+            elif table == "memory_records_data":
+                await conn.execute(text("ALTER TABLE memory_records ADD COLUMN data JSON NULL"))
+            elif table == "memory_candidates_data":
+                await conn.execute(text("ALTER TABLE memory_candidates ADD COLUMN data JSON NULL"))
+            elif table == "proposals_source":
+                await conn.execute(text("ALTER TABLE proposals ADD COLUMN source VARCHAR(20) DEFAULT 'activity'"))
+            elif table == "proposals_quality":
+                await conn.execute(text("ALTER TABLE proposals ADD COLUMN quality_score FLOAT DEFAULT 0"))
+            elif table == "entity_alias_type":
+                await conn.execute(text("ALTER TABLE entity_aliases ADD COLUMN entity_type VARCHAR(32) DEFAULT 'person'"))
             elif table == "request_traces_tokens_in":
                 await conn.execute(text("ALTER TABLE request_traces ADD COLUMN tokens_in INTEGER DEFAULT 0"))
             elif table == "request_traces_tokens_out":

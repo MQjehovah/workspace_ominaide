@@ -43,6 +43,22 @@ async def enqueue_all_users() -> dict:
     return {"users": len(user_ids)}
 
 
+async def backfill_entities() -> dict:
+    from ai.entities.backfill import backfill_memory_edges
+    from ai.entities.extract import seed_from_profile
+    from core.auth.domain.models import User
+    from core.database.session import async_session
+    from sqlalchemy import select
+
+    async with async_session() as db:
+        user_ids = list((await db.execute(select(User.id))).scalars().all())
+        for user_id in user_ids:
+            await seed_from_profile(db, int(user_id))
+        await db.commit()
+    result = await backfill_memory_edges()
+    return {"users": len(user_ids), **result}
+
+
 register_handler("cognition.mine.user", mine_user_job)
 
 JOBS = [
@@ -53,5 +69,13 @@ JOBS = [
         interval_seconds=1800,
         timeout_seconds=300,
         run_on_start=False,
+    ),
+    PeriodicJob(
+        key="cognition.entities.backfill",
+        owner="cognition",
+        handler=backfill_entities,
+        interval_seconds=86400,
+        timeout_seconds=300,
+        run_on_start=True,
     ),
 ]
