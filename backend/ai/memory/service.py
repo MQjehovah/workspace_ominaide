@@ -352,6 +352,12 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
             record.sources = sources[-20:]
         await _supersede_conflicts(db, user_id, cand, record.id)
         await _link_edges(db, user_id, record)
+        try:
+            from ai.entities.extract import attach_memory_entities
+
+            await attach_memory_entities(db, user_id, record)
+        except Exception as e:
+            log.warning(f"[memory] entity attach failed: {e}")
         cand.status = "approved"
         cand.reviewed_at = datetime.utcnow()
         await db.commit()

@@ -83,6 +83,59 @@ async def test_mention_and_relation_are_user_scoped(client):
             raise AssertionError("cross-user mention should be rejected")
 
 
+async def test_seed_profile_creates_person_and_project(client):
+    token, user_id = await _new_user(client)
+    import json
+    from ai.entities.extract import seed_from_profile
+    from core.auth.domain.models import UserProfile
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        profile = await db.get(UserProfile, user_id)
+        if profile is None:
+            profile = UserProfile(user_id=user_id)
+            db.add(profile)
+            await db.flush()
+        profile.contacts = json.dumps([{"name": "张三", "relation": "客户"}])
+        profile.projects = json.dumps([{"name": "预算评审"}])
+        await db.commit()
+
+        result = await seed_from_profile(db, user_id)
+        await db.commit()
+        assert result["entities"] >= 2
+
+
+async def test_memory_edges_backfill_is_idempotent(client):
+    token, user_id = await _new_user(client)
+    from ai.entities.backfill import backfill_memory_edges
+    from ai.memory.models import MemoryEdge, MemoryRecord
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        memory = MemoryRecord(
+            user_id=user_id,
+            kind="relationship",
+            content="张三负责预算评审",
+            normalized="张三负责预算评审",
+            confidence=80,
+        )
+        db.add(memory)
+        await db.flush()
+        db.add(MemoryEdge(
+            user_id=user_id,
+            memory_id=memory.id,
+            target_type="person",
+            target_name="张三",
+            relation="mentions",
+        ))
+        await db.commit()
+
+    first = await backfill_memory_edges()
+    second = await backfill_memory_edges()
+    assert first["mentions_created"] >= 1
+    assert second["mentions_created"] == 0
+
+
 async def test_entity_tables_and_user_isolation(client):
     token, user_id = await _new_user(client)
     from ai.entities.models import Entity, EntityAlias
