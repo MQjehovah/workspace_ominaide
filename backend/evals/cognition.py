@@ -328,6 +328,82 @@ async def _capability_risk(user_id: int) -> tuple[bool, str]:
     return bool(risk), f"risk={risk}"
 
 
+async def _entity_resolution(user_id: int) -> tuple[bool, str]:
+    from ai.entities.models import EntityAlias
+    from ai.entities.service import resolve_entity
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        person = await resolve_entity(
+            db, user_id, "person", "评测张三", alias_type="name"
+        )
+        db.add(EntityAlias(
+            user_id=user_id,
+            entity_id=person.id,
+            alias="eval-zhangsan@example.com",
+            alias_type="email",
+        ))
+        await db.flush()
+        same = await resolve_entity(
+            db, user_id, "person", "eval-zhangsan@example.com", alias_type="email"
+        )
+        await db.commit()
+    return person.id == same.id, f"entity_id={person.id}"
+
+
+async def _memory_situation_proposal(user_id: int) -> tuple[bool, str]:
+    from plugins.schedule.backend.models import Event
+    from ai.memory.models import MemoryRecord
+    from core.database.session import async_session
+    from ai.cognition.miner import mine_user
+
+    async with async_session() as db:
+        db.add(Event(
+            user_id=user_id,
+            title="和评测张三开报价评审会",
+            start_time=datetime.now() + timedelta(hours=2),
+        ))
+        db.add(MemoryRecord(
+            user_id=user_id,
+            kind="commitment",
+            content="评测：会前把报价发给评测张三",
+            normalized="评测：会前把报价发给评测张三",
+            confidence=90,
+            data={
+                "person": "评测张三",
+                "state": "open",
+                "quote": "我周五前把报价发你",
+            },
+        ))
+        await db.commit()
+    result = await mine_user(user_id)
+    return result["created"] >= 1, f"result={result}"
+
+
+async def _resolved_memory_closes_proposal(user_id: int) -> tuple[bool, str]:
+    from ai.memory.models import MemoryRecord
+    from core.database.session import async_session
+    from ai.cognition.miner import mine_user
+
+    async with async_session() as db:
+        row = MemoryRecord(
+            user_id=user_id,
+            kind="commitment",
+            content="评测：已解决的承诺",
+            normalized="评测：已解决的承诺",
+            confidence=90,
+            data={
+                "person": "评测张三",
+                "state": "resolved",
+                "quote": "已经完成",
+            },
+        )
+        db.add(row)
+        await db.commit()
+    result = await mine_user(user_id)
+    return result["created"] == 0, f"result={result}"
+
+
 CASES = [
     ("situation_snapshot", "situation", _situation),
     ("situation_prompt", "situation", _situation_prompt),
@@ -353,6 +429,13 @@ CASES = [
     ("memory_curate", "memory", _memory_curate),
     ("handoff_offline", "handoff", _handoff_offline),
     ("capability_risk", "capability", _capability_risk),
+    ("entity_resolution", "entity", _entity_resolution),
+    ("memory_situation_proposal", "mining", _memory_situation_proposal),
+    (
+        "resolved_memory_closes_proposal",
+        "mining",
+        _resolved_memory_closes_proposal,
+    ),
 ]
 
 
