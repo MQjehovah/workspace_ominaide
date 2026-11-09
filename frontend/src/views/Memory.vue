@@ -1,6 +1,6 @@
 <template>
-  <div class="page-wrapper about-page">
-    <section class="hero">
+  <div class="page-wrapper about-page" :class="{ embedded: props.embedded }">
+    <section v-if="!props.embedded" class="hero">
       <div class="blob b1"></div>
       <div class="blob b2"></div>
       <div class="hero-top">
@@ -61,7 +61,7 @@
     <div
       v-else
       class="tab-panel"
-      :class="tab === 'overview' ? 'overview-grid' : (tab === 'memory' ? 'memory-stack' : 'graph-single')"
+      :class="tab === 'overview' ? 'overview-grid' : tab === 'memory' ? 'memory-stack' : tab === 'graph' ? 'graph-single' : 'review-single'"
     >
       <section v-if="tab === 'overview'" id="understanding" class="page-card understanding-card reveal" style="--d: 0ms">
         <div class="section-head">
@@ -211,7 +211,7 @@
           <div class="section-title">
             <h3>最近回顾</h3>
           </div>
-          <el-button link type="primary" @click="$router.push('/insights')">查看全部</el-button>
+          <el-button link type="primary" @click="openTab('reviews')">查看全部</el-button>
         </div>
         <div v-if="reviews.length === 0" class="empty-soft">
           <p>还没有每日回顾。每天结束时会自动生成一份。</p>
@@ -222,6 +222,10 @@
             <div class="review-summary">{{ r.summary }}</div>
           </div>
         </div>
+      </section>
+
+      <section v-if="tab === 'reviews'" class="reviews-embedded">
+        <ReviewPipeline embedded />
       </section>
 
       <div v-if="tab === 'memory'" class="memory-status">
@@ -328,12 +332,17 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Edit, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 import EntityGraph from '@/components/EntityGraph.vue'
+import ReviewPipeline from './Insights.vue'
 
+const props = defineProps<{ embedded?: boolean }>()
+
+const route = useRoute()
 const profile = ref<any>({ contacts: [], projects: [], interests: [], habits: [], insights: {} })
 const entities = ref<any[]>([])
 const entityLinks = ref<any[]>([])
@@ -359,7 +368,7 @@ const kindOptions = [
   { label: '项目', value: 'project' },
 ]
 
-type TabKey = 'overview' | 'memory' | 'graph'
+type TabKey = 'overview' | 'memory' | 'graph' | 'reviews'
 const tab = ref<TabKey>('overview')
 
 const initial = computed(() => (profile.value.name || '我').slice(0, 1))
@@ -372,13 +381,14 @@ const tabs = computed(() => [
   { key: 'overview' as TabKey, label: '概览', count: 0 },
   { key: 'memory' as TabKey, label: '记忆库', count: candidates.value.length },
   { key: 'graph' as TabKey, label: '关系图谱', count: entities.value.length },
+  { key: 'reviews' as TabKey, label: '回顾', count: reviews.value.length },
 ])
 
 const stats = computed(() => [
   { key: 'records', label: '长期记忆', value: records.value.length, tab: 'memory' as TabKey },
   { key: 'candidates', label: '待审核', value: candidates.value.length, tab: 'memory' as TabKey },
   { key: 'entities', label: '实体', value: entities.value.length, tab: 'graph' as TabKey },
-  { key: 'reviews', label: '回顾', value: reviews.value.length, tab: 'overview' as TabKey },
+  { key: 'reviews', label: '回顾', value: reviews.value.length, tab: 'reviews' as TabKey },
 ])
 
 const filteredRecords = computed(() => {
@@ -915,4 +925,7 @@ section[id] { scroll-margin-top: 12px; }
   .blob, .reveal, .sk-line { animation: none !important; }
   .record-card, .hero-stat { transition: none; }
 }
+
+.about-page.embedded { max-width: none; margin: 0; padding: 0; }
+.reviews-embedded { width: 100%; }
 </style>

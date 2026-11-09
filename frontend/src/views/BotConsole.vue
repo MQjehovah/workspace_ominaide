@@ -111,6 +111,10 @@
             </div>
           </el-tab-pane>
 
+          <el-tab-pane label="全局记忆" name="global-memory">
+            <MemoryView embedded />
+          </el-tab-pane>
+
           <el-tab-pane label="例程" name="routines">
             <div class="page-card">
               <div class="page-card-body">
@@ -166,7 +170,7 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="记忆" name="memories">
+          <el-tab-pane label="Bot 记忆" name="memories">
             <div class="page-card">
               <div class="page-card-body">
                 <div class="section-head">
@@ -577,8 +581,9 @@ import {
 } from '@element-plus/icons-vue'
 import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
+import MemoryView from './Memory.vue'
 
-type TabName = 'settings' | 'routines' | 'memories' | 'skills' | 'runs' | 'approvals'
+type TabName = 'settings' | 'global-memory' | 'routines' | 'memories' | 'skills' | 'runs' | 'approvals'
 
 const route = useRoute()
 
@@ -1236,7 +1241,7 @@ function startPolling() {
 
 onMounted(async () => {
   const q = String(route.query.tab || '')
-  if (['settings', 'routines', 'memories', 'runs', 'approvals'].includes(q)) {
+  if (['settings', 'global-memory', 'routines', 'memories', 'skills', 'runs', 'approvals'].includes(q)) {
     tab.value = q as TabName
   }
   await loadBots()
@@ -1251,7 +1256,7 @@ onUnmounted(() => {
 
 watch(() => route.query.tab, (value) => {
   const q = String(value || '')
-  if (['settings', 'routines', 'memories', 'runs', 'approvals'].includes(q) && q !== tab.value) {
+  if (['settings', 'global-memory', 'routines', 'memories', 'skills', 'runs', 'approvals'].includes(q) && q !== tab.value) {
     tab.value = q as TabName
     loadTab()
   }

@@ -30,14 +30,6 @@
         <el-icon><Collection /></el-icon>
         <span>随手记</span>
       </el-menu-item>
-      <el-menu-item index="/insights">
-        <el-icon><Sunrise /></el-icon>
-        <span>每日回顾</span>
-      </el-menu-item>
-      <el-menu-item index="/memory">
-        <el-icon><UserFilled /></el-icon>
-        <span>记忆</span>
-      </el-menu-item>
       <el-menu-item index="/schedule">
         <el-icon><Calendar /></el-icon>
         <span>日程</span>
@@ -116,9 +108,9 @@ import BrandMark from '@/components/BrandMark.vue'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Folder, Document, User, UserFilled, Monitor, Setting, SwitchButton,
+  Folder, Document, User, Monitor, Setting, SwitchButton,
   DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound,
-  Sunrise, Message, ChatLineRound, Connection, Odometer, Collection,
+  Message, ChatLineRound, Connection, Odometer, Collection,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 

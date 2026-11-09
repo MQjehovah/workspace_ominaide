@@ -1,5 +1,5 @@
 <template>
-  <div class="page-wrapper">
+  <div class="page-wrapper" :class="{ embedded: props.embedded }">
     <div class="page-header">
       <h2>回顾</h2>
       <div class="header-actions">
@@ -121,6 +121,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+
+const props = defineProps<{ embedded?: boolean }>()
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import client from '@/api/client'
@@ -230,4 +232,6 @@ onMounted(() => {
 .weekly-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .weekly-title { font-size: 16px; font-weight: 600; color: #1a1a2e; margin-right: 10px; }
 .section-heading { font-size: 13px; color: #909399; letter-spacing: .5px; margin: 4px 0 10px; }
+.embedded { max-width: none; margin: 0; padding: 0; }
+.embedded .page-header { margin-bottom: 12px; }
 </style>

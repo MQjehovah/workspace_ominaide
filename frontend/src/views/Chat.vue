@@ -25,10 +25,14 @@
 
       <section class="message-pane page-card">
         <div class="chat-toolbar">
+          <div class="current-conv">
+            <div class="current-title">{{ currentTitle }}</div>
+            <div class="current-sub">{{ messages.length }} 条消息 · {{ botName }}</div>
+          </div>
+          <div class="toolbar-spacer"></div>
           <el-select v-model="botId" size="small" clearable placeholder="默认助手" style="width:180px">
             <el-option v-for="b in bots" :key="b.id" :label="b.name" :value="b.id" />
           </el-select>
-          <span class="session-hint">{{ botId ? '使用所选助手' : '默认助手' }}</span>
         </div>
 
         <div ref="bodyRef" class="message-body">
@@ -141,6 +145,13 @@ const bodyRef = ref<HTMLElement | null>(null)
 const pickerVisible = ref(false)
 const contextRefs = ref<any[]>([])
 const contextCommentId = ref<number | null>(null)
+
+const currentSession = computed(() => sessions.value.find((s) => s.session_id === sessionId.value))
+const currentTitle = computed(() => currentSession.value?.title || '新对话')
+const botName = computed(() => {
+  const found = bots.value.find((b) => b.id === botId.value)
+  return found?.name || '默认助手'
+})
 
 const filteredSessions = computed(() => {
   const q = sessionQuery.value.trim().toLowerCase()
@@ -533,4 +544,26 @@ onMounted(async () => {
 .dot:nth-child(2) { animation-delay: .2s; }
 .dot:nth-child(3) { animation-delay: .4s; }
 @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+.chat-layout { grid-template-columns: 252px 1fr; }
+.session-pane { border-radius: 16px; background: linear-gradient(180deg, #fff, #fbfcff); box-shadow: 0 8px 24px -20px rgba(30,41,59,.45); }
+.session-row { margin-bottom: 2px; transition: background .15s, border-color .15s; border: 1px solid transparent; }
+.session-row.active { border-color: #c7d2fe; box-shadow: inset 3px 0 0 #6366f1; }
+.session-search :deep(.el-input__wrapper) { border-radius: 9px; background: #f7f9fc; }
+.message-pane { border-radius: 18px; background: radial-gradient(900px 400px at 80% -20%, #eef2ff 0, transparent 60%), #fff; box-shadow: 0 12px 34px -28px rgba(30,41,59,.5); }
+.chat-toolbar { padding: 2px 2px 12px; }
+.current-conv { min-width: 0; }
+.current-title { font-size: 14px; font-weight: 700; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+.current-sub { margin-top: 2px; font-size: 11px; color: #9aa3b2; }
+.toolbar-spacer { flex: 1; }
+.message-body { padding: 22px 12px 8px; }
+.message-row { max-width: 920px; margin-left: auto; margin-right: auto; width: 100%; }
+.bubble { box-shadow: 0 3px 12px -10px rgba(30,41,59,.28); }
+.message-row.assistant .bubble { background: #fff; border-color: #edf0f5; }
+.chat-empty { padding-top: 12vh; }
+.chat-empty-icon { width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#eef2ff,#e0f2fe); color: #6366f1; font-size: 26px; }
+.composer { position: relative; margin-top: 12px; padding: 10px; border: 1px solid #e8ecf4; border-radius: 16px; background: #fbfcff; box-shadow: 0 8px 24px -22px rgba(30,41,59,.5); }
+.composer .el-input { flex: 1; }
+.composer :deep(.el-textarea__inner) { border: none; box-shadow: none; background: transparent; padding: 4px 6px; font-size: 13.5px; }
+.context-bar { padding-top: 8px; }
 </style>

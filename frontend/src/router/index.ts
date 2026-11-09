@@ -34,9 +34,7 @@ const router = createRouter({
         },
         {
           path: 'insights',
-          name: 'Insights',
-          meta: { title: '每日回顾' },
-          component: () => import('@/views/Insights.vue')
+          redirect: { path: '/bots', query: { tab: 'global-memory', memoryTab: 'reviews' } }
         },
         {
           path: 'captures',
@@ -52,9 +50,7 @@ const router = createRouter({
         },
         {
           path: 'memory',
-          name: 'Memory',
-          meta: { title: '记忆' },
-          component: () => import('@/views/Memory.vue')
+          redirect: { path: '/bots', query: { tab: 'global-memory' } }
         },
         {
           path: 'chat',
