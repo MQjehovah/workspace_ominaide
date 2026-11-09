@@ -50,6 +50,13 @@ async def _match_entities(
     return list(matched.values())
 
 
+def _int_id(value) -> int:
+    if isinstance(value, int):
+        return value
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return int(digits) if digits else 0
+
+
 def _row(entity: Entity, source_type: str, source_id: int, role: str) -> dict:
     return {
         "entity_id": entity.id,
@@ -57,7 +64,7 @@ def _row(entity: Entity, source_type: str, source_id: int, role: str) -> dict:
         "name": entity.canonical_name,
         "role": role,
         "source_type": source_type,
-        "source_id": int(source_id or 0),
+        "source_id": _int_id(source_id),
         "confidence": 0.8,
     }
 
@@ -75,7 +82,7 @@ async def build_situation_entities(
     seen: set[tuple] = set()
 
     def push(entity: Entity, source_type: str, source_id: int, role: str) -> None:
-        key = (entity.id, source_type, int(source_id or 0), role)
+        key = (entity.id, source_type, _int_id(source_id), role)
         if key in seen:
             return
         seen.add(key)
@@ -83,7 +90,7 @@ async def build_situation_entities(
 
     async with async_session() as db:
         for event in snapshot.get("calendar") or []:
-            event_id = int(event.get("id") or 0)
+            event_id = _int_id(event.get("id"))
             for entity in await _match_entities(db, user_id, str(event.get("title") or "")):
                 push(entity, "event", event_id, "about")
             for person in event.get("attendees") or []:
@@ -91,7 +98,7 @@ async def build_situation_entities(
                     push(entity, "event", event_id, "attendee")
 
         for todo in snapshot.get("todos") or []:
-            todo_id = int(todo.get("id") or 0)
+            todo_id = _int_id(todo.get("id"))
             for entity in await _match_entities(
                 db, user_id, str(todo.get("title") or "")
             ):
@@ -99,7 +106,7 @@ async def build_situation_entities(
 
         recent_mail = (snapshot.get("inbox") or {}).get("recent_mail") or []
         for mail in recent_mail:
-            mail_id = int(mail.get("id") or 0)
+            mail_id = _int_id(mail.get("id"))
             for entity in await _match_entities(
                 db, user_id, str(mail.get("from") or ""), types=("person",)
             ):
@@ -109,7 +116,7 @@ async def build_situation_entities(
                 push(entity, "mail", mail_id, "about")
 
         for goal in snapshot.get("goals") or []:
-            goal_id = int(goal.get("id") or 0)
+            goal_id = _int_id(goal.get("id"))
             for entity in await _match_entities(
                 db, user_id, str(goal.get("title") or "")
             ):
@@ -118,7 +125,7 @@ async def build_situation_entities(
         recent = snapshot.get("recent") or {}
         for group in ("notes", "projects", "files"):
             for item in recent.get(group) or []:
-                item_id = int(item.get("id") or 0)
+                item_id = _int_id(item.get("id"))
                 for entity in await _match_entities(
                     db, user_id, str(item.get("title") or item.get("name") or "")
                 ):

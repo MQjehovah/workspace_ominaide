@@ -70,6 +70,8 @@ def _signals(context: dict, proposals: list[dict]) -> list[dict]:
             start = datetime.fromisoformat(str(raw))
         except ValueError:
             continue
+        if start.tzinfo is not None:
+            start = start.astimezone().replace(tzinfo=None)
         if now <= start <= now + timedelta(hours=2):
             signals.append({
                 "type": "meeting_soon",

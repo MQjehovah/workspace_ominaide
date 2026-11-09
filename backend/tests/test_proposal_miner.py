@@ -45,6 +45,48 @@ async def test_memory_record_keeps_structured_data(client):
         assert row.data["person"] == "张三"
 
 
+async def test_commitment_and_event_create_proposal(client):
+    token, user_id = await _new_user(client)
+    from datetime import datetime, timedelta
+    from ai.memory.models import MemoryRecord
+    from plugins.schedule.backend.models import Event
+    from core.database.session import async_session
+    from ai.cognition.miner import mine_user
+
+    async with async_session() as db:
+        db.add(Event(
+            user_id=user_id,
+            title="和张三开预算评审会",
+            start_time=datetime.now() + timedelta(hours=2),
+        ))
+        db.add(MemoryRecord(
+            user_id=user_id,
+            kind="commitment",
+            content="周五前把报价发给张三",
+            normalized="周五前把报价发给张三",
+            confidence=90,
+            data={
+                "person": "张三",
+                "project": "预算",
+                "state": "open",
+                "due_at": "2026-11-13",
+                "quote": "我周五前把报价发你",
+            },
+        ))
+        await db.commit()
+
+    result = await mine_user(user_id)
+    assert result["created"] >= 1
+
+
+async def test_memory_without_situation_is_rejected(client):
+    token, user_id = await _new_user(client)
+    from ai.cognition.miner import mine_user
+
+    result = await mine_user(user_id)
+    assert result["created"] == 0
+
+
 async def test_proposal_link_action_returns_url(client):
     from ai.cognition.proposals import _execute_action
 
