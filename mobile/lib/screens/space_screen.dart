@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/cos_models.dart';
 import '../models/file_item.dart';
 import '../models/space_catalog.dart';
 import '../services/api_service.dart';
-import '../services/cos_repository.dart';
 import '../services/event_time.dart';
 import '../services/refresh_bus.dart';
 import '../services/seen_state_service.dart';
@@ -18,7 +16,6 @@ import 'machine_screen.dart';
 import 'dingtalk_conversations_screen.dart';
 import 'files_screen.dart';
 import 'insights_screen.dart';
-import 'inbox_screen.dart';
 import 'mail_screen.dart';
 import 'meeting_minutes_screen.dart';
 import 'music_screen.dart';
@@ -47,8 +44,6 @@ class _SpaceScreenState extends State<SpaceScreen> {
   int _projects = 0;
   int _files = 0;
   int _sources = 0;
-  int _inboxTotal = 0;
-  int _inboxUrgent = 0;
   bool _loading = true;
   bool _error = false;
   Set<String> _hidden = {};
@@ -193,7 +188,8 @@ class _SpaceScreenState extends State<SpaceScreen> {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final results = await Future.wait<dynamic>([
-      _safe(cosRepository.getTriage(force: force)),
+      _safe(api.listMailMessages(unread: true, limit: 200)),
+      _safe(api.dingtalkConversations()),
       _safe(api.listNotifications(limit: 50)),
       _safe(api.listScheduleEvents(
         start: start.toIso8601String(),
@@ -205,16 +201,22 @@ class _SpaceScreenState extends State<SpaceScreen> {
       _safe(api.listSourceItems()),
     ]);
     if (!mounted) return;
-    final triage = results[0] as TriageSnapshot?;
-    final notifications = (results[1] as List<Map<String, dynamic>>?) ?? [];
-    final events = (results[2] as List<Map<String, dynamic>>?) ?? [];
-    final todos = (results[3] as List<Map<String, dynamic>>?) ?? [];
-    final projects = (results[4] as List<Map<String, dynamic>>?) ?? [];
-    final files = (results[5] as List?)?.whereType<FileItem>().toList() ??
+    final unreadMail = (results[0] as List?)?.length ?? 0;
+    final conversations =
+        (results[1] as List<Map<String, dynamic>>?) ?? const [];
+    final notifications = (results[2] as List<Map<String, dynamic>>?) ?? [];
+    final events = (results[3] as List<Map<String, dynamic>>?) ?? [];
+    final todos = (results[4] as List<Map<String, dynamic>>?) ?? [];
+    final projects = (results[5] as List<Map<String, dynamic>>?) ?? [];
+    final files = (results[6] as List?)?.whereType<FileItem>().toList() ??
         const <FileItem>[];
-    final sources = (results[6] as List<Map<String, dynamic>>?) ?? [];
+    final sources = (results[7] as List<Map<String, dynamic>>?) ?? [];
     final notificationUnread =
         notifications.where((n) => n['read'] == false).length;
+    final dingtalkUnread = conversations.fold<int>(
+      0,
+      (sum, item) => sum + ((item['unread_count'] as num?)?.toInt() ?? 0),
+    );
 
     // File badges show files added since the user last opened Files.
     final filesSeenAt = await SeenStateService().filesSeenAt();
@@ -230,23 +232,20 @@ class _SpaceScreenState extends State<SpaceScreen> {
     setState(() {
       _error = results.every((value) => value == null);
       // Mail/files/sources badges describe unread or new content, not totals.
-      _mail = triage?.unreadCount('mail') ?? 0;
-      _dingtalk = triage?.unreadCount('dingtalk') ?? 0;
+      _mail = unreadMail;
+      _dingtalk = dingtalkUnread;
       _notifications = notificationUnread;
       _schedule = events.where((event) => !eventHasEnded(event)).length;
       _todos = todos.length;
       _projects = projects.length;
       _files = newFiles;
       _sources = sources.where((item) => item['read'] != true).length;
-      _inboxTotal = (triage?.pendingCount ?? 0) + notificationUnread;
-      _inboxUrgent = triage?.urgentCount ?? 0;
       _loading = false;
     });
   }
 
   Future<void> _open(String key) async {
     final Widget? target = switch (key) {
-      'inbox' => const InboxScreen(),
       'mail' => const MailScreen(),
       'dingtalk' => const DingTalkConversationsScreen(),
       'notifications' => const NotificationsScreen(),
@@ -341,22 +340,6 @@ class _SpaceScreenState extends State<SpaceScreen> {
                     onRetry: () => _load(force: true),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: _InboxCard(
-                  total: _inboxTotal,
-                  urgent: _inboxUrgent,
-                  mail: _mail,
-                  dingtalk: _dingtalk,
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const InboxScreen()),
-                    );
-                    if (mounted) _load(force: true);
-                  },
-                ),
-              ),
               for (final group in groups) ...[
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -386,92 +369,6 @@ class _SpaceScreenState extends State<SpaceScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _InboxCard extends StatelessWidget {
-  const _InboxCard({
-    required this.total,
-    required this.urgent,
-    required this.mail,
-    required this.dingtalk,
-    required this.onTap,
-  });
-
-  final int total;
-  final int urgent;
-  final int mail;
-  final int dingtalk;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = AppPalette.of(context);
-    return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.all(13),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  palette.accent.withValues(alpha: 0.65),
-                  palette.accent,
-                ],
-              ),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.inbox_rounded,
-              color: Colors.white,
-              size: 19,
-            ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '收件箱',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: palette.ink,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$total 条待处理 · 邮件 $mail · 钉钉 $dingtalk',
-                  style: TextStyle(fontSize: 10.5, color: palette.muted),
-                ),
-              ],
-            ),
-          ),
-          if (urgent > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-              decoration: BoxDecoration(
-                color: palette.accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: Text(
-                '$urgent 紧急',
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w800,
-                  color: palette.accent,
-                ),
-              ),
-            ),
-          const SizedBox(width: 2),
-          Icon(Icons.chevron_right_rounded, size: 18, color: palette.muted),
-        ],
       ),
     );
   }

@@ -39,7 +39,7 @@ async def _daily_brief(ctx: SkillContext) -> dict:
 
 
 async def _meeting_prepare(ctx: SkillContext) -> dict:
-    from core.cos.service import meeting_prep
+    from core.ai.scenarios.meeting_prep import meeting_prep
 
     attendees = ctx.input.get("attendees") or []
     if isinstance(attendees, str):
@@ -120,9 +120,29 @@ async def _weekly_review(ctx: SkillContext) -> dict:
     }
 
 
+async def _draft_reply(ctx: SkillContext) -> dict:
+    from core.ai.scenarios.draft_reply import draft_reply
+
+    draft = await draft_reply(
+        ctx.user_id,
+        source=str(ctx.input.get("source") or "mail"),
+        message_id=ctx.input.get("message_id"),
+        message=ctx.input.get("message"),
+        subject=ctx.input.get("subject"),
+        tone=str(ctx.input.get("tone") or "professional"),
+        instructions=ctx.input.get("instructions"),
+        bot=ctx.bot,
+        extra_system=ctx.skill.body,
+    )
+    if draft is None:
+        raise ValueError("没有可回复的内容")
+    return draft
+
+
 HANDLERS: dict[str, Callable[[SkillContext], Awaitable[dict]]] = {
     "daily-brief": _daily_brief,
     "daily-review": _daily_review,
     "meeting-prepare": _meeting_prepare,
     "weekly-review": _weekly_review,
+    "draft-reply": _draft_reply,
 }

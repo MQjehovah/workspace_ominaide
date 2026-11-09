@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from core.config.settings import settings
-from core.cos.service import _llm_json
+from core.ai.llm import llm_json
 from core.database.session import async_session
 from core.meetings.asr import AsrError, transcribe_minio_object
 from core.meetings.models import MeetingMinutesJob
@@ -104,7 +104,7 @@ async def _summarise_long(transcript: str, bot) -> dict:
     text = transcript[:_MAX_TRANSCRIPT_CHARS]
     if len(text) <= 16000:
         return _normalise_minutes(
-            await _llm_json(
+            await llm_json(
                 _MINUTES_SYSTEM,
                 text,
                 bot=bot,
@@ -116,7 +116,7 @@ async def _summarise_long(transcript: str, bot) -> dict:
     size = 12000
     for start in range(0, len(text), size):
         piece = text[start : start + size]
-        result = await _llm_json(
+        result = await llm_json(
             "提炼这段会议转写的讨论点、决议、待办和风险，输出 JSON："
             '{"discussion":[],"decisions":[],"action_items":[],"risks":[]}。'
             "不要编造。",
@@ -128,7 +128,7 @@ async def _summarise_long(transcript: str, bot) -> dict:
 
     merged = "\n\n".join(chunks)[:24000]
     return _normalise_minutes(
-        await _llm_json(
+        await llm_json(
             _MINUTES_SYSTEM,
             "以下是分段提炼结果，请合并为最终会议纪要：\n\n" + merged,
             bot=bot,

@@ -85,7 +85,7 @@ async def test_user_cannot_register_dingtalk_mcp(client):
 
 
 async def test_dingtalk_unread_count_controls_pending_state(client):
-    from core.cos import collectors
+    from core.ai import context as ai_context
     from core.database.session import async_session
     from core.activities.models import UserActivity
 
@@ -117,7 +117,7 @@ async def test_dingtalk_unread_count_controls_pending_state(client):
         ))
         await db.commit()
 
-    items, _ = await collectors.dingtalk_items(user_id, limit=10)
+    items, _ = await ai_context.dingtalk_items(user_id, limit=10)
     by_id = {item["title"]: item for item in items}
     assert by_id["已读群"]["needs_reply"] is False
     assert by_id["已读群"]["meta"]["read"] is True

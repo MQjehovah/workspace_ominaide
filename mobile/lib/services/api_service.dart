@@ -1196,14 +1196,6 @@ class ApiService {
         final data = _asMap(decodeJson(res));
         return DailyBrief.fromJson(_asMap(data['output']));
       }
-      // Transitional fallback while the backend is being upgraded. Remove once
-      // every deployment runs the Agent Skills API.
-      if (res.statusCode == 404) {
-        final legacy = await get('/cos/daily-brief');
-        if (legacy.statusCode == 200) {
-          return DailyBrief.fromJson(_asMap(decodeJson(legacy)));
-        }
-      }
     } catch (_) {}
     return null;
   }
@@ -1223,23 +1215,6 @@ class ApiService {
     return null;
   }
 
-  Future<TriageSnapshot?> getTriage({int days = 3}) async {
-    try {
-      var res = await get('/inbox/groups?days=$days');
-      if (res.statusCode == 404) {
-        res = await get('/cos/triage?days=$days');
-      }
-      if (res.statusCode != 200) return null;
-      final data = decodeJson(res);
-      if (data is! Map) return null;
-      return TriageSnapshot.fromJson(
-        data.map((k, v) => MapEntry(k.toString(), v)),
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<Map<String, dynamic>?> getDraftReply({
     String source = 'mail',
     int? messageId,
@@ -1257,13 +1232,6 @@ class ApiService {
           if (botId != null) 'bot_id': botId,
         },
       );
-      if (res.statusCode == 404) {
-        res = await post('/cos/draft-reply', {
-          'source': source,
-          'message_id': messageId,
-          'tone': tone,
-        });
-      }
       if (res.statusCode != 200) return null;
       final dynamic data = decodeJson(res);
       return data is Map ? data.map((k, v) => MapEntry(k.toString(), v)) : null;
@@ -1449,19 +1417,6 @@ class ApiService {
     final res = await get('/workbench/summary');
     if (res.statusCode != 200) return {};
     return _asMap(decodeJson(res));
-  }
-
-  Future<List<String>> getWorkbenchSuggestions({bool refresh = false}) async {
-    final res =
-        await get('/inbox/suggestions${refresh ? '?refresh=true' : ''}');
-    if (res.statusCode != 200) return [];
-    final data = decodeJson(res);
-    final list = data is Map ? data['suggestions'] : null;
-    if (list is! List) return [];
-    return list
-        .map((e) => e.toString().trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
   }
 
   Future<List<Map<String, dynamic>>> getActivitySuggestions({

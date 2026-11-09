@@ -215,9 +215,6 @@ app.include_router(insights_router)
 from core.memory_router import router as memory_router
 app.include_router(memory_router)
 
-from core.inbox.router import router as inbox_router
-app.include_router(inbox_router)
-
 from core.observability.router import router as metrics_router
 app.include_router(metrics_router)
 

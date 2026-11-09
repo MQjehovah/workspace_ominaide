@@ -20,30 +20,6 @@ void main() {
     expect(brief.prompts, isEmpty);
   });
 
-  test('parses triage groups and counts by source', () {
-    final snapshot = TriageSnapshot.fromJson({
-      'counts': {'total': 3, 'urgent': 1, 'needs_reply': 1},
-      'groups': {
-        'urgent': [
-          {'id': 'mail:1', 'source': 'mail', 'title': '预算确认', 'priority': 'urgent'},
-        ],
-        'needs_reply': [
-          {'id': 'dingtalk:1', 'source': 'dingtalk', 'title': '项目群', 'needs_reply': true},
-        ],
-        'today': [
-          {'id': 'todo:1', 'source': 'todo', 'title': '提交周报'},
-        ],
-      },
-      'sources': {'dingtalk': 'ok'},
-    });
-
-    expect(snapshot.total, 3);
-    expect(snapshot.urgentCount, 1);
-    expect(snapshot.needsReplyCount, 1);
-    expect(snapshot.bySource('dingtalk').single.title, '项目群');
-    expect(snapshot.countsBySource()['todo'], 1);
-  });
-
   test('parses weekly review', () {
     final review = WeeklyReview.fromJson({
       'period': {'start': '2026-10-31', 'end': '2026-11-06'},

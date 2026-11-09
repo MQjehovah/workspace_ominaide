@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
 from core.auth.dependencies import get_current_user
-from core.cos import collectors
+from core.ai.context import schedule_items, todo_items
 from core.database.session import async_session
 
 router = APIRouter(prefix="/api/workbench", tags=["workbench"])
@@ -126,56 +126,24 @@ async def workbench_summary(user: dict = Depends(get_current_user)):
         except Exception:
             return None
 
-    from core.cos.service import triage
-
-    triage_data, events, todos, files, notes, projects = (
+    events, todos, files, notes, projects = (
         await asyncio.gather(
-            safe(triage(user_id, 3)),
             safe(
-                collectors.schedule_items(
+                schedule_items(
                     user_id,
                     start=start,
                     end=end,
                     limit=20,
                 )
             ),
-            safe(collectors.todo_items(user_id, limit=100)),
+            safe(todo_items(user_id, limit=100)),
             safe(_recent_files(user_id)),
             safe(_recent_notes(user_id)),
             safe(_recent_projects(user_id)),
         )
     )
 
-    triage_data = triage_data or {}
-    groups = triage_data.get("groups") or {}
-    pending = (
-        len(groups.get("urgent") or [])
-        + len(groups.get("needs_reply") or [])
-        + len(groups.get("today") or [])
-    )
-    all_items = [
-        item
-        for values in groups.values()
-        if isinstance(values, list)
-        for item in values
-    ]
-    mail_unread = sum(
-        1
-        for item in all_items
-        if item.get("source") == "mail" and not (item.get("meta") or {}).get("read")
-    )
-    dingtalk_count = sum(
-        1 for item in all_items if item.get("source") == "dingtalk"
-    )
-
     return {
-        "triage": triage_data,
-        "inbox": {
-            "pending": pending,
-            "urgent": len(groups.get("urgent") or []),
-            "mail": mail_unread,
-            "dingtalk": dingtalk_count,
-        },
         "events": [_event_out(item) for item in (events or [])],
         "todos": [_todo_out(item) for item in (todos or [])],
         "recent": {

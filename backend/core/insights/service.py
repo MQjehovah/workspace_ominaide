@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select, update
 
 from core.config.settings import settings
-from core.cos.context import build_context
+from core.ai.context import build_context
 from core.database.session import async_session
 from core.activities.models import UserActivity
 from core.insights.models import ActivitySuggestion
@@ -96,10 +96,10 @@ def _prompt_payload(context: dict, activities: list[UserActivity]) -> dict:
 async def _extract_with_llm(context: dict, activities: list[UserActivity]) -> list[dict] | None:
     if not settings.llm_api_key:
         return None
-    from core.cos.service import _llm_json
+    from core.ai.llm import llm_json
 
     payload = _prompt_payload(context, activities)
-    result = await _llm_json(
+    result = await llm_json(
         _SYSTEM,
         json.dumps(payload, ensure_ascii=False, default=str)[:12000],
         max_chars=12000,

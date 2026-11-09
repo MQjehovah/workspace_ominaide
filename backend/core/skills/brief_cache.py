@@ -36,7 +36,7 @@ async def generate(
     refresh: bool = False,
 ) -> dict:
     """Return the cached brief, rendering it only when needed."""
-    from core.cos.service import daily_brief
+    from core.ai.scenarios.daily_brief import daily_brief
     from core.skills.loader import get_skill
 
     day = day or date.today()

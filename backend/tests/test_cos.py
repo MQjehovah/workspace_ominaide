@@ -1,4 +1,4 @@
-"""Chief-of-Staff scenario API: triage, briefs, meeting prep and drafts."""
+"""AI scenario API: briefs, meeting prep, reviews and drafts."""
 
 from conftest import auth
 from datetime import date, datetime, timedelta
@@ -77,27 +77,9 @@ async def _seed_sources(user_id: int, tag: str) -> dict:
         }
 
 
-async def test_cos_requires_auth(client):
-    r = await client.get("/api/inbox/groups")
+async def test_skill_requires_auth(client):
+    r = await client.post("/api/skills/daily-brief/run", json={"input": {}})
     assert r.status_code == 401
-
-
-async def test_triage_aggregates_user_sources_only(client):
-    token_a, user_a = await _new_user(client)
-    token_b, user_b = await _new_user(client)
-    await _seed_sources(user_a, "alpha")
-    await _seed_sources(user_b, "bravo")
-
-    r = await client.get("/api/inbox/groups?days=7", headers=auth(token_a))
-    assert r.status_code == 200, r.text
-    body = r.json()
-    text = str(body)
-    assert "alpha" in text
-    assert "bravo" not in text
-
-    sources = {item["source"] for group in body["groups"].values() for item in group}
-    assert {"mail", "todo", "schedule", "sources"} <= sources
-    assert body["counts"]["total"] >= 4
 
 
 async def test_daily_brief_has_summary_and_prompts(client):
@@ -116,26 +98,6 @@ async def test_daily_brief_has_summary_and_prompts(client):
     assert body["prompts"]
     assert "sections" not in body
     assert "stats" not in body
-
-
-async def test_workbench_prompts_reuse_daily_brief(client):
-    token, user_id = await _new_user(client)
-    await _seed_sources(user_id, "briefprompts")
-
-    r = await client.post(
-        "/api/skills/daily-brief/run",
-        json={"input": {}},
-        headers=auth(token),
-    )
-    assert r.status_code == 200, r.text
-    prompts = r.json()["output"]["prompts"]
-    assert prompts
-
-    r = await client.get("/api/inbox/suggestions", headers=auth(token))
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["source"] == "brief"
-    assert body["suggestions"] == prompts
 
 
 async def test_meeting_prep_collects_context(client):
@@ -189,7 +151,7 @@ async def test_dingtalk_items_read_synced_conversations(client):
     token, user_id = await _new_user(client)
     from core.database.session import async_session
     from core.activities.models import UserActivity
-    from core.cos import collectors
+    from core.ai import context as ai_context
 
     async with async_session() as db:
         db.add(UserActivity(
@@ -207,13 +169,13 @@ async def test_dingtalk_items_read_synced_conversations(client):
         ))
         await db.commit()
 
-    items, status = await collectors.dingtalk_items(user_id, limit=5)
+    items, status = await ai_context.dingtalk_items(user_id, limit=5)
     assert status == "cached"
     assert items and items[0]["title"] == "项目群"
     assert items[0]["id"] == "dingtalk:cid-1"
     assert "预算" in items[0]["summary"]
 
-    hits, _ = await collectors.dingtalk_items(user_id, query="开会", limit=5)
+    hits, _ = await ai_context.dingtalk_items(user_id, query="开会", limit=5)
     assert hits and "开会" in hits[0]["summary"]
 
 
@@ -225,7 +187,7 @@ async def test_skill_toggle_disables_run(client):
     r = await client.get(f"/api/bots/{bot_id}/skills", headers=auth(token))
     assert r.status_code == 200, r.text
     skills = {s["key"]: s for s in r.json()["skills"]}
-    assert {"daily-brief", "meeting-prepare", "weekly-review"} <= set(skills)
+    assert {"daily-brief", "daily-review", "meeting-prepare", "weekly-review", "draft-reply"} <= set(skills)
     assert skills["daily-brief"]["enabled"] is True
 
     r = await client.put(
@@ -270,14 +232,14 @@ async def test_mark_all_mail_read(client):
 
 async def test_dingtalk_items_never_calls_the_cli(monkeypatch):
     """Workbench reads must not shell out to dws; the scheduler owns syncing."""
-    from core.cos import collectors
+    from core.ai import context as ai_context
     from core.mcp_hub.hub import mcp_hub
 
     async def fail(*args, **kwargs):
         raise AssertionError("dingtalk collector must not call MCP/dws")
 
     monkeypatch.setattr(mcp_hub, "call_external", fail)
-    items, status = await collectors.dingtalk_items(999999, limit=5)
+    items, status = await ai_context.dingtalk_items(999999, limit=5)
     assert items == []
     assert status == "empty"
 
@@ -286,17 +248,17 @@ async def test_daily_brief_is_served_from_hourly_cache(client, monkeypatch):
     token, user_id = await _new_user(client)
     await _seed_sources(user_id, "briefcache")
 
-    from core.cos import service as cos_service
+    from core.ai.scenarios import daily_brief as daily_brief_module
 
     calls = 0
-    original = cos_service.daily_brief
+    original = daily_brief_module.daily_brief
 
     async def counting(*args, **kwargs):
         nonlocal calls
         calls += 1
         return await original(*args, **kwargs)
 
-    monkeypatch.setattr(cos_service, "daily_brief", counting)
+    monkeypatch.setattr(daily_brief_module, "daily_brief", counting)
 
     r = await client.post(
         "/api/skills/daily-brief/run",
@@ -371,19 +333,6 @@ async def test_daily_review_skill_persists(client):
     assert r.json()["summary"] == output["summary"]
 
 
-async def test_workbench_suggestions_from_user_context(client, monkeypatch):
-    token, user_id = await _new_user(client)
-    await _seed_sources(user_id, "suggest")
-
-    r = await client.get("/api/inbox/suggestions", headers=auth(token))
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert len(body["suggestions"]) == 3
-    assert all(isinstance(item, str) and item for item in body["suggestions"])
-    assert body["source"] == "fallback"
-    assert body["expires_at"]
-
-
 async def test_workbench_summary_aggregates_sections(client, monkeypatch):
     token, user_id = await _new_user(client)
     await _seed_sources(user_id, "summary")
@@ -395,7 +344,8 @@ async def test_workbench_summary_aggregates_sections(client, monkeypatch):
     assert body["todos"]
     assert isinstance(body["recent"]["files"], list)
     assert isinstance(body["recent"]["notes"], list)
-    assert body["inbox"]["pending"] >= 1
+    assert "triage" not in body
+    assert "inbox" not in body
 
 
 async def test_send_mail_saves_to_sent(client, monkeypatch):

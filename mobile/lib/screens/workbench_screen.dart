@@ -16,7 +16,6 @@ import '../widgets/app_widgets.dart';
 import 'brief_screen.dart';
 import 'chat_screen.dart';
 import 'files_screen.dart';
-import 'inbox_screen.dart';
 import 'library_screen.dart';
 import 'notes_screen.dart';
 import 'projects_screen.dart';
@@ -35,7 +34,6 @@ class WorkbenchScreen extends StatefulWidget {
 class _WorkbenchScreenState extends State<WorkbenchScreen> {
   final _chatController = TextEditingController();
   DailyBrief? _brief;
-  TriageSnapshot? _triage;
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _todos = [];
   List<Map<String, dynamic>> _activitySuggestions = [];
@@ -47,26 +45,18 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     '看看今天的待办',
     '写本周周报',
   ];
-  Timer? _suggestionTimer;
-  int _unreadNotifications = 0;
   String _name = '';
   bool _loading = true;
   bool _briefLoading = true;
   bool _error = false;
   int _loadToken = 0;
   DateTime? _lastLoadAt;
-  bool _suggestionsRequested = false;
   late final ValueNotifier<int> _refresh = RefreshBus.signal('workbench');
 
   @override
   void initState() {
     super.initState();
     _refresh.addListener(_onRefreshSignal);
-    _loadCachedSuggestions();
-    _suggestionTimer = Timer.periodic(
-      const Duration(hours: 1),
-      (_) => _loadSuggestions(force: true),
-    );
     _bootstrap();
   }
 
@@ -82,34 +72,9 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
 
   @override
   void dispose() {
-    _suggestionTimer?.cancel();
     _refresh.removeListener(_onRefreshSignal);
     _chatController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadCachedSuggestions() async {
-    final cached = await LocalCacheService().readList('workbench.suggestions');
-    if (!mounted || cached.isEmpty) return;
-    final items = cached
-        .map((e) => (e['text'] ?? '').toString())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (items.isNotEmpty) setState(() => _suggestions = items);
-  }
-
-  Future<void> _loadSuggestions({bool force = false}) async {
-    try {
-      final items = await ApiService().getWorkbenchSuggestions(refresh: force);
-      if (!mounted || items.isEmpty) return;
-      setState(() => _suggestions = items);
-      await LocalCacheService().writeJson(
-        'workbench.suggestions',
-        items.map((text) => {'text': text}).toList(),
-      );
-    } catch (_) {
-      // Keep cached/default suggestions when offline.
-    }
   }
 
   Future<T?> _safe<T>(Future<T> future) async {
@@ -135,17 +100,10 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   }
 
   void _applySummary(Map<String, dynamic> summary) {
-    final triageData = summary['triage'];
     final recent = (summary['recent'] as Map?) ?? const {};
     final recentFiles = (recent['files'] as List?) ?? const [];
     final recentNotes = (recent['notes'] as List?) ?? const [];
     final recentProjects = (recent['projects'] as List?) ?? const [];
-    final suggestionList = (summary['suggestions'] as List?) ?? const [];
-    _triage = triageData is Map
-        ? TriageSnapshot.fromJson(
-            triageData.map((k, v) => MapEntry(k.toString(), v)),
-          )
-        : null;
     _events = ((summary['events'] as List?) ?? const [])
         .whereType<Map>()
         .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
@@ -168,9 +126,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
         .whereType<Map>()
         .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
         .toList();
-    if (suggestionList.isNotEmpty) {
-      _suggestions = suggestionList.map((e) => e.toString()).toList();
-    }
   }
 
   Future<void> _load({bool force = false}) async {
@@ -190,7 +145,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     // Fast, cheap calls first: these unblock the whole workbench.
     final results = await Future.wait<dynamic>([
       _safe(api.getWorkbenchSummary()),
-      _safe(api.listNotifications(limit: 50)),
       _safe(api.getMe()),
       _safe(api.getActivitySuggestions()),
     ]);
@@ -205,34 +159,30 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
     }
     if (!mounted || token != _loadToken) return;
 
-    final me = results[2] as Map<String, dynamic>?;
-    final notifications = (results[1] as List<Map<String, dynamic>>?) ?? [];
+    final me = results[1] as Map<String, dynamic>?;
     final activitySuggestions =
-        (results[3] as List<Map<String, dynamic>>?) ?? const [];
+        (results[2] as List<Map<String, dynamic>>?) ?? const [];
     setState(() {
       _error = results[0] == null && summary.isEmpty;
       _applySummary(summary);
       _activitySuggestions = activitySuggestions;
-      _unreadNotifications =
-          notifications.where((n) => n['read'] == false).length;
       _name = (me?['display_name'] ?? me?['username'] ?? '').toString();
       _loading = false;
       _briefLoading = true;
     });
 
-    // Suggestions also trigger a DingTalk read; fetch them only after the
-    // summary call has warmed that cache, and only once per app session.
-    if (!_suggestionsRequested) {
-      _suggestionsRequested = true;
-      unawaited(_loadSuggestions());
-    }
-
-    // The daily brief is served from the backend's hourly snapshot.
+    // The daily brief is served from the backend's hourly snapshot. Its
+    // prompts are the workbench suggestion chips; there is no separate call.
     final brief = await briefFuture;
     if (!mounted || token != _loadToken) return;
     setState(() {
       _briefLoading = false;
-      if (brief != null) _brief = brief;
+      if (brief != null) {
+        _brief = brief;
+        if (brief.prompts.isNotEmpty) {
+          _suggestions = brief.prompts;
+        }
+      }
     });
     if (brief != null) {
       unawaited(LocalCacheService().writeJson('workbench.brief', {
@@ -351,22 +301,13 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
-    final inboxCount = (_triage?.pendingCount ?? 0) + _unreadNotifications;
-    final urgent = _triage?.urgentCount ?? 0;
-    final sourceCounts = <String, int>{
-      'mail': _triage?.unreadCount('mail') ?? 0,
-      'dingtalk': _triage?.unreadCount('dingtalk') ?? 0,
-    };
 
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
-            await Future.wait([
-              _load(force: true),
-              _loadSuggestions(),
-            ]);
+            await _load(force: true);
           },
           color: palette.primary,
           child: ListView(
@@ -423,14 +364,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                     _buildHeroChat(palette),
                     const SizedBox(height: 9),
                     _buildTodayCard(palette),
-                    const SizedBox(height: 9),
-                    _buildInboxCard(
-                      palette,
-                      inboxCount,
-                      urgent,
-                      sourceCounts,
-                      _unreadNotifications,
-                    ),
                     const SizedBox(height: 9),
                     _buildActivitySuggestionsCard(palette),
                     const SizedBox(height: 9),
@@ -690,104 +623,6 @@ class _WorkbenchScreenState extends State<WorkbenchScreen> {
                       size: 16, color: palette.muted),
                 ],
               ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInboxCard(
-    AppPalette palette,
-    int total,
-    int urgent,
-    Map<String, int> sourceCounts,
-    int notificationCount,
-  ) {
-    return AppCard(
-      onTap: () => _pushAndRefresh(const InboxScreen()),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                '信息',
-                style: TextStyle(
-                  fontSize: 10,
-                  letterSpacing: 1.1,
-                  fontWeight: FontWeight.w700,
-                  color: palette.muted,
-                ),
-              ),
-              const Spacer(),
-              Icon(Icons.chevron_right_rounded, size: 16, color: palette.muted),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '$total',
-                style: TextStyle(
-                  fontSize: 26,
-                  height: 1,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
-                  color: palette.ink,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  '待处理',
-                  style: TextStyle(fontSize: 10, color: palette.muted),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: [
-              SourcePill(
-                label: '邮件 ${sourceCounts['mail'] ?? 0}',
-                color: palette.primary,
-                icon: Icons.mail_outline_rounded,
-              ),
-              SourcePill(
-                label: '钉钉 ${sourceCounts['dingtalk'] ?? 0}',
-                color: palette.accent,
-                icon: Icons.chat_outlined,
-              ),
-              if (notificationCount > 0)
-                SourcePill(
-                  label: '通知 $notificationCount',
-                  color: palette.success,
-                  icon: Icons.notifications_none_rounded,
-                ),
-            ],
-          ),
-          if (urgent > 0) ...[
-            const SizedBox(height: 7),
-            Row(
-              children: [
-                TagDot(color: palette.accent),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    '$urgent 条紧急',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: palette.accent,
-                    ),
-                  ),
-                ),
-              ],
             ),
           ],
         ],

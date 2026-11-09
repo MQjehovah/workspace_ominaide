@@ -201,7 +201,7 @@ async def ai_draft(
     user: dict = Depends(get_current_user),
 ):
     from core.bots.registry import get_active_bot, get_or_create_default_bot
-    from core.cos.service import draft_reply
+    from core.skills.runtime import run_skill
 
     try:
         bot = (
@@ -211,17 +211,21 @@ async def ai_draft(
         )
     except Exception:
         raise HTTPException(status_code=404, detail="Bot not found")
-    draft = await draft_reply(
-        user["id"],
-        source="mail",
-        message_id=message_id,
-        tone=req.tone,
-        instructions=req.instructions,
-        bot=bot,
-    )
-    if draft is None:
+    try:
+        result = await run_skill(
+            user["id"],
+            bot.id,
+            "draft-reply",
+            {
+                "source": "mail",
+                "message_id": message_id,
+                "tone": req.tone,
+                "instructions": req.instructions,
+            },
+        )
+    except Exception:
         raise HTTPException(status_code=404, detail="Message not found or empty")
-    return draft
+    return result.get("output") or {}
 
 
 @router.put("/messages/read-all")
