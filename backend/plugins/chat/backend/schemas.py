@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     bot_id: int | None = None
     machine_id: str | None = None
+    client_kind: str | None = None
     context_refs: list[ObjectRef] | None = None
     context_comment_id: int | None = None
 

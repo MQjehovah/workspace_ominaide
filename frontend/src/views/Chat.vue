@@ -845,6 +845,7 @@ async function send(reuseUser = false) {
         message: text,
         session_id: sessionId.value,
         bot_id: botId.value || undefined,
+        client_kind: 'web',
         context_refs: contextRefs.value.length
           ? contextRefs.value.map((ref) => ({ type: ref.type, id: ref.id }))
           : undefined,

@@ -1,6 +1,9 @@
 from pathlib import Path
 
+import pytest
+
 from ai.coding import workspace
+from core.config.settings import settings
 
 
 def test_glob_and_apply_patch(tmp_path):
@@ -44,3 +47,37 @@ def test_delete_and_move_file(tmp_path):
     deleted = workspace.delete_file(str(tmp_path), {"path": "new/b.txt"})
     assert deleted["deleted"] is True
     assert not (tmp_path / "new" / "b.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_project_file_lists_reads_and_searches_server_workspace(tmp_path, monkeypatch):
+    from ai.mcp.tools.coding import project_file
+
+    monkeypatch.setattr(settings, "coding_workspace_root", str(tmp_path))
+    project = tmp_path / "demo"
+    (project / "src").mkdir(parents=True)
+    (project / "src" / "main.py").write_text("import os\nprint('hello')\n", encoding="utf-8")
+    (project / "README.md").write_text("# Demo\n", encoding="utf-8")
+    (project / ".git").mkdir()
+    (project / ".git" / "config").write_text("secret\n", encoding="utf-8")
+
+    listed = await project_file(1, {"op": "list", "project": "demo", "depth": 2})
+    text = listed.content[0].text
+    assert "src/" in text
+    assert "README.md" in text
+    assert ".git/" not in text
+
+    read = await project_file(
+        1, {"op": "read", "project": "demo", "path": "src/main.py"}
+    )
+    assert "2: print('hello')" in read.content[0].text
+
+    found = await project_file(
+        1, {"op": "grep", "project": "demo", "query": "hello"}
+    )
+    assert "src/main.py:2" in found.content[0].text
+
+    escaped = await project_file(
+        1, {"op": "read", "project": "demo", "path": "../outside.txt"}
+    )
+    assert escaped.isError is True

@@ -357,6 +357,13 @@ async def _coding_loop(run: Run, bot: Bot, coding) -> None:
 
 
 async def _loop(run: Run, bot: Bot, messages: list[dict], seq: int) -> None:
+    from ai.bots.context import set_current_client_kind, set_local_tools_enabled
+
+    meta = run.meta or {}
+    client_kind = str(meta.get("client_kind") or "desktop")
+    set_current_client_kind(client_kind)
+    set_local_tools_enabled(bool(meta.get("machine_id")) or client_kind != "web")
+
     client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
     all_tools = tool_registry.get_tools(user_id=run.user_id)
     from ai.cognition.agent_profiles import get_profile, scoped_tools

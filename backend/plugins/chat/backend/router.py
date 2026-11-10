@@ -20,9 +20,13 @@ from ai.llm.clients import get_openai_client
 from ai.bots import runner
 from ai.bots.context import (
     reset_current_bot_id,
+    reset_current_client_kind,
     reset_current_session_id,
+    reset_local_tools_enabled,
     set_current_bot_id,
+    set_current_client_kind,
     set_current_session_id,
+    set_local_tools_enabled,
 )
 from ai.bots.memory import build_bot_context
 from ai.bots.registry import BotNotFound, get_active_bot, get_or_create_default_bot
@@ -198,6 +202,18 @@ async def build_messages(
                 priority=70,
                 max_chars=2000,
             )
+    client_kind = (req.client_kind or ("web" if not req.machine_id else "desktop")).lower()
+    if client_kind == "web" and not req.machine_id:
+        builder.section(
+            "client_surface",
+            (
+                "当前请求来自 Web 云端，不在用户桌面本地机器上。"
+                "历史对话中出现的本地机器状态可能已经过期，不要假设用户仍在原来的电脑上。"
+                "不要使用 local_* 工具；需要分析项目时使用服务端项目工具或 delegate_agent。"
+            ),
+            priority=75,
+            required=True,
+        )
     if extra_system:
         builder.section("extra", extra_system, priority=60, max_chars=4000)
     t_ctx = time.monotonic()
@@ -395,6 +411,9 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
         messages = await build_messages(req, user["id"], bot=bot)
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(session_id)
+        client_kind = (req.client_kind or ("web" if not req.machine_id else "desktop")).lower()
+        client_token = set_current_client_kind(client_kind)
+        local_token = set_local_tools_enabled(bool(req.machine_id))
         try:
             reply = await run_agent(
                 user["id"],
@@ -407,6 +426,8 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
                     session_id=session_id,
             )
         finally:
+            reset_local_tools_enabled(local_token)
+            reset_current_client_kind(client_token)
             reset_current_session_id(session_token)
             reset_current_bot_id(token)
         await save_message(user["id"], "user", req.message, session_id, bot=bot)
@@ -435,6 +456,9 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
         done_marker = object()
 
         async def produce():
+            client_kind = (req.client_kind or ("web" if not req.machine_id else "desktop")).lower()
+            client_token = set_current_client_kind(client_kind)
+            local_token = set_local_tools_enabled(bool(req.machine_id))
             try:
                 # Build context inside the stream so the client gets headers
                 # and heartbeats immediately, even when embeddings/DB are slow.
@@ -455,6 +479,8 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
                     f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
                 )
             finally:
+                reset_local_tools_enabled(local_token)
+                reset_current_client_kind(client_token)
                 await queue.put(done_marker)
 
         producer = asyncio.create_task(produce())
@@ -522,14 +548,23 @@ async def chat_run(req: ChatRequest, user: dict = Depends(get_current_user)):
     bot = await _resolve_bot(user["id"], req.bot_id)
     messages = await build_messages(req, user["id"], bot=bot)
     await save_message(user["id"], "user", req.message, session_id, bot=bot)
-    run = await runner.create_run(
-        user["id"],
-        bot,
-        req.message,
-        messages=messages,
-        trigger="chat",
-        session_id=session_id,
-    )
+    client_kind = (req.client_kind or ("web" if not req.machine_id else "desktop")).lower()
+    client_token = set_current_client_kind(client_kind)
+    local_token = set_local_tools_enabled(bool(req.machine_id))
+    try:
+        run = await runner.create_run(
+            user["id"],
+            bot,
+            req.message,
+            messages=messages,
+            trigger="chat",
+            agent="chat",
+            session_id=session_id,
+            meta={"client_kind": client_kind, "machine_id": req.machine_id},
+        )
+    finally:
+        reset_local_tools_enabled(local_token)
+        reset_current_client_kind(client_token)
     return {
         "run_id": run.id,
         "bot_id": bot.id,

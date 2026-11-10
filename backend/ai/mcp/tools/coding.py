@@ -4,6 +4,7 @@ The coding runtime lives in ``ai.coding``; this module only creates child
 Runs and lists projects/runs. It deliberately has no dependency on a business
 plugin.
 """
+import re
 from pathlib import Path
 
 from sqlalchemy import select
@@ -29,6 +30,183 @@ def _resolve_project(user_id: int, project: str) -> Path:
     if not path.exists() or not path.is_dir():
         raise ValueError(f"项目目录不存在：{project}")
     return path
+
+
+_IGNORED_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    ".turbo",
+    ".cache",
+    "target",
+    "vendor",
+    ".idea",
+    ".vscode",
+}
+_MAX_READ_BYTES = 400_000
+_MAX_READ_LINES = 2000
+
+
+def _resolve_project_path(user_id: int, project: str) -> Path:
+    """Accept either an absolute workspace path or a project name."""
+    raw = str(project or "").strip()
+    if not raw:
+        raise ValueError("project 必填，可用 list_coding_projects 查看")
+    if raw.startswith("~"):
+        raw = str(Path(raw).expanduser())
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = projects_root(user_id) / raw
+    return _resolve_project(user_id, str(candidate))
+
+
+def _safe_child(root: Path, relative: str) -> Path:
+    target = (root / (relative or ".")).resolve()
+    if target != root and root not in target.parents:
+        raise ValueError(f"路径越界：{relative}")
+    return target
+
+
+def _read_text(path: Path, limit: int = _MAX_READ_BYTES) -> str:
+    data = path.read_bytes()[:limit]
+    if b"\x00" in data:
+        raise ValueError("这是二进制文件，不能按文本读取")
+    return data.decode("utf-8", errors="replace")
+
+
+def _walk_files(root: Path, start: Path, *, max_files: int = 2000):
+    count = 0
+    for item in sorted(start.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+        if item.name in _IGNORED_DIRS:
+            continue
+        if item.is_dir():
+            yield item
+            for child in _walk_files(root, item, max_files=max_files - count):
+                yield child
+        else:
+            yield item
+        count += 1
+        if count >= max_files:
+            return
+
+
+async def project_file(user_id: int, args: dict) -> MCPCallResponse:
+    """Read-only access to a server-side project workspace."""
+    op = str(args.get("op") or "list").strip().lower()
+    project = str(args.get("project") or "").strip()
+    rel = str(args.get("path") or "").strip().lstrip("/")
+    try:
+        root = _resolve_project_path(user_id, project)
+        target = _safe_child(root, rel)
+    except ValueError as e:
+        return _err(str(e))
+    if not target.exists():
+        return _err(f"路径不存在：{rel or '.'}")
+
+    if op == "list":
+        if not target.is_dir():
+            return _err("list 需要目录路径；读取文件请用 op=read")
+        try:
+            depth = max(1, min(int(args.get("depth") or 1), 3))
+        except (TypeError, ValueError):
+            depth = 1
+        try:
+            limit = max(1, min(int(args.get("limit") or 200), 1000))
+        except (TypeError, ValueError):
+            limit = 200
+        lines = [f"项目：{root.name}  {root}"]
+        shown = 0
+        stack: list[tuple[Path, int]] = [(target, 0)]
+        while stack and shown < limit:
+            current, level = stack.pop()
+            try:
+                entries = sorted(
+                    current.iterdir(), key=lambda p: (p.is_file(), p.name.lower())
+                )
+            except OSError as e:
+                lines.append(f"! 无法读取 {current}: {e}")
+                continue
+            for item in entries:
+                if item.name in _IGNORED_DIRS:
+                    continue
+                if shown >= limit:
+                    break
+                rel_path = item.relative_to(root)
+                lines.append(f"{'  ' * level}{rel_path}{'/' if item.is_dir() else ''}")
+                shown += 1
+                if item.is_dir() and level + 1 < depth:
+                    stack.append((item, level + 1))
+        if shown >= limit:
+            lines.append(f"... 已截断（limit={limit}），可指定 path 查看子目录")
+        return _ok("\n".join(lines))
+
+    if op == "read":
+        if not target.is_file():
+            return _err("read 需要文件路径；列目录请用 op=list")
+        try:
+            start = max(1, int(args.get("start_line") or 1))
+            end = int(args.get("end_line") or 0)
+        except (TypeError, ValueError):
+            start, end = 1, 0
+        try:
+            text = _read_text(target)
+        except ValueError as e:
+            return _err(str(e))
+        lines = text.splitlines()
+        if end <= 0:
+            end = min(len(lines), start - 1 + _MAX_READ_LINES)
+        end = min(end, len(lines))
+        body = "\n".join(
+            f"{i}: {lines[i - 1]}" for i in range(start, end + 1)
+        )
+        header = f"文件：{target.relative_to(root)}  行 {start}-{end}/{len(lines)}"
+        if end < len(lines):
+            header += f"（用 start_line={end + 1} 继续）"
+        return _ok(f"{header}\n{body}")
+
+    if op in ("grep", "search"):
+        pattern = str(args.get("query") or "").strip()
+        if not pattern:
+            return _err("grep 需要 query")
+        try:
+            limit = max(1, min(int(args.get("limit") or 50), 300))
+        except (TypeError, ValueError):
+            limit = 50
+        try:
+            regex = re.compile(pattern, re.IGNORECASE)
+        except re.error as e:
+            return _err(f"正则无效：{e}")
+        hits: list[str] = []
+        files = [target] if target.is_file() else list(_walk_files(root, target))
+        for file in files:
+            if len(hits) >= limit:
+                break
+            if not file.is_file():
+                continue
+            try:
+                content = _read_text(file, limit=1_000_000)
+            except (OSError, ValueError):
+                continue
+            for lineno, line in enumerate(content.splitlines(), 1):
+                if regex.search(line):
+                    hits.append(
+                        f"{file.relative_to(root)}:{lineno}: {line.strip()[:240]}"
+                    )
+                    if len(hits) >= limit:
+                        break
+        if not hits:
+            return _ok(f"未找到匹配：{pattern}")
+        return _ok("\n".join(hits))
+
+    return _err(f"不支持的 op：{op}（可用 list/read/grep）")
 
 
 async def delegate_agent(user_id: int, args: dict) -> MCPCallResponse:
@@ -204,6 +382,47 @@ async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
 
 
 TOOLS = [
+    (
+        MCPTool(
+            name="project_file",
+            description=(
+                "只读访问服务端工作区里的项目源码。op=list 列目录/结构，"
+                "op=read 读文件（带行号），op=grep 在项目内搜索文本。"
+                "分析服务端项目时优先用它，不要用 local_* 读取服务端路径。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "op": {
+                        "type": "string",
+                        "enum": ["list", "read", "grep"],
+                        "description": "操作类型，默认 list",
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "项目名或绝对路径，先用 list_coding_projects 查看",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "项目内相对路径；list 时为目录，read 时为文件",
+                    },
+                    "query": {"type": "string", "description": "grep 的搜索内容/正则"},
+                    "depth": {
+                        "type": "integer",
+                        "description": "list 的递归深度，1-3，默认 1",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "list/grep 返回条数上限，默认 200/50",
+                    },
+                    "start_line": {"type": "integer", "description": "read 起始行，默认 1"},
+                    "end_line": {"type": "integer", "description": "read 结束行，默认自动"},
+                },
+                "required": ["project"],
+            },
+        ),
+        project_file,
+    ),
     (
         MCPTool(
             name="delegate_agent",

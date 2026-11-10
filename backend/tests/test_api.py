@@ -216,6 +216,7 @@ async def test_coding_tools_registered(client, admin_token):
     names = {t["name"] for t in r.json()["tools"]}
     assert "delegate_agent" in names
     assert "list_coding_projects" in names
+    assert "project_file" in names
     assert "list_coding_runs" in names
     assert "get_coding_run" in names
     assert "dispatch_coding_task" not in names

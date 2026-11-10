@@ -33,6 +33,12 @@ async def list_local_machines(user_id: int, args: dict) -> MCPCallResponse:
 
 
 def _resolve_machine(user_id: int, args: dict) -> str:
+    from ai.bots.context import local_tools_enabled
+
+    if not local_tools_enabled():
+        raise local_tools.LocalMachineError(
+            "当前 Web 会话没有选择本地机器，local_* 工具不可用。"
+        )
     return local_tools.resolve_machine(
         user_id,
         machine_id=str(args.get("machine_id") or "").strip() or None,

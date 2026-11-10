@@ -65,6 +65,7 @@ TOOL_RISK = {
     "create_word_document": RISK_WRITE,
     "create_presentation": RISK_WRITE,
     "list_coding_projects": RISK_READ,
+    "project_file": RISK_READ,
     "list_coding_runs": RISK_READ,
     "get_coding_run": RISK_READ,
     "web_search": RISK_READ,

@@ -18,7 +18,7 @@ import re
 from ai.mcp.core import MCPCallRequest, MCPCallResponse, MCPContent, MCPTool
 from ai.mcp.registry import tool_registry
 from ai.bots import policy
-from ai.bots.context import get_current_bot_id
+from ai.bots.context import get_current_bot_id, local_tools_enabled
 from core.config.settings import settings
 from core.logging import get_logger
 
@@ -48,6 +48,9 @@ DEFAULT_PINNED_TOOLS = {
     "web_fetch",
     "skill_search",
     "skill_call",
+    "delegate_agent",
+    "list_coding_projects",
+    "project_file",
 }
 
 # All local machine tools are source="local". They are never exposed
@@ -59,6 +62,8 @@ GATEWAY_INSTRUCTION = (
     "所有 local_* 本地工具和本地 MCP 工具不在默认工具表中，必须先用 "
     "tool_search(scope=\"machine\") 或 scope=\"all\" 检索，再用 tool_call 调用。"
     "技能先用 skill_search 检索，再用 skill_call 调用。"
+    "分析服务端项目时先用 list_coding_projects 找项目，再用 project_file 读取源码；"
+    "修改代码时使用 delegate_agent。不要用 local_* 读取服务端路径。"
     "tool_call 的审批按底层真实工具执行。"
 )
 
@@ -234,7 +239,9 @@ def search_server_tools(
         tools = [t for t in tools if t.name in set(allowed) | GATEWAY_TOOLS]
     if source:
         tools = [t for t in tools if t.source == source]
-        if source == "local" and not _online_machine_ids(user_id):
+        if source == "local" and (
+            not local_tools_enabled() or not _online_machine_ids(user_id)
+        ):
             tools = []
     else:
         # Local machine tools are injected dynamically; don't duplicate them
@@ -388,7 +395,8 @@ async def tool_search(user_id: int, args: dict) -> MCPCallResponse:
     if scope in ("server", "all"):
         add(search_server_tools(user_id, query, source=source, limit=limit, bot=bot))
 
-    if scope in ("machine", "all") and source not in ("builtin", "plugin", "mcp"):
+    local_available = local_tools_enabled()
+    if scope in ("machine", "all") and source not in ("builtin", "plugin", "mcp") and local_available:
         # Local primitives are registered but only discoverable here.
         local_items = search_server_tools(
             user_id, query, source="local", limit=limit, bot=bot
@@ -408,6 +416,8 @@ async def tool_search(user_id: int, args: dict) -> MCPCallResponse:
     payload: dict = {"query": query, "scope": scope, "tools": items}
     if local_error:
         payload["local_error"] = local_error
+    if not local_available and scope in ("machine", "all"):
+        payload["local_hint"] = "当前 Web 会话没有选择本地机器，local_* 工具不可用。"
     if not items:
         payload["hint"] = (
             "没有匹配工具。换更短的关键词；本地机器工具和本地 MCP 需要 "
@@ -438,6 +448,8 @@ async def tool_call(user_id: int, args: dict) -> MCPCallResponse:
         )
 
     if target["kind"] == "local":
+        if not local_tools_enabled():
+            return _err("当前 Web 会话没有选择本地机器，不能调用 local_* 工具。")
         server_id = target["server_id"]
         tool_name = target["tool"]
         machine_id = str(args.get("machine_id") or target["machine_id"]).strip()
