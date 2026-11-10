@@ -70,7 +70,8 @@ class _ApiHttp {
     Duration? timeout,
   }) {
     return _run(() => _client
-        .post(uri, headers: _headersFor(headers), body: body, encoding: encoding)
+        .post(uri,
+            headers: _headersFor(headers), body: body, encoding: encoding)
         .timeout(timeout ?? _defaultTimeout));
   }
 
@@ -105,7 +106,8 @@ class _ApiHttp {
     Duration? timeout,
   }) {
     return _run(() => _client
-        .patch(uri, headers: _headersFor(headers), body: body, encoding: encoding)
+        .patch(uri,
+            headers: _headersFor(headers), body: body, encoding: encoding)
         .timeout(timeout ?? _defaultTimeout));
   }
 
@@ -189,11 +191,13 @@ class ApiService {
     final refresh = _refreshToken ?? await _readStoredRefreshToken();
     if (refresh == null || refresh.isEmpty) return false;
     try {
-      final res = await http.post(
-        Uri.parse('$_baseUrl/api/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'refresh_token': refresh}),
-      ).timeout(const Duration(seconds: 20));
+      final res = await http
+          .post(
+            Uri.parse('$_baseUrl/api/auth/refresh'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'refresh_token': refresh}),
+          )
+          .timeout(const Duration(seconds: 20));
       if (res.statusCode != 200) return false;
       final data = decodeJson(res);
       final access = data['access_token'];
@@ -1518,7 +1522,8 @@ class ApiService {
   Stream<Map<String, dynamic>> streamAgentRun(int id) async* {
     final request =
         http.Request('GET', Uri.parse('$_baseUrl/api/runs/$id/stream'));
-    final response = await _http.send(request, timeout: const Duration(seconds: 30));
+    final response =
+        await _http.send(request, timeout: const Duration(seconds: 30));
     if (response.statusCode != 200) {
       final body = await response.stream.bytesToString();
       throw Exception(body.isEmpty ? '运行流连接失败' : body);
@@ -1584,6 +1589,17 @@ class ApiService {
         .whereType<Map>()
         .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
         .toList();
+  }
+
+  Future<int> markAllSourceItemsRead({int? sourceId}) async {
+    final query = sourceId == null ? '' : '?source_id=$sourceId';
+    final res = await put('/sources/items/read-all$query', const {});
+    if (res.statusCode != 200) return 0;
+    final dynamic data = decodeJson(res);
+    if (data is Map) {
+      return (data['updated'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
   }
 
   Future<List<Map<String, dynamic>>> listMcpServers() async {
@@ -2038,7 +2054,6 @@ class ApiService {
     });
   }
 
-
   // -- Quick capture --
   Future<Map<String, dynamic>> createCapture({
     required String kind,
@@ -2099,7 +2114,8 @@ class ApiService {
     return _asMapList(data['items']);
   }
 
-  Future<void> convertCapture(int id, String target, {Map<String, dynamic>? params}) async {
+  Future<void> convertCapture(int id, String target,
+      {Map<String, dynamic>? params}) async {
     final res = await post('/captures/$id/convert', {
       'target': target,
       if (params != null) 'params': params,

@@ -4,7 +4,7 @@ log = get_logger(__name__)
 import asyncio
 import feedparser
 import httpx
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 
@@ -137,6 +137,29 @@ async def mark_read(db: AsyncSession, user_id: int, item_id: int):
     item.read = True
     await db.flush()
     return True
+
+
+async def mark_all_read(
+    db: AsyncSession,
+    user_id: int,
+    source_id: int | None = None,
+) -> int:
+    """Mark every unread item for a user (optionally a single source)."""
+    cond = [ContentSource.user_id == user_id, ContentItem.read == False]  # noqa: E712
+    if source_id is not None:
+        cond.append(ContentItem.source_id == source_id)
+    ids = (
+        await db.execute(
+            select(ContentItem.id).join(ContentSource).where(*cond)
+        )
+    ).scalars().all()
+    if not ids:
+        return 0
+    await db.execute(
+        update(ContentItem).where(ContentItem.id.in_(ids)).values(read=True)
+    )
+    await db.flush()
+    return len(ids)
 
 
 async def mark_starred(db: AsyncSession, user_id: int, item_id: int):

@@ -152,3 +152,22 @@ async def test_scheduled_source_refresh_calls_fetch_for_stale_sources(client, mo
     monkeypatch.setattr(sources_service, "fetch_source_content", fake_fetch)
     await refresh_due_sources_job()
     assert source_id in called
+
+
+async def test_mark_all_source_items_read(client):
+    token, user_id = await _new_user(client)
+    await _add_source_and_items(user_id, count=3)
+
+    r = await client.put(
+        "/api/sources/items/read-all", headers=auth(token), json={}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] == 3
+
+    r = await client.get(
+        "/api/sources/items?page_size=10", headers=auth(token)
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 3
+    assert all(item["read"] is True for item in items)

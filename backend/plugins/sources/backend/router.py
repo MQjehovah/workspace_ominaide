@@ -144,6 +144,16 @@ async def get_item(
     return (await _with_source_titles(db, [item]))[0]
 
 
+@router.put("/items/read-all")
+async def read_all_items(
+    source_id: int | None = Query(None),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    updated = await service.mark_all_read(db, user["id"], source_id)
+    return {"updated": updated}
+
+
 @router.put("/items/{item_id}/read")
 async def read_item(
     item_id: int,
