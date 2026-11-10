@@ -87,7 +87,7 @@ async def ensure_session(
                 session_id=session_id,
                 bot_id=bot_id,
                 title=title,
-                kind=kind or "chat",
+                kind=kind or "session",
                 objective=objective,
                 status="active",
                 meta=metadata or {},

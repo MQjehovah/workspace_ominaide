@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 class SessionCreate(BaseModel):
     session_id: str | None = None
     bot_id: int | None = None
-    kind: str = "chat"
+    kind: str | None = None
     title: str | None = None
     objective: str | None = None
     metadata: dict = Field(default_factory=dict)
