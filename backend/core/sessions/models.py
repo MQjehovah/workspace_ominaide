@@ -19,7 +19,7 @@ class Session(Base):
     owns the long-lived container: title, objective, status and metadata.
     """
 
-    __tablename__ = "chat_sessions"
+    __tablename__ = "sessions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -42,7 +42,7 @@ class SessionMessage(Base):
     Tool arguments/results intentionally live in RunStep, not here.
     """
 
-    __tablename__ = "chat_messages"
+    __tablename__ = "session_messages"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)

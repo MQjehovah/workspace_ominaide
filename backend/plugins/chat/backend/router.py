@@ -311,6 +311,8 @@ async def list_sessions(
             SessionItem(
                 session_id=s.session_id,
                 title=s.title,
+                kind=s.kind,
+                status=s.status,
                 updated_at=s.updated_at,
                 bot_id=s.bot_id,
             )

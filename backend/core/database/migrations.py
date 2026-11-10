@@ -506,10 +506,47 @@ async def ensure_schema_migrations():
                     channel="now",
                 ))
             await conn.execute(text("DROP TABLE activity_suggestions"))
+    # One-time migration: chat_sessions/chat_messages -> sessions/session_messages.
+    async with engine.begin() as conn:
+        table_names = set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
+        if "chat_sessions" in table_names and "sessions" in table_names:
+            await conn.execute(text(
+                "INSERT INTO sessions "
+                "(id, user_id, session_id, bot_id, title, kind, objective, status, metadata, "
+                "active_run_id, last_message_at, created_at, updated_at) "
+                "SELECT id, user_id, session_id, bot_id, title, COALESCE(kind, 'chat'), "
+                "objective, COALESCE(status, 'active'), metadata, active_run_id, "
+                "last_message_at, created_at, updated_at FROM chat_sessions c "
+                "WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = c.id)"
+            ))
+            await conn.execute(text("DROP TABLE chat_sessions"))
+            table_names.discard("chat_sessions")
+
+        if "chat_messages" in table_names and "session_messages" in table_names:
+            await conn.execute(text(
+                "INSERT INTO session_messages "
+                "(id, user_id, session_id, bot_id, run_id, role, kind, content, metadata, created_at) "
+                "SELECT id, user_id, session_id, bot_id, run_id, role, COALESCE(kind, 'text'), "
+                "content, metadata, created_at FROM chat_messages c "
+                "WHERE NOT EXISTS (SELECT 1 FROM session_messages m WHERE m.id = c.id)"
+            ))
+            await conn.execute(text("DROP TABLE chat_messages"))
+            table_names.discard("chat_messages")
+
+        if dialect == "postgresql":
+            for table in ("sessions", "session_messages"):
+                if table not in table_names:
+                    continue
+                await conn.execute(text(
+                    f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+                    f"COALESCE((SELECT MAX(id) FROM {table}), 1), "
+                    f"(SELECT COUNT(*) > 0 FROM {table}))"
+                ))
+
     # One-time migration: coding_runs extension -> Session.metadata + Run.meta.
     async with engine.begin() as conn:
         table_names = set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
-        if "coding_runs" in table_names and "runs" in table_names and "chat_sessions" in table_names:
+        if "coding_runs" in table_names and "runs" in table_names and "sessions" in table_names:
             import json as _json
 
             rows = (await conn.execute(text("SELECT * FROM coding_runs"))).mappings().all()
@@ -529,7 +566,7 @@ async def ensure_schema_migrations():
                 session_id = run.get("session_id")
                 if session_id:
                     existing = (await conn.execute(
-                        text("SELECT kind FROM chat_sessions WHERE user_id = :uid AND session_id = :sid LIMIT 1"),
+                        text("SELECT kind FROM sessions WHERE user_id = :uid AND session_id = :sid LIMIT 1"),
                         {"uid": run["user_id"], "sid": session_id},
                     )).mappings().first()
                     if existing is not None and existing.get("kind") != "coding":
@@ -538,7 +575,7 @@ async def ensure_schema_migrations():
                     session_id = f"coding-{run['id']}"
 
                 existing = (await conn.execute(
-                    text("SELECT id FROM chat_sessions WHERE user_id = :uid AND session_id = :sid LIMIT 1"),
+                    text("SELECT id FROM sessions WHERE user_id = :uid AND session_id = :sid LIMIT 1"),
                     {"uid": run["user_id"], "sid": session_id},
                 )).mappings().first()
                 if existing is None:
@@ -547,7 +584,7 @@ async def ensure_schema_migrations():
                     )
                     meta_sql = "CAST(:meta AS JSON)" if dialect == "postgresql" else ":meta"
                     await conn.execute(text(
-                        "INSERT INTO chat_sessions "
+                        "INSERT INTO sessions "
                         "(user_id, session_id, bot_id, title, kind, objective, status, metadata, created_at, updated_at) "
                         f"VALUES (:uid, :sid, :bid, :title, 'coding', :objective, :status, {meta_sql}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                     ), {
@@ -562,7 +599,7 @@ async def ensure_schema_migrations():
                 else:
                     meta_sql = "CAST(:meta AS JSON)" if dialect == "postgresql" else ":meta"
                     await conn.execute(text(
-                        f"UPDATE chat_sessions SET metadata = {meta_sql}, updated_at = CURRENT_TIMESTAMP "
+                        f"UPDATE sessions SET metadata = {meta_sql}, updated_at = CURRENT_TIMESTAMP "
                         "WHERE user_id = :uid AND session_id = :sid"
                     ), {"uid": run["user_id"], "sid": session_id, "meta": meta_json})
 
@@ -580,14 +617,14 @@ async def ensure_schema_migrations():
                     if not content:
                         return
                     exists = (await conn.execute(
-                        text("SELECT id FROM chat_messages WHERE run_id = :rid AND role = :role LIMIT 1"),
+                        text("SELECT id FROM session_messages WHERE run_id = :rid AND role = :role LIMIT 1"),
                         {"rid": run["id"], "role": role},
                     )).mappings().first()
                     if exists is not None:
                         return
                     msg_sql = "CAST(:meta AS JSON)" if dialect == "postgresql" else ":meta"
                     await conn.execute(text(
-                        "INSERT INTO chat_messages "
+                        "INSERT INTO session_messages "
                         "(user_id, session_id, bot_id, run_id, role, kind, content, metadata, created_at) "
                         f"VALUES (:uid, :sid, :bid, :rid, :role, 'text', :content, {msg_sql}, CURRENT_TIMESTAMP)"
                     ), {
