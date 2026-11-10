@@ -18,6 +18,14 @@ async def test_list_local_machines_empty(monkeypatch):
     assert "没有在线的本地机器" in _text(response)
 
 
+async def test_local_file_rejects_server_project_path(monkeypatch):
+    response = await local_tool.local_file(
+        1, {"op": "list", "path": "/data/workspace/1/projects/demo"}
+    )
+    assert response.isError
+    assert "project_file" in _text(response)
+
+
 async def test_local_shell_requires_machine_when_multiple(monkeypatch):
     names = {"dev-a": "mac-a", "dev-b": "mac-b"}
     monkeypatch.setattr(

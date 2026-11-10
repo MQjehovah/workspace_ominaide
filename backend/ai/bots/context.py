@@ -12,7 +12,6 @@ _current_bot_id: ContextVar[int | None] = ContextVar("current_bot_id", default=N
 _current_run_id: ContextVar[int | None] = ContextVar("current_run_id", default=None)
 _current_session_id: ContextVar[str | None] = ContextVar("current_session_id", default=None)
 _current_client_kind: ContextVar[str] = ContextVar("current_client_kind", default="desktop")
-_current_local_tools_enabled: ContextVar[bool] = ContextVar("current_local_tools_enabled", default=True)
 
 
 def set_current_bot_id(bot_id: int | None) -> Token:
@@ -61,15 +60,3 @@ def reset_current_client_kind(token: Token) -> None:
 
 def get_current_client_kind() -> str:
     return _current_client_kind.get()
-
-
-def set_local_tools_enabled(enabled: bool) -> Token:
-    return _current_local_tools_enabled.set(bool(enabled))
-
-
-def reset_local_tools_enabled(token: Token) -> None:
-    _current_local_tools_enabled.reset(token)
-
-
-def local_tools_enabled() -> bool:
-    return _current_local_tools_enabled.get()

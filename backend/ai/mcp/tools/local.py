@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from ai.mcp.core import MCPCallResponse, MCPContent, MCPTool
 from core.config.settings import settings
@@ -33,12 +34,6 @@ async def list_local_machines(user_id: int, args: dict) -> MCPCallResponse:
 
 
 def _resolve_machine(user_id: int, args: dict) -> str:
-    from ai.bots.context import local_tools_enabled
-
-    if not local_tools_enabled():
-        raise local_tools.LocalMachineError(
-            "当前 Web 会话没有选择本地机器，local_* 工具不可用。"
-        )
     return local_tools.resolve_machine(
         user_id,
         machine_id=str(args.get("machine_id") or "").strip() or None,
@@ -451,9 +446,32 @@ async def local_grep(user_id: int, args: dict) -> MCPCallResponse:
     return _ok("\n".join(lines))
 
 
+def _is_server_project_path(user_id: int, path: str) -> bool:
+    """Server-side project paths must not be sent to a desktop machine."""
+    raw = str(path or "").strip()
+    if not raw.startswith("/"):
+        return False
+    if raw == "/data/workspace" or raw.startswith("/data/workspace/"):
+        return True
+    try:
+        from core.paths import projects_root
+
+        root = projects_root(user_id).resolve()
+        target = Path(raw).expanduser().resolve()
+        return target == root or root in target.parents
+    except Exception:
+        return False
+
+
 async def local_file(user_id: int, args: dict) -> MCPCallResponse:
     """One local filesystem entry point for list/read/write/grep."""
     op = str(args.get("op") or "").strip().lower()
+    if _is_server_project_path(user_id, str(args.get("path") or "")):
+        return _err(
+            "这是服务端项目路径，不是本地机器路径。"
+            "分析服务端项目请用 project_file；local_file 只用于用户设备上的文件。"
+            "设备端路径请使用 ~ 或该设备自己的绝对路径。"
+        )
     if op in ("list", "ls", "dir"):
         return await local_list_dir(user_id, args)
     if op in ("read", "cat"):
@@ -736,7 +754,8 @@ TOOLS = [
             description=(
                 "在用户本地机器上操作文件。op=list 列目录，op=read 读文本，"
                 "op=write 写文件，op=grep 在目录中搜索文本。"
-                "本机文件、项目、日志优先用它；写入默认需要桌面端确认。"
+                "只用于用户设备上的文件；服务端项目路径请用 project_file。"
+                "写入默认需要桌面端确认。"
             ),
             inputSchema={
                 "type": "object",

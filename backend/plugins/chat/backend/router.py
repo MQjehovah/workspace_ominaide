@@ -22,11 +22,9 @@ from ai.bots.context import (
     reset_current_bot_id,
     reset_current_client_kind,
     reset_current_session_id,
-    reset_local_tools_enabled,
     set_current_bot_id,
     set_current_client_kind,
     set_current_session_id,
-    set_local_tools_enabled,
 )
 from ai.bots.memory import build_bot_context
 from ai.bots.registry import BotNotFound, get_active_bot, get_or_create_default_bot
@@ -207,9 +205,11 @@ async def build_messages(
         builder.section(
             "client_surface",
             (
-                "当前请求来自 Web 云端，不在用户桌面本地机器上。"
-                "历史对话中出现的本地机器状态可能已经过期，不要假设用户仍在原来的电脑上。"
-                "不要使用 local_* 工具；需要分析项目时使用服务端项目工具或 delegate_agent。"
+                "当前请求来自 Web 云端会话。你运行在服务端，不直接运行在用户桌面上。"
+                "历史对话里出现的本地机器状态可能已经过期，不要默认用户还在同一台电脑前。"
+                "但你仍然可以调用 local_* 工具，在用户在线设备上执行设备端指令；"
+                "多台设备在线时先用 list_local_machines 确认 machine_id。"
+                "服务端项目源码用 project_file 或 delegate_agent 读取，不要用 local_file 访问服务端路径。"
             ),
             priority=75,
             required=True,
@@ -413,7 +413,6 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
         session_token = set_current_session_id(session_id)
         client_kind = (req.client_kind or ("web" if not req.machine_id else "desktop")).lower()
         client_token = set_current_client_kind(client_kind)
-        local_token = set_local_tools_enabled(bool(req.machine_id))
         try:
             reply = await run_agent(
                 user["id"],
@@ -426,7 +425,6 @@ async def chat_agent(req: ChatRequest, user: dict = Depends(get_current_user)):
                     session_id=session_id,
             )
         finally:
-            reset_local_tools_enabled(local_token)
             reset_current_client_kind(client_token)
             reset_current_session_id(session_token)
             reset_current_bot_id(token)
@@ -458,7 +456,6 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
         async def produce():
             client_kind = (req.client_kind or ("web" if not req.machine_id else "desktop")).lower()
             client_token = set_current_client_kind(client_kind)
-            local_token = set_local_tools_enabled(bool(req.machine_id))
             try:
                 # Build context inside the stream so the client gets headers
                 # and heartbeats immediately, even when embeddings/DB are slow.
@@ -479,7 +476,6 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
                     f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
                 )
             finally:
-                reset_local_tools_enabled(local_token)
                 reset_current_client_kind(client_token)
                 await queue.put(done_marker)
 
@@ -550,7 +546,6 @@ async def chat_run(req: ChatRequest, user: dict = Depends(get_current_user)):
     await save_message(user["id"], "user", req.message, session_id, bot=bot)
     client_kind = (req.client_kind or ("web" if not req.machine_id else "desktop")).lower()
     client_token = set_current_client_kind(client_kind)
-    local_token = set_local_tools_enabled(bool(req.machine_id))
     try:
         run = await runner.create_run(
             user["id"],
@@ -563,7 +558,6 @@ async def chat_run(req: ChatRequest, user: dict = Depends(get_current_user)):
             meta={"client_kind": client_kind, "machine_id": req.machine_id},
         )
     finally:
-        reset_local_tools_enabled(local_token)
         reset_current_client_kind(client_token)
     return {
         "run_id": run.id,
