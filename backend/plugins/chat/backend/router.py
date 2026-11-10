@@ -58,7 +58,6 @@ async def _upsert_session(db: AsyncSession, user_id: int, session_id: str, role:
             user_id=user_id,
             session_id=session_id,
             bot_id=bot.id if bot is not None else None,
-            kind="chat",
             status="active",
         )
         db.add(s)
@@ -311,7 +310,6 @@ async def list_sessions(
             SessionItem(
                 session_id=s.session_id,
                 title=s.title,
-                kind=s.kind,
                 status=s.status,
                 updated_at=s.updated_at,
                 bot_id=s.bot_id,

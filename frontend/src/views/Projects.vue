@@ -217,12 +217,6 @@
             <el-option label="OpenCode" value="opencode" />
           </el-select>
         </el-form-item>
-        <el-form-item label="会话">
-          <el-select v-model="runForm.session_id" style="width:100%" placeholder="新建 Coding Session">
-            <el-option label="新建 Coding Session" value="" />
-            <el-option v-for="s in codingSessions" :key="s.session_id" :label="s.title || s.session_id" :value="s.session_id" />
-          </el-select>
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="runOpen = false">取消</el-button>
@@ -245,7 +239,6 @@ const projects = ref<any[]>([])
 const route = useRoute()
 const router = useRouter()
 const runs = ref<any[]>([])
-const codingSessions = ref<any[]>([])
 const selectedId = ref<number | null>(null)
 const selected = computed(() => projects.value.find(p => p.id === selectedId.value) || null)
 const commentsOpen = ref(false)
@@ -262,7 +255,7 @@ const pathPlaceholder = computed(() =>
 
 const runOpen = ref(false)
 const starting = ref(false)
-const runForm = reactive({ instruction: '', branch: '', engine: 'builtin', session_id: '' })
+const runForm = reactive({ instruction: '', branch: '', engine: 'builtin' })
 
 const runDrawer = ref(false)
 const runDetail = ref<any>(null)
@@ -294,7 +287,7 @@ async function loadProjects() {
       selectedId.value = projects.value[0]?.id || null
     }
     if (selectedId.value) {
-      await Promise.all([loadRuns(), loadCodingSessions()])
+      await loadRuns()
     }
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '加载项目失败')
@@ -309,20 +302,8 @@ function askAssistant() {
 function selectProject(id: number) {
   selectedId.value = id
   loadRuns()
-  loadCodingSessions()
 }
 
-async function loadCodingSessions() {
-  try {
-    const r = await client.get('/sessions', { params: { kind: 'coding', limit: 100 } })
-    const path = selected.value?.path
-    codingSessions.value = (r.data?.sessions || []).filter((item: any) =>
-      !path || !item.metadata?.project_path || item.metadata.project_path === path
-    )
-  } catch {
-    codingSessions.value = []
-  }
-}
 
 async function loadRuns() {
   if (!selectedId.value) {
@@ -395,7 +376,6 @@ function retryRun() {
   runForm.instruction = runDetail.value?.input || ''
   runForm.branch = ''
   runForm.engine = runDetail.value?.engine || 'builtin'
-  runForm.session_id = runDetail.value?.session_id || ''
   runDrawer.value = false
   runOpen.value = true
 }
@@ -454,7 +434,6 @@ function openRun() {
   runForm.instruction = ''
   runForm.branch = ''
   runForm.engine = 'builtin'
-  runForm.session_id = ''
   runOpen.value = true
 }
 
@@ -469,7 +448,6 @@ async function startRun() {
       instruction: runForm.instruction.trim(),
       branch: runForm.branch.trim() || null,
       engine: runForm.engine,
-      session_id: runForm.session_id || null,
     })
     runOpen.value = false
     await loadRuns()

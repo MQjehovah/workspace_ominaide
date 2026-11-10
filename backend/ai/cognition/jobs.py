@@ -43,6 +43,40 @@ async def enqueue_all_users() -> dict:
     return {"users": len(user_ids)}
 
 
+async def tick_active_goals() -> dict:
+    """Recover goal dispatch after restarts and missed run-finished events."""
+    from sqlalchemy import select
+
+    from ai.cognition.models import Goal
+    from ai.cognition.orchestrator import tick_goal
+    from core.database.session import async_session
+    from core.observability.context import set_user_id
+
+    async with async_session() as db:
+        rows = list(
+            (
+                await db.execute(
+                    select(Goal).where(
+                        Goal.status.in_(("planning", "ready", "running", "waiting", "verifying"))
+                    ).limit(50)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    count = 0
+    for goal in rows:
+        set_user_id(goal.user_id)
+        try:
+            await tick_goal(goal.user_id, goal.id)
+            count += 1
+        except Exception:
+            continue
+        finally:
+            set_user_id(None)
+    return {"goals": count}
+
+
 async def backfill_entities() -> dict:
     from ai.entities.backfill import backfill_memory_edges
     from ai.entities.extract import seed_from_profile
@@ -68,6 +102,14 @@ JOBS = [
         handler=enqueue_all_users,
         interval_seconds=1800,
         timeout_seconds=300,
+        run_on_start=False,
+    ),
+    PeriodicJob(
+        key="cognition.goals.tick",
+        owner="cognition",
+        handler=tick_active_goals,
+        interval_seconds=60,
+        timeout_seconds=120,
         run_on_start=False,
     ),
     PeriodicJob(

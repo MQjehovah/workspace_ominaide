@@ -45,7 +45,7 @@ def _message_out(row: SessionMessage) -> dict:
     }
 
 
-def new_session_id(kind: str = "chat") -> str:
+def new_session_id(kind: str = "session") -> str:
     return f"{kind}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
 
@@ -117,7 +117,7 @@ async def create_session(
     metadata: dict | None = None,
     session_id: str | None = None,
 ) -> dict:
-    session_id = session_id or new_session_id(kind)
+    session_id = session_id or new_session_id(kind or "session")
     return await ensure_session(
         user_id,
         session_id,

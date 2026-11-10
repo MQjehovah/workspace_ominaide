@@ -214,7 +214,7 @@ async def test_projects_requires_auth(client):
 async def test_coding_tools_registered(client, admin_token):
     r = await client.get("/api/mcp/tools", headers=auth(admin_token))
     names = {t["name"] for t in r.json()["tools"]}
-    assert "delegate_coding" in names
+    assert "delegate_agent" in names
     assert "list_coding_projects" in names
     assert "list_coding_runs" in names
     assert "get_coding_run" in names

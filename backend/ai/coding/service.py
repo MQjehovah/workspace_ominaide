@@ -32,12 +32,14 @@ async def create_coding_run(
     engine: str | None = None,
     parent_run_id: int | None = None,
     session_id: str | None = None,
+    goal_id: int | None = None,
+    task_id: int | None = None,
 ):
     from ai.bots import runner
     from ai.bots.context import get_current_session_id
 
     engine = (engine or settings.coding_engine or "builtin").lower()
-    session_id = session_id or get_current_session_id() or session_service.new_session_id("coding")
+    session_id = session_id or get_current_session_id() or session_service.new_session_id()
     metadata = {
         "project_path": project,
         "engine": engine,
@@ -47,7 +49,6 @@ async def create_coding_run(
         user_id,
         session_id,
         bot_id=bot.id if bot is not None else None,
-        kind="coding",
         title=instruction[:60],
         objective=instruction,
         metadata=metadata,
@@ -59,6 +60,8 @@ async def create_coding_run(
         trigger="coding",
         agent=engine,
         meta=metadata,
+        goal_id=goal_id,
+        task_id=task_id,
         parent_run_id=parent_run_id,
         session_id=session_id,
         auto_start=False,

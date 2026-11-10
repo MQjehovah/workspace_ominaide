@@ -96,7 +96,7 @@ TOOL_RISK = {
     "google_drive_search": RISK_READ,
     "google_drive_read": RISK_READ,
     "google_drive_upload": RISK_WRITE,
-    "delegate_coding": RISK_WRITE,
+    "delegate_agent": RISK_WRITE,
     # External side effects: require explicit approval in chat.
     "ha_toggle": RISK_EXTERNAL,
     "ha_call_service": RISK_EXTERNAL,

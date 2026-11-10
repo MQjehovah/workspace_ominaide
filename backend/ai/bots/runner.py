@@ -928,6 +928,45 @@ async def _finalize(
         if run.output and run.routine_id is None and not skip_summary:
             await _emit_run_finished(run)
 
+    if run.task_id and run.goal_id:
+        asyncio.create_task(
+            _after_goal_run(run.user_id, run.goal_id, run.task_id, status, run.error)
+        )
+
+
+async def _after_goal_run(
+    user_id: int,
+    goal_id: int,
+    task_id: int,
+    status: str,
+    error: str | None,
+) -> None:
+    """Verify a finished goal task and let the orchestrator dispatch the next one."""
+    try:
+        from ai.cognition import goals as goal_service
+
+        task = await goal_service.get_task(user_id, task_id)
+        if task is None or task.get("status") not in ("running", "waiting_approval"):
+            return
+        if status == "done":
+            from ai.cognition.verifier import verify_task
+
+            await verify_task(user_id, task_id)
+        else:
+            await goal_service.update_task(
+                user_id,
+                task_id,
+                status="failed",
+                output={"error": error or f"run {status}"},
+            )
+            await goal_service.update_goal(user_id, goal_id, status="blocked")
+            return
+        from ai.cognition.orchestrator import tick_goal
+
+        await tick_goal(user_id, goal_id)
+    except Exception as exc:
+        log.warning(f"[bots.runner] goal continuation failed: {exc}")
+
 
 async def _broadcast_chat_reply(run: Run) -> None:
     """Push asynchronous replies (e.g. delegated coding runs) to open chats."""

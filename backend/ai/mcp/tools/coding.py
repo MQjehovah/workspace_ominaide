@@ -31,20 +31,17 @@ def _resolve_project(user_id: int, project: str) -> Path:
     return path
 
 
-async def delegate_coding(user_id: int, args: dict) -> MCPCallResponse:
-    from ai.bots.context import get_current_bot_id, get_current_run_id
+async def delegate_agent(user_id: int, args: dict) -> MCPCallResponse:
+    """Delegate a task to another agent in the current session."""
+    from ai.bots import runner
+    from ai.bots.context import get_current_bot_id, get_current_run_id, get_current_session_id
     from ai.bots.registry import get_active_bot, get_or_create_default_bot
     from ai.coding.service import create_coding_run
 
-    project = (args.get("project") or "").strip()
-    instruction = (args.get("instruction") or "").strip()
-    branch = (args.get("branch") or "").strip() or None
-    if not project or not instruction:
-        return _err("project 和 instruction 必填")
-    try:
-        _resolve_project(user_id, project)
-    except ValueError as e:
-        return _err(str(e))
+    agent = str(args.get("agent") or "").strip().lower()
+    instruction = str(args.get("instruction") or "").strip()
+    if not agent or not instruction:
+        return _err("agent 和 instruction 必填")
 
     bot_id = get_current_bot_id()
     bot = (
@@ -52,23 +49,51 @@ async def delegate_coding(user_id: int, args: dict) -> MCPCallResponse:
         if bot_id is not None
         else await get_or_create_default_bot(user_id)
     )
-    run = await create_coding_run(
-        user_id,
-        bot,
-        project,
-        instruction,
-        branch=branch,
-        parent_run_id=get_current_run_id(),
-    )
+    session_id = get_current_session_id()
+    parent_run_id = get_current_run_id()
+
+    if agent in {"coder_builtin", "coder_opencode", "coding"}:
+        project = str(args.get("project") or "").strip()
+        if not project:
+            return _err("Coding Agent 需要 project 参数")
+        try:
+            _resolve_project(user_id, project)
+        except ValueError as e:
+            return _err(str(e))
+        engine = str(args.get("engine") or ("opencode" if agent == "coder_opencode" else "builtin"))
+        run = await create_coding_run(
+            user_id,
+            bot,
+            project,
+            instruction,
+            branch=str(args.get("branch") or "").strip() or None,
+            engine=engine,
+            parent_run_id=parent_run_id,
+            session_id=session_id,
+        )
+    else:
+        allowed = {"chat", "researcher", "planner", "architect", "comms", "verifier"}
+        if agent not in allowed:
+            return _err(f"不支持的 Agent：{agent}")
+        run = await runner.create_run(
+            user_id,
+            bot,
+            instruction,
+            trigger="delegate",
+            agent=agent,
+            agent_profile_key=agent,
+            parent_run_id=parent_run_id,
+            session_id=session_id,
+            auto_start=True,
+        )
     return _ok(
         "\n".join(
             [
-                f"已创建 Coding Run #{run.id}。",
-                f"项目：{project}",
-                f"分支：{branch or '自动创建 feature/*'}",
+                f"已创建 {agent} Run #{run.id}。",
+                f"会话：{run.session_id or '-'}",
                 f"状态：{run.status}",
                 f"进度：/api/runs/{run.id}/stream",
-                f"完成后可用 get_coding_run(run_id={run.id}) 读取完整产出。",
+                f"完成后可用 get_coding_run(run_id={run.id}) 或 /api/runs/{run.id} 读取结果。",
             ]
         )
     )
@@ -181,32 +206,41 @@ async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
 TOOLS = [
     (
         MCPTool(
-            name="delegate_coding",
+            name="delegate_agent",
             description=(
-                "把代码修改任务交给 Coding Agent。它会读取/修改项目文件、运行构建测试，"
-                "并在完成后按策略提交到 feature/* 分支；用户明确要求时才传 branch=master。"
-                "先用 list_coding_projects 找项目路径。"
+                "把任务委派给另一个 Agent，并在当前 Session 创建子 Run。"
+                "可用于 coder_builtin/coder_opencode/researcher/verifier/chat。"
+                "Coding 任务需要 project；先用 list_coding_projects 找项目路径。"
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "project": {
+                    "agent": {
                         "type": "string",
-                        "description": "项目绝对路径，位于当前用户的 projects 目录下",
+                        "enum": ["chat", "researcher", "planner", "architect", "comms", "verifier", "coder_builtin", "coder_opencode"],
+                        "description": "执行这次任务的 Agent",
                     },
                     "instruction": {
                         "type": "string",
-                        "description": "详细开发任务，用自然语言描述",
+                        "description": "任务说明",
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "Coding 任务的项目绝对路径",
                     },
                     "branch": {
                         "type": "string",
-                        "description": "可选。用户明确要求直接在 master 改动时传 master；否则留空，自动创建 feature/*。",
+                        "description": "可选分支",
+                    },
+                    "engine": {
+                        "type": "string",
+                        "description": "可选：builtin | opencode；默认由 agent 决定",
                     },
                 },
-                "required": ["project", "instruction"],
+                "required": ["agent", "instruction"],
             },
         ),
-        delegate_coding,
+        delegate_agent,
     ),
     (
         MCPTool(
