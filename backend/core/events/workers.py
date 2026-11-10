@@ -1,4 +1,6 @@
 """Subscribe to events and process them (indexing, entity extraction)."""
+import asyncio
+
 from core.events.bus import subscribe
 from ai.retrieval.indexer import index_content
 from core.config.settings import settings
@@ -41,13 +43,31 @@ async def entity_handler(event):
     if not settings.memory_layer_enabled or _skip_entities(event):
         return
     from ai.retrieval.indexer import extract_and_store_entities
+
+    text = str(event.details or "")
+    source_type = event.entity_type or event.event_type
+    source_id = event.entity_id or event.id
+    title = event.summary or ""
     await extract_and_store_entities(
         user_id=event.user_id,
-        content=str(event.details or ""),
-        source_type=event.entity_type or event.event_type,
-        source_id=event.id,
-        title=event.summary or "",
+        content=text,
+        source_type=source_type,
+        source_id=source_id,
+        title=title,
     )
+    try:
+        from ai.entities.relations import extract_relations_from_text
+
+        asyncio.create_task(
+            extract_relations_from_text(
+                event.user_id,
+                f"{title}\n{text}",
+                source_type,
+                int(source_id),
+            )
+        )
+    except Exception:
+        pass
 
 
 def register_workers():

@@ -6,6 +6,7 @@ from core.logging import get_logger
 log = get_logger(__name__)
 from ai.llm.usage import tracked_create
 
+import asyncio
 import json
 import re
 from datetime import datetime, timedelta
@@ -373,6 +374,16 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
         cand.reviewed_at = datetime.utcnow()
         await db.commit()
         await _index_record(user_id, record)
+        try:
+            from ai.entities.relations import extract_relations_from_text
+
+            asyncio.create_task(
+                extract_relations_from_text(
+                    user_id, record.content or "", "memory", record.id
+                )
+            )
+        except Exception as e:
+            log.warning(f"[memory] relation extraction enqueue failed: {e}")
         try:
             from ai.cognition.jobs import enqueue_mine_user
 

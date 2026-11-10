@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections import defaultdict
@@ -310,3 +311,50 @@ async def extract_relations_for_user(
         used_sources += 1
 
     return {"sources": used_sources, "relations": created, "skipped": False}
+
+
+_user_locks: dict[int, asyncio.Lock] = {}
+
+
+async def extract_relations_from_text(
+    user_id: int,
+    text: str,
+    source_type: str,
+    source_id: int,
+) -> dict:
+    """Extract relations for one freshly indexed source, skipping if busy."""
+    if len((text or "").strip()) < 40 or not settings.llm_api_key:
+        return {"relations": 0, "skipped": True}
+    lock = _user_locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_locks[user_id] = lock
+    if lock.locked():
+        return {"relations": 0, "skipped": True}
+    async with lock:
+        async with async_session() as db:
+            entities = list((await db.execute(
+                select(Entity).where(
+                    Entity.user_id == user_id,
+                    Entity.status == "active",
+                )
+            )).scalars().all())
+            if len(entities) < 2:
+                return {"relations": 0, "skipped": True}
+            aliases = list((await db.execute(
+                select(EntityAlias).where(
+                    EntityAlias.user_id == user_id,
+                    EntityAlias.entity_id.in_([entity.id for entity in entities]),
+                )
+            )).scalars().all())
+            alias_map: dict[int, list[str]] = defaultdict(list)
+            for alias in aliases:
+                alias_map[alias.entity_id].append(alias.alias)
+            matched = _match_entities(entities, alias_map, text)
+            if len(matched) < 2:
+                return {"relations": 0, "skipped": False}
+            created = await _extract_for_source(
+                db, user_id, source_type, source_id, matched, alias_map, text
+            )
+            await db.commit()
+            return {"relations": created, "skipped": False}

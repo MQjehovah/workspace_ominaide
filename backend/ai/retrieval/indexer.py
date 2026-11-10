@@ -18,6 +18,10 @@ ENTITY_STOPWORDS = {
     "创建笔记", "修改笔记", "删除笔记", "文件库导入",
 }
 _INVALID_ENTITY_NAME = re.compile(r"[{}<>/\\|=]|^[A-Za-z]$")
+_CANONICAL_TYPES = {
+    "person", "project", "term", "product", "organization",
+    "location", "event", "topic", "technology", "task", "document",
+}
 
 
 async def index_content(
@@ -78,7 +82,7 @@ async def extract_and_store_entities(user_id: int, content: str, source_type: st
         resp = await tracked_create(client, 
             model=settings.llm_model,
             messages=[
-                {"role": "system", "content": "从文本中提取稳定的实体（人物、项目、产品、术语），以JSON格式返回数组：[{\"name\":\"实体名\",\"type\":\"person|project|term\"}]。不要提取代码路径、API 路由、操作动词、单个字母或测试占位符。只返回JSON，不要其他文字。"},
+                {"role": "system", "content": "从文本中提取稳定的实体，以JSON格式返回数组：[{\"name\":\"实体名\",\"type\":\"person|project|term|product|organization|location|event|topic|technology|task|document\"}]。不要提取代码路径、API 路由、操作动词、单个字母或测试占位符。只返回JSON，不要其他文字。"},
                 {"role": "user", "content": text_in},
             ],
             temperature=0.1,
@@ -95,13 +99,17 @@ async def extract_and_store_entities(user_id: int, content: str, source_type: st
         from ai.llm.embeddings import generate_embedding
         from datetime import datetime
 
+        canonical_items: list[tuple[str, str]] = []
         for ent in entities:
             name = ent.get("name", "").strip()
-            etype = ent.get("type", "term")
+            etype = str(ent.get("type", "term")).strip().lower()
+            if etype not in _CANONICAL_TYPES:
+                etype = "term"
             if not name or len(name) < 2:
                 continue
             if name.lower() in ENTITY_STOPWORDS or _INVALID_ENTITY_NAME.search(name):
                 continue
+            canonical_items.append((name, etype))
 
             vector = await generate_embedding(name)
             if not vector:
@@ -137,5 +145,30 @@ async def extract_and_store_entities(user_id: int, content: str, source_type: st
                     )
                 except Exception as exc:
                     log.warning("[entity] people index error: %s", exc)
+
+        if canonical_items:
+            from ai.entities.service import add_mention, resolve_entity
+            from core.database.session import async_session
+
+            async with async_session() as db:
+                for name, etype in canonical_items:
+                    entity = await resolve_entity(
+                        db, user_id, etype, name,
+                        source="event", confidence=0.8,
+                    )
+                    if entity is None:
+                        continue
+                    await add_mention(
+                        db,
+                        user_id,
+                        entity.id,
+                        source_type=source_type,
+                        source_id=source_id,
+                        quote=(title or name)[:300],
+                        role="mentions",
+                        confidence=0.8,
+                        extracted_by="llm",
+                    )
+                await db.commit()
     except Exception as e:
         log.warning(f"[entity] error: {e}")
