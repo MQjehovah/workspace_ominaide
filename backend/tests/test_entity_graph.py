@@ -224,3 +224,90 @@ async def test_entity_tables_and_user_isolation(client):
         )).scalars())
         assert len(rows) == 1
         assert rows[0].canonical_name == "张三"
+
+
+async def test_canonical_graph_endpoint_and_chat_context(client):
+    token, user_id = await _new_user(client)
+    from ai.entities.service import add_mention, add_relation, resolve_entity
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        person = await resolve_entity(db, user_id, "person", "图测试张三")
+        project = await resolve_entity(db, user_id, "project", "图测试项目")
+        await add_relation(db, user_id, person.id, project.id, "works_on")
+        await add_mention(
+            db, user_id, person.id,
+            source_type="note", source_id=1, quote="图测试张三负责项目",
+        )
+        await add_mention(
+            db, user_id, project.id,
+            source_type="note", source_id=1, quote="图测试项目进度",
+        )
+        await db.commit()
+
+    response = await client.get(
+        "/api/memory/entities/graph?q=图测试", headers=auth(token)
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    names = {node["name"] for node in data["nodes"]}
+    assert {"图测试张三", "图测试项目"} <= names
+    assert any(link["relation"] == "works_on" for link in data["links"])
+
+    context = await client.get(
+        "/api/context/build?q=图测试张三", headers=auth(token)
+    )
+    assert context.status_code == 200, context.text
+    payload = context.json()
+    assert payload["graph"]["entities"]
+    assert any(
+        relation["relation"] == "works_on"
+        for relation in payload["graph"]["relations"]
+    )
+
+
+async def test_merge_entities_moves_aliases_mentions_and_relations(client):
+    token, user_id = await _new_user(client)
+    from ai.entities.models import Entity, EntityAlias, EntityMention
+    from ai.entities.service import add_mention, add_relation, resolve_entity
+    from core.database.session import async_session
+    from sqlalchemy import select
+
+    async with async_session() as db:
+        source = await resolve_entity(db, user_id, "person", "合并前张三")
+        target = await resolve_entity(db, user_id, "person", "合并后张三")
+        project = await resolve_entity(db, user_id, "project", "合并项目")
+        await add_mention(
+            db, user_id, source.id,
+            source_type="note", source_id=9, quote="合并前张三",
+        )
+        await add_relation(db, user_id, source.id, project.id, "works_on")
+        await db.commit()
+        source_id, target_id = source.id, target.id
+
+    response = await client.post(
+        f"/api/memory/entities/{source_id}/merge",
+        headers=auth(token),
+        json={"into_id": target_id},
+    )
+    assert response.status_code == 200, response.text
+
+    async with async_session() as db:
+        merged = await db.get(Entity, source_id)
+        assert merged.status == "merged"
+        assert merged.merged_into == target_id
+        alias = (await db.execute(
+            select(EntityAlias).where(
+                EntityAlias.entity_id == target_id,
+                EntityAlias.alias == "合并前张三",
+            )
+        )).scalar_one_or_none()
+        assert alias is not None
+        mention = (await db.execute(
+            select(EntityMention).where(
+                EntityMention.entity_id == target_id,
+                EntityMention.source_type == "note",
+                EntityMention.source_id == 9,
+            )
+        )).scalar_one_or_none()
+        assert mention is not None

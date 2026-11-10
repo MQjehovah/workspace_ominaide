@@ -334,6 +334,29 @@ async def build_context(
                     }
                 )
 
+    graph_data = {"entities": [], "relations": [], "mentions": []}
+    if query.strip():
+        try:
+            from ai.entities.service import graph_context
+
+            async with async_session() as db:
+                graph_data = await graph_context(db, user_id, query, limit=limit)
+            existing = {(item.get("type"), item.get("id")) for item in items}
+            for mention in graph_data.get("mentions") or []:
+                key = (mention.get("source_type"), mention.get("source_id"))
+                if key in existing:
+                    continue
+                existing.add(key)
+                items.append({
+                    "type": mention.get("source_type"),
+                    "id": mention.get("source_id"),
+                    "title": mention.get("entity_name") or "关联对象",
+                    "snippet": mention.get("quote") or "",
+                    "citation": f"{mention.get('source_type')}:{mention.get('source_id')}",
+                })
+        except Exception as exc:
+            log.warning(f"[memory] graph context failed: {exc}")
+
     related_nodes = []
     if object_type and object_id is not None:
         related_nodes = await related(user_id, object_type, object_id)
@@ -343,4 +366,5 @@ async def build_context(
         "items": items,
         "count": len(items),
         "related": related_nodes,
+        "graph": graph_data,
     }

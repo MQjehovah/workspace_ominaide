@@ -61,4 +61,4 @@ async def test_entity_graph_degrades_gracefully_on_sqlite(client):
     assert r.status_code == 200, r.text
     assert r.json()["nodes"] == []
     assert r.json()["links"] == []
-    assert r.json()["supported"] is False
+    assert r.json()["supported"] is True

@@ -204,9 +204,16 @@
             </div>
             <div class="entity-actions">
               <el-button link type="primary" size="small" @click="focusEntity(selectedEntity)">聚焦</el-button>
+              <el-button link type="primary" size="small" @click="openMerge">合并</el-button>
               <el-popconfirm title="忘掉这个实体？不会删除原始内容。" @confirm="forgetEntity(selectedEntity)">
                 <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
               </el-popconfirm>
+            </div>
+            <div v-if="selectedEntity.aliases?.length > 1" class="entity-aliases">
+              <span class="entity-subtitle">别名</span>
+              <el-tag v-for="alias in selectedEntity.aliases" :key="alias" size="small" effect="plain">
+                {{ alias }}
+              </el-tag>
             </div>
             <div v-if="selectedEntity.sources?.length" class="entity-sources">
               <span class="entity-subtitle">来源</span>
@@ -231,6 +238,9 @@
                 @click="selectEntity(neighbor.id)"
               >
                 {{ neighbor.name }}
+                <span v-if="relationTextFor(neighbor.id)" class="entity-relation">
+                  · {{ relationTextFor(neighbor.id) }}
+                </span>
               </el-tag>
             </div>
           </div>
@@ -367,6 +377,29 @@
         </transition-group>
       </section>
     </div>
+
+    <el-dialog v-model="mergeOpen" title="合并实体" width="460px">
+      <p class="muted">
+        把「{{ selectedEntity?.name }}」合并到另一个实体。别名、提及和关系会一起迁移。
+      </p>
+      <el-select
+        v-model="mergeTargetId"
+        filterable
+        placeholder="选择目标实体"
+        style="width: 100%"
+      >
+        <el-option
+          v-for="entity in mergeCandidates"
+          :key="entity.id"
+          :label="`${entity.name} (${typeLabel(entity.type)})`"
+          :value="entity.id"
+        />
+      </el-select>
+      <template #footer>
+        <el-button @click="mergeOpen = false">取消</el-button>
+        <el-button type="primary" :disabled="!mergeTargetId" @click="confirmMerge">合并</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -392,6 +425,8 @@ const entityType = ref('')
 const entityQuery = ref('')
 const focusEntityId = ref<string | null>(null)
 const selectedEntityId = ref<string | null>(null)
+const mergeOpen = ref(false)
+const mergeTargetId = ref<string | number | null>(null)
 const graphRef = ref<any>(null)
 const reviews = ref<any[]>([])
 const candidates = ref<any[]>([])
@@ -539,11 +574,29 @@ const neighborMap = computed(() => {
   return map
 })
 
+const neighborRelations = computed(() => {
+  const map = new Map<string, Set<string>>()
+  for (const link of entityLinks.value) {
+    const a = String(link.source)
+    const b = String(link.target)
+    const relation = String(link.relation || '相关')
+    if (!map.has(a)) map.set(a, new Set())
+    if (!map.has(b)) map.set(b, new Set())
+    map.get(a)!.add(relation)
+    map.get(b)!.add(relation)
+  }
+  return map
+})
+
 const selectedNeighbors = computed(() => {
   if (!selectedEntity.value) return []
   const ids = neighborMap.value.get(selectedEntity.value.id) || new Set()
   return entities.value.filter((entity) => ids.has(entity.id))
 })
+
+const mergeCandidates = computed(() =>
+  entities.value.filter((entity) => entity.id !== selectedEntity.value?.id),
+)
 
 const graphEntities = computed(() => {
   let list = entities.value
@@ -585,6 +638,51 @@ function sourceRoute(src: any) {
     return `${path}?project=${id}`
   }
   return path
+}
+
+const RELATION_LABELS: Record<string, string> = {
+  works_on: '负责',
+  assigned_to: '负责',
+  member_of: '属于',
+  owns: '拥有',
+  uses: '使用',
+  about: '关于',
+  communicates_with: '沟通',
+  knows: '认识',
+  related_to: '相关',
+  '同一来源': '同一来源',
+}
+
+function relationLabel(relation: string) {
+  return RELATION_LABELS[relation] || relation
+}
+
+function relationTextFor(entityId: string) {
+  const relations = neighborRelations.value.get(entityId)
+  if (!relations) return ''
+  return [...relations].slice(0, 2).map(relationLabel).join(' / ')
+}
+
+function openMerge() {
+  mergeTargetId.value = null
+  mergeOpen.value = true
+}
+
+async function confirmMerge() {
+  const source = selectedEntity.value
+  if (!source || !mergeTargetId.value) return
+  try {
+    await client.post(`/memory/entities/${source.id}/merge`, {
+      into_id: Number(mergeTargetId.value),
+    })
+    ElMessage.success('已合并')
+    mergeOpen.value = false
+    selectedEntityId.value = null
+    focusEntityId.value = null
+    await loadEntities()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '合并失败')
+  }
 }
 
 function openSource(src: any) {
@@ -951,9 +1049,10 @@ section[id] { scroll-margin-top: 12px; }
 }
 .entity-detail-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 .entity-actions { display: flex; align-items: center; gap: 6px; }
-.entity-sources, .entity-neighbors {
+.entity-sources, .entity-neighbors, .entity-aliases {
   flex-basis: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
+.entity-relation { font-size: 10px; opacity: .68; margin-left: 2px; }
 .entity-subtitle { font-size: 11px; color: #94a3b8; margin-right: 2px; }
 .entity-source {
   border: 1px solid #e2e8f0; background: #fff; border-radius: 6px;

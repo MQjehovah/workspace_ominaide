@@ -130,95 +130,170 @@ async def list_entities(
     return {"items": items, "counts": counts, "supported": True}
 
 
+_NOISE_ENTITY_NAMES = {
+    "项目", "任务", "需求", "问题", "功能", "模块", "系统", "平台", "服务",
+    "接口", "数据", "配置", "代码", "文档", "测试", "版本", "上线",
+    "backend", "frontend", "feature", "main", "git", "公司", "部门",
+    "客户", "经办人", "负责人", "工单",
+}
+
+
 @router.get("/entities/graph")
 async def entity_graph(
     entity_type: str | None = Query(None),
     limit: int = Query(200, ge=1, le=500),
     q: str = Query(""),
+    include_noise: bool = Query(False),
     user: dict = Depends(get_current_user),
 ):
-    """Entities plus links between entities that share the same source."""
-    if engine.dialect.name != "postgresql":
-        return {"nodes": [], "links": [], "counts": {}, "supported": False}
-    try:
-        async with engine.begin() as conn:
-            rows = (await conn.execute(
-                text(
-                    "SELECT doc_key, title, metadata, created_at FROM embeddings "
-                    "WHERE collection = 'entities' AND user_id = :uid "
-                    "ORDER BY created_at DESC LIMIT :limit"
-                ),
-                {"uid": user["id"], "limit": limit},
-            )).mappings().all()
-    except Exception as e:
-        log.warning(f"[memory] entity graph error: {e}")
-        return {"nodes": [], "links": [], "counts": {}, "supported": False}
+    """Canonical entity graph: aliases, mentions and typed relations."""
+    from ai.entities.models import (
+        Entity,
+        EntityAlias,
+        EntityMention,
+        EntityRelation,
+    )
+    from sqlalchemy import or_, select
 
-    query = (q or "").strip().lower()
+    query_text = (q or "").strip().lower()
+    async with async_session() as db:
+        entity_q = select(Entity).where(
+            Entity.user_id == user["id"],
+            Entity.status == "active",
+        )
+        if entity_type:
+            entity_q = entity_q.where(Entity.type == entity_type)
+        entities = list((await db.execute(
+            entity_q.order_by(Entity.updated_at.desc()).limit(limit)
+        )).scalars().all())
+        if not entities:
+            return {"nodes": [], "links": [], "counts": {}, "supported": True}
+
+        if not query_text and not include_noise:
+            entities = [
+                entity for entity in entities
+                if entity.canonical_name.strip().lower() not in _NOISE_ENTITY_NAMES
+            ]
+        if not entities:
+            return {"nodes": [], "links": [], "counts": {}, "supported": True}
+        ids = [entity.id for entity in entities]
+        aliases = list((await db.execute(
+            select(EntityAlias).where(
+                EntityAlias.user_id == user["id"],
+                EntityAlias.entity_id.in_(ids),
+            )
+        )).scalars().all())
+        mentions = list((await db.execute(
+            select(EntityMention).where(
+                EntityMention.user_id == user["id"],
+                EntityMention.entity_id.in_(ids),
+            )
+        )).scalars().all())
+        relations = list((await db.execute(
+            select(EntityRelation).where(
+                EntityRelation.user_id == user["id"],
+                or_(
+                    EntityRelation.from_entity_id.in_(ids),
+                    EntityRelation.to_entity_id.in_(ids),
+                ),
+            )
+        )).scalars().all())
+
+    alias_map: dict[int, list[str]] = {}
+    for alias in aliases:
+        alias_map.setdefault(alias.entity_id, []).append(alias.alias)
+
+    mention_map: dict[int, list[EntityMention]] = {}
+    for mention in mentions:
+        mention_map.setdefault(mention.entity_id, []).append(mention)
+
     nodes = []
     counts: dict[str, int] = {}
-    groups: dict[str, list[str]] = {}
-    for row in rows:
-        meta = _loads(row["metadata"]) or {}
-        etype = meta.get("type") or "term"
-        if _is_external_entity(meta):
+    by_id = {}
+    for entity in entities:
+        names = [entity.canonical_name, *alias_map.get(entity.id, [])]
+        if query_text and not any(query_text in str(name).lower() for name in names):
             continue
-        # Bot memories are mirrored into the same collection but are not
-        # entities; they have no sources and would only add isolated dots.
-        if etype == "memory":
-            continue
-        if entity_type and etype != entity_type:
-            continue
-        name = row["title"] or ""
-        if query and query not in name.lower():
-            continue
-        sources = [
-            src for src in (meta.get("sources") or [])
-            if isinstance(src, dict) and src.get("id") is not None
-        ]
-        node_id = row["doc_key"]
-        counts[etype] = counts.get(etype, 0) + 1
-        nodes.append({
-            "id": node_id,
-            "name": name,
-            "type": etype,
+        own_mentions = mention_map.get(entity.id, [])
+        sources = []
+        seen_sources = set()
+        for mention in own_mentions:
+            key = (mention.source_type, mention.source_id)
+            if key in seen_sources:
+                continue
+            seen_sources.add(key)
+            sources.append({
+                "type": mention.source_type,
+                "id": mention.source_id,
+                "title": (mention.quote or f"{mention.source_type} #{mention.source_id}")[:120],
+            })
+        stamps = [m.created_at for m in own_mentions if m.created_at]
+        node = {
+            "id": str(entity.id),
+            "name": entity.canonical_name,
+            "type": entity.type,
+            "aliases": alias_map.get(entity.id, []),
             "source_count": len(sources),
-            "sources": [
-                {
-                    "type": str(src.get("type") or "unknown"),
-                    "id": src.get("id"),
-                    "title": src.get("title"),
-                }
-                for src in sources[:8]
-            ],
-            "first_seen": meta.get("first_seen"),
-            "last_seen": meta.get("last_seen"),
+            "sources": sources[:8],
+            "first_seen": min(stamps).isoformat() if stamps else None,
+            "last_seen": max(stamps).isoformat() if stamps else None,
             "degree": 0,
-        })
-        for src in sources:
-            groups.setdefault(f"{src.get('type') or 'unknown'}:{src['id']}", []).append(node_id)
+        }
+        nodes.append(node)
+        by_id[entity.id] = node
+        counts[entity.type] = counts.get(entity.type, 0) + 1
 
-    weights: dict[tuple[str, str], int] = {}
-    for ids in groups.values():
-        unique = sorted(set(ids))
-        # A source shared by too many entities would turn into a hairball.
-        if len(unique) < 2 or len(unique) > 12:
+    if not nodes:
+        return {"nodes": [], "links": [], "counts": {}, "supported": True}
+
+    allowed = {int(node_id) for node_id in by_id}
+    seen_pairs: set[tuple[int, int]] = set()
+    links = []
+    for relation in relations:
+        a, b = relation.from_entity_id, relation.to_entity_id
+        if a not in allowed or b not in allowed or a == b:
             continue
-        for i in range(len(unique)):
-            for j in range(i + 1, len(unique)):
-                key = (unique[i], unique[j])
-                weights[key] = weights.get(key, 0) + 1
+        left, right = sorted((a, b))
+        seen_pairs.add((left, right))
+        links.append({
+            "source": str(a),
+            "target": str(b),
+            "relation": relation.relation,
+            "weight": max(1, int(round((relation.confidence or 0.5) * 3))),
+            "confidence": relation.confidence,
+        })
 
-    links = [
-        {"source": a, "target": b, "weight": w, "relation": "同一来源"}
-        for (a, b), w in weights.items()
-    ]
-    by_id = {node["id"]: node for node in nodes}
+    # Fill gaps with co-occurrence links when a source mentions several
+    # entities but no typed relation was extracted.
+    groups: dict[tuple[str, int], set[int]] = {}
+    for mention in mentions:
+        if mention.entity_id not in allowed:
+            continue
+        groups.setdefault(
+            (mention.source_type, mention.source_id), set()
+        ).add(mention.entity_id)
+    for ids_in_source in groups.values():
+        if len(ids_in_source) < 2 or len(ids_in_source) > 12:
+            continue
+        ordered = sorted(ids_in_source)
+        for i in range(len(ordered)):
+            for j in range(i + 1, len(ordered)):
+                a, b = ordered[i], ordered[j]
+                if (a, b) in seen_pairs:
+                    continue
+                seen_pairs.add((a, b))
+                links.append({
+                    "source": str(a),
+                    "target": str(b),
+                    "relation": "同一来源",
+                    "weight": 1,
+                    "confidence": 0.4,
+                })
+
     for link in links:
-        if link["source"] in by_id:
-            by_id[link["source"]]["degree"] += 1
-        if link["target"] in by_id:
-            by_id[link["target"]]["degree"] += 1
+        by_id[int(link["source"])]["degree"] += 1
+        by_id[int(link["target"])]["degree"] += 1
+
     return {"nodes": nodes, "links": links, "counts": counts, "supported": True}
 
 
@@ -393,9 +468,43 @@ def _record_out(row) -> dict:
     }
 
 
+class EntityMerge(BaseModel):
+    into_id: int
+
+
+@router.post("/entities/{entity_id}/merge")
+async def merge_entity(
+    entity_id: int,
+    req: EntityMerge,
+    user: dict = Depends(get_current_user),
+):
+    from ai.entities.service import merge_entities
+
+    async with async_session() as db:
+        try:
+            target = await merge_entities(
+                db, user["id"], entity_id, req.into_id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await db.commit()
+    return {"message": "Entities merged", "target_id": target.id}
+
+
 @router.delete("/entities/{doc_key}")
 async def delete_entity(doc_key: str, user: dict = Depends(get_current_user)):
     """Forget one entity; the underlying source content is untouched."""
+    if doc_key.isdigit():
+        from ai.entities.models import Entity
+
+        async with async_session() as db:
+            entity = await db.get(Entity, int(doc_key))
+            if entity is None or entity.user_id != user["id"]:
+                raise HTTPException(status_code=404, detail="Entity not found")
+            entity.status = "forgotten"
+            await db.commit()
+        return {"message": "Entity forgotten"}
+
     if engine.dialect.name != "postgresql":
         raise HTTPException(status_code=404, detail="Entity not found")
     async with engine.begin() as conn:

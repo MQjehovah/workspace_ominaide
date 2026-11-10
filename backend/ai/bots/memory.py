@@ -361,10 +361,65 @@ async def build_bot_context(
     return "\n\n".join(parts) if parts else None
 
 
+async def _graph_entities_block(user_id: int, query: str) -> str | None:
+    """Entities and typed relations expanded from the canonical graph."""
+    if not (query and settings.memory_layer_enabled):
+        return None
+    try:
+        from ai.entities.service import graph_context
+        from core.database.session import async_session
+
+        async with async_session() as db:
+            context = await graph_context(db, user_id, query)
+        entities = context.get("entities") or []
+        if not entities:
+            return None
+        lines = ["【相关实体】"]
+        for entity in entities[:8]:
+            lines.append(f"- {entity['name']} ({entity['type']})")
+        relations = context.get("relations") or []
+        if relations:
+            labels = {
+                "works_on": "负责", "assigned_to": "负责", "member_of": "属于",
+                "owns": "拥有", "uses": "使用", "about": "关于",
+                "communicates_with": "沟通", "knows": "认识",
+                "related_to": "相关", "同一来源": "同一来源",
+            }
+            lines.append("【实体关系】")
+            for relation in relations[:10]:
+                label = labels.get(relation["relation"], relation["relation"])
+                lines.append(
+                    f"- {relation['from_name']} --{label}--> "
+                    f"{relation['to_name']}"
+                )
+        mentions = context.get("mentions") or []
+        if mentions:
+            lines.append("【相关来源】")
+            seen = set()
+            for mention in mentions:
+                key = (mention.get("source_type"), mention.get("source_id"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                quote = str(mention.get("quote") or "").strip()
+                lines.append(
+                    f"- {mention.get('source_type')} #{mention.get('source_id')}"
+                    + (f": {quote[:120]}" if quote else "")
+                )
+                if len(seen) >= 8:
+                    break
+        return "\n".join(lines)
+    except Exception:
+        return None
+
+
 async def _entities_block(user_id: int, query: str, vec: list[float] | None = None) -> str | None:
     """Non-memory entities (people, projects, files...) related to the query."""
     if not (query and settings.memory_layer_enabled):
         return None
+    graph_block = await _graph_entities_block(user_id, query)
+    if graph_block:
+        return graph_block
     try:
         from ai.llm.embeddings import generate_embedding
         from ai.retrieval import vector_store

@@ -80,6 +80,7 @@ async def tick_active_goals() -> dict:
 async def backfill_entities() -> dict:
     from ai.entities.backfill import backfill_memory_edges
     from ai.entities.extract import seed_from_profile
+    from ai.entities.sync import sync_all
     from core.auth.domain.models import User
     from core.database.session import async_session
     from sqlalchemy import select
@@ -90,7 +91,8 @@ async def backfill_entities() -> dict:
             await seed_from_profile(db, int(user_id))
         await db.commit()
     result = await backfill_memory_edges()
-    return {"users": len(user_ids), **result}
+    synced = await sync_all()
+    return {"users": len(user_ids), **result, **synced}
 
 
 register_handler("cognition.mine.user", mine_user_job)
