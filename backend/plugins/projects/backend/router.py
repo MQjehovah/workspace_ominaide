@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from core.auth.dependencies import get_current_user
 from ai.bots.registry import get_or_create_default_bot
@@ -8,6 +8,7 @@ from plugins.projects.backend import service
 from plugins.projects.backend.schemas import (
     ProjectCreate,
     ProjectOut,
+    ProjectRepoOut,
     ProjectRunCreate,
     ProjectRunOut,
     ProjectUpdate,
@@ -16,17 +17,34 @@ from plugins.projects.backend.schemas import (
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
+async def _project_out(project) -> dict:
+    data = ProjectOut.model_validate(project).model_dump()
+    repos = await service.list_project_repos(project.id)
+    data["repos"] = [
+        ProjectRepoOut.model_validate(repo).model_dump() for repo in repos
+    ]
+    return data
+
+
 @router.get("", response_model=list[ProjectOut])
 async def list_projects(user: dict = Depends(get_current_user)):
-    return await service.list_projects(user["id"])
+    projects = await service.list_projects(user["id"])
+    return [await _project_out(project) for project in projects]
 
 
 @router.post("", response_model=ProjectOut)
-async def create_project(payload: ProjectCreate, user: dict = Depends(get_current_user)):
+async def create_project(
+    payload: ProjectCreate,
+    background: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
     try:
-        return await service.create_project(user["id"], payload)
+        project = await service.create_project(user["id"], payload)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if payload.repos and payload.clone:
+        background.add_task(service.clone_project_repos, project.id)
+    return await _project_out(project)
 
 
 @router.delete("/{project_id}")
@@ -53,7 +71,7 @@ async def get_project(project_id: int, user: dict = Depends(get_current_user)):
     project = await service.get_project(user["id"], project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    return await _project_out(project)
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
@@ -66,7 +84,46 @@ async def update_project(
         raise HTTPException(status_code=422, detail=str(e))
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    return await _project_out(project)
+
+
+@router.get("/{project_id}/repos", response_model=list[ProjectRepoOut])
+async def list_project_repos(
+    project_id: int,
+    user: dict = Depends(get_current_user),
+):
+    project = await service.get_project(user["id"], project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return await service.list_project_repos(project_id)
+
+
+@router.post("/{project_id}/repos/clone")
+async def clone_project_repos(
+    project_id: int,
+    background: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    project = await service.get_project(user["id"], project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    background.add_task(service.clone_project_repos, project_id)
+    return {"message": "Clone scheduled"}
+
+
+@router.post("/{project_id}/repos/{repo_id}/clone")
+async def clone_project_repo(
+    project_id: int,
+    repo_id: int,
+    user: dict = Depends(get_current_user),
+):
+    project = await service.get_project(user["id"], project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    repo = await service.clone_repo(repo_id)
+    if repo is None or repo.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return ProjectRepoOut.model_validate(repo)
 
 
 @router.get("/{project_id}/runs", response_model=list[ProjectRunOut])

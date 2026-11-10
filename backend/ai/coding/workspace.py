@@ -523,7 +523,18 @@ def move_file(root: str, args: dict) -> dict:
     }
 
 
-async def git_diff(root: str, args: dict) -> dict:
+def _repo_dirs(base: Path) -> list[Path]:
+    try:
+        children = sorted(base.iterdir(), key=lambda item: item.name.lower())
+    except OSError:
+        return []
+    return [
+        child for child in children
+        if child.is_dir() and (child / ".git").exists()
+    ]
+
+
+async def _git_diff_one(root: str, args: dict) -> dict:
     command = [
         "git",
         "-c", "core.fsmonitor=false",
@@ -555,6 +566,63 @@ async def git_diff(root: str, args: dict) -> dict:
         "diff": clamp(text, MAX_COMMAND_OUTPUT),
         "stderr": clamp(err.decode("utf-8", errors="replace"), 4000),
         "empty": not text.strip(),
+    }
+
+
+async def git_diff(root: str, args: dict) -> dict:
+    base = Path(root).expanduser().resolve()
+    if (base / ".git").exists():
+        return await _git_diff_one(str(base), args)
+
+    repos = _repo_dirs(base)
+    if not repos:
+        return {"error": "not a git repository"}
+
+    path_arg = args.get("path")
+    selected: list[Path] = []
+    selected_path: Path | None = None
+    if path_arg:
+        try:
+            selected_path = safe_path(str(base), path_arg)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        for repo in repos:
+            if selected_path == repo or repo in selected_path.parents:
+                selected = [repo]
+                break
+    if not selected:
+        selected = repos
+
+    sections: list[str] = []
+    codes: list[int] = []
+    errors: list[str] = []
+    any_empty = True
+    for repo in selected:
+        sub_args = dict(args)
+        if selected_path is not None:
+            try:
+                relative = selected_path.relative_to(repo).as_posix() or "."
+            except ValueError:
+                relative = "."
+            sub_args["path"] = relative
+        result = await _git_diff_one(str(repo), sub_args)
+        if result.get("error"):
+            errors.append(f"{repo.name}: {result['error']}")
+            continue
+        text = result.get("diff") or ""
+        if text.strip():
+            any_empty = False
+            sections.append(f"### {repo.name}/\n{text}")
+        codes.append(int(result.get("code") or 0))
+        if result.get("stderr"):
+            errors.append(f"{repo.name}: {result['stderr']}")
+
+    return {
+        "code": max(codes) if codes else 0,
+        "diff": clamp("\n\n".join(sections), MAX_COMMAND_OUTPUT),
+        "stderr": clamp("\n".join(errors), 4000),
+        "empty": any_empty,
+        "repos": [repo.name for repo in selected],
     }
 
 

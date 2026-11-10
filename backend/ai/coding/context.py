@@ -39,6 +39,18 @@ async def _git(root: str, *args: str, timeout: float = 5.0) -> str:
         return ""
 
 
+def _repo_dirs(base: Path) -> list[Path]:
+    try:
+        children = sorted(base.iterdir(), key=lambda item: item.name.lower())
+    except OSError:
+        return []
+    return [
+        child
+        for child in children
+        if child.is_dir() and (child / ".git").exists()
+    ]
+
+
 def _detected_commands(root: Path) -> list[str]:
     hints: list[str] = []
 
@@ -111,27 +123,58 @@ async def build_project_context(root: str, max_chars: int = 12000) -> str:
         suffix = "（已截断）" if len(entries) > len(shown) or tree.get("truncated") else ""
         parts.append("目录结构（深度 2）：\n" + "\n".join(shown) + suffix)
 
-    branch = await _git(root, "rev-parse", "--abbrev-ref", "HEAD")
-    status = await _git(root, "status", "--short")
-    history = await _git(root, "log", "--oneline", "-8")
-    git_lines = []
-    if branch and branch != "HEAD":
-        git_lines.append(f"当前分支：{branch}")
-    if history:
-        git_lines.append("最近提交：\n" + history)
-    if status:
-        status_lines = status.splitlines()
-        if len(status_lines) > 40:
-            status_lines = status_lines[:40] + ["...（更多未显示）"]
-        git_lines.append("未提交改动：\n" + "\n".join(status_lines))
-    else:
-        git_lines.append("未提交改动：无")
-    if git_lines:
-        parts.append("Git 状态：\n" + "\n".join(git_lines))
+    repos = _repo_dirs(base)
+    if repos:
+        parts.append(
+            "这是多仓库工作区，包含：\n"
+            + "\n".join(f"- {repo.name}/" for repo in repos)
+        )
+        for repo in repos[:8]:
+            branch = await _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+            status = await _git(repo, "status", "--short")
+            history = await _git(repo, "log", "--oneline", "-5")
+            lines = [f"### {repo.name}/"]
+            if branch and branch != "HEAD":
+                lines.append(f"当前分支：{branch}")
+            if history:
+                lines.append("最近提交：\n" + history)
+            if status:
+                status_lines = status.splitlines()
+                if len(status_lines) > 20:
+                    status_lines = status_lines[:20] + ["...（更多未显示）"]
+                lines.append("未提交改动：\n" + "\n".join(status_lines))
+            else:
+                lines.append("未提交改动：无")
+            parts.append("\n".join(lines))
 
-    commands = _detected_commands(base)
-    if commands:
-        parts.append("可用验证命令：\n" + "\n".join(f"- {c}" for c in commands))
+        command_lines: list[str] = []
+        for repo in repos[:8]:
+            for command in _detected_commands(repo):
+                command_lines.append(f"- (cd {repo.name} && {command})")
+        if command_lines:
+            parts.append("可用验证命令：\n" + "\n".join(command_lines))
+    else:
+        branch = await _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+        status = await _git(root, "status", "--short")
+        history = await _git(root, "log", "--oneline", "-8")
+        git_lines = []
+        if branch and branch != "HEAD":
+            git_lines.append(f"当前分支：{branch}")
+        if history:
+            git_lines.append("最近提交：\n" + history)
+        if status:
+            status_lines = status.splitlines()
+            if len(status_lines) > 40:
+                status_lines = status_lines[:40] + ["...（更多未显示）"]
+            git_lines.append("未提交改动：\n" + "\n".join(status_lines))
+        else:
+            git_lines.append("未提交改动：无")
+        if git_lines:
+            parts.append("Git 状态：\n" + "\n".join(git_lines))
+
+        commands = _detected_commands(base)
+        if commands:
+            parts.append("可用验证命令：\n" + "\n".join(f"- {c}" for c in commands))
 
     text = "\n\n".join(parts)[:max_chars]
     _CACHE[key] = (time.time(), text)

@@ -41,7 +41,10 @@
             <h3>{{ selected.name }}</h3>
             <p class="muted">{{ selected.path }}</p>
             <p class="muted">
-              <template v-if="selected.is_git">
+              <template v-if="selected.repos?.length">
+                多仓库工作区 · {{ selected.repos.length }} 个 Git 项目
+              </template>
+              <template v-else-if="selected.is_git">
                 Git 项目 · 默认分支 {{ selected.default_branch || 'master' }}
                 <template v-if="selected.repo_url"> · {{ selected.repo_url }}</template>
               </template>
@@ -55,6 +58,37 @@
             <el-popconfirm title="删除这个项目？会同时删除项目目录，不可恢复；历史 Run 保留。" @confirm="deleteProject">
               <template #reference><el-button type="danger" plain>删除</el-button></template>
             </el-popconfirm>
+          </div>
+        </div>
+
+        <div v-if="selected.repos?.length" class="page-card">
+          <div class="page-card-body">
+            <div class="section-head">
+              <div>
+                <h4>Git 仓库</h4>
+                <p>一个 workspace 可以包含多个独立仓库。</p>
+              </div>
+              <el-button :icon="Refresh" @click="loadProjects">刷新</el-button>
+            </div>
+            <div class="repo-list">
+              <div v-for="repo in selected.repos" :key="repo.id" class="repo-row">
+                <div class="repo-main">
+                  <span class="repo-name">{{ repo.name }}</span>
+                  <span class="repo-path">{{ repo.path }}/</span>
+                  <span class="repo-url">{{ repo.url }}</span>
+                </div>
+                <el-tag size="small" :type="repo.status === 'cloned' ? 'success' : repo.status === 'error' ? 'danger' : 'warning'">
+                  {{ repo.status }}
+                </el-tag>
+                <el-button
+                  v-if="repo.status !== 'cloned' && repo.status !== 'cloning'"
+                  size="small"
+                  :icon="Refresh"
+                  @click="cloneRepo(repo)"
+                >克隆</el-button>
+                <span v-if="repo.error" class="repo-error">{{ repo.error }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -113,11 +147,24 @@
           <el-checkbox v-model="form.is_git">这是一个 Git 仓库</el-checkbox>
         </el-form-item>
         <template v-if="form.is_git">
-          <el-form-item label="仓库地址" required>
+          <el-form-item v-if="!form.repos_text.trim()" label="仓库地址" required>
             <el-input v-model="form.repo_url" placeholder="必填，例如 git@github.com:user/repo.git" />
           </el-form-item>
-          <el-form-item label="默认分支">
+          <el-form-item v-if="!form.repos_text.trim()" label="默认分支">
             <el-input v-model="form.default_branch" placeholder="master" />
+          </el-form-item>
+          <el-form-item label="多仓库">
+            <el-input
+              v-model="form.repos_text"
+              type="textarea"
+              :rows="4"
+              placeholder="每行一个仓库：目录名 仓库地址 分支&#10;例如：gateway https://github.com/MQjehovah/gateway.git master"
+            />
+            <div class="form-hint">填写多仓库后，上面的单仓库地址会被忽略。项目会克隆到各自子目录。</div>
+          </el-form-item>
+          <el-form-item v-if="form.repos_text.trim()" label="自动克隆">
+            <el-checkbox v-model="form.clone">创建后自动执行 git clone</el-checkbox>
+            <span class="form-hint">服务器无法访问 GitHub 时可关闭，稍后手动放入仓库目录。</span>
           </el-form-item>
         </template>
         <el-form-item label="描述">
@@ -247,7 +294,7 @@ const createOpen = ref(false)
 const saving = ref(false)
 const form = reactive({
   name: '', path: '', is_git: true, repo_url: '', default_branch: 'master',
-  description: '',
+  repos_text: '', clone: true, description: '',
 })
 const pathPlaceholder = computed(() =>
   form.name.trim() ? `/workspace/${form.name.trim()}` : '/workspace/<名称>'
@@ -383,9 +430,26 @@ function retryRun() {
 function openCreate() {
   Object.assign(form, {
     name: '', path: '', is_git: true, repo_url: '', default_branch: 'master',
-    description: '',
+    repos_text: '', clone: true, description: '',
   })
   createOpen.value = true
+}
+
+function parseRepos() {
+  return form.repos_text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [name, url, branch] = line.split(/\s+/)
+      return {
+        name,
+        url,
+        path: name,
+        default_branch: branch || 'master',
+      }
+    })
+    .filter(repo => repo.name && repo.url)
 }
 
 async function createProject() {
@@ -394,27 +458,43 @@ async function createProject() {
     ElMessage.warning('名称必填')
     return
   }
-  if (form.is_git && !form.repo_url.trim()) {
-    ElMessage.warning('Git 项目必须填写仓库地址')
+  const repos = parseRepos()
+  if (form.is_git && !repos.length && !form.repo_url.trim()) {
+    ElMessage.warning('Git 项目必须填写仓库地址，或多仓库列表')
     return
   }
   const path = form.path.trim() || `/workspace/${name}`
   saving.value = true
   try {
     await client.post('/projects', {
-      ...form,
       name,
       path,
-      repo_url: form.repo_url.trim(),
+      is_git: form.is_git || repos.length > 0,
+      repo_url: repos.length ? undefined : form.repo_url.trim(),
       default_branch: form.default_branch.trim() || 'master',
+      repos,
+      clone: form.clone,
+      description: form.description,
     })
     createOpen.value = false
     await loadProjects()
-    ElMessage.success('项目已添加')
+    ElMessage.success('项目已添加，仓库开始克隆')
+    window.setTimeout(loadProjects, 2500)
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '添加失败')
   } finally {
     saving.value = false
+  }
+}
+
+async function cloneRepo(repo: any) {
+  if (!selected.value) return
+  try {
+    await client.post(`/projects/${selected.value.id}/repos/${repo.id}/clone`)
+    await loadProjects()
+    ElMessage.success('克隆完成')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '克隆失败')
   }
 }
 
@@ -479,6 +559,14 @@ onUnmounted(stopRunPolling)
 .projects-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .projects-header .sub { margin: 4px 0 0; font-size: 12px; color: #909399; }
 .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.repo-list { display: flex; flex-direction: column; gap: 8px; }
+.repo-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; }
+.repo-main { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 240px; flex-wrap: wrap; }
+.repo-name { font-weight: 600; }
+.repo-path { font-family: monospace; font-size: 12px; color: var(--el-text-color-secondary); }
+.repo-url { font-size: 12px; color: var(--el-text-color-secondary); }
+.repo-error { width: 100%; font-size: 12px; color: var(--el-color-danger); }
+.form-hint { margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); }
 .project-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
 .project-list { padding: 12px; position: sticky; top: 12px; }
 .panel-title { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px 10px; font-size: 12px; font-weight: 700; color: #606266; letter-spacing: .5px; }
@@ -512,7 +600,15 @@ onUnmounted(stopRunPolling)
 .empty-main h3 { margin: 4px 0 0; color: #606266; font-size: 15px; }
 .empty-main p { margin: 0; font-size: 12px; }
 @media (max-width: 980px) {
-  .project-grid { grid-template-columns: 1fr; }
+  .repo-list { display: flex; flex-direction: column; gap: 8px; }
+.repo-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; }
+.repo-main { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 240px; flex-wrap: wrap; }
+.repo-name { font-weight: 600; }
+.repo-path { font-family: monospace; font-size: 12px; color: var(--el-text-color-secondary); }
+.repo-url { font-size: 12px; color: var(--el-text-color-secondary); }
+.repo-error { width: 100%; font-size: 12px; color: var(--el-color-danger); }
+.form-hint { margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); }
+.project-grid { grid-template-columns: 1fr; }
   .project-list { position: static; }
 }
 @media (max-width: 600px) {

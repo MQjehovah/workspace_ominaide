@@ -230,6 +230,7 @@ def coding_system_prompt(project: str, developer: dict | None, context: str = ""
         "6. 完成后用中文简要说明改了什么、验证结果，以及仍需用户注意的事项。",
         "7. 单次运行有轮次预算。接近上限时停止探索，优先给出可交付结果和阶段性总结。",
         "8. 如果用户只要求分析或报告，不要为了无关的测试失败无限排查；主要调查完成后及时输出报告。",
+        "9. 项目可能是一个包含多个 git 仓库的 workspace；先确认要修改哪个子目录，git 操作在对应仓库内执行。",
         "",
         "可用工具：list_dir / glob / read_file / write_file / edit_file / apply_patch / delete_file / move_file / search_text / git_diff / run_command。",
         "可用技能：先 skill_search 检索，再 skill_call 执行；不要猜测技能 key。",
