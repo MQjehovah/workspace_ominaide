@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     # Daily memory agent auto-approves candidates at or above this confidence.
     memory_auto_approve_threshold: int = 85
     intelligence_layer_enabled: bool = True
+    # Shared context window management for chat and coding agents.
+    context_compress_enabled: bool = True
+    context_compress_threshold_chars: int = 60000
+    context_keep_recent_turns: int = 6
+    context_tool_result_max_chars: int = 8000
+    context_summary_max_chars: int = 4000
+    context_summary_model: str = ""
     # Proactive interruption policy for notifications/voice proposals.
     proposal_notify_daily_limit: int = 8
     proposal_quiet_hours: str = "22:00-08:00"
@@ -113,6 +120,18 @@ class Settings(BaseSettings):
     # instead of <workspace_root>/<user_id>/projects. Leave empty in production.
     coding_workspace_root: str = ""
     coding_max_turns: int = 100
+    # Coding Agent can use its own model/provider, independent of chat bots.
+    coding_model: str = ""
+    coding_base_url: str = ""
+    coding_api_key: str = ""
+    coding_temperature: float = 0.2
+    # Engine: builtin | opencode
+    coding_engine: str = "builtin"
+    coding_agent_home: str = "/data/agent-runtime/home"
+    coding_agent_timeout_seconds: int = 1800
+    coding_opencode_bin: str = ""
+    coding_opencode_model: str = ""
+    coding_opencode_agent: str = "build"
     coding_command_timeout_ms: int = 120000
     # One-shot delivery: after the agent finishes, verify -> branch -> commit -> push.
     # When enabled the agent tools themselves cannot commit/push; delivery owns git.

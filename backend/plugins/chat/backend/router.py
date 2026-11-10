@@ -139,19 +139,21 @@ async def build_messages(
     history_limit: int | None = None,
     timing: dict | None = None,
 ) -> list[dict]:
-    messages: list[dict] = []
+    from ai.context_builder import ContextBuilder
+
+    builder = ContextBuilder()
     persona_text = (
         bot.system_prompt
         if bot is not None and bot.system_prompt
         else settings.assistant_system_prompt
     )
     if persona and persona_text:
-        messages.append({"role": "system", "content": persona_text})
+        builder.section("persona", persona_text, priority=100, required=True)
     from ai.mcp.gateway import gateway_instruction
 
     instruction = gateway_instruction()
     if instruction:
-        messages.append({"role": "system", "content": instruction})
+        builder.section("tool_gateway", instruction, priority=80, max_chars=4000)
     from ai.cognition.situation import situation_prompt
 
     t_situation = time.monotonic()
@@ -159,32 +161,36 @@ async def build_messages(
     if timing is not None:
         timing["situation"] = time.monotonic() - t_situation
     if situation:
-        messages.append({
-            "role": "system",
-            "content": "当前用户情境：\n" + situation,
-        })
+        builder.section(
+            "situation",
+            "当前用户情境：\n" + situation,
+            priority=65,
+            max_chars=4000,
+        )
     if req.machine_id:
         from core.wschannel.hub import host_channel
 
         online = host_channel.machine_ids(user_id)
         if req.machine_id in online:
             machine_name = host_channel.machine_name(req.machine_id)
-            messages.append({
-                "role": "system",
-                "content": (
+            builder.section(
+                "machine",
+                (
                     f"当前用户正在本地机器「{machine_name}」({req.machine_id}) 上对话。"
                     "除非用户明确要求其他机器，local_* 工具默认使用这台机器；"
                     "不要凭之前的上下文切换到其他在线机器。"
                 ),
-            })
+                priority=70,
+                max_chars=2000,
+            )
     if extra_system:
-        messages.append({"role": "system", "content": extra_system})
+        builder.section("extra", extra_system, priority=60, max_chars=4000)
     t_ctx = time.monotonic()
     ctx = await build_bot_context(user_id, bot, req.message, timing=timing)
     if timing is not None:
         timing["bot_context"] = time.monotonic() - t_ctx
     if ctx:
-        messages.append({"role": "system", "content": ctx})
+        builder.section("memory", ctx, priority=55, max_chars=12000)
     from ai.skills.runtime import build_skill_context
 
     t_skill = time.monotonic()
@@ -192,7 +198,7 @@ async def build_messages(
     if timing is not None:
         timing["skill_context"] = time.monotonic() - t_skill
     if skill_ctx:
-        messages.append({"role": "system", "content": skill_ctx})
+        builder.section("skills", skill_ctx, priority=50, max_chars=4000)
     if req.context_refs:
         from app.objects.registry import build_context_block
 
@@ -202,14 +208,14 @@ async def build_messages(
             req.context_comment_id,
         )
         if block:
-            messages.append({"role": "system", "content": block})
+            builder.section("context_refs", block, priority=45, max_chars=12000)
     t_hist = time.monotonic()
     history = await resolve_history(req, user_id, limit=history_limit, bot=bot)
     if timing is not None:
         timing["history"] = time.monotonic() - t_hist
-    messages.extend(history)
-    messages.append({"role": "user", "content": _user_content(req)})
-    return messages
+    builder.history(history)
+    builder.user(_user_content(req))
+    return await builder.build()
 
 
 @router.get("/history", response_model=list[ChatHistoryItem])

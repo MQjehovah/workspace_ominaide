@@ -15,6 +15,7 @@ from openai import AsyncOpenAI
 from ai.coding import workspace
 from ai.coding.context import build_project_context
 from ai.coding.prompts import TOOLS, coding_system_prompt
+from ai.context_window import compact_context
 from core.config.settings import settings
 from core.paths import projects_root
 
@@ -135,28 +136,36 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
             )
         except Exception as e:
             log.debug("[coding] context build failed: %s", e)
-        messages = [
-            {
-                "role": "system",
-                "content": coding_system_prompt(
-                    str(project), developer, context, branch=coding_run.branch
-                ),
-            },
-            {"role": "user", "content": run.input or ""},
-        ]
+        from ai.context_builder import ContextBuilder
+
+        builder = ContextBuilder()
+        builder.section(
+            "coding_agent",
+            coding_system_prompt(
+                str(project), developer, context, branch=coding_run.branch
+            ),
+            priority=100,
+            required=True,
+        )
         try:
             from ai.skills.runtime import build_skill_context
 
             skill_ctx = await build_skill_context(bot)
             if skill_ctx:
-                messages.append({"role": "system", "content": skill_ctx})
+                builder.section("skills", skill_ctx, priority=50, max_chars=4000)
         except Exception as e:
             log.debug("[coding] skill context failed: %s", e)
+        builder.user(run.input or "")
+        messages = await builder.build()
 
     client = AsyncOpenAI(
-        api_key=settings.llm_api_key, base_url=settings.llm_base_url
+        api_key=settings.coding_api_key or settings.llm_api_key,
+        base_url=settings.coding_base_url or settings.llm_base_url,
     )
-    model = (bot.model or settings.llm_model) if bot is not None else settings.llm_model
+    model = settings.coding_model or (
+        (bot.model if bot is not None else "") or settings.llm_model
+    )
+    temperature = settings.coding_temperature
     # Coding runs get their own budget. Chat bots default to 60 turns, which
     # is too small for repository-wide investigation and implementation.
     max_turns = min(
@@ -176,6 +185,11 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
             await on_event("checkpoint", {"messages": messages})
             return {"status": "cancelled", "output": last_text or None, "error": None}
 
+        compacted = await compact_context(messages, client=client, model=model)
+        if compacted is not messages:
+            messages = compacted
+            await on_event("checkpoint", {"messages": messages})
+
         remaining = max_turns - _turn
         if remaining <= 2 and not budget_warned:
             budget_warned = True
@@ -194,7 +208,7 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
                 model=model,
                 messages=messages,
                 tools=None if force_final else TOOLS,
-                temperature=0.2,
+                temperature=temperature,
             )
         except Exception as e:
             await on_event("checkpoint", {"messages": messages})

@@ -77,6 +77,7 @@
               <el-table-column prop="branch" label="分支" width="180">
                 <template #default="{ row }">{{ row.branch || 'feature/*' }}</template>
               </el-table-column>
+              <el-table-column prop="engine" label="引擎" width="100" />
               <el-table-column prop="input" label="任务" min-width="260" show-overflow-tooltip />
               <el-table-column label="输出" min-width="240" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.output || row.error || '' }}</template>
@@ -209,6 +210,12 @@
         <el-form-item label="分支">
           <el-input v-model="runForm.branch" placeholder="留空自动创建 feature/*；明确要求时才填 master" />
         </el-form-item>
+        <el-form-item label="引擎">
+          <el-select v-model="runForm.engine" style="width:100%">
+            <el-option label="内置 Coding Agent" value="builtin" />
+            <el-option label="OpenCode" value="opencode" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="runOpen = false">取消</el-button>
@@ -247,7 +254,7 @@ const pathPlaceholder = computed(() =>
 
 const runOpen = ref(false)
 const starting = ref(false)
-const runForm = reactive({ instruction: '', branch: '' })
+const runForm = reactive({ instruction: '', branch: '', engine: 'builtin' })
 
 const runDrawer = ref(false)
 const runDetail = ref<any>(null)
@@ -364,6 +371,7 @@ async function cancelRun() {
 function retryRun() {
   runForm.instruction = runDetail.value?.input || ''
   runForm.branch = ''
+  runForm.engine = runDetail.value?.engine || 'builtin'
   runDrawer.value = false
   runOpen.value = true
 }
@@ -421,6 +429,7 @@ async function deleteProject() {
 function openRun() {
   runForm.instruction = ''
   runForm.branch = ''
+  runForm.engine = 'builtin'
   runOpen.value = true
 }
 
@@ -434,6 +443,7 @@ async function startRun() {
     const r = await client.post(`/projects/${selectedId.value}/runs`, {
       instruction: runForm.instruction.trim(),
       branch: runForm.branch.trim() || null,
+      engine: runForm.engine,
     })
     runOpen.value = false
     await loadRuns()

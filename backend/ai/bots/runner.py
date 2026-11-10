@@ -255,7 +255,12 @@ async def _execute(run_id: int) -> None:
 
     if not messages:
         messages = await _default_messages(
-            run.user_id, bot, run.input or "", run.agent_profile_key
+            run.user_id,
+            bot,
+            run.input or "",
+            run.agent_profile_key,
+            goal_id=run.goal_id,
+            task_id=run.task_id,
         )
 
     await _mark_running(run.id, run.started_at)
@@ -270,7 +275,14 @@ async def _execute(run_id: int) -> None:
 
 
 async def _coding_loop(run: Run, bot: Bot, coding) -> None:
-    from ai.coding.loop import run_coding
+    engine = str(getattr(coding, "engine", "") or settings.coding_engine or "builtin").lower()
+    if engine == "opencode":
+        from ai.coding.opencode import run_opencode as run_agent
+    elif engine == "builtin":
+        from ai.coding.loop import run_coding as run_agent
+    else:
+        await _finalize(run.id, "failed", error=f"unsupported coding engine: {engine}")
+        return
 
     await _mark_running(run.id, run.started_at)
     seq = 0
@@ -323,7 +335,7 @@ async def _coding_loop(run: Run, bot: Bot, coding) -> None:
     run_token = set_current_run_id(run.id)
     session_token = set_current_session_id(run.session_id)
     try:
-        result = await run_coding(
+        result = await run_agent(
             run, bot, coding, on_event=emit, is_cancelled=cancelled
         )
     finally:
@@ -611,35 +623,95 @@ async def _call_tool(run: Run, name: str, arguments: dict) -> tuple[str, bool]:
     return text, is_err
 
 
+async def _goal_task_context(user_id: int, goal_id: int | None, task_id: int | None) -> str:
+    if not goal_id and not task_id:
+        return ""
+    try:
+        from ai.cognition import goals as goal_service
+
+        goal = await goal_service.get_goal(user_id, goal_id) if goal_id else None
+        task = await goal_service.get_task(user_id, task_id) if task_id else None
+        lines: list[str] = []
+        if goal:
+            lines.append(f"目标：{goal.get('title') or ''}")
+            if goal.get("description"):
+                lines.append(f"目标说明：{goal.get('description')}")
+            if goal.get("success_criteria"):
+                lines.append(f"目标验收：{goal.get('success_criteria')}")
+        if task:
+            lines.append(f"当前 Task：{task.get('title') or ''}")
+            if task.get("description"):
+                lines.append(f"Task 说明：{task.get('description')}")
+            if task.get("acceptance"):
+                lines.append(f"Task 验收：{task.get('acceptance')}")
+            depends_on = task.get("depends_on") or []
+            if depends_on and goal_id:
+                all_tasks = await goal_service.list_tasks(user_id, goal_id)
+                by_id = {item["id"]: item for item in all_tasks}
+                for dep_id in depends_on:
+                    dep = by_id.get(int(dep_id))
+                    if not dep:
+                        continue
+                    output = str(dep.get("output") or "").strip()
+                    if output:
+                        lines.append(
+                            f"前置 Task「{dep.get('title')}」结果：\n{output[:2500]}"
+                        )
+        if not lines:
+            return ""
+        lines.append("只完成当前 Task，不要越界执行其他 Task；完成后汇报结果和依据。")
+        return "\n".join(lines)[:6000]
+    except Exception:
+        return ""
+
+
 async def _default_messages(
     user_id: int,
     bot: Bot,
     prompt: str,
     agent_profile_key: str | None = None,
+    *,
+    goal_id: int | None = None,
+    task_id: int | None = None,
 ) -> list[dict]:
-    messages = []
+    from ai.context_builder import ContextBuilder
+
+    builder = ContextBuilder()
     persona = bot.system_prompt or settings.assistant_system_prompt
     if persona:
-        messages.append({"role": "system", "content": persona})
+        builder.section("persona", persona, priority=100, required=True)
     if agent_profile_key:
         from ai.cognition.agent_profiles import get_profile
 
         profile = get_profile(agent_profile_key)
         if profile is not None:
-            messages.append({"role": "system", "content": profile.system_prompt})
+            builder.section(
+                "agent_profile",
+                profile.system_prompt,
+                priority=95,
+                required=True,
+            )
+    goal_context = await _goal_task_context(user_id, goal_id, task_id)
+    if goal_context:
+        builder.section(
+            "goal_task",
+            goal_context,
+            priority=92,
+            required=True,
+        )
     instruction = gateway_instruction()
     if instruction:
-        messages.append({"role": "system", "content": instruction})
+        builder.section("tool_gateway", instruction, priority=80, max_chars=4000)
     ctx = await build_bot_context(user_id, bot, prompt)
     if ctx:
-        messages.append({"role": "system", "content": ctx})
+        builder.section("memory", ctx, priority=55, max_chars=12000)
     from ai.skills.runtime import build_skill_context
 
     skill_ctx = await build_skill_context(bot)
     if skill_ctx:
-        messages.append({"role": "system", "content": skill_ctx})
-    messages.append({"role": "user", "content": prompt})
-    return messages
+        builder.section("skills", skill_ctx, priority=50, max_chars=4000)
+    builder.user(prompt)
+    return await builder.build()
 
 
 # ---------------------------------------------------------------------------

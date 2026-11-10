@@ -54,3 +54,4 @@ class ProjectRunOut(BaseModel):
 class ProjectRunCreate(BaseModel):
     instruction: str = Field(min_length=1, max_length=20000)
     branch: str | None = None
+    engine: str | None = None

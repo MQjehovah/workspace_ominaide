@@ -97,4 +97,5 @@ async def start_project_run(
         project.path,
         payload.instruction,
         branch=payload.branch,
+        engine=payload.engine,
     )

@@ -6,6 +6,7 @@ from ai.llm.clients import get_openai_client
 from ai.cognition.authorization import ApprovalRequired, authorized_tool_call
 from ai.mcp.gateway import select_exposed_tools
 from ai.mcp.registry import tool_registry
+from ai.context_window import compact_context
 
 
 def _to_openai_tools(mcp_tools):
@@ -105,6 +106,11 @@ async def run_agent(
     )
 
     for turn in range(max_turns):
+        messages = await compact_context(
+            messages,
+            client=client,
+            model=model or settings.llm_model,
+        )
         resp = await tracked_create(client, 
             model=model or settings.llm_model,
             messages=messages,
@@ -198,6 +204,11 @@ async def run_agent_stream(
         return f"data: {json.dumps({'type': 'usage', 'chars': total_chars, 'tools': total_tools}, ensure_ascii=False)}\n\n"
 
     for turn in range(max_turns):
+        messages = await compact_context(
+            messages,
+            client=client,
+            model=model or settings.llm_model,
+        )
         accumulated_content = ""
         accumulated_reasoning = ""
         tool_calls = None

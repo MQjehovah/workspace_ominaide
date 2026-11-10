@@ -6,6 +6,7 @@ coding-specific project/branch/engine fields.
 from sqlalchemy import select
 
 from core.database.session import async_session
+from core.config.settings import settings
 from ai.coding.models import CodingRun
 
 
@@ -16,7 +17,7 @@ async def create_coding_run(
     instruction: str,
     *,
     branch: str | None = None,
-    engine: str = "builtin",
+    engine: str | None = None,
     parent_run_id: int | None = None,
     session_id: str | None = None,
 ):
@@ -40,7 +41,7 @@ async def create_coding_run(
                 user_id=user_id,
                 project_path=project,
                 branch=branch,
-                engine=engine,
+                engine=(engine or settings.coding_engine or "builtin"),
             )
         )
         await db.commit()
