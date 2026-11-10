@@ -1,4 +1,5 @@
 import asyncio
+import glob as globlib
 import os
 import re
 import shlex
@@ -413,6 +414,150 @@ def edit_file(root: str, args: dict) -> dict:
     return {"path": args.get("path"), "replaced": count, "bytes": len(next_text.encode("utf-8"))}
 
 
+def glob_files(root: str, args: dict) -> dict:
+    pattern = str(args.get("pattern") or "").strip()
+    if not pattern:
+        return {"error": "pattern is required"}
+    if ".." in Path(pattern).parts:
+        return {"error": "pattern must stay inside the project"}
+    base = safe_path(root, args.get("path") or ".")
+    if not base.is_dir():
+        return {"error": f"not a directory: {args.get('path') or '.'}"}
+    try:
+        max_results = min(max(int(args.get("max_results") or 200), 1), 1000)
+    except (TypeError, ValueError):
+        max_results = 200
+    root_path = Path(root).resolve()
+    matches: list[str] = []
+    truncated = False
+    for raw in globlib.iglob(str(base / pattern), recursive=True):
+        path = Path(raw)
+        try:
+            rel = path.resolve().relative_to(root_path)
+        except ValueError:
+            continue
+        if any(part in SKIP_DIRS for part in rel.parts):
+            continue
+        if _is_sensitive(rel):
+            continue
+        if not path.is_file():
+            continue
+        matches.append(rel.as_posix())
+        if len(matches) >= max_results:
+            truncated = True
+            break
+    return {"pattern": pattern, "path": rel_path(root, base), "matches": matches, "truncated": truncated}
+
+
+def apply_patch(root: str, args: dict) -> dict:
+    changes = args.get("changes")
+    if not isinstance(changes, list) or not changes:
+        return {"error": "changes must be a non-empty list"}
+    if len(changes) > 100:
+        return {"error": "too many changes (max 100)"}
+    buffers: dict[Path, str] = {}
+    touched: list[str] = []
+    for index, change in enumerate(changes):
+        if not isinstance(change, dict):
+            return {"error": f"change #{index + 1} must be an object"}
+        path = safe_path(root, change.get("path"))
+        if not path.exists() or not path.is_file():
+            return {"error": f"change #{index + 1}: file not found: {change.get('path')}"}
+        old = str(change.get("old_string") or "")
+        if not old:
+            return {"error": f"change #{index + 1}: old_string is required"}
+        text = buffers.get(path)
+        if text is None:
+            text = path.read_text(encoding="utf-8")
+        count = text.count(old)
+        if count == 0:
+            return {"error": f"change #{index + 1}: old_string not found", "path": change.get("path")}
+        replace_all = bool(change.get("replace_all"))
+        if count > 1 and not replace_all:
+            return {
+                "error": f"change #{index + 1}: old_string matched {count} times",
+                "path": change.get("path"),
+            }
+        new = str(change.get("new_string") or "")
+        buffers[path] = text.replace(old, new) if replace_all else text.replace(old, new, 1)
+        name = rel_path(root, path)
+        if name not in touched:
+            touched.append(name)
+    for path, text in buffers.items():
+        path.write_text(text, encoding="utf-8")
+        _hand_to_sandbox(path)
+    return {"files": touched, "changes": len(changes), "bytes": sum(len(t.encode("utf-8")) for t in buffers.values())}
+
+
+def delete_file(root: str, args: dict) -> dict:
+    path = safe_path(root, args.get("path"))
+    if not path.exists():
+        return {"error": f"file not found: {args.get('path')}"}
+    if path.is_dir():
+        return {"error": "delete_file only removes files; directories are not supported"}
+    path.unlink()
+    return {"path": args.get("path"), "deleted": True}
+
+
+def move_file(root: str, args: dict) -> dict:
+    source = safe_path(root, args.get("source") or args.get("from"))
+    target = safe_path(root, args.get("target") or args.get("to"))
+    if not source.exists():
+        return {"error": f"source not found: {args.get('source') or args.get('from')}"}
+    if source.is_dir():
+        return {"error": "move_file only moves files; directories are not supported"}
+    if target.exists():
+        return {"error": f"target already exists: {args.get('target') or args.get('to')}"}
+    created: list[Path] = []
+    probe = target.parent
+    while not probe.exists() and probe != probe.parent:
+        created.append(probe)
+        probe = probe.parent
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(target))
+    _hand_to_sandbox(target, *reversed(created))
+    return {
+        "source": rel_path(root, source),
+        "target": rel_path(root, target),
+        "moved": True,
+    }
+
+
+async def git_diff(root: str, args: dict) -> dict:
+    command = [
+        "git",
+        "-c", "core.fsmonitor=false",
+        "--no-pager", "diff", "--no-color",
+        "--no-ext-diff", "--no-textconv",
+    ]
+    if bool(args.get("staged")):
+        command.append("--cached")
+    if bool(args.get("stat")):
+        command.append("--stat")
+    path_arg = args.get("path")
+    if path_arg:
+        target = safe_path(root, path_arg)
+        command.extend(["--", rel_path(root, target)])
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=str(root),
+            env=git_env(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except (OSError, asyncio.TimeoutError) as exc:
+        return {"error": str(exc)}
+    text = out.decode("utf-8", errors="replace")
+    return {
+        "code": proc.returncode or 0,
+        "diff": clamp(text, MAX_COMMAND_OUTPUT),
+        "stderr": clamp(err.decode("utf-8", errors="replace"), 4000),
+        "empty": not text.strip(),
+    }
+
+
 def search_text(root: str, args: dict) -> dict:
     base = safe_path(root, args.get("path") or ".")
     pattern = str(args.get("pattern") or "")
@@ -560,6 +705,16 @@ async def execute_tool(root: str, name: str, args: dict, *, allow_push: bool = F
             return edit_file(root, args)
         if name == "search_text":
             return search_text(root, args)
+        if name == "glob":
+            return glob_files(root, args)
+        if name == "apply_patch":
+            return apply_patch(root, args)
+        if name == "delete_file":
+            return delete_file(root, args)
+        if name == "move_file":
+            return move_file(root, args)
+        if name == "git_diff":
+            return await git_diff(root, args)
         if name == "run_command":
             return await run_command(root, args, allow_push=allow_push, allow_commit=allow_commit,
                                      identity=identity, ssh_key=ssh_key)

@@ -113,6 +113,90 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "glob",
+            "description": "Find files by glob pattern, e.g. **/*.py or src/**/*.ts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "Glob pattern relative to path"},
+                    "path": {"type": "string", "description": "Root directory, default '.'"},
+                    "max_results": {"type": "number", "description": "Max matches, default 200"},
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "apply_patch",
+            "description": "Apply multiple exact string edits atomically. Validates every edit before writing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "changes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"},
+                                "old_string": {"type": "string"},
+                                "new_string": {"type": "string"},
+                                "replace_all": {"type": "boolean"},
+                            },
+                            "required": ["path", "old_string", "new_string"],
+                        },
+                    },
+                },
+                "required": ["changes"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_file",
+            "description": "Delete a single file. Directories are not supported.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "Relative file path"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "move_file",
+            "description": "Move or rename a single file. Fails if the target exists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "Relative source path"},
+                    "target": {"type": "string", "description": "Relative target path"},
+                },
+                "required": ["source", "target"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_diff",
+            "description": "Show the current git diff (optionally staged or stat-only).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Optional relative path"},
+                    "staged": {"type": "boolean", "description": "Show staged changes"},
+                    "stat": {"type": "boolean", "description": "Show diffstat only"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_command",
             "description": "Run a shell command in the project directory and return stdout/stderr/exit code. Use for builds and tests.",
             "parameters": {
@@ -145,7 +229,7 @@ def coding_system_prompt(project: str, developer: dict | None, context: str = ""
         "7. 单次运行有轮次预算。接近上限时停止探索，优先给出可交付结果和阶段性总结。",
         "8. 如果用户只要求分析或报告，不要为了无关的测试失败无限排查；主要调查完成后及时输出报告。",
         "",
-        "可用工具：list_dir / read_file / write_file / edit_file / search_text / run_command。",
+        "可用工具：list_dir / glob / read_file / write_file / edit_file / apply_patch / delete_file / move_file / search_text / git_diff / run_command。",
         "可用技能：先 skill_search 检索，再 skill_call 执行；不要猜测技能 key。",
         "",
         "【分支与交付】",
