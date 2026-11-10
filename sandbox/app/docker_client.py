@@ -94,6 +94,58 @@ class SandboxDocker:
             return str(path)
         return str(Path(host_root) / relative)
 
+    def image_exists(self, image: str) -> bool:
+        try:
+            self.client.images.get(image)
+            return True
+        except NotFound:
+            return False
+        except (APIError, DockerException):
+            return False
+
+    def build_image(self, template: Template, *, on_log) -> str:
+        if template.build is None:
+            raise SandboxDockerError(f"template {template.id} has no build config")
+        context = Path(template.build.context).expanduser().resolve()
+        if not self._under_allowed_roots(context):
+            raise SandboxDockerError(
+                f"build context is outside allowed roots: {context}"
+            )
+        if not context.exists() or not context.is_dir():
+            raise SandboxDockerError(f"build context is not a directory: {context}")
+        tag = template.build.tag or template.image
+        try:
+            image, logs = self.client.images.build(
+                path=str(context),
+                dockerfile=template.build.dockerfile,
+                tag=tag,
+                buildargs=template.build.args,
+                rm=True,
+                forcerm=True,
+            )
+            for chunk in logs:
+                if isinstance(chunk, dict) and chunk.get("stream"):
+                    on_log(chunk["stream"])
+                elif isinstance(chunk, dict) and chunk.get("error"):
+                    on_log(chunk["error"] + "\n")
+            return tag
+        except (APIError, DockerException) as exc:
+            raise SandboxDockerError(f"image build failed: {exc}") from exc
+
+    def container_ip(self, container_id: str, network: str | None = None) -> str | None:
+        try:
+            attrs = self.client.containers.get(container_id).attrs
+        except (NotFound, APIError, DockerException):
+            return None
+        networks = (attrs.get("NetworkSettings") or {}).get("Networks") or {}
+        if network and network in networks:
+            return networks[network].get("IPAddress") or None
+        for info in networks.values():
+            ip = info.get("IPAddress")
+            if ip:
+                return ip
+        return None
+
     def _home_volume(self, workspace: Workspace) -> str:
         name = f"{self.config.name_prefix}-{workspace.id}-home"
         try:
@@ -286,7 +338,7 @@ class SandboxDocker:
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         timeout: int = 600,
-    ) -> Iterator[tuple[str, bytes]]:
+    ) -> Iterator[tuple[str, object]]:
         try:
             container = self.client.containers.get(container_id)
         except NotFound as exc:
@@ -311,6 +363,8 @@ class SandboxDocker:
                     yield "stdout", stdout_b
                 if stderr_b:
                     yield "stderr", stderr_b
+            code = int(self.client.api.exec_inspect(exec_id).get("ExitCode") or 0)
+            yield "exit", code
         except (NotFound, APIError, DockerException) as exc:
             raise SandboxDockerError(f"stream failed: {exc}") from exc
 

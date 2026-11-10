@@ -19,7 +19,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN npm config set registry https://registry.npmmirror.com && \
-    npm install -g pnpm@9 && \
+    npm install -g pnpm@9 @opencode/cli@2.2.6 && \
     npm cache clean --force
 
 # Agent identity must match CODING_SANDBOX_HOME conventions and the bind-mounted

@@ -58,6 +58,10 @@
         <el-icon><Cpu /></el-icon>
         <span>项目</span>
       </el-menu-item>
+      <el-menu-item index="/workspaces">
+        <el-icon><Box /></el-icon>
+        <span>工作空间</span>
+      </el-menu-item>
 
       <div class="menu-divider"></div>
       <div class="menu-label" v-if="!collapsed">管理</div>
@@ -114,7 +118,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   Folder, Document, User, Monitor, Setting, SwitchButton,
   DataAnalysis, Calendar, Promotion, TrendCharts, Cellphone, Cpu, ChatDotRound,
-  Message, ChatLineRound, Connection, Odometer, Collection,
+  Message, ChatLineRound, Connection, Odometer, Collection, Box,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 

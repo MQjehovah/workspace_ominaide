@@ -8,9 +8,11 @@ the final status. Git delivery is not performed here.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import uuid
@@ -23,11 +25,8 @@ ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 MAX_OUTPUT_CHARS = 60_000
 
 
-def _ensure_config(home: Path, base_url: str, model: str) -> None:
-    config_dir = home / ".config" / "opencode"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_file = config_dir / "opencode.json"
-    payload = {
+def _config_payload(base_url: str, model: str) -> dict:
+    return {
         "$schema": "https://opencode.ai/config.json",
         "providers": {
             "omniaide": {
@@ -44,6 +43,13 @@ def _ensure_config(home: Path, base_url: str, model: str) -> None:
         },
         "model": f"omniaide/{model}",
     }
+
+
+def _ensure_config(home: Path, base_url: str, model: str) -> None:
+    config_dir = home / ".config" / "opencode"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_file = config_dir / "opencode.json"
+    payload = _config_payload(base_url, model)
     config_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     os.chmod(config_file, 0o644)
     workspace._hand_to_sandbox(config_dir, config_file)
@@ -119,6 +125,10 @@ async def _pump(stream, parts: list[str], *, emit) -> None:
 
 
 async def run_opencode(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
+    if (settings.coding_sandbox_mode or "").lower() == "docker":
+        return await _run_opencode_sandbox(
+            run, bot, coding_run, on_event=on_event, is_cancelled=is_cancelled
+        )
     try:
         project = _resolve_project(run.user_id, coding_run.project_path or "")
     except Exception as exc:
@@ -285,5 +295,153 @@ async def run_opencode(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
             "status": "failed",
             "output": output[-MAX_OUTPUT_CHARS:] or None,
             "error": (error_text[-4000:] or f"OpenCode exited with code {code}"),
+        }
+    return {"status": "done", "output": output[-MAX_OUTPUT_CHARS:] or "OpenCode finished.", "error": None}
+
+
+async def _run_opencode_sandbox(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
+    """Run OpenCode inside the sandbox workspace container."""
+    from ai.coding.sandbox_client import SandboxError, ensure_workspace, get_client
+
+    try:
+        project = _resolve_project(run.user_id, coding_run.project_path or "")
+    except Exception as exc:
+        return {"status": "failed", "output": None, "error": str(exc)}
+
+    base_url = (
+        settings.coding_opencode_base_url
+        or settings.coding_base_url
+        or settings.llm_base_url
+    )
+    api_key = (
+        settings.coding_opencode_api_key
+        or settings.coding_api_key
+        or settings.llm_api_key
+    )
+    model = (
+        settings.coding_opencode_model
+        or settings.coding_model
+        or settings.llm_model
+    )
+    if not base_url or not api_key or not model:
+        return {
+            "status": "failed",
+            "output": None,
+            "error": (
+                "OpenCode 缺少模型配置。请设置 CODING_OPENCODE_BASE_URL、"
+                "CODING_OPENCODE_API_KEY、CODING_OPENCODE_MODEL，"
+                "或复用 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL。"
+            ),
+        }
+
+    try:
+        workspace = await ensure_workspace(run.user_id, str(project))
+        client = get_client()
+    except SandboxError as exc:
+        return {"status": "failed", "output": None, "error": str(exc)}
+
+    payload = json.dumps(_config_payload(base_url, model), ensure_ascii=False)
+    encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+    try:
+        await client.exec(
+            workspace["id"],
+            (
+                "mkdir -p /home/agent/.config/opencode && "
+                f"printf %s {shlex.quote(encoded)} | base64 -d "
+                "> /home/agent/.config/opencode/opencode.json"
+            ),
+            timeout_seconds=60,
+        )
+    except SandboxError as exc:
+        return {"status": "failed", "output": None, "error": f"cannot write OpenCode config: {exc}"}
+
+    model_ref = model if "/" in model else f"omniaide/{model}"
+    argv = ["opencode", "--standalone", "run", "--auto", "-m", model_ref]
+    session_id = getattr(coding_run, "session_id", None)
+    if session_id:
+        from core.sessions import service as session_service
+
+        session = await session_service.get_session(run.user_id, session_id)
+        meta = (session or {}).get("metadata") or {}
+        opencode_session = str(meta.get("opencode_session_id") or "")
+        if not opencode_session:
+            opencode_session = "ses_" + uuid.uuid4().hex
+            await session_service.update_session(
+                run.user_id,
+                session_id,
+                metadata={"opencode_session_id": opencode_session},
+            )
+        argv.extend(["--session", opencode_session])
+    if settings.coding_opencode_agent:
+        argv.extend(["--agent", settings.coding_opencode_agent])
+    argv.append(run.input or "")
+
+    env = {
+        "HOME": "/home/agent",
+        "XDG_CONFIG_HOME": "/home/agent/.config",
+        "XDG_DATA_HOME": "/home/agent/.local/share",
+        "XDG_CACHE_HOME": "/home/agent/.cache",
+        "OMNIAIDE_OPENCODE_BASE_URL": base_url,
+        "OMNIAIDE_OPENCODE_API_KEY": api_key,
+        "OMNIAIDE_OPENCODE_MODEL": model,
+        "TERM": "dumb",
+    }
+    timeout = max(int(settings.coding_agent_timeout_seconds or 1800), 60)
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    exit_code = 0
+    cancelled = False
+    try:
+        async for event in client.stream_exec(
+            workspace["id"],
+            argv,
+            env=env,
+            timeout_seconds=timeout,
+        ):
+            kind = event.get("type")
+            if kind == "chunk":
+                text = str(event.get("text") or "")
+                if event.get("stream") == "stderr":
+                    stderr_parts.append(text)
+                else:
+                    stdout_parts.append(text)
+                    if text.strip():
+                        await on_event("partial", {"content": text})
+            elif kind == "exit":
+                exit_code = int(event.get("exit_code") or 0)
+            elif kind == "error":
+                raise RuntimeError(str(event.get("error") or "sandbox stream failed"))
+            if await is_cancelled():
+                cancelled = True
+                break
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "output": "".join(stdout_parts)[-MAX_OUTPUT_CHARS:] or None,
+            "error": f"OpenCode sandbox failed: {exc}",
+        }
+
+    output = "".join(stdout_parts).strip()
+    error_text = "".join(stderr_parts).strip()
+    await on_event(
+        "step",
+        {
+            "name": "opencode",
+            "arguments": {
+                "model": settings.coding_opencode_model or None,
+                "agent": settings.coding_opencode_agent or None,
+                "sandbox": workspace.get("id"),
+            },
+            "result": f"exit={exit_code}" + (f"\n{error_text[-4000:]}" if error_text else ""),
+            "status": "ok" if exit_code == 0 else "error",
+        },
+    )
+    if cancelled:
+        return {"status": "cancelled", "output": output[-MAX_OUTPUT_CHARS:] or None, "error": None}
+    if exit_code != 0:
+        return {
+            "status": "failed",
+            "output": output[-MAX_OUTPUT_CHARS:] or None,
+            "error": (error_text[-4000:] or f"OpenCode exited with code {exit_code}"),
         }
     return {"status": "done", "output": output[-MAX_OUTPUT_CHARS:] or "OpenCode finished.", "error": None}

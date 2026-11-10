@@ -49,6 +49,18 @@ class WorkspaceStore:
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id)"
             )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS template_builds (
+                    template_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'idle',
+                    log TEXT,
+                    error TEXT,
+                    started_at REAL,
+                    finished_at REAL
+                )
+                """
+            )
             self._conn.commit()
 
     def create(self, workspace: Workspace) -> Workspace:
@@ -129,6 +141,31 @@ class WorkspaceStore:
         with self._lock:
             self._conn.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,))
             self._conn.commit()
+
+    def set_build(self, template_id: str, **fields: Any) -> None:
+        allowed = {"status", "log", "error", "started_at", "finished_at"}
+        data = {key: value for key, value in fields.items() if key in allowed}
+        if not data:
+            return
+        assignments = ", ".join(f"{key} = ?" for key in data)
+        values = list(data.values()) + [template_id]
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO template_builds (template_id, status) VALUES (?, 'idle')",
+                (template_id,),
+            )
+            self._conn.execute(
+                f"UPDATE template_builds SET {assignments} WHERE template_id = ?",
+                values,
+            )
+            self._conn.commit()
+
+    def get_build(self, template_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM template_builds WHERE template_id = ?", (template_id,)
+            ).fetchone()
+        return dict(row) if row else None
 
     def count(self) -> int:
         with self._lock:

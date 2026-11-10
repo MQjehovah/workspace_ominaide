@@ -13,11 +13,19 @@ class Resources(BaseModel):
     pids: int = Field(default=512, gt=0)
 
 
+class TemplateBuild(BaseModel):
+    context: str
+    dockerfile: str = "Dockerfile"
+    args: dict[str, str] = Field(default_factory=dict)
+    tag: str | None = None
+
+
 class Template(BaseModel):
     id: str
     name: str
     description: str = ""
     image: str
+    build: TemplateBuild | None = None
     workdir: str = "/workspace"
     user: str = "1001:1000"
     shell: str = "/bin/bash"
@@ -37,6 +45,7 @@ class TemplateSummary(BaseModel):
     workdir: str
     ports: list[int]
     setup_count: int
+    has_build: bool = False
 
 
 class WorkspaceCreate(BaseModel):
@@ -90,6 +99,15 @@ class WorkspaceDetail(Workspace):
     docker_status: str | None = None
     ports: list[PortBinding] = Field(default_factory=list)
     setup_running: bool = False
+
+
+class BuildStatus(BaseModel):
+    template_id: str
+    status: str = "idle"
+    log: str | None = None
+    error: str | None = None
+    started_at: float | None = None
+    finished_at: float | None = None
 
 
 class Health(BaseModel):

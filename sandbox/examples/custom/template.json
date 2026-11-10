@@ -1,0 +1,18 @@
+{
+  "id": "custom-demo",
+  "name": "Custom Demo",
+  "description": "Builds its own image from /data/sandbox/builds/custom-demo.",
+  "image": "omniaide/custom-demo:latest",
+  "build": {
+    "context": "/data/sandbox/builds/custom-demo",
+    "dockerfile": "Dockerfile",
+    "args": {}
+  },
+  "workdir": "/workspace",
+  "user": "1001:1000",
+  "shell": "/bin/bash",
+  "ports": [8000],
+  "setup": [],
+  "resources": {"cpus": 2.0, "memory": "4g", "pids": 512},
+  "ttl_seconds": 1800
+}

@@ -36,7 +36,17 @@ POST   /api/workspaces/{id}/exec
 POST   /api/workspaces/{id}/exec/stream
 POST   /api/workspaces/{id}/setup
 GET    /api/workspaces/{id}/logs
+
+POST   /api/templates/{id}/build
+GET    /api/templates/{id}/build
+
+ANY    /api/workspaces/{id}/proxy/{port}/{path}
+WS     /api/workspaces/{id}/proxy/{port}/{path}
+WS     /api/workspaces/{id}/terminal
 ```
+
+The port proxy and terminal are internal. The backend exposes them under
+`/api/sandbox/...` with user auth; the browser never sees the runner token.
 
 Create:
 
@@ -75,6 +85,36 @@ data: {"type": "done"}
 - The Docker socket is mounted only into the runner, never into workspaces.
 - `project_path` must be under `SANDBOX_ALLOWED_ROOTS`.
 - No backend secrets, `/config`, or `/data` are exposed to workspaces.
+
+## Template builds
+
+A template may build its own image instead of referencing a prebuilt one:
+
+```json
+{
+  "id": "my-project",
+  "name": "My Project",
+  "image": "omniaide/my-project:latest",
+  "build": {
+    "context": "/data/sandbox/builds/my-project",
+    "dockerfile": "Dockerfile",
+    "args": {"NODE_VERSION": "20"}
+  },
+  "workdir": "/workspace"
+}
+```
+
+The build context must be under `SANDBOX_ALLOWED_ROOTS`. Trigger a build with
+`POST /api/templates/my-project/build` and poll
+`GET /api/templates/my-project/build`. Creating a workspace also builds the
+image automatically when it is missing.
+
+## OpenCode
+
+The base image installs `@opencode/cli@2.2.6`. When the backend runs with
+`CODING_SANDBOX_MODE=docker`, OpenCode executes inside the workspace container,
+writes its provider config to `/home/agent/.config/opencode/opencode.json`, and
+keeps its session state in the workspace home volume.
 
 ## Build and run
 

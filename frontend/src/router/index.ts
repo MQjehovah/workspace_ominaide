@@ -101,6 +101,12 @@ const router = createRouter({
           component: () => import('@/views/Projects.vue')
         },
         {
+          path: 'workspaces',
+          name: 'Workspaces',
+          meta: { title: '工作空间' },
+          component: () => import('@/views/Workspaces.vue')
+        },
+        {
           path: 'apps/:pluginName/:pathMatch(.*)*',
           name: 'PluginHost',
           meta: { title: '插件' },

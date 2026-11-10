@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     environment:
       SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:-}
-      SANDBOX_ALLOWED_ROOTS: /data/workspace,/data/sandbox/workspaces
+      SANDBOX_ALLOWED_ROOTS: /data/workspace,/data/sandbox/workspaces,/data/sandbox/builds
       SANDBOX_DATA_ROOT: /data/sandbox/workspaces
       SANDBOX_STATE_DB: /data/sandbox/workspaces.db
       SANDBOX_NETWORK: omniaide-sandbox
@@ -18,11 +18,16 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${SANDBOX_DATA_MOUNT:-/data}:/data
+      # Optional: edit templates without rebuilding the runner image.
+      - ${SANDBOX_TEMPLATES_MOUNT:-../sandbox/templates}:/app/templates:ro
     ports:
       - "127.0.0.1:8010:8010"
     networks:
       - infra
+      - sandbox
 
 networks:
   infra:
     external: true
+  sandbox:
+    name: omniaide-sandbox

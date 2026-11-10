@@ -64,6 +64,7 @@ class TemplateRegistry:
                 workdir=t.workdir,
                 ports=t.ports,
                 setup_count=len(t.setup),
+                has_build=t.build is not None,
             )
             for t in sorted(self._templates.values(), key=lambda item: item.id)
         ]

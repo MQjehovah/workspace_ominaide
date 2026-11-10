@@ -251,9 +251,11 @@ app.include_router(activities_router)
 from app.objects.router import router as objects_router
 from app.desktop.router import router as desktop_releases_router
 from core.sessions.router import router as sessions_router
+from ai.sandbox.router import router as sandbox_router
 app.include_router(objects_router)
 app.include_router(desktop_releases_router)
 app.include_router(sessions_router)
+app.include_router(sandbox_router)
 
 
 @app.websocket("/ws/sync/{folder_id}")

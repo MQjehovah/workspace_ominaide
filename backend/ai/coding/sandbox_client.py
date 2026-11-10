@@ -6,6 +6,7 @@ The runner owns Docker. This module only knows the workspace/exec HTTP API.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from pathlib import Path
 
@@ -19,7 +20,7 @@ class SandboxError(RuntimeError):
 
 
 class SandboxClient:
-    def __init__(self, base_url: str, token: str, *, timeout: float = 30.0):
+    def __init__(self, base_url: str, token: str, *, timeout: float = 120.0):
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
@@ -45,6 +46,23 @@ class SandboxClient:
         if not response.content:
             return None
         return response.json()
+
+    async def list_templates(self) -> list[dict]:
+        return await self._request("GET", "/api/templates") or []
+
+    async def get_template(self, template_id: str) -> dict:
+        return await self._request("GET", f"/api/templates/{template_id}")
+
+    async def build_template(self, template_id: str) -> dict:
+        return await self._request("POST", f"/api/templates/{template_id}/build")
+
+    async def get_build(self, template_id: str) -> dict:
+        return await self._request("GET", f"/api/templates/{template_id}/build")
+
+    async def logs(self, workspace_id: str, tail: int = 200) -> dict:
+        return await self._request(
+            "GET", f"/api/workspaces/{workspace_id}/logs?tail={tail}"
+        )
 
     async def list_workspaces(self, owner_id: str) -> list[dict]:
         data = await self._request(
@@ -105,6 +123,49 @@ class SandboxClient:
             },
             timeout=timeout_seconds + 30,
         )
+
+    async def stream_exec(
+        self,
+        workspace_id: str,
+        command: str | list[str],
+        *,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        timeout_seconds: int = 600,
+    ):
+        """Yield SSE events from the runner's streaming exec endpoint."""
+        url = f"{self.base_url}/api/workspaces/{workspace_id}/exec/stream"
+        payload = {
+            "command": command,
+            "cwd": cwd,
+            "env": env or {},
+            "timeout_seconds": timeout_seconds,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds + 60) as client:
+                async with client.stream(
+                    "POST",
+                    url,
+                    headers=self._headers(),
+                    json=payload,
+                ) as response:
+                    if response.status_code >= 400:
+                        detail = (await response.aread()).decode("utf-8", errors="replace")
+                        raise SandboxError(
+                            f"sandbox runner stream: {response.status_code} {detail}"
+                        )
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        raw = line[6:].strip()
+                        if not raw:
+                            continue
+                        try:
+                            yield json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+        except httpx.HTTPError as exc:
+            raise SandboxError(f"sandbox runner unavailable: {exc}") from exc
 
     async def wait_ready(self, workspace_id: str, *, timeout_seconds: int) -> dict:
         deadline = time.monotonic() + max(timeout_seconds, 10)
