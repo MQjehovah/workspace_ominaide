@@ -134,6 +134,7 @@ async def list_entities(
 async def entity_graph(
     entity_type: str | None = Query(None),
     limit: int = Query(200, ge=1, le=500),
+    q: str = Query(""),
     user: dict = Depends(get_current_user),
 ):
     """Entities plus links between entities that share the same source."""
@@ -153,6 +154,7 @@ async def entity_graph(
         log.warning(f"[memory] entity graph error: {e}")
         return {"nodes": [], "links": [], "counts": {}, "supported": False}
 
+    query = (q or "").strip().lower()
     nodes = []
     counts: dict[str, int] = {}
     groups: dict[str, list[str]] = {}
@@ -167,19 +169,33 @@ async def entity_graph(
             continue
         if entity_type and etype != entity_type:
             continue
+        name = row["title"] or ""
+        if query and query not in name.lower():
+            continue
+        sources = [
+            src for src in (meta.get("sources") or [])
+            if isinstance(src, dict) and src.get("id") is not None
+        ]
         node_id = row["doc_key"]
         counts[etype] = counts.get(etype, 0) + 1
         nodes.append({
             "id": node_id,
-            "name": row["title"],
+            "name": name,
             "type": etype,
-            "source_count": len(meta.get("sources") or []),
+            "source_count": len(sources),
+            "sources": [
+                {
+                    "type": str(src.get("type") or "unknown"),
+                    "id": src.get("id"),
+                    "title": src.get("title"),
+                }
+                for src in sources[:8]
+            ],
             "first_seen": meta.get("first_seen"),
             "last_seen": meta.get("last_seen"),
+            "degree": 0,
         })
-        for src in meta.get("sources") or []:
-            if not isinstance(src, dict) or src.get("id") is None:
-                continue
+        for src in sources:
             groups.setdefault(f"{src.get('type') or 'unknown'}:{src['id']}", []).append(node_id)
 
     weights: dict[tuple[str, str], int] = {}
@@ -197,6 +213,12 @@ async def entity_graph(
         {"source": a, "target": b, "weight": w, "relation": "同一来源"}
         for (a, b), w in weights.items()
     ]
+    by_id = {node["id"]: node for node in nodes}
+    for link in links:
+        if link["source"] in by_id:
+            by_id[link["source"]]["degree"] += 1
+        if link["target"] in by_id:
+            by_id[link["target"]]["degree"] += 1
     return {"nodes": nodes, "links": links, "counts": counts, "supported": True}
 
 

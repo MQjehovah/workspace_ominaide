@@ -157,11 +157,19 @@
             <h3>实体图谱</h3>
           </div>
           <div class="entity-tools">
-            <span class="graph-summary" v-if="entities.length">{{ entities.length }} 个实体 · {{ entityLinks.length }} 条关系</span>
+            <span class="graph-summary" v-if="entities.length">
+              {{ graphEntities.length }} / {{ entities.length }} 个实体 · {{ graphLinks.length }} 条关系
+            </span>
+            <el-input
+              v-model="entityQuery"
+              size="small"
+              clearable
+              placeholder="搜索实体"
+              style="width:150px"
+            />
+            <el-button v-if="focusEntityId" size="small" @click="clearFocus">显示全部</el-button>
             <el-select v-model="entityType" size="small" clearable placeholder="全部类型" style="width:118px" @change="loadEntities">
-              <el-option label="人物" value="person" />
-              <el-option label="项目" value="project" />
-              <el-option label="术语" value="term" />
+              <el-option v-for="option in entityTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
           </div>
         </div>
@@ -174,32 +182,64 @@
         <template v-else>
           <EntityGraph
             ref="graphRef"
-            :nodes="entities"
-            :links="entityLinks"
+            :nodes="graphEntities"
+            :links="graphLinks"
             :selected-id="selectedEntityId"
             @select="selectEntity"
           />
           <div v-if="selectedEntity" class="entity-detail">
             <div class="entity-detail-main">
-              <span class="entity-avatar" :class="selectedEntity.type">{{ (selectedEntity.name || '?').slice(0, 1) }}</span>
+              <span class="entity-avatar" :style="{ background: typeSoft(selectedEntity.type), color: typeColor(selectedEntity.type) }">
+                {{ (selectedEntity.name || '?').slice(0, 1) }}
+              </span>
               <div class="entity-text">
                 <span class="entity-name">{{ selectedEntity.name }}</span>
                 <span class="muted">
                   {{ typeLabel(selectedEntity.type) }}
                   · 来自 {{ selectedEntity.source_count || 0 }} 处内容
+                  · {{ selectedEntity.degree || 0 }} 条关联
                   <template v-if="selectedEntity.last_seen"> · 最近 {{ fmt(selectedEntity.last_seen) }}</template>
                 </span>
               </div>
             </div>
-            <el-popconfirm title="忘掉这个实体？不会删除原始内容。" @confirm="forgetEntity(selectedEntity)">
-              <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
-            </el-popconfirm>
+            <div class="entity-actions">
+              <el-button link type="primary" size="small" @click="focusEntity(selectedEntity)">聚焦</el-button>
+              <el-popconfirm title="忘掉这个实体？不会删除原始内容。" @confirm="forgetEntity(selectedEntity)">
+                <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
+              </el-popconfirm>
+            </div>
+            <div v-if="selectedEntity.sources?.length" class="entity-sources">
+              <span class="entity-subtitle">来源</span>
+              <button
+                v-for="src in selectedEntity.sources"
+                :key="`${src.type}-${src.id}`"
+                type="button"
+                class="entity-source"
+                :disabled="!sourceRoute(src)"
+                @click="openSource(src)"
+              >
+                {{ src.title || `${src.type} #${src.id}` }}
+              </button>
+            </div>
+            <div v-if="selectedNeighbors.length" class="entity-neighbors">
+              <span class="entity-subtitle">关联实体</span>
+              <el-tag
+                v-for="neighbor in selectedNeighbors"
+                :key="neighbor.id"
+                size="small"
+                effect="plain"
+                @click="selectEntity(neighbor.id)"
+              >
+                {{ neighbor.name }}
+              </el-tag>
+            </div>
           </div>
           <div class="graph-foot">
             <div class="graph-legend">
-              <span><i class="legend-dot person"></i>人物</span>
-              <span><i class="legend-dot project"></i>项目</span>
-              <span><i class="legend-dot term"></i>术语</span>
+              <span v-for="item in entityLegend" :key="item.type">
+                <i class="legend-dot" :style="{ background: item.color }"></i>
+                {{ item.label }} {{ item.count }}
+              </span>
             </div>
             <span class="muted">{{ selectedEntity ? '再次点击节点可取消选择' : '点击节点查看详情' }}</span>
           </div>
@@ -332,7 +372,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Edit, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
 import client from '@/api/client'
@@ -343,11 +383,14 @@ import ReviewPipeline from './Insights.vue'
 const props = defineProps<{ embedded?: boolean }>()
 
 const route = useRoute()
+const router = useRouter()
 const profile = ref<any>({ contacts: [], projects: [], interests: [], habits: [], insights: {} })
 const entities = ref<any[]>([])
 const entityLinks = ref<any[]>([])
 const entitiesSupported = ref(true)
 const entityType = ref('')
+const entityQuery = ref('')
+const focusEntityId = ref<string | null>(null)
 const selectedEntityId = ref<string | null>(null)
 const graphRef = ref<any>(null)
 const reviews = ref<any[]>([])
@@ -428,8 +471,135 @@ function textOf(item: any) {
   return typeof item === 'string' ? item : item?.text || ''
 }
 
+const TYPE_COLORS: Record<string, string> = {
+  person: '#6366f1', project: '#10b981', term: '#f59e0b',
+  product: '#0ea5e9', organization: '#8b5cf6', location: '#f97316',
+  event: '#ef4444', topic: '#14b8a6', technology: '#06b6d4',
+  task: '#84cc16', document: '#64748b',
+}
+const TYPE_SOFT_COLORS: Record<string, string> = {
+  person: '#eef2ff', project: '#ecfdf5', term: '#fffbeb',
+  product: '#f0f9ff', organization: '#f5f3ff', location: '#fff7ed',
+  event: '#fef2f2', topic: '#f0fdfa', technology: '#ecfeff',
+  task: '#f7fee7', document: '#f1f5f9',
+}
+
+function typeColor(type: string) {
+  return TYPE_COLORS[type] || '#94a3b8'
+}
+
+function typeSoft(type: string) {
+  return TYPE_SOFT_COLORS[type] || '#e2e8f0'
+}
+
+const entityTypeOptions = [
+  { label: '人物', value: 'person' },
+  { label: '项目', value: 'project' },
+  { label: '术语', value: 'term' },
+  { label: '产品', value: 'product' },
+  { label: '组织', value: 'organization' },
+  { label: '地点', value: 'location' },
+  { label: '事件', value: 'event' },
+  { label: '主题', value: 'topic' },
+  { label: '技术', value: 'technology' },
+  { label: '任务', value: 'task' },
+  { label: '文档', value: 'document' },
+]
+
 function typeLabel(type: string) {
-  return ({ person: '人物', project: '项目', term: '术语' } as Record<string, string>)[type] || type
+  return entityTypeOptions.find((item) => item.value === type)?.label || type
+}
+
+const entityLegend = computed(() => {
+  const counts = new Map<string, number>()
+  for (const entity of entities.value) {
+    const type = String(entity.type || 'term')
+    counts.set(type, (counts.get(type) || 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, count]) => ({
+      type,
+      count,
+      label: typeLabel(type),
+      color: typeColor(type),
+    }))
+})
+
+const neighborMap = computed(() => {
+  const map = new Map<string, Set<string>>()
+  for (const link of entityLinks.value) {
+    const a = String(link.source)
+    const b = String(link.target)
+    if (!map.has(a)) map.set(a, new Set())
+    if (!map.has(b)) map.set(b, new Set())
+    map.get(a)!.add(b)
+    map.get(b)!.add(a)
+  }
+  return map
+})
+
+const selectedNeighbors = computed(() => {
+  if (!selectedEntity.value) return []
+  const ids = neighborMap.value.get(selectedEntity.value.id) || new Set()
+  return entities.value.filter((entity) => ids.has(entity.id))
+})
+
+const graphEntities = computed(() => {
+  let list = entities.value
+  if (focusEntityId.value) {
+    const keep = new Set([focusEntityId.value, ...(neighborMap.value.get(focusEntityId.value) || [])])
+    list = list.filter((entity) => keep.has(entity.id))
+  }
+  const query = entityQuery.value.trim().toLowerCase()
+  if (query) {
+    list = list.filter((entity) => String(entity.name || '').toLowerCase().includes(query))
+  }
+  return list
+})
+
+const graphLinks = computed(() => {
+  const keep = new Set(graphEntities.value.map((entity) => entity.id))
+  return entityLinks.value.filter((link) => keep.has(link.source) && keep.has(link.target))
+})
+
+function sourceRoute(src: any) {
+  const type = String(src?.type || '').toLowerCase()
+  const id = src?.id
+  const base: Record<string, string> = {
+    project: '/projects', projects: '/projects',
+    note: '/notes', notes: '/notes',
+    file: '/files', files: '/files',
+    mail: '/mail', mails: '/mail',
+    event: '/schedule', events: '/schedule', schedule: '/schedule',
+    todo: '/dashboard', todos: '/dashboard',
+    meeting: '/notes', meetings: '/notes',
+    session: '/chat', sessions: '/chat',
+    cognition: '/cognition',
+    source: '/sources', sources: '/sources', source_item: '/sources', rss: '/sources',
+    memory: '/bots',
+  }
+  const path = base[type]
+  if (!path) return ''
+  if ((type === 'project' || type === 'projects') && id) {
+    return `${path}?project=${id}`
+  }
+  return path
+}
+
+function openSource(src: any) {
+  const path = sourceRoute(src)
+  if (path) router.push(path)
+}
+
+function focusEntity(entity: any) {
+  if (!entity?.id) return
+  focusEntityId.value = entity.id
+  selectedEntityId.value = entity.id
+}
+
+function clearFocus() {
+  focusEntityId.value = null
 }
 
 function kindLabel(kind: string) {
@@ -503,6 +673,9 @@ async function loadEntities() {
     if (!entities.value.some((e: any) => e.id === selectedEntityId.value)) {
       selectedEntityId.value = null
     }
+    if (focusEntityId.value && !entities.value.some((e: any) => e.id === focusEntityId.value)) {
+      focusEntityId.value = null
+    }
   } catch {
     entities.value = []
     entityLinks.value = []
@@ -513,6 +686,7 @@ async function loadEntities() {
 
 function selectEntity(id: string) {
   selectedEntityId.value = selectedEntityId.value === id ? null : id
+  if (focusEntityId.value) focusEntityId.value = id
 }
 
 async function forgetEntity(e: any) {
@@ -520,6 +694,7 @@ async function forgetEntity(e: any) {
     await client.delete(`/memory/entities/${encodeURIComponent(e.id)}`)
     ElMessage.success(`已遗忘「${e.name}」`)
     selectedEntityId.value = null
+    if (focusEntityId.value === e.id) focusEntityId.value = null
     await loadEntities()
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.detail || '遗忘失败')
@@ -762,7 +937,7 @@ section[id] { scroll-margin-top: 12px; }
 .entity-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 .graph-summary { font-size: 11.5px; color: #94a3b8; }
 .entity-card :deep(.entity-graph) { height: 560px; }
-.graph-legend { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: #64748b; }
+.graph-legend { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: #64748b; flex-wrap: wrap; }
 .graph-legend span { display: inline-flex; align-items: center; gap: 4px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .legend-dot.person { background: #6366f1; }
@@ -770,10 +945,23 @@ section[id] { scroll-margin-top: 12px; }
 .legend-dot.term { background: #f59e0b; }
 .entity-detail {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap;
   margin-top: 12px; padding: 10px 12px; border-radius: 12px;
   background: #f8faff; border: 1px solid #e8edf8;
 }
-.entity-detail-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.entity-detail-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.entity-actions { display: flex; align-items: center; gap: 6px; }
+.entity-sources, .entity-neighbors {
+  flex-basis: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.entity-subtitle { font-size: 11px; color: #94a3b8; margin-right: 2px; }
+.entity-source {
+  border: 1px solid #e2e8f0; background: #fff; border-radius: 6px;
+  padding: 2px 8px; font-size: 11px; color: #4f46e5; cursor: pointer;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.entity-source:disabled { color: #94a3b8; cursor: default; }
+.entity-source:not(:disabled):hover { border-color: #c7d2fe; background: #eef2ff; }
 .entity-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .entity-avatar {
   width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0;

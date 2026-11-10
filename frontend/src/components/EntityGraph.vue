@@ -72,11 +72,27 @@ const TYPE_COLOR: Record<string, string> = {
   person: '#6366f1',
   project: '#10b981',
   term: '#f59e0b',
+  product: '#0ea5e9',
+  organization: '#8b5cf6',
+  location: '#f97316',
+  event: '#ef4444',
+  topic: '#14b8a6',
+  technology: '#06b6d4',
+  task: '#84cc16',
+  document: '#64748b',
 }
 const TYPE_SOFT: Record<string, string> = {
   person: '#c7d2fe',
   project: '#a7f3d0',
   term: '#fde68a',
+  product: '#bae6fd',
+  organization: '#ddd6fe',
+  location: '#fed7aa',
+  event: '#fecaca',
+  topic: '#99f6e4',
+  technology: '#a5f3fc',
+  task: '#d9f99d',
+  document: '#e2e8f0',
 }
 
 function color(type: string) {
@@ -93,6 +109,11 @@ function radius(node: GraphNode) {
 
 function endpoint(value: string | GraphNode): GraphNode {
   return value as GraphNode
+}
+
+function shortName(name: string): string {
+  const text = String(name || '')
+  return text.length > 14 ? `${text.slice(0, 13)}…` : text
 }
 
 function ticked() {
@@ -159,6 +180,10 @@ function render() {
     .attr('stroke-opacity', 0.5)
     .attr('stroke-width', (d: GraphLink) => Math.min(3.2, 0.9 + d.weight * 0.9))
 
+  linkSelection
+    .append('title')
+    .text((d: GraphLink) => `${d.relation || '关联'}${d.weight ? ` · 权重 ${d.weight}` : ''}`)
+
   nodeSelection = rootSelection
     .append('g')
     .attr('class', 'graph-nodes')
@@ -187,7 +212,7 @@ function render() {
 
   nodeSelection
     .append('text')
-    .text((d: GraphNode) => d.name)
+    .text((d: GraphNode) => shortName(d.name))
     .attr('text-anchor', 'middle')
     .attr('dy', (d: GraphNode) => radius(d) + 15)
     .attr('font-size', 11)
@@ -197,6 +222,7 @@ function render() {
     .attr('stroke', 'rgba(255, 255, 255, .95)')
     .attr('stroke-width', 3)
     .attr('stroke-linejoin', 'round')
+    .attr('opacity', (d: GraphNode) => (d.degree > 0 || d.source_count > 1 ? 1 : 0.55))
     .style('pointer-events', 'none')
 
   nodeSelection
@@ -302,7 +328,11 @@ function updateSelection() {
 }
 
 function typeName(type: string) {
-  return ({ person: '人物', project: '项目', term: '术语' } as Record<string, string>)[type] || type
+  return ({
+    person: '人物', project: '项目', term: '术语', product: '产品',
+    organization: '组织', location: '地点', event: '事件', topic: '主题',
+    technology: '技术', task: '任务', document: '文档',
+  } as Record<string, string>)[type] || type
 }
 
 function scheduleRender() {
