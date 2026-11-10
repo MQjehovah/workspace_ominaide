@@ -8,10 +8,18 @@ dedicated branch, and force-push is never used.
 import asyncio
 import os
 import re
+import shutil
 import signal
 import time
 from pathlib import Path
 from typing import Awaitable, Callable
+
+try:  # POSIX only; Windows dev machines fall back to the current user.
+    import grp
+    import pwd
+except ImportError:  # pragma: no cover
+    grp = None
+    pwd = None
 
 from ai.coding import workspace
 from ai.coding.context import invalidate_context
@@ -114,19 +122,39 @@ async def _shell(root: str, command: str, *, identity: dict | None, ssh_key: str
         return -1, "", "sandbox user is unavailable; refusing to verify as root"
     if sandbox:
         env = workspace.sandbox_env(identity)
-        run_kwargs = {"user": sandbox[0], "group": sandbox[1], "extra_groups": []}
+        # uvloop's subprocess implementation rejects user/group/extra_groups.
+        # Drop privileges with setpriv, matching the workspace command runner.
+        setpriv = shutil.which("setpriv")
+        if not setpriv or pwd is None or grp is None:
+            return -1, "", "setpriv is unavailable; refusing to verify as root"
+        try:
+            user_entry = pwd.getpwnam(sandbox[0])
+            group_entry = grp.getgrnam(sandbox[1])
+        except KeyError:
+            return -1, "", f"sandbox identity unavailable: {sandbox[0]}:{sandbox[1]}"
+        proc = await asyncio.create_subprocess_exec(
+            setpriv,
+            "--reuid", str(user_entry.pw_uid),
+            "--regid", str(group_entry.gr_gid),
+            "--clear-groups",
+            "--",
+            "/bin/sh", "-c", command,
+            cwd=str(root),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
     else:
         env = workspace.git_env(identity, ssh_key)
-        run_kwargs = {}
-    proc = await asyncio.create_subprocess_shell(
-        command,
-        cwd=str(root),
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        start_new_session=True,
-        **run_kwargs,
-    )
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            cwd=str(root),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
