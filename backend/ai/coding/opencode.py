@@ -8,6 +8,7 @@ the final status. Git delivery is not performed here.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -19,6 +20,32 @@ from core.config.settings import settings
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 MAX_OUTPUT_CHARS = 60_000
+
+
+def _ensure_config(home: Path, base_url: str, model: str) -> None:
+    config_dir = home / ".config" / "opencode"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_file = config_dir / "opencode.json"
+    payload = {
+        "$schema": "https://opencode.ai/config.json",
+        "providers": {
+            "omniaide": {
+                "name": "OmniAide",
+                "env": ["OMNIAIDE_OPENCODE_API_KEY"],
+                "package": "@opencode/ai/providers/openai-compatible",
+                "settings": {"baseURL": base_url},
+                "models": {
+                    model: {
+                        "name": model,
+                    }
+                },
+            }
+        },
+        "model": f"omniaide/{model}",
+    }
+    config_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.chmod(config_file, 0o644)
+    workspace._hand_to_sandbox(config_dir, config_file)
 
 
 def _resolve_project(user_id: int, project: str) -> Path:
@@ -40,6 +67,7 @@ def _find_binary(home: Path) -> Path | None:
     configured = (settings.coding_opencode_bin or "").strip()
     candidates = [
         Path(configured).expanduser() if configured else None,
+        home / ".local" / "opencode2" / "node_modules" / ".bin" / "opencode",
         home / ".local" / "opencode" / "node_modules" / ".bin" / "opencode",
         home / ".local" / "bin" / "opencode",
         home / "bin" / "opencode",
@@ -116,9 +144,39 @@ async def run_opencode(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
     if prefix is None:
         return {"status": "failed", "output": None, "error": "setpriv unavailable; refusing to run OpenCode as root"}
 
-    argv = [str(binary), "run"]
-    if settings.coding_opencode_model:
-        argv.extend(["-m", settings.coding_opencode_model])
+    base_url = (
+        settings.coding_opencode_base_url
+        or settings.coding_base_url
+        or settings.llm_base_url
+    )
+    api_key = (
+        settings.coding_opencode_api_key
+        or settings.coding_api_key
+        or settings.llm_api_key
+    )
+    model = (
+        settings.coding_opencode_model
+        or settings.coding_model
+        or settings.llm_model
+    )
+    if not base_url or not api_key or not model:
+        return {
+            "status": "failed",
+            "output": None,
+            "error": (
+                "OpenCode 缺少模型配置。请设置 CODING_OPENCODE_BASE_URL、"
+                "CODING_OPENCODE_API_KEY、CODING_OPENCODE_MODEL，"
+                "或复用 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL。"
+            ),
+        }
+    try:
+        _ensure_config(home, base_url, model)
+    except OSError as exc:
+        return {"status": "failed", "output": None, "error": f"cannot write OpenCode config: {exc}"}
+
+    argv = [str(binary), "--standalone", "run", "--auto"]
+    model_ref = model if "/" in model else f"omniaide/{model}"
+    argv.extend(["-m", model_ref])
     if settings.coding_opencode_agent:
         argv.extend(["--agent", settings.coding_opencode_agent])
     argv.append(run.input or "")
@@ -129,6 +187,9 @@ async def run_opencode(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
         "XDG_CONFIG_HOME": str(home / ".config"),
         "XDG_DATA_HOME": str(home / ".local" / "share"),
         "XDG_CACHE_HOME": str(home / ".cache"),
+        "OMNIAIDE_OPENCODE_BASE_URL": base_url,
+        "OMNIAIDE_OPENCODE_API_KEY": api_key,
+        "OMNIAIDE_OPENCODE_MODEL": model,
     })
     env["PATH"] = f"{binary.parent}:{home / '.local' / 'bin'}:{env.get('PATH', '')}"
 

@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     coding_agent_home: str = "/data/agent-runtime/home"
     coding_agent_timeout_seconds: int = 1800
     coding_opencode_bin: str = ""
+    coding_opencode_base_url: str = ""
+    coding_opencode_api_key: str = ""
     coding_opencode_model: str = ""
     coding_opencode_agent: str = "build"
     coding_command_timeout_ms: int = 120000
