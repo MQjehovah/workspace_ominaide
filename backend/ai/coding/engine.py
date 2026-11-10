@@ -133,23 +133,43 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
         api_key=settings.llm_api_key, base_url=settings.llm_base_url
     )
     model = (bot.model or settings.llm_model) if bot is not None else settings.llm_model
+    # Coding runs get their own budget. Chat bots default to 60 turns, which
+    # is too small for repository-wide investigation and implementation.
     max_turns = min(
-        int((bot.max_turns if bot is not None else 0) or settings.coding_max_turns),
-        100,
+        max(
+            int(settings.coding_max_turns or 60),
+            int((bot.max_turns if bot is not None else 0) or 0),
+        ),
+        150,
     )
 
     final = ""
     last_text = ""
+    budget_exhausted = False
+    budget_warned = False
     for _turn in range(max_turns):
         if await is_cancelled():
             await on_event("checkpoint", {"messages": messages})
             return {"status": "cancelled", "output": last_text or None, "error": None}
 
+        remaining = max_turns - _turn
+        if remaining <= 2 and not budget_warned:
+            budget_warned = True
+            messages.append({
+                "role": "system",
+                "content": (
+                    "本次运行即将达到轮次上限。不要再调用任何工具，"
+                    "立即用中文输出阶段性总结：已经完成了什么、发现了什么、"
+                    "还有哪些未完成，以及建议的下一步。"
+                ),
+            })
+        force_final = remaining <= 2
+
         try:
             resp = await tracked_create(client, 
                 model=model,
                 messages=messages,
-                tools=TOOLS,
+                tools=None if force_final else TOOLS,
                 temperature=0.2,
             )
         except Exception as e:
@@ -163,6 +183,12 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
 
         if not msg.tool_calls:
             final = msg.content or last_text
+            budget_exhausted = force_final
+            break
+
+        if force_final:
+            final = msg.content or last_text
+            budget_exhausted = True
             break
 
         messages.append(_assistant_message(msg))
@@ -196,12 +222,24 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
         await on_event("checkpoint", {"messages": messages})
 
     if not final:
+        final = last_text or ""
+        budget_exhausted = True
+
+    if not final:
         await on_event("checkpoint", {"messages": messages})
         return {
             "status": "failed",
-            "output": last_text or None,
+            "output": None,
             "error": f"reached max turns ({max_turns})",
         }
+
+    if budget_exhausted:
+        await on_event("checkpoint", {"messages": messages})
+        note = (
+            f"（已达到单次运行轮次上限 {max_turns}，以下为阶段性结果。"
+            "本次未自动提交或推送，建议确认后继续。）"
+        )
+        return {"status": "done", "output": f"{note}\n\n{final}", "error": None}
 
     summary = None
     if allow_commit:

@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     # Legacy/test override. When set, projects use this directory directly
     # instead of <workspace_root>/<user_id>/projects. Leave empty in production.
     coding_workspace_root: str = ""
-    coding_max_turns: int = 60
+    coding_max_turns: int = 100
     coding_command_timeout_ms: int = 120000
     # One-shot delivery: after the agent finishes, verify -> branch -> commit -> push.
     # When enabled the agent tools themselves cannot commit/push; delivery owns git.

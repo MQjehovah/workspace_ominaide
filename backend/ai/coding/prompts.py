@@ -112,6 +112,8 @@ def coding_system_prompt(project: str, developer: dict | None, context: str = ""
         "4. 修改后尽量运行构建、测试或最小验证命令确认没有破坏。",
         "5. 不要执行格式化磁盘、关机、删除项目根目录等破坏性命令。",
         "6. 完成后用中文简要说明改了什么、验证结果，以及仍需用户注意的事项。",
+        "7. 单次运行有轮次预算。接近上限时停止探索，优先给出可交付结果和阶段性总结。",
+        "8. 如果用户只要求分析或报告，不要为了无关的测试失败无限排查；主要调查完成后及时输出报告。",
         "",
         "可用工具：list_dir / read_file / write_file / edit_file / search_text / run_command。",
         "",
