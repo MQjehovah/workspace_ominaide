@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -65,49 +66,142 @@ class _SourcesScreenState extends State<SourcesScreen> {
     }
   }
 
+  String _htmlToText(String html) {
+    if (html.trim().isEmpty) return '';
+    var text = html
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</p\s*>', caseSensitive: false), '\n\n')
+        .replaceAll(RegExp(r'</div\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</h[1-6]\s*>', caseSensitive: false), '\n\n')
+        .replaceAll(RegExp(r'<li[^>]*>', caseSensitive: false), '• ')
+        .replaceAll(RegExp(r'</li\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&#x27;', "'")
+        .replaceAll('&ldquo;', '“')
+        .replaceAll('&rdquo;', '”')
+        .replaceAll('&mdash;', '—')
+        .replaceAll('&hellip;', '…');
+    text = text.replaceAllMapped(RegExp(r'&#(x?[0-9a-fA-F]+);'), (match) {
+      final raw = match.group(1) ?? '';
+      try {
+        final code = raw.startsWith('x') || raw.startsWith('X')
+            ? int.parse(raw.substring(1), radix: 16)
+            : int.parse(raw);
+        return String.fromCharCode(code);
+      } catch (_) {
+        return match.group(0) ?? '';
+      }
+    });
+    return text.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+  }
+
+  String _articleText(Map<String, dynamic> entry) {
+    final content = (entry['content'] ?? '').toString().trim();
+    final summary = (entry['summary'] ?? '').toString().trim();
+    return _htmlToText(content.isNotEmpty ? content : summary);
+  }
+
+  String _formatPublished(dynamic value) {
+    final text = (value ?? '').toString().trim();
+    if (text.isEmpty) return '';
+    final parsed = DateTime.tryParse(text);
+    if (parsed == null) return text;
+    final local = parsed.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  Future<void> _openLink(String link) async {
+    final uri = Uri.tryParse(link);
+    if (uri == null) return;
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开链接')),
+      );
+    }
+  }
+
   Future<void> _open(Map<String, dynamic> entry) async {
     final palette = AppPalette.of(context);
+    final title = (entry['title'] ?? '').toString();
+    final sourceTitle = (entry['source_title'] ?? '资讯').toString();
+    final published = _formatPublished(entry['published']);
+    final link = (entry['link'] ?? '').toString().trim();
+    final body = _articleText(entry);
+
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       backgroundColor: palette.card,
       builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.9,
+          minChildSize: 0.45,
+          maxChildSize: 0.96,
+          builder: (context, controller) {
+            return ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
               children: [
                 Text(
-                  (entry['title'] ?? '').toString(),
+                  title,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 18,
+                    height: 1.45,
                     fontWeight: FontWeight.w800,
                     color: palette.ink,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  (entry['summary'] ?? entry['content'] ?? '').toString(),
-                  maxLines: 8,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        published.isEmpty
+                            ? sourceTitle
+                            : '$sourceTitle · $published',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: palette.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Divider(color: palette.line),
+                const SizedBox(height: 10),
+                SelectableText(
+                  body.isEmpty ? '暂无正文，可打开原文查看。' : body,
                   style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.7,
-                    color: palette.muted,
+                    fontSize: 14,
+                    height: 1.85,
+                    color: palette.ink,
                   ),
                 ),
-                if ((entry['link'] ?? '').toString().isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    (entry['link'] ?? '').toString(),
-                    style: TextStyle(fontSize: 10, color: palette.primary),
+                if (link.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  OutlinedButton.icon(
+                    onPressed: () => _openLink(link),
+                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                    label: const Text('在浏览器打开原文'),
                   ),
                 ],
               ],
-            ),
-          ),
+            );
+          },
         );
       },
     );
