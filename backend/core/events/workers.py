@@ -42,8 +42,11 @@ async def indexing_handler(event):
 async def entity_handler(event):
     if not settings.memory_layer_enabled or _skip_entities(event):
         return
+    from ai.entities.settings import auto_extract_enabled, auto_relations_enabled
     from ai.retrieval.indexer import extract_and_store_entities
 
+    if not await auto_extract_enabled(event.user_id):
+        return
     text = str(event.details or "")
     source_type = event.entity_type or event.event_type
     source_id = event.entity_id or event.id
@@ -56,16 +59,17 @@ async def entity_handler(event):
         title=title,
     )
     try:
-        from ai.entities.relations import extract_relations_from_text
+        if await auto_relations_enabled(event.user_id):
+            from ai.entities.relations import extract_relations_from_text
 
-        asyncio.create_task(
-            extract_relations_from_text(
-                event.user_id,
-                f"{title}\n{text}",
-                source_type,
-                int(source_id),
+            asyncio.create_task(
+                extract_relations_from_text(
+                    event.user_id,
+                    f"{title}\n{text}",
+                    source_type,
+                    int(source_id),
+                )
             )
-        )
     except Exception:
         pass
 

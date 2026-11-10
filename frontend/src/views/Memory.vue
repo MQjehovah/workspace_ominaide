@@ -169,6 +169,32 @@
             />
             <el-button v-if="focusEntityId" size="small" @click="clearFocus">显示全部</el-button>
             <el-button size="small" @click="openMergeSuggestions">合并建议</el-button>
+            <el-popover placement="bottom-end" :width="300" trigger="click">
+              <template #reference>
+                <el-button size="small">提取设置</el-button>
+              </template>
+              <div class="entity-settings">
+                <div class="setting-row">
+                  <span>新内容自动抽实体</span>
+                  <el-switch v-model="entitySettings.auto_extract" @change="saveEntitySettings" />
+                </div>
+                <div class="setting-row">
+                  <span>自动抽关系</span>
+                  <el-switch v-model="entitySettings.auto_relations" @change="saveEntitySettings" />
+                </div>
+                <p class="muted">关闭后不会在后台调用 LLM，可随时手动抽取。</p>
+                <div class="setting-actions">
+                  <el-button size="small" @click="triggerEntityExtract">抽实体</el-button>
+                  <el-button size="small" @click="triggerRelationExtract">抽关系</el-button>
+                </div>
+                <p class="muted" v-if="entitySettings.last_extract_at">
+                  最近实体：{{ fmt(entitySettings.last_extract_at) }}
+                </p>
+                <p class="muted" v-if="entitySettings.last_relation_at">
+                  最近关系：{{ fmt(entitySettings.last_relation_at) }}
+                </p>
+              </div>
+            </el-popover>
             <el-checkbox v-model="communityMode" size="small">社区着色</el-checkbox>
             <el-select v-model="entityType" size="small" clearable placeholder="全部类型" style="width:118px" @change="loadEntities">
               <el-option v-for="option in entityTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
@@ -515,6 +541,12 @@ const relationEditOpen = ref(false)
 const relationEditId = ref<number | null>(null)
 const relationEditType = ref('related_to')
 const relationEditConfidence = ref(0.8)
+const entitySettings = ref<any>({
+  auto_extract: false,
+  auto_relations: false,
+  last_extract_at: null,
+  last_relation_at: null,
+})
 const graphRef = ref<any>(null)
 const reviews = ref<any[]>([])
 const candidates = ref<any[]>([])
@@ -949,6 +981,48 @@ function kindLabel(kind: string) {
   } as Record<string, string>)[kind] || kind
 }
 
+async function loadEntitySettings() {
+  try {
+    const { data } = await client.get('/memory/entity-settings')
+    entitySettings.value = { ...entitySettings.value, ...data }
+  } catch {
+    // Keep defaults: background LLM extraction is off until explicitly enabled.
+  }
+}
+
+async function saveEntitySettings() {
+  try {
+    const { data } = await client.patch('/memory/entity-settings', {
+      auto_extract: entitySettings.value.auto_extract,
+      auto_relations: entitySettings.value.auto_relations,
+    })
+    entitySettings.value = { ...entitySettings.value, ...data }
+    ElMessage.success('设置已保存')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '保存失败')
+  }
+}
+
+async function triggerEntityExtract() {
+  try {
+    await client.post('/memory/entities/extract', null, { params: { limit: 8 } })
+    ElMessage.success('实体抽取已开始')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '启动失败')
+  }
+}
+
+async function triggerRelationExtract() {
+  try {
+    await client.post('/memory/entities/relations/extract', null, {
+      params: { limit_sources: 8 },
+    })
+    ElMessage.success('关系抽取已开始')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '启动失败')
+  }
+}
+
 async function loadMemory() {
   try {
     const [c, r] = await Promise.all([
@@ -1051,7 +1125,9 @@ async function loadReviews() {
 }
 
 async function loadAll() {
-  await Promise.all([loadProfile(), loadEntities(), loadReviews(), loadMemory()])
+  await Promise.all([
+    loadProfile(), loadEntities(), loadReviews(), loadMemory(), loadEntitySettings(),
+  ])
 }
 
 async function refreshAll() {
@@ -1300,6 +1376,9 @@ section[id] { scroll-margin-top: 12px; }
   padding: 8px 10px; border: 1px solid #e8edf8; border-radius: 8px;
 }
 .suggestion-main { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.entity-settings { display: flex; flex-direction: column; gap: 10px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.setting-actions { display: flex; gap: 8px; }
 .entity-relation { font-size: 10px; opacity: .68; margin-left: 2px; }
 .entity-subtitle { font-size: 11px; color: #94a3b8; margin-right: 2px; }
 .entity-source {

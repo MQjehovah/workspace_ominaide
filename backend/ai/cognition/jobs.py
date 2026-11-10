@@ -97,6 +97,7 @@ async def backfill_entities() -> dict:
 
 async def extract_entity_relations() -> dict:
     from ai.entities.relations import extract_relations_for_user
+    from ai.entities.settings import auto_relations_enabled
     from core.auth.domain.models import User
     from core.database.session import async_session
     from sqlalchemy import select
@@ -104,12 +105,16 @@ async def extract_entity_relations() -> dict:
     async with async_session() as db:
         user_ids = list((await db.execute(select(User.id))).scalars().all())
     total = 0
+    processed = 0
     for user_id in user_ids:
+        if not await auto_relations_enabled(int(user_id)):
+            continue
         result = await extract_relations_for_user(
             int(user_id), limit_sources=3
         )
         total += int(result.get("relations") or 0)
-    return {"users": len(user_ids), "relations": total}
+        processed += 1
+    return {"users": processed, "relations": total}
 
 
 register_handler("cognition.mine.user", mine_user_job)

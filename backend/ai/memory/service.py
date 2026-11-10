@@ -375,13 +375,16 @@ async def approve_candidate(user_id: int, candidate_id: int) -> MemoryRecord | N
         await db.commit()
         await _index_record(user_id, record)
         try:
-            from ai.entities.relations import extract_relations_from_text
+            from ai.entities.settings import auto_relations_enabled
 
-            asyncio.create_task(
-                extract_relations_from_text(
-                    user_id, record.content or "", "memory", record.id
+            if await auto_relations_enabled(user_id):
+                from ai.entities.relations import extract_relations_from_text
+
+                asyncio.create_task(
+                    extract_relations_from_text(
+                        user_id, record.content or "", "memory", record.id
+                    )
                 )
-            )
         except Exception as e:
             log.warning(f"[memory] relation extraction enqueue failed: {e}")
         try:

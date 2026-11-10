@@ -310,6 +310,10 @@ async def extract_relations_for_user(
             await db.commit()
         used_sources += 1
 
+    if used_sources:
+        from ai.entities.settings import mark_run
+
+        await mark_run(user_id, "last_relation_at")
     return {"sources": used_sources, "relations": created, "skipped": False}
 
 

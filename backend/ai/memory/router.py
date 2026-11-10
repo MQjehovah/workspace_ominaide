@@ -486,6 +486,11 @@ class RelationUpdate(BaseModel):
     confidence: float | None = None
 
 
+class EntitySettingsUpdate(BaseModel):
+    auto_extract: bool | None = None
+    auto_relations: bool | None = None
+
+
 def _relation_out(row) -> dict:
     return {
         "id": row.id,
@@ -495,6 +500,35 @@ def _relation_out(row) -> dict:
         "confidence": row.confidence,
         "meta": row.meta,
     }
+
+
+@router.get("/entity-settings")
+async def get_entity_settings(user: dict = Depends(get_current_user)):
+    from ai.entities.settings import get_entity_settings as load
+
+    return await load(user["id"])
+
+
+@router.patch("/entity-settings")
+async def update_entity_settings(
+    req: EntitySettingsUpdate,
+    user: dict = Depends(get_current_user),
+):
+    from ai.entities.settings import update_entity_settings as save
+
+    return await save(user["id"], req.model_dump())
+
+
+@router.post("/entities/extract")
+async def extract_entities(
+    background: BackgroundTasks,
+    limit: int = Query(8, ge=1, le=20),
+    user: dict = Depends(get_current_user),
+):
+    from ai.entities.auto import extract_entities_for_user
+
+    background.add_task(extract_entities_for_user, user["id"], limit)
+    return {"message": "Entity extraction scheduled"}
 
 
 @router.get("/entities/merge-suggestions")

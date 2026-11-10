@@ -360,3 +360,27 @@ async def test_merge_suggestions_and_manual_relation_crud(client):
         f"/api/memory/relations/{relation_id}", headers=auth(token)
     )
     assert response.status_code == 200, response.text
+
+
+async def test_entity_settings_default_off_and_update(client):
+    token, _ = await _new_user(client)
+    response = await client.get(
+        "/api/memory/entity-settings", headers=auth(token)
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["auto_extract"] is False
+    assert response.json()["auto_relations"] is False
+
+    response = await client.patch(
+        "/api/memory/entity-settings",
+        headers=auth(token),
+        json={"auto_extract": True, "auto_relations": True},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["auto_extract"] is True
+    assert response.json()["auto_relations"] is True
+
+    response = await client.get(
+        "/api/memory/entity-settings", headers=auth(token)
+    )
+    assert response.json()["auto_extract"] is True
