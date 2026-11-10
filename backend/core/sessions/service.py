@@ -98,10 +98,8 @@ async def ensure_session(
                 row.bot_id = bot_id
             if kind:
                 row.kind = kind
-            if title:
-                row.title = title
-            if objective:
-                row.objective = objective
+            # Title/objective belong to the session, not to each new Run.
+            # Use update_session explicitly when the user renames the session.
             if metadata:
                 row.meta = {**(row.meta or {}), **metadata}
         await db.commit()
