@@ -168,6 +168,8 @@
               style="width:150px"
             />
             <el-button v-if="focusEntityId" size="small" @click="clearFocus">显示全部</el-button>
+            <el-button size="small" @click="openMergeSuggestions">合并建议</el-button>
+            <el-checkbox v-model="communityMode" size="small">社区着色</el-checkbox>
             <el-select v-model="entityType" size="small" clearable placeholder="全部类型" style="width:118px" @change="loadEntities">
               <el-option v-for="option in entityTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
@@ -182,9 +184,10 @@
         <template v-else>
           <EntityGraph
             ref="graphRef"
-            :nodes="graphEntities"
+            :nodes="graphNodes"
             :links="graphLinks"
             :selected-id="selectedEntityId"
+            :color-mode="communityMode ? 'community' : 'type'"
             @select="selectEntity"
           />
           <div v-if="selectedEntity" class="entity-detail">
@@ -205,6 +208,7 @@
             <div class="entity-actions">
               <el-button link type="primary" size="small" @click="focusEntity(selectedEntity)">聚焦</el-button>
               <el-button link type="primary" size="small" @click="openMerge">合并</el-button>
+              <el-button link type="primary" size="small" @click="openRelationCreate">添加关系</el-button>
               <el-popconfirm title="忘掉这个实体？不会删除原始内容。" @confirm="forgetEntity(selectedEntity)">
                 <template #reference><el-button link type="danger" size="small">遗忘</el-button></template>
               </el-popconfirm>
@@ -243,13 +247,29 @@
                 </span>
               </el-tag>
             </div>
+            <div v-if="selectedRelations.length" class="entity-relations">
+              <span class="entity-subtitle">关系</span>
+              <el-tag
+                v-for="relation in selectedRelations"
+                :key="relation.id"
+                size="small"
+                closable
+                @click="openRelationEdit(relation)"
+                @close="deleteRelation(relation)"
+              >
+                {{ relationLabel(relation.relation) }} · {{ relation.otherName }}
+              </el-tag>
+            </div>
           </div>
           <div class="graph-foot">
-            <div class="graph-legend">
+            <div v-if="!communityMode" class="graph-legend">
               <span v-for="item in entityLegend" :key="item.type">
                 <i class="legend-dot" :style="{ background: item.color }"></i>
                 {{ item.label }} {{ item.count }}
               </span>
+            </div>
+            <div v-else class="graph-legend">
+              <span>按社区着色</span>
             </div>
             <span class="muted">{{ selectedEntity ? '再次点击节点可取消选择' : '点击节点查看详情' }}</span>
           </div>
@@ -400,6 +420,63 @@
         <el-button type="primary" :disabled="!mergeTargetId" @click="confirmMerge">合并</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="suggestionsOpen" title="合并建议" width="620px">
+      <div v-if="suggestionsLoading" class="empty-soft">正在分析实体相似度…</div>
+      <div v-else-if="suggestions.length === 0" class="empty-soft">没有发现明显的重复实体。</div>
+      <div v-else class="suggestion-list">
+        <div v-for="(item, index) in suggestions" :key="index" class="suggestion-row">
+          <div class="suggestion-main">
+            <span>{{ item.a.name }}</span>
+            <span class="muted">→</span>
+            <span>{{ item.b.name }}</span>
+            <span class="muted">· {{ item.reason }} · {{ Math.round(item.score * 100) }}%</span>
+          </div>
+          <el-button size="small" type="primary" @click="mergeSuggestion(item)">合并</el-button>
+        </div>
+      </div>
+    </el-dialog>
+
+    <el-dialog v-model="relationCreateOpen" title="添加关系" width="460px">
+      <el-form label-width="80px">
+        <el-form-item label="目标实体">
+          <el-select v-model="relationCreateTarget" filterable style="width: 100%" placeholder="选择实体">
+            <el-option
+              v-for="entity in mergeCandidates"
+              :key="entity.id"
+              :label="`${entity.name} (${typeLabel(entity.type)})`"
+              :value="entity.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关系">
+          <el-select v-model="relationCreateType" style="width: 100%">
+            <el-option v-for="option in relationOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="relationCreateOpen = false">取消</el-button>
+        <el-button type="primary" :disabled="!relationCreateTarget" @click="confirmRelationCreate">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="relationEditOpen" title="编辑关系" width="420px">
+      <el-form label-width="70px">
+        <el-form-item label="关系">
+          <el-select v-model="relationEditType" style="width: 100%">
+            <el-option v-for="option in relationOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="置信度">
+          <el-slider v-model="relationEditConfidence" :min="0" :max="1" :step="0.05" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="relationEditOpen = false">取消</el-button>
+        <el-button type="primary" @click="confirmRelationEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -427,6 +504,17 @@ const focusEntityId = ref<string | null>(null)
 const selectedEntityId = ref<string | null>(null)
 const mergeOpen = ref(false)
 const mergeTargetId = ref<string | number | null>(null)
+const communityMode = ref(false)
+const suggestionsOpen = ref(false)
+const suggestionsLoading = ref(false)
+const suggestions = ref<any[]>([])
+const relationCreateOpen = ref(false)
+const relationCreateTarget = ref<string | number | null>(null)
+const relationCreateType = ref('related_to')
+const relationEditOpen = ref(false)
+const relationEditId = ref<number | null>(null)
+const relationEditType = ref('related_to')
+const relationEditConfidence = ref(0.8)
 const graphRef = ref<any>(null)
 const reviews = ref<any[]>([])
 const candidates = ref<any[]>([])
@@ -598,6 +686,74 @@ const mergeCandidates = computed(() =>
   entities.value.filter((entity) => entity.id !== selectedEntity.value?.id),
 )
 
+const relationOptions = [
+  { label: '负责', value: 'works_on' },
+  { label: '被分配', value: 'assigned_to' },
+  { label: '属于', value: 'member_of' },
+  { label: '拥有', value: 'owns' },
+  { label: '使用', value: 'uses' },
+  { label: '关于', value: 'about' },
+  { label: '沟通', value: 'communicates_with' },
+  { label: '认识', value: 'knows' },
+  { label: '位于', value: 'located_in' },
+  { label: '组成部分', value: 'part_of' },
+  { label: '相关', value: 'related_to' },
+]
+
+const selectedRelations = computed(() => {
+  const current = selectedEntity.value
+  if (!current) return []
+  const byId = new Map(entities.value.map((entity) => [entity.id, entity]))
+  return entityLinks.value
+    .filter((link) => link.id && (link.source === current.id || link.target === current.id))
+    .map((link) => {
+      const otherId = link.source === current.id ? link.target : link.source
+      return {
+        ...link,
+        otherId,
+        otherName: byId.get(otherId)?.name || otherId,
+      }
+    })
+})
+
+const communityMap = computed(() => {
+  const labels = new Map<string, string>()
+  for (const entity of entities.value) labels.set(entity.id, entity.id)
+  for (let round = 0; round < 8; round += 1) {
+    let changed = false
+    for (const entity of entities.value) {
+      const counts = new Map<string, number>()
+      for (const neighbor of neighborMap.value.get(entity.id) || []) {
+        const label = labels.get(neighbor) || neighbor
+        counts.set(label, (counts.get(label) || 0) + 1)
+      }
+      let best = labels.get(entity.id) || entity.id
+      let bestCount = 0
+      for (const [label, count] of counts) {
+        if (count > bestCount || (count === bestCount && label < best)) {
+          best = label
+          bestCount = count
+        }
+      }
+      if (best !== labels.get(entity.id)) {
+        labels.set(entity.id, best)
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+  const unique = [...new Set(labels.values())]
+  const index = new Map(unique.map((value, position) => [value, position]))
+  return new Map([...labels].map(([id, label]) => [id, index.get(label) || 0]))
+})
+
+const graphNodes = computed(() =>
+  graphEntities.value.map((entity) => ({
+    ...entity,
+    community: communityMap.value.get(entity.id) || 0,
+  })),
+)
+
 const graphEntities = computed(() => {
   let list = entities.value
   if (focusEntityId.value) {
@@ -682,6 +838,92 @@ async function confirmMerge() {
     await loadEntities()
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.detail || '合并失败')
+  }
+}
+
+async function openMergeSuggestions() {
+  suggestionsOpen.value = true
+  suggestionsLoading.value = true
+  try {
+    const { data } = await client.get('/memory/entities/merge-suggestions', {
+      params: { limit: 30 },
+    })
+    suggestions.value = data.items || []
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '加载合并建议失败')
+    suggestions.value = []
+  } finally {
+    suggestionsLoading.value = false
+  }
+}
+
+async function mergeSuggestion(item: any) {
+  try {
+    await client.post(`/memory/entities/${item.a.id}/merge`, {
+      into_id: item.b.id,
+    })
+    suggestions.value = suggestions.value.filter((entry) => entry !== item)
+    ElMessage.success('已合并')
+    await loadEntities()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '合并失败')
+  }
+}
+
+function openRelationCreate() {
+  relationCreateTarget.value = null
+  relationCreateType.value = 'related_to'
+  relationCreateOpen.value = true
+}
+
+async function confirmRelationCreate() {
+  const source = selectedEntity.value
+  if (!source || !relationCreateTarget.value) return
+  try {
+    await client.post('/memory/relations', {
+      from_id: Number(source.id),
+      to_id: Number(relationCreateTarget.value),
+      relation: relationCreateType.value,
+      confidence: 0.8,
+    })
+    relationCreateOpen.value = false
+    ElMessage.success('关系已添加')
+    await loadEntities()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '添加失败')
+  }
+}
+
+function openRelationEdit(relation: any) {
+  relationEditId.value = relation.id
+  relationEditType.value = relation.relation
+  relationEditConfidence.value = Number(relation.confidence || 0.8)
+  relationEditOpen.value = true
+}
+
+async function confirmRelationEdit() {
+  if (!relationEditId.value) return
+  try {
+    await client.patch(`/memory/relations/${relationEditId.value}`, {
+      relation: relationEditType.value,
+      confidence: relationEditConfidence.value,
+    })
+    relationEditOpen.value = false
+    ElMessage.success('关系已更新')
+    await loadEntities()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '更新失败')
+  }
+}
+
+async function deleteRelation(relation: any) {
+  if (!relation.id) return
+  try {
+    await client.delete(`/memory/relations/${relation.id}`)
+    ElMessage.success('关系已删除')
+    await loadEntities()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '删除失败')
   }
 }
 
@@ -1049,9 +1291,15 @@ section[id] { scroll-margin-top: 12px; }
 }
 .entity-detail-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 .entity-actions { display: flex; align-items: center; gap: 6px; }
-.entity-sources, .entity-neighbors, .entity-aliases {
+.entity-sources, .entity-neighbors, .entity-aliases, .entity-relations {
   flex-basis: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
+.suggestion-list { display: flex; flex-direction: column; gap: 8px; }
+.suggestion-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 10px; border: 1px solid #e8edf8; border-radius: 8px;
+}
+.suggestion-main { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
 .entity-relation { font-size: 10px; opacity: .68; margin-left: 2px; }
 .entity-subtitle { font-size: 11px; color: #94a3b8; margin-right: 2px; }
 .entity-source {

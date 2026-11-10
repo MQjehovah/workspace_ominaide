@@ -402,9 +402,12 @@ async def _graph_entities_block(user_id: int, query: str) -> str | None:
                     continue
                 seen.add(key)
                 quote = str(mention.get("quote") or "").strip()
+                source_type = mention.get("source_type")
+                source_id = mention.get("source_id")
                 lines.append(
-                    f"- {mention.get('source_type')} #{mention.get('source_id')}"
+                    f"- {source_type} #{source_id}"
                     + (f": {quote[:120]}" if quote else "")
+                    + f" [{source_type}:{source_id}]"
                 )
                 if len(seen) >= 8:
                     break

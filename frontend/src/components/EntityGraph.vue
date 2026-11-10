@@ -36,6 +36,7 @@ interface GraphNode extends SimulationNodeDatum {
   type: string
   source_count: number
   degree: number
+  community?: number
 }
 
 interface GraphLink extends SimulationLinkDatum<GraphNode> {
@@ -46,9 +47,10 @@ interface GraphLink extends SimulationLinkDatum<GraphNode> {
 }
 
 const props = defineProps<{
-  nodes: Array<{ id: string; name: string; type: string; source_count?: number }>
+  nodes: Array<{ id: string; name: string; type: string; source_count?: number; community?: number }>
   links: Array<{ source: string; target: string; weight?: number; relation?: string }>
   selectedId?: string | null
+  colorMode?: 'type' | 'community'
 }>()
 
 const emit = defineEmits<{
@@ -95,12 +97,27 @@ const TYPE_SOFT: Record<string, string> = {
   document: '#e2e8f0',
 }
 
-function color(type: string) {
-  return TYPE_COLOR[type] || '#94a3b8'
+const COMMUNITY_COLORS = [
+  '#6366f1', '#10b981', '#f59e0b', '#0ea5e9', '#8b5cf6',
+  '#f97316', '#ef4444', '#14b8a6', '#84cc16', '#ec4899',
+]
+const COMMUNITY_SOFT = [
+  '#c7d2fe', '#a7f3d0', '#fde68a', '#bae6fd', '#ddd6fe',
+  '#fed7aa', '#fecaca', '#99f6e4', '#d9f99d', '#fbcfe8',
+]
+
+function color(node: GraphNode) {
+  if (props.colorMode === 'community') {
+    return COMMUNITY_COLORS[(node.community || 0) % COMMUNITY_COLORS.length]
+  }
+  return TYPE_COLOR[node.type] || '#94a3b8'
 }
 
-function softColor(type: string) {
-  return TYPE_SOFT[type] || '#e2e8f0'
+function softColor(node: GraphNode) {
+  if (props.colorMode === 'community') {
+    return COMMUNITY_SOFT[(node.community || 0) % COMMUNITY_SOFT.length]
+  }
+  return TYPE_SOFT[node.type] || '#e2e8f0'
 }
 
 function radius(node: GraphNode) {
@@ -196,7 +213,7 @@ function render() {
     .append('circle')
     .attr('class', 'node-halo')
     .attr('r', (d: GraphNode) => radius(d) + 5)
-    .attr('fill', (d: GraphNode) => softColor(d.type))
+    .attr('fill', (d: GraphNode) => softColor(d))
     .attr('fill-opacity', 0.18)
     .attr('stroke', 'none')
 
@@ -204,7 +221,7 @@ function render() {
     .append('circle')
     .attr('class', 'node-dot')
     .attr('r', (d: GraphNode) => radius(d))
-    .attr('fill', (d: GraphNode) => color(d.type))
+    .attr('fill', (d: GraphNode) => color(d))
     .attr('fill-opacity', 0.92)
     .attr('stroke', (d: GraphNode) => (d.id === props.selectedId ? '#1e3a8a' : '#ffffff'))
     .attr('stroke-width', (d: GraphNode) => (d.id === props.selectedId ? 3 : 2))
@@ -343,7 +360,7 @@ function scheduleRender() {
   }, 60)
 }
 
-watch(() => [props.nodes, props.links], scheduleRender)
+watch(() => [props.nodes, props.links, props.colorMode], scheduleRender)
 watch(() => props.selectedId, updateSelection)
 
 onMounted(() => {

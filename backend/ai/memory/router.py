@@ -7,7 +7,7 @@ log = get_logger(__name__)
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -256,6 +256,7 @@ async def entity_graph(
         left, right = sorted((a, b))
         seen_pairs.add((left, right))
         links.append({
+            "id": relation.id,
             "source": str(a),
             "target": str(b),
             "relation": relation.relation,
@@ -283,6 +284,7 @@ async def entity_graph(
                     continue
                 seen_pairs.add((a, b))
                 links.append({
+                    "id": None,
                     "source": str(a),
                     "target": str(b),
                     "relation": "同一来源",
@@ -470,6 +472,116 @@ def _record_out(row) -> dict:
 
 class EntityMerge(BaseModel):
     into_id: int
+
+
+class RelationCreate(BaseModel):
+    from_id: int
+    to_id: int
+    relation: str = "related_to"
+    confidence: float = 0.8
+
+
+class RelationUpdate(BaseModel):
+    relation: str | None = None
+    confidence: float | None = None
+
+
+def _relation_out(row) -> dict:
+    return {
+        "id": row.id,
+        "from_id": row.from_entity_id,
+        "to_id": row.to_entity_id,
+        "relation": row.relation,
+        "confidence": row.confidence,
+        "meta": row.meta,
+    }
+
+
+@router.get("/entities/merge-suggestions")
+async def entity_merge_suggestions(
+    limit: int = Query(20, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
+    from ai.entities.service import merge_suggestions
+
+    async with async_session() as db:
+        return {"items": await merge_suggestions(db, user["id"], limit)}
+
+
+@router.post("/entities/relations/extract")
+async def extract_entity_relations(
+    background: BackgroundTasks,
+    limit_sources: int = Query(8, ge=1, le=20),
+    user: dict = Depends(get_current_user),
+):
+    from ai.entities.relations import extract_relations_for_user
+
+    background.add_task(
+        extract_relations_for_user, user["id"], limit_sources=limit_sources
+    )
+    return {"message": "Relation extraction scheduled"}
+
+
+@router.post("/relations")
+async def create_relation(
+    req: RelationCreate,
+    user: dict = Depends(get_current_user),
+):
+    from ai.entities.service import add_relation
+
+    async with async_session() as db:
+        try:
+            row = await add_relation(
+                db,
+                user["id"],
+                req.from_id,
+                req.to_id,
+                req.relation,
+                confidence=req.confidence,
+                meta={"source": "manual"},
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await db.commit()
+        await db.refresh(row)
+        return _relation_out(row)
+
+
+@router.patch("/relations/{relation_id}")
+async def update_relation(
+    relation_id: int,
+    req: RelationUpdate,
+    user: dict = Depends(get_current_user),
+):
+    from ai.entities.models import EntityRelation
+
+    async with async_session() as db:
+        row = await db.get(EntityRelation, relation_id)
+        if row is None or row.user_id != user["id"]:
+            raise HTTPException(status_code=404, detail="Relation not found")
+        if req.relation is not None:
+            row.relation = req.relation[:60]
+        if req.confidence is not None:
+            row.confidence = max(0.0, min(float(req.confidence), 1.0))
+        await db.commit()
+        await db.refresh(row)
+        return _relation_out(row)
+
+
+@router.delete("/relations/{relation_id}")
+async def delete_relation(
+    relation_id: int,
+    user: dict = Depends(get_current_user),
+):
+    from ai.entities.models import EntityRelation
+
+    async with async_session() as db:
+        row = await db.get(EntityRelation, relation_id)
+        if row is None or row.user_id != user["id"]:
+            raise HTTPException(status_code=404, detail="Relation not found")
+        await db.delete(row)
+        await db.commit()
+    return {"message": "Relation deleted"}
 
 
 @router.post("/entities/{entity_id}/merge")

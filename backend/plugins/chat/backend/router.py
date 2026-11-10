@@ -222,6 +222,14 @@ async def build_messages(
         timing["bot_context"] = time.monotonic() - t_ctx
     if ctx:
         builder.section("memory", ctx, priority=55, max_chars=12000)
+        if "【相关来源】" in ctx:
+            builder.section(
+                "citation_hint",
+                "使用【相关实体】【实体关系】【相关来源】中的信息回答时，"
+                "保留来源的 [type:id] 引用标记，例如 [note:12] 或 [project:5]。",
+                priority=54,
+                max_chars=800,
+            )
     from ai.skills.runtime import build_skill_context
 
     t_skill = time.monotonic()

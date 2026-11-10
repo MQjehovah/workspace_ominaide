@@ -95,6 +95,23 @@ async def backfill_entities() -> dict:
     return {"users": len(user_ids), **result, **synced}
 
 
+async def extract_entity_relations() -> dict:
+    from ai.entities.relations import extract_relations_for_user
+    from core.auth.domain.models import User
+    from core.database.session import async_session
+    from sqlalchemy import select
+
+    async with async_session() as db:
+        user_ids = list((await db.execute(select(User.id))).scalars().all())
+    total = 0
+    for user_id in user_ids:
+        result = await extract_relations_for_user(
+            int(user_id), limit_sources=3
+        )
+        total += int(result.get("relations") or 0)
+    return {"users": len(user_ids), "relations": total}
+
+
 register_handler("cognition.mine.user", mine_user_job)
 
 JOBS = [
@@ -121,5 +138,13 @@ JOBS = [
         interval_seconds=86400,
         timeout_seconds=300,
         run_on_start=True,
+    ),
+    PeriodicJob(
+        key="cognition.entities.relations",
+        owner="cognition",
+        handler=extract_entity_relations,
+        interval_seconds=21600,
+        timeout_seconds=300,
+        run_on_start=False,
     ),
 ]

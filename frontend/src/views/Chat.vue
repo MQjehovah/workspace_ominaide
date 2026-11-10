@@ -211,7 +211,7 @@ import { Plus } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import client from '@/api/client'
-import { apiUrl } from '@/api/base'
+import { apiUrl, appUrl } from '@/api/base'
 import { formatBackendDate } from '@/utils/date'
 import ObjectPicker from '@/components/ObjectPicker.vue'
 
@@ -257,8 +257,36 @@ const filteredSessions = computed(() => {
   return sessions.value.filter((s) => String(s.title || '').toLowerCase().includes(q))
 })
 
+function citationPath(type: string, id: string): string {
+  const value = type.toLowerCase()
+  const base: Record<string, string> = {
+    project: '/projects', projects: '/projects',
+    note: '/notes', notes: '/notes',
+    file: '/files', files: '/files',
+    mail: '/mail', mails: '/mail',
+    event: '/schedule', events: '/schedule', schedule: '/schedule',
+    todo: '/dashboard', todos: '/dashboard',
+    meeting: '/notes', meetings: '/notes',
+    session: '/chat', sessions: '/chat', chat: '/chat',
+    source: '/sources', sources: '/sources', source_item: '/sources',
+    memory: '/bots', cognition: '/cognition',
+  }
+  const path = base[value]
+  if (!path) return ''
+  if ((value === 'project' || value === 'projects') && id) {
+    return `${path}?project=${id}`
+  }
+  return path
+}
+
 function renderMarkdown(text: string) {
-  return DOMPurify.sanitize(md.render(String(text || '')))
+  let html = md.render(String(text || ''))
+  html = html.replace(/\[([a-z_]+):(\d+)\]/g, (match, type, id) => {
+    const path = citationPath(String(type), String(id))
+    if (!path) return match
+    return `<a class="citation-link" href="${appUrl(path)}">${match}</a>`
+  })
+  return DOMPurify.sanitize(html)
 }
 
 function copyMessage(m: any) {
@@ -974,6 +1002,8 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #4f46e5, #6366f1); color: #fff;
 }
 .bubble.streaming { border-color: #c7d2fe; box-shadow: 0 0 0 3px rgba(99, 102, 241, .06); }
+.citation-link { color: #4f46e5; font-size: .92em; text-decoration: none; border-bottom: 1px dotted #a5b4fc; }
+.citation-link:hover { background: #eef2ff; }
 .md-body { word-break: break-word; }
 .md-body :deep(p) { margin: 0 0 8px; }
 .md-body :deep(p:last-child) { margin-bottom: 0; }

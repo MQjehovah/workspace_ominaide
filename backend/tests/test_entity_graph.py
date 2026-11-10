@@ -311,3 +311,52 @@ async def test_merge_entities_moves_aliases_mentions_and_relations(client):
             )
         )).scalar_one_or_none()
         assert mention is not None
+
+
+async def test_merge_suggestions_and_manual_relation_crud(client):
+    token, user_id = await _new_user(client)
+    from ai.entities.service import resolve_entity
+    from core.database.session import async_session
+
+    async with async_session() as db:
+        left = await resolve_entity(db, user_id, "project", "测试项目Alpha")
+        right = await resolve_entity(db, user_id, "project", "测试项目Alpha扩展")
+        other = await resolve_entity(db, user_id, "person", "测试负责人")
+        await db.commit()
+        left_id, right_id, other_id = left.id, right.id, other.id
+
+    response = await client.get(
+        "/api/memory/entities/merge-suggestions", headers=auth(token)
+    )
+    assert response.status_code == 200, response.text
+    pairs = response.json()["items"]
+    assert any(
+        {item["a"]["id"], item["b"]["id"]} == {left_id, right_id}
+        for item in pairs
+    )
+
+    response = await client.post(
+        "/api/memory/relations",
+        headers=auth(token),
+        json={
+            "from_id": other_id,
+            "to_id": left_id,
+            "relation": "works_on",
+            "confidence": 0.9,
+        },
+    )
+    assert response.status_code == 200, response.text
+    relation_id = response.json()["id"]
+
+    response = await client.patch(
+        f"/api/memory/relations/{relation_id}",
+        headers=auth(token),
+        json={"relation": "owns", "confidence": 0.95},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["relation"] == "owns"
+
+    response = await client.delete(
+        f"/api/memory/relations/{relation_id}", headers=auth(token)
+    )
+    assert response.status_code == 200, response.text

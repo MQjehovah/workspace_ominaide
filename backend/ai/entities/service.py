@@ -221,6 +221,11 @@ async def add_relation(
         )
     )).scalar_one_or_none()
     if existing is not None:
+        if confidence > (existing.confidence or 0):
+            existing.confidence = float(confidence)
+        if meta:
+            existing.meta = {**(existing.meta or {}), **meta}
+        await db.flush()
         return existing
     row = EntityRelation(
         user_id=user_id,
@@ -509,3 +514,66 @@ async def merge_entities(
     source.merged_into = target.id
     await db.flush()
     return target
+
+
+async def merge_suggestions(db, user_id: int, limit: int = 20) -> list[dict]:
+    """Suggest likely duplicate entities for manual merge."""
+    from difflib import SequenceMatcher
+
+    entities = list((await db.execute(
+        select(Entity).where(
+            Entity.user_id == user_id,
+            Entity.status == "active",
+        )
+    )).scalars().all())
+    aliases = list((await db.execute(
+        select(EntityAlias).where(
+            EntityAlias.user_id == user_id,
+            EntityAlias.entity_id.in_([entity.id for entity in entities]) if entities else [],
+        )
+    )).scalars().all())
+    alias_map: dict[int, list[str]] = {}
+    for alias in aliases:
+        alias_map.setdefault(alias.entity_id, []).append(alias.alias)
+
+    names: list[tuple[Entity, str]] = []
+    for entity in entities:
+        values = [entity.canonical_name, *alias_map.get(entity.id, [])]
+        for value in values:
+            normalized = normalize_name(value)
+            if normalized:
+                names.append((entity, normalized))
+
+    suggestions: list[dict] = []
+    seen: set[tuple[int, int]] = set()
+    for i in range(len(names)):
+        left, left_name = names[i]
+        for j in range(i + 1, len(names)):
+            right, right_name = names[j]
+            if left.id == right.id or left.type != right.type:
+                continue
+            key = (min(left.id, right.id), max(left.id, right.id))
+            if key in seen:
+                continue
+            if left_name == right_name:
+                score, reason = 1.0, "名称完全相同"
+            elif (
+                min(len(left_name), len(right_name)) >= 3
+                and (left_name in right_name or right_name in left_name)
+            ):
+                score = 0.9
+                reason = "名称包含关系"
+            else:
+                score = SequenceMatcher(None, left_name, right_name).ratio()
+                reason = "名称相似"
+            if score < 0.82:
+                continue
+            seen.add(key)
+            suggestions.append({
+                "a": {"id": left.id, "name": left.canonical_name, "type": left.type},
+                "b": {"id": right.id, "name": right.canonical_name, "type": right.type},
+                "score": round(score, 3),
+                "reason": reason,
+            })
+    suggestions.sort(key=lambda item: item["score"], reverse=True)
+    return suggestions[: max(1, min(limit, 100))]
