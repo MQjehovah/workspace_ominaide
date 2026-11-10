@@ -178,6 +178,10 @@ async def ensure_schema_migrations():
                 result.append("messages_kind")
             if "metadata" not in cols:
                 result.append("messages_metadata")
+        if "sessions" in table_names:
+            cols = {c["name"] for c in inspector.get_columns("sessions")}
+            if "deleted_at" not in cols:
+                result.append("sessions_deleted_at")
         if "chat_sessions" in table_names:
             cols = {c["name"] for c in inspector.get_columns("chat_sessions")}
             if "bot_id" not in cols:
@@ -356,6 +360,8 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN active_run_id INTEGER NULL"))
             elif table == "sessions_last_message":
                 await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN last_message_at TIMESTAMP NULL"))
+            elif table == "sessions_deleted_at":
+                await conn.execute(text("ALTER TABLE sessions ADD COLUMN deleted_at TIMESTAMP NULL"))
             elif table == "messages_run":
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN run_id INTEGER NULL"))
             elif table == "messages_kind":

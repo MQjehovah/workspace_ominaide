@@ -25,6 +25,7 @@ def _session_out(row: Session) -> dict:
         "metadata": row.meta or {},
         "active_run_id": row.active_run_id,
         "last_message_at": row.last_message_at,
+        "deleted_at": row.deleted_at,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -102,6 +103,9 @@ async def ensure_session(
             # Use update_session explicitly when the user renames the session.
             if metadata:
                 row.meta = {**(row.meta or {}), **metadata}
+            if row.deleted_at is not None:
+                row.deleted_at = None
+                row.status = "active"
         await db.commit()
         await db.refresh(row)
         return _session_out(row)
@@ -129,9 +133,17 @@ async def create_session(
     )
 
 
-async def list_sessions(user_id: int, *, kind: str | None = None, limit: int = 100) -> list[dict]:
+async def list_sessions(
+    user_id: int,
+    *,
+    kind: str | None = None,
+    limit: int = 100,
+    include_deleted: bool = False,
+) -> list[dict]:
     async with async_session() as db:
         query = select(Session).where(Session.user_id == user_id)
+        if not include_deleted:
+            query = query.where(Session.deleted_at.is_(None))
         if kind:
             query = query.where(Session.kind == kind)
         rows = list(
@@ -166,6 +178,7 @@ async def update_session(user_id: int, session_id: str, **values: Any) -> dict |
 
 
 async def delete_session(user_id: int, session_id: str) -> bool:
+    """Archive a session without destroying messages or runs."""
     async with async_session() as db:
         row = (
             await db.execute(
@@ -177,15 +190,30 @@ async def delete_session(user_id: int, session_id: str) -> bool:
         ).scalar_one_or_none()
         if row is None:
             return False
-        await db.execute(
-            delete(SessionMessage).where(
-                SessionMessage.user_id == user_id,
-                SessionMessage.session_id == session_id,
-            )
-        )
-        await db.delete(row)
+        row.deleted_at = datetime.now()
+        row.status = "archived"
+        row.active_run_id = None
         await db.commit()
         return True
+
+
+async def restore_session(user_id: int, session_id: str) -> dict | None:
+    async with async_session() as db:
+        row = (
+            await db.execute(
+                select(Session).where(
+                    Session.user_id == user_id,
+                    Session.session_id == session_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        row.deleted_at = None
+        row.status = "active"
+        await db.commit()
+        await db.refresh(row)
+        return _session_out(row)
 
 
 async def add_message(

@@ -297,7 +297,10 @@ async def list_sessions(
 ):
     from plugins.chat.backend.models import ChatSession
     async with async_session() as db:
-        q = select(ChatSession).where(ChatSession.user_id == user["id"])
+        q = select(ChatSession).where(
+            ChatSession.user_id == user["id"],
+            ChatSession.deleted_at.is_(None),
+        )
         if bot_id is not None:
             bot = await _resolve_bot(user["id"], bot_id)
             q = q.where(
@@ -349,23 +352,11 @@ async def delete_session(
     bot_id: int | None = Query(None),
     user: dict = Depends(get_current_user),
 ):
-    from plugins.chat.backend.models import ChatMessage, ChatSession
-    async with async_session() as db:
-        msg_cond = [ChatMessage.user_id == user["id"], ChatMessage.session_id == session_id]
-        sess_cond = [ChatSession.user_id == user["id"], ChatSession.session_id == session_id]
-        if bot_id is not None:
-            bot = await _resolve_bot(user["id"], bot_id)
-            if bot.is_default:
-                msg_cond.append(
-                    or_(ChatMessage.bot_id == bot.id, ChatMessage.bot_id.is_(None))
-                )
-            else:
-                msg_cond.append(ChatMessage.bot_id == bot.id)
-            sess_cond.append(ChatSession.bot_id == bot.id)
-        await db.execute(delete(ChatMessage).where(*msg_cond))
-        await db.execute(delete(ChatSession).where(*sess_cond))
-        await db.commit()
-    return {"message": "Session deleted"}
+    from core.sessions import service as session_service
+
+    if not await session_service.delete_session(user["id"], session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"message": "Session archived"}
 
 
 @router.post("", response_model=ChatResponse)

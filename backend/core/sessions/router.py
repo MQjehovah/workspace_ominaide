@@ -40,9 +40,14 @@ class MessageCreate(BaseModel):
 async def list_sessions(
     kind: str | None = Query(None),
     limit: int = Query(100, ge=1, le=200),
+    include_deleted: bool = Query(False),
     user: dict = Depends(get_current_user),
 ):
-    return {"sessions": await service.list_sessions(user["id"], kind=kind, limit=limit)}
+    return {
+        "sessions": await service.list_sessions(
+            user["id"], kind=kind, limit=limit, include_deleted=include_deleted
+        )
+    }
 
 
 @router.post("")
@@ -83,7 +88,15 @@ async def update_session(
 async def delete_session(session_id: str, user: dict = Depends(get_current_user)):
     if not await service.delete_session(user["id"], session_id):
         raise HTTPException(status_code=404, detail="Session not found")
-    return {"message": "Session deleted"}
+    return {"message": "Session archived"}
+
+
+@router.post("/{session_id}/restore")
+async def restore_session(session_id: str, user: dict = Depends(get_current_user)):
+    session = await service.restore_session(user["id"], session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
 
 
 @router.get("/{session_id}/messages")
