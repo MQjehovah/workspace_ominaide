@@ -52,7 +52,6 @@ async def _seed_user_data(user_id: int) -> None:
     from ai.bots.models import (
         Bot, Approval, BotMemory, BotRoutine, Run, RunStep,
     )
-    from ai.coding.models import CodingRun
     from ai.skills.models import BotSkill
     from core.database.session import async_session
     from activities.models import UserActivity
@@ -92,7 +91,6 @@ async def _seed_user_data(user_id: int) -> None:
             routine_id=routine.id, user_id=user_id, trigger_type="manual",
             status="done", idempotency_key=f"test-{user_id}",
         ))
-        db.add(CodingRun(run_id=run.id, user_id=user_id, project_path="/tmp/x"))
 
         server = McpServer(
             user_id=user_id, slug=f"dingtalk-{user_id}", name="钉钉",
@@ -194,7 +192,6 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
     from ai.bots.models import (
         Bot, Approval, BotMemory, BotRoutine, Run, RunStep,
     )
-    from ai.coding.models import CodingRun
     from ai.skills.models import BotSkill
     from core.database.session import async_session
     from activities.models import UserActivity
@@ -217,7 +214,7 @@ async def test_delete_user_data_cleans_everything(client, tmp_path, monkeypatch)
         )).scalar_one_or_none() is None
         for model in (
             Bot, Approval, BotMemory, BotRoutine, Run, RunStep,
-            BotSkill, AutomationRun, CodingRun, McpServer, McpTool,
+            BotSkill, AutomationRun, McpServer, McpTool,
             File, Playlist, PlaylistItem, ContentSource, ContentItem,
             SyncFolder, SyncEvent, Project, PluginNote, PluginTodoItem,
             Event, BackgroundJob, UserActivity, RequestTrace,

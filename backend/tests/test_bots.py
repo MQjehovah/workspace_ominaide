@@ -331,15 +331,14 @@ async def test_save_memory_tool_uses_bot_scope(client, user_token):
     assert any("深色模式" in m["content"] for m in memories)
 
 
-async def test_list_coding_runs_reads_extension_fields(client, user_token):
-    """Coding metadata lives in coding_runs, not on the generic Run."""
+async def test_list_coding_runs_reads_run_metadata(client, user_token):
+    """Coding metadata lives in Run.meta now that coding_runs is retired."""
     me = (await client.get("/api/auth/me", headers=auth(user_token))).json()
     uid = me["id"]
     bots = (await client.get("/api/bots", headers=auth(user_token))).json()
     bot_id = next(b for b in bots if b["is_default"])["id"]
 
     from ai.bots.models import Run, RunStep
-    from ai.coding.models import CodingRun
     from core.database.session import async_session
 
     async with async_session() as db:
@@ -347,22 +346,19 @@ async def test_list_coding_runs_reads_extension_fields(client, user_token):
             bot_id=bot_id,
             user_id=uid,
             trigger="coding",
+            agent="builtin",
             status="done",
             input="只读检查项目结构",
             output="检查完成：目录结构正常",
+            meta={
+                "project_path": "/workspace/demo",
+                "branch": "feature/check",
+                "engine": "builtin",
+            },
         )
         db.add(run)
         await db.commit()
         await db.refresh(run)
-        db.add(
-            CodingRun(
-                run_id=run.id,
-                user_id=uid,
-                project_path="/workspace/demo",
-                branch="feature/check",
-                engine="builtin",
-            )
-        )
         db.add(
             RunStep(
                 run_id=run.id,

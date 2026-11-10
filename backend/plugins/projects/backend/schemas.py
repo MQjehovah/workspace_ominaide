@@ -40,6 +40,7 @@ class ProjectOut(BaseModel):
 
 class ProjectRunOut(BaseModel):
     id: int
+    session_id: str | None = None
     status: str
     input: str | None = None
     output: str | None = None
@@ -55,3 +56,4 @@ class ProjectRunCreate(BaseModel):
     instruction: str = Field(min_length=1, max_length=20000)
     branch: str | None = None
     engine: str | None = None
+    session_id: str | None = None

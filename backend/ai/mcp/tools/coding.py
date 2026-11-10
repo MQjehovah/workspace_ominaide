@@ -88,7 +88,6 @@ async def list_coding_projects(user_id: int, args: dict) -> MCPCallResponse:
 
 async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
     from ai.bots.models import Run
-    from ai.coding.models import CodingRun
     from core.database.session import async_session
 
     limit = min(int(args.get("limit") or 10), 50)
@@ -96,22 +95,24 @@ async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
         rows = list(
             (
                 await db.execute(
-                    select(Run, CodingRun)
-                    .join(CodingRun, CodingRun.run_id == Run.id)
-                    .where(Run.user_id == user_id)
+                    select(Run)
+                    .where(Run.user_id == user_id, Run.trigger == "coding")
                     .order_by(Run.id.desc())
                     .limit(limit)
                 )
-            ).all()
+            )
+            .scalars()
+            .all()
         )
     if not rows:
         return _ok("还没有 Coding Run。")
     lines = ["最近的 Coding Run："]
-    for run, coding in rows:
+    for run in rows:
+        meta = run.meta or {}
         preview = (run.output or run.error or "").replace("\n", " ")[:80]
         lines.append(
-            f"- #{run.id} [{run.status}] {coding.project_path or '-'} · "
-            f"{coding.branch or '-'} · {(run.input or '')[:60]}"
+            f"- #{run.id} [{run.status}] {meta.get('project_path') or '-'} · "
+            f"{meta.get('branch') or '-'} · {(run.input or '')[:60]}"
             + (f" · 产出：{preview}" if preview else "")
         )
     lines.append("需要完整产出时调用 get_coding_run(run_id)。")
@@ -121,7 +122,6 @@ async def list_coding_runs(user_id: int, args: dict) -> MCPCallResponse:
 async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
     """Read one Coding Run's full output, error and steps."""
     from ai.bots.models import Run, RunStep
-    from ai.coding.models import CodingRun
     from core.database.session import async_session
 
     try:
@@ -132,16 +132,17 @@ async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
         return _err("run_id 必填")
 
     async with async_session() as db:
-        row = (
+        run = (
             await db.execute(
-                select(Run, CodingRun)
-                .join(CodingRun, CodingRun.run_id == Run.id)
-                .where(Run.id == run_id, Run.user_id == user_id)
+                select(Run).where(
+                    Run.id == run_id,
+                    Run.user_id == user_id,
+                    Run.trigger == "coding",
+                )
             )
-        ).first()
-        if row is None:
+        ).scalar_one_or_none()
+        if run is None:
             return _err(f"Coding Run #{run_id} 不存在")
-        run, coding = row
         steps = list(
             (
                 await db.execute(
@@ -152,12 +153,14 @@ async def get_coding_run(user_id: int, args: dict) -> MCPCallResponse:
             ).scalars().all()
         )
 
+    meta = run.meta or {}
     lines = [
         f"# Coding Run #{run.id}",
         f"状态：{run.status}",
-        f"项目：{coding.project_path or '-'}",
-        f"分支：{coding.branch or '-'}",
-        f"引擎：{coding.engine or '-'}",
+        f"会话：{run.session_id or '-'}",
+        f"项目：{meta.get('project_path') or '-'}",
+        f"分支：{meta.get('branch') or '-'}",
+        f"引擎：{run.agent or meta.get('engine') or '-'}",
         f"任务：{run.input or '-'}",
     ]
     if run.output:

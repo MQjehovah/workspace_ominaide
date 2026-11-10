@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import signal
+import uuid
 from pathlib import Path
 
 from ai.coding import workspace
@@ -177,6 +178,21 @@ async def run_opencode(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
     argv = [str(binary), "--standalone", "run", "--auto"]
     model_ref = model if "/" in model else f"omniaide/{model}"
     argv.extend(["-m", model_ref])
+    session_id = getattr(coding_run, "session_id", None)
+    if session_id:
+        from core.sessions import service as session_service
+
+        session = await session_service.get_session(run.user_id, session_id)
+        meta = (session or {}).get("metadata") or {}
+        opencode_session = str(meta.get("opencode_session_id") or "")
+        if not opencode_session:
+            opencode_session = "ses_" + uuid.uuid4().hex
+            await session_service.update_session(
+                run.user_id,
+                session_id,
+                metadata={"opencode_session_id": opencode_session},
+            )
+        argv.extend(["--session", opencode_session])
     if settings.coding_opencode_agent:
         argv.extend(["--agent", settings.coding_opencode_agent])
     argv.append(run.input or "")

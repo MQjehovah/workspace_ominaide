@@ -367,12 +367,13 @@ async function loadHistory() {
     const { data } = await client.get('/chat/history', {
       params: { session_id: sessionId.value, limit: 100 },
     })
-    messages.value = (data || [])
+    const items = (data || [])
       .filter((m: any) => m.content)
       .map((m: any, index: number) => ({
         id: `history-${index}-${m.created_at || ''}`,
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.content,
+        runId: m.run_id || null,
         steps: [] as any[],
         stepsOpen: false,
         reasoning: '',
@@ -382,6 +383,27 @@ async function loadHistory() {
         error: '',
         elapsed: 0,
         createdAt: m.created_at || '',
+      }))
+    messages.value = items
+    await Promise.all(items
+      .filter((m: any) => m.role === 'assistant' && m.runId)
+      .map(async (m: any) => {
+        try {
+          const run = await client.get(`/runs/${m.runId}`)
+          const steps = run.data?.steps || []
+          m.steps = steps
+            .filter((step: any) => step.type === 'tool' || step.type === 'delivery')
+            .map((step: any) => ({
+              id: step.id,
+              name: step.tool_name || step.type,
+              args: step.arguments ? JSON.stringify(step.arguments, null, 2) : '',
+              result: step.result || '',
+              status: step.status === 'error' || step.status === 'denied' ? 'error' : 'done',
+              duration: '',
+            }))
+        } catch {
+          m.steps = []
+        }
       }))
     scrollBottom()
   } catch {

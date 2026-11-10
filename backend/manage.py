@@ -29,7 +29,6 @@ import ai.bots.models  # noqa
 import ai.automation.models  # noqa
 import plugins.captures.backend.models  # noqa
 import ai.memory.people.models  # noqa
-import ai.coding.models  # noqa
 import plugins.schedule.backend.models  # noqa
 import plugins.projects.backend.models  # noqa
 

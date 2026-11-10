@@ -98,4 +98,5 @@ async def start_project_run(
         payload.instruction,
         branch=payload.branch,
         engine=payload.engine,
+        session_id=payload.session_id,
     )

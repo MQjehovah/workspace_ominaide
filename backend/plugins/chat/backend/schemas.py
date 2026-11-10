@@ -30,7 +30,9 @@ class ChatResponse(BaseModel):
 class ChatHistoryItem(BaseModel):
     id: int
     role: str
+    kind: str | None = None
     content: str
+    run_id: int | None = None
     created_at: datetime
     bot_id: int | None = None
 
@@ -61,6 +63,8 @@ class TtsRequest(BaseModel):
 class SessionItem(BaseModel):
     session_id: str
     title: str | None = None
+    kind: str | None = None
+    status: str | None = None
     updated_at: datetime | None = None
     bot_id: int | None = None
 

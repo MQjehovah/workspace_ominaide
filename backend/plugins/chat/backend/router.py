@@ -58,16 +58,29 @@ async def _upsert_session(db: AsyncSession, user_id: int, session_id: str, role:
             user_id=user_id,
             session_id=session_id,
             bot_id=bot.id if bot is not None else None,
+            kind="chat",
+            status="active",
         )
         db.add(s)
     elif bot is not None and s.bot_id is None:
         s.bot_id = bot.id
     s.updated_at = datetime.utcnow()
+    s.last_message_at = datetime.utcnow()
     if not s.title and role == "user" and content:
         s.title = content[:30]
 
 
-async def save_message(user_id: int, role: str, content: str, session_id: str = DEFAULT_SESSION, bot=None):
+async def save_message(
+    user_id: int,
+    role: str,
+    content: str,
+    session_id: str = DEFAULT_SESSION,
+    bot=None,
+    *,
+    run_id: int | None = None,
+    kind: str = "text",
+    metadata: dict | None = None,
+):
     from plugins.chat.backend.models import ChatMessage
     if not content:
         return
@@ -77,8 +90,11 @@ async def save_message(user_id: int, role: str, content: str, session_id: str = 
                 user_id=user_id,
                 session_id=session_id,
                 role=role,
+                kind=kind,
                 content=content,
                 bot_id=bot.id if bot is not None else None,
+                run_id=run_id,
+                meta=metadata or {},
             ))
             await _upsert_session(db, user_id, session_id, role, content, bot)
             await db.commit()

@@ -83,6 +83,8 @@ async def create_run(
     goal_id: int | None = None,
     task_id: int | None = None,
     agent_profile_key: str | None = None,
+    agent: str | None = None,
+    meta: dict | None = None,
     parent_run_id: int | None = None,
     session_id: str | None = None,
     idempotency_key: str | None = None,
@@ -105,6 +107,8 @@ async def create_run(
             goal_id=goal_id,
             task_id=task_id,
             agent_profile_key=agent_profile_key,
+            agent=agent,
+            meta=meta or {},
             parent_run_id=parent_run_id,
             session_id=session_id,
             trigger=trigger,
@@ -904,6 +908,14 @@ async def _finalize(
             await db.execute(select(Bot).where(Bot.id == run.bot_id))
         ).scalar_one_or_none()
 
+    if run.session_id:
+        try:
+            from core.sessions.service import set_active_run
+
+            await set_active_run(run.user_id, run.session_id, None)
+        except Exception as e:
+            log.debug("[sessions] clear active run failed: %s", e)
+
     if status == "done":
         if run.session_id and run.output:
             await _save_chat_reply(run)
@@ -947,7 +959,12 @@ async def _save_chat_reply(run: Run) -> None:
                 await db.execute(select(Bot).where(Bot.id == run.bot_id))
             ).scalar_one_or_none()
         await save_message(
-            run.user_id, "assistant", run.output, run.session_id, bot=bot
+            run.user_id,
+            "assistant",
+            run.output,
+            run.session_id,
+            bot=bot,
+            run_id=run.id,
         )
     except Exception as e:
         log.warning(f"[bots.runner] save chat reply failed: {e}")

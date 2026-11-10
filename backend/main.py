@@ -35,7 +35,6 @@ async def lifespan(app: FastAPI):
     import activities.models  # noqa
     import plugins.notifications.backend.models  # noqa
     import plugins.chat.backend.models  # noqa
-    import ai.coding.models  # noqa
     import plugins.projects.backend.models  # noqa
     import plugins.schedule.backend.models  # noqa
     import ai.bots.models  # noqa
@@ -50,6 +49,7 @@ async def lifespan(app: FastAPI):
     import ai.insights.review_models  # noqa
     import ai.mcp_hub.models  # noqa
     import core.wschannel.models  # noqa
+    import core.sessions.models  # noqa
     import plugins.oauth.backend.models  # noqa
     import plugins.dingtalk.backend.models  # noqa
     import ai.cognition.models  # noqa
@@ -250,8 +250,10 @@ app.include_router(activities_router)
 
 from app.objects.router import router as objects_router
 from app.desktop.router import router as desktop_releases_router
+from core.sessions.router import router as sessions_router
 app.include_router(objects_router)
 app.include_router(desktop_releases_router)
+app.include_router(sessions_router)
 
 
 @app.websocket("/ws/sync/{folder_id}")

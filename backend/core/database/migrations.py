@@ -172,10 +172,28 @@ async def ensure_schema_migrations():
                 result.append("chat_messages")
             if "bot_id" not in cols:
                 result.append("chat_messages_bot")
+            if "run_id" not in cols:
+                result.append("messages_run")
+            if "kind" not in cols:
+                result.append("messages_kind")
+            if "metadata" not in cols:
+                result.append("messages_metadata")
         if "chat_sessions" in table_names:
             cols = {c["name"] for c in inspector.get_columns("chat_sessions")}
             if "bot_id" not in cols:
                 result.append("chat_sessions_bot")
+            if "kind" not in cols:
+                result.append("sessions_kind")
+            if "objective" not in cols:
+                result.append("sessions_objective")
+            if "status" not in cols:
+                result.append("sessions_status")
+            if "metadata" not in cols:
+                result.append("sessions_metadata")
+            if "active_run_id" not in cols:
+                result.append("sessions_active_run")
+            if "last_message_at" not in cols:
+                result.append("sessions_last_message")
         if "user_profiles" in table_names:
             cols = {c["name"] for c in inspector.get_columns("user_profiles")}
             if "developer" not in cols:
@@ -200,6 +218,10 @@ async def ensure_schema_migrations():
                 result.append("runs_task")
             if "agent_profile_key" not in cols:
                 result.append("runs_agent_profile")
+            if "agent" not in cols:
+                result.append("runs_agent")
+            if "metadata" not in cols:
+                result.append("runs_metadata")
         if "bots" in table_names:
             cols = {c["name"] for c in inspector.get_columns("bots")}
             if "pinned_tools" not in cols:
@@ -322,6 +344,24 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN bot_id INTEGER NULL"))
             elif table == "chat_sessions_bot":
                 await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN bot_id INTEGER NULL"))
+            elif table == "sessions_kind":
+                await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN kind VARCHAR(20) DEFAULT 'chat'"))
+            elif table == "sessions_objective":
+                await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN objective TEXT NULL"))
+            elif table == "sessions_status":
+                await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN status VARCHAR(24) DEFAULT 'active'"))
+            elif table == "sessions_metadata":
+                await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN metadata JSON NULL"))
+            elif table == "sessions_active_run":
+                await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN active_run_id INTEGER NULL"))
+            elif table == "sessions_last_message":
+                await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN last_message_at TIMESTAMP NULL"))
+            elif table == "messages_run":
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN run_id INTEGER NULL"))
+            elif table == "messages_kind":
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN kind VARCHAR(20) DEFAULT 'text'"))
+            elif table == "messages_metadata":
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN metadata JSON NULL"))
             elif table == "user_profiles":
                 await conn.execute(text("ALTER TABLE user_profiles ADD COLUMN developer TEXT NULL"))
             elif table == "runs_parent":
@@ -332,6 +372,10 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE runs ADD COLUMN task_id INTEGER NULL"))
             elif table == "runs_agent_profile":
                 await conn.execute(text("ALTER TABLE runs ADD COLUMN agent_profile_key VARCHAR(64) NULL"))
+            elif table == "runs_agent":
+                await conn.execute(text("ALTER TABLE runs ADD COLUMN agent VARCHAR(32) NULL"))
+            elif table == "runs_metadata":
+                await conn.execute(text("ALTER TABLE runs ADD COLUMN metadata JSON NULL"))
             elif table == "bots_pinned_tools":
                 await conn.execute(text("ALTER TABLE bots ADD COLUMN pinned_tools JSON NULL"))
             elif table == "mcp_servers_owner_plugin":
@@ -462,4 +506,103 @@ async def ensure_schema_migrations():
                     channel="now",
                 ))
             await conn.execute(text("DROP TABLE activity_suggestions"))
+    # One-time migration: coding_runs extension -> Session.metadata + Run.meta.
+    async with engine.begin() as conn:
+        table_names = set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
+        if "coding_runs" in table_names and "runs" in table_names and "chat_sessions" in table_names:
+            import json as _json
+
+            rows = (await conn.execute(text("SELECT * FROM coding_runs"))).mappings().all()
+            for coding in rows:
+                run = (await conn.execute(
+                    text("SELECT id, user_id, bot_id, session_id, input, output, status FROM runs WHERE id = :id"),
+                    {"id": coding["run_id"]},
+                )).mappings().first()
+                if run is None:
+                    continue
+                meta = {
+                    "project_path": coding.get("project_path"),
+                    "branch": coding.get("branch"),
+                    "engine": coding.get("engine") or "builtin",
+                }
+                meta_json = _json.dumps(meta, ensure_ascii=False)
+                session_id = run.get("session_id")
+                if session_id:
+                    existing = (await conn.execute(
+                        text("SELECT kind FROM chat_sessions WHERE user_id = :uid AND session_id = :sid LIMIT 1"),
+                        {"uid": run["user_id"], "sid": session_id},
+                    )).mappings().first()
+                    if existing is not None and existing.get("kind") != "coding":
+                        session_id = f"coding-{run['id']}"
+                if not session_id:
+                    session_id = f"coding-{run['id']}"
+
+                existing = (await conn.execute(
+                    text("SELECT id FROM chat_sessions WHERE user_id = :uid AND session_id = :sid LIMIT 1"),
+                    {"uid": run["user_id"], "sid": session_id},
+                )).mappings().first()
+                if existing is None:
+                    status = "done" if run["status"] == "done" else (
+                        "blocked" if run["status"] == "failed" else "active"
+                    )
+                    meta_sql = "CAST(:meta AS JSON)" if dialect == "postgresql" else ":meta"
+                    await conn.execute(text(
+                        "INSERT INTO chat_sessions "
+                        "(user_id, session_id, bot_id, title, kind, objective, status, metadata, created_at, updated_at) "
+                        f"VALUES (:uid, :sid, :bid, :title, 'coding', :objective, :status, {meta_sql}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ), {
+                        "uid": run["user_id"],
+                        "sid": session_id,
+                        "bid": run.get("bot_id"),
+                        "title": (run.get("input") or "Coding Session")[:60],
+                        "objective": (run.get("input") or "")[:20000],
+                        "status": status,
+                        "meta": meta_json,
+                    })
+                else:
+                    meta_sql = "CAST(:meta AS JSON)" if dialect == "postgresql" else ":meta"
+                    await conn.execute(text(
+                        f"UPDATE chat_sessions SET metadata = {meta_sql}, updated_at = CURRENT_TIMESTAMP "
+                        "WHERE user_id = :uid AND session_id = :sid"
+                    ), {"uid": run["user_id"], "sid": session_id, "meta": meta_json})
+
+                meta_sql = "CAST(:meta AS JSON)" if dialect == "postgresql" else ":meta"
+                await conn.execute(text(
+                    f"UPDATE runs SET session_id = :sid, agent = :agent, metadata = {meta_sql} WHERE id = :id"
+                ), {
+                    "sid": session_id,
+                    "agent": meta["engine"],
+                    "meta": meta_json,
+                    "id": run["id"],
+                })
+
+                async def _insert_message(role: str, content: str):
+                    if not content:
+                        return
+                    exists = (await conn.execute(
+                        text("SELECT id FROM chat_messages WHERE run_id = :rid AND role = :role LIMIT 1"),
+                        {"rid": run["id"], "role": role},
+                    )).mappings().first()
+                    if exists is not None:
+                        return
+                    msg_sql = "CAST(:meta AS JSON)" if dialect == "postgresql" else ":meta"
+                    await conn.execute(text(
+                        "INSERT INTO chat_messages "
+                        "(user_id, session_id, bot_id, run_id, role, kind, content, metadata, created_at) "
+                        f"VALUES (:uid, :sid, :bid, :rid, :role, 'text', :content, {msg_sql}, CURRENT_TIMESTAMP)"
+                    ), {
+                        "uid": run["user_id"],
+                        "sid": session_id,
+                        "bid": run.get("bot_id"),
+                        "rid": run["id"],
+                        "role": role,
+                        "content": content[:200000],
+                        "meta": "{}",
+                    })
+
+                await _insert_message("user", run.get("input") or "")
+                if run.get("status") == "done":
+                    await _insert_message("assistant", run.get("output") or "")
+
+            await conn.execute(text("DROP TABLE coding_runs"))
 

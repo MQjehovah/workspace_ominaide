@@ -155,6 +155,19 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
                 builder.section("skills", skill_ctx, priority=50, max_chars=4000)
         except Exception as e:
             log.debug("[coding] skill context failed: %s", e)
+        session_id = getattr(coding_run, "session_id", None)
+        if session_id:
+            try:
+                from core.sessions.service import list_messages
+
+                history = await list_messages(run.user_id, session_id, limit=20)
+                builder.history([
+                    {"role": item["role"], "content": item["content"]}
+                    for item in history
+                    if item.get("run_id") != run.id and item.get("kind") == "text"
+                ])
+            except Exception as e:
+                log.debug("[coding] session history failed: %s", e)
         builder.user(run.input or "")
         messages = await builder.build()
 

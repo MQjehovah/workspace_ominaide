@@ -4,7 +4,6 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from ai.coding.models import CodingRun
 from core.paths import ensure_user_workspace, projects_root
 from ai.bots.models import Run
 from core.database.session import async_session
@@ -147,45 +146,54 @@ async def list_project_runs(
     user_id: int, project_path: str, limit: int = 50
 ) -> list[dict]:
     async with async_session() as db:
-        rows = (
-            await db.execute(
-                select(Run, CodingRun)
-                .join(CodingRun, CodingRun.run_id == Run.id)
-                .where(
-                    Run.user_id == user_id,
-                    CodingRun.project_path == project_path,
+        rows = list(
+            (
+                await db.execute(
+                    select(Run)
+                    .where(Run.user_id == user_id, Run.trigger == "coding")
+                    .order_by(Run.id.desc())
+                    .limit(max(limit * 3, 100))
                 )
-                .order_by(Run.id.desc())
-                .limit(limit)
             )
-        ).all()
-        return [_run_dict(run, coding) for run, coding in rows]
+            .scalars()
+            .all()
+        )
+        selected = [
+            run for run in rows
+            if str((run.meta or {}).get("project_path") or "") == project_path
+        ][:limit]
+        return [_run_dict(run) for run in selected]
 
 
 async def list_all_coding_runs(user_id: int, limit: int = 20) -> list[dict]:
     async with async_session() as db:
-        rows = (
-            await db.execute(
-                select(Run, CodingRun)
-                .join(CodingRun, CodingRun.run_id == Run.id)
-                .where(Run.user_id == user_id)
-                .order_by(Run.id.desc())
-                .limit(limit)
+        rows = list(
+            (
+                await db.execute(
+                    select(Run)
+                    .where(Run.user_id == user_id, Run.trigger == "coding")
+                    .order_by(Run.id.desc())
+                    .limit(limit)
+                )
             )
-        ).all()
-        return [_run_dict(run, coding) for run, coding in rows]
+            .scalars()
+            .all()
+        )
+        return [_run_dict(run) for run in rows]
 
 
-def _run_dict(run: Run, coding: CodingRun) -> dict:
+def _run_dict(run: Run) -> dict:
+    meta = run.meta or {}
     return {
         "id": run.id,
+        "session_id": run.session_id,
         "status": run.status,
         "input": run.input,
         "output": run.output,
         "error": run.error,
         "created_at": run.created_at,
         "finished_at": run.finished_at,
-        "branch": coding.branch,
-        "engine": coding.engine,
-        "project_path": coding.project_path,
+        "branch": meta.get("branch"),
+        "engine": run.agent or meta.get("engine"),
+        "project_path": meta.get("project_path"),
     }

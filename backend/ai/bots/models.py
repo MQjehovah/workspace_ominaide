@@ -83,6 +83,8 @@ class Run(Base):
     goal_id = Column(Integer, ForeignKey("goals.id", ondelete="SET NULL"), nullable=True, index=True)
     task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     agent_profile_key = Column(String(64), nullable=True, index=True)
+    agent = Column(String(32), nullable=True, index=True)
+    meta = Column("metadata", JSON, nullable=True)
     parent_run_id = Column(Integer, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True)
     session_id = Column(String(64), nullable=True, index=True)
     trigger = Column(String(20), default="api", nullable=False)
