@@ -148,6 +148,12 @@ class Settings(BaseSettings):
     coding_sandbox_enabled: bool = True
     coding_sandbox_user: str = "agent"
     coding_sandbox_home: str = "/home/agent"
+    # Execution backend: local (setpriv in this container) | docker (runner).
+    coding_sandbox_mode: str = "local"
+    coding_sandbox_runner_url: str = ""
+    coding_sandbox_runner_token: str = ""
+    coding_sandbox_template: str = "omniaide-base"
+    coding_sandbox_wait_seconds: int = 120
     coding_max_concurrency: int = 2
     # Notes RAG: chunking + hybrid retrieval (vector + BM25 + RRF + MMR)
     notes_rag_enabled: bool = True

@@ -99,15 +99,28 @@ async def _execute_tool(run, project, name, args, identity, ssh_key):
 
         result = await skill_call(run.user_id, args)
         return _mcp_text(result), bool(getattr(result, "isError", False))
-    result = await workspace.execute_tool(
-        str(project),
-        name,
-        args,
-        allow_push=False,
-        allow_commit=False,
-        identity=identity,
-        ssh_key=ssh_key,
-    )
+    if name == "run_command" and (settings.coding_sandbox_mode or "").lower() == "docker":
+        from ai.coding.sandbox_runner import run_command_in_sandbox
+
+        result = await run_command_in_sandbox(
+            run.user_id,
+            str(project),
+            args,
+            allow_push=False,
+            allow_commit=False,
+            identity=identity,
+            ssh_key=ssh_key,
+        )
+    else:
+        result = await workspace.execute_tool(
+            str(project),
+            name,
+            args,
+            allow_push=False,
+            allow_commit=False,
+            identity=identity,
+            ssh_key=ssh_key,
+        )
     text = json.dumps(result, ensure_ascii=False, default=str)[:MAX_TOOL_RESULT_CHARS]
     return text, bool(result.get("error"))
 

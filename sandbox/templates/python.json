@@ -1,0 +1,24 @@
+{
+  "id": "python",
+  "name": "Python",
+  "description": "Python 3.12 workspace. Installs requirements.txt or editable pyproject on first start.",
+  "image": "omniaide/sandbox-base:latest",
+  "workdir": "/workspace",
+  "user": "1001:1000",
+  "shell": "/bin/bash",
+  "env": {
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "ports": [8000, 8080],
+  "setup": [
+    "if [ -f requirements.txt ]; then pip install --user -r requirements.txt; fi",
+    "if [ -f pyproject.toml ] && [ ! -f requirements.txt ]; then pip install --user -e .; fi"
+  ],
+  "resources": {
+    "cpus": 2.0,
+    "memory": "4g",
+    "pids": 512
+  },
+  "ttl_seconds": 1800
+}

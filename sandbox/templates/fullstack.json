@@ -1,0 +1,25 @@
+{
+  "id": "fullstack",
+  "name": "Fullstack",
+  "description": "Python + Node workspace with both package managers prepared.",
+  "image": "omniaide/sandbox-base:latest",
+  "workdir": "/workspace",
+  "user": "1001:1000",
+  "shell": "/bin/bash",
+  "env": {
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+    "PYTHONUNBUFFERED": "1",
+    "NPM_CONFIG_UPDATE_NOTIFIER": "false"
+  },
+  "ports": [3000, 5173, 8000, 8080],
+  "setup": [
+    "if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi",
+    "if [ -f requirements.txt ]; then pip install --user -r requirements.txt; fi"
+  ],
+  "resources": {
+    "cpus": 4.0,
+    "memory": "8g",
+    "pids": 1024
+  },
+  "ttl_seconds": 1800
+}

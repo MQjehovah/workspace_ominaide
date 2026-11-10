@@ -1,0 +1,21 @@
+{
+  "id": "omniaide-base",
+  "name": "OmniAide Base",
+  "description": "Python 3.12 + Node 20 + git + build tools. No project setup.",
+  "image": "omniaide/sandbox-base:latest",
+  "workdir": "/workspace",
+  "user": "1001:1000",
+  "shell": "/bin/bash",
+  "env": {
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+    "NPM_CONFIG_UPDATE_NOTIFIER": "false"
+  },
+  "ports": [3000, 5173, 8000, 8080],
+  "setup": [],
+  "resources": {
+    "cpus": 2.0,
+    "memory": "4g",
+    "pids": 512
+  },
+  "ttl_seconds": 1800
+}

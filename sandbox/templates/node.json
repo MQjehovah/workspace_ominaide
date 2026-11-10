@@ -1,0 +1,22 @@
+{
+  "id": "node",
+  "name": "Node.js",
+  "description": "Node 20 workspace. Installs package dependencies from package.json on first start.",
+  "image": "omniaide/sandbox-base:latest",
+  "workdir": "/workspace",
+  "user": "1001:1000",
+  "shell": "/bin/bash",
+  "env": {
+    "NPM_CONFIG_UPDATE_NOTIFIER": "false"
+  },
+  "ports": [3000, 5173, 8080],
+  "setup": [
+    "if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi"
+  ],
+  "resources": {
+    "cpus": 2.0,
+    "memory": "4g",
+    "pids": 512
+  },
+  "ttl_seconds": 1800
+}

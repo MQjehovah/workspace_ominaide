@@ -1,5 +1,7 @@
 """Prompts and tool schema for the built-in coding agent loop."""
 
+from core.config.settings import settings
+
 TOOLS = [
     {
         "type": "function",
@@ -232,11 +234,25 @@ def coding_system_prompt(project: str, developer: dict | None, context: str = ""
         "可用工具：list_dir / glob / read_file / write_file / edit_file / apply_patch / delete_file / move_file / search_text / git_diff / run_command。",
         "可用技能：先 skill_search 检索，再 skill_call 执行；不要猜测技能 key。",
         "",
+    ]
+    if (settings.coding_sandbox_mode or "").lower() == "docker":
+        lines.extend(
+            [
+                "【执行环境】",
+                "run_command 在隔离的 sandbox 容器中执行，项目根目录映射到容器的 /workspace。",
+                "cwd 仍然使用相对项目根目录的路径；容器内没有后端密钥和数据库配置。",
+                "构建、测试需要的依赖可以在容器内安装，不会污染服务器环境。",
+                "",
+            ]
+        )
+    lines.extend(
+        [
         "【分支与交付】",
         "默认建议在 feature/* 分支开发；只有用户明确要求时才直接在 master 改动。",
         "如果本次运行指定了分支，就按指定分支执行；否则由交付层创建 feature/* 分支。",
         "不要自行执行 git commit 或 git push；改完留在工作区即可，交付层统一处理。",
-    ]
+        ]
+    )
     if branch:
         lines.append(f"本次运行指定分支：{branch}")
         if branch in ("main", "master"):

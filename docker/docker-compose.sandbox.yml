@@ -1,0 +1,28 @@
+services:
+  sandbox-runner:
+    build:
+      context: ../sandbox
+    image: omniaide-sandbox-runner:latest
+    container_name: sandbox-runner
+    restart: unless-stopped
+    environment:
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:-}
+      SANDBOX_ALLOWED_ROOTS: /data/workspace,/data/sandbox/workspaces
+      SANDBOX_DATA_ROOT: /data/sandbox/workspaces
+      SANDBOX_STATE_DB: /data/sandbox/workspaces.db
+      SANDBOX_NETWORK: omniaide-sandbox
+      SANDBOX_DEFAULT_TTL_SECONDS: ${SANDBOX_DEFAULT_TTL_SECONDS:-1800}
+      # Host path of the data volume mounted at /data. Sibling containers need
+      # host paths, so the runner translates /data/... before creating them.
+      SANDBOX_HOST_DATA_ROOT: ${SANDBOX_HOST_DATA_ROOT:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${SANDBOX_DATA_MOUNT:-/data}:/data
+    ports:
+      - "127.0.0.1:8010:8010"
+    networks:
+      - infra
+
+networks:
+  infra:
+    external: true
