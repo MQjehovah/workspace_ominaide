@@ -659,33 +659,131 @@ class _FilesScreenState extends State<FilesScreen> {
     }
   }
 
-  Future<void> _move(FileItem f) async {
-    final ctl = TextEditingController(text: f.folderPath);
-    final folder = await showDialog<String>(
+  String _joinPath(String parent, String name) {
+    final base = _normalizePath(parent);
+    return base == '/' ? '/$name' : '$base/$name';
+  }
+
+  Future<String?> _pickFolder({
+    required String title,
+    required String initialPath,
+  }) async {
+    var path = _normalizePath(initialPath);
+    var loading = true;
+    var folders = <FileItem>[];
+    var initialized = false;
+
+    return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('移动到'),
-        content: TextField(
-          controller: ctl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '/ 或 /文件夹/'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
-            child: const Text('移动'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDlgState) {
+            Future<void> load() async {
+              setDlgState(() => loading = true);
+              final items = await ApiService().listFiles(folderPath: path);
+              if (!ctx.mounted) return;
+              setDlgState(() {
+                folders = items.where((item) => item.isFolder).toList();
+                loading = false;
+              });
+            }
+
+            if (!initialized) {
+              initialized = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) => load());
+            }
+
+            return AlertDialog(
+              title: Text(title),
+              content: SizedBox(
+                width: 380,
+                height: 420,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (path != '/')
+                          IconButton(
+                            icon: const Icon(Icons.arrow_upward_rounded),
+                            tooltip: '上一级',
+                            onPressed: () {
+                              final parent =
+                                  path.substring(0, path.lastIndexOf('/'));
+                              path = _normalizePath(parent);
+                              load();
+                            },
+                          ),
+                        Expanded(
+                          child: Text(
+                            path,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 12),
+                    Expanded(
+                      child: loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : folders.isEmpty
+                              ? const Center(child: Text('没有子文件夹'))
+                              : ListView.builder(
+                                  itemCount: folders.length,
+                                  itemBuilder: (context, index) {
+                                    final folder = folders[index];
+                                    return ListTile(
+                                      leading: const Icon(Icons.folder_rounded),
+                                      title: Text(folder.originalName),
+                                      onTap: () {
+                                        path = _joinPath(
+                                            path, folder.originalName);
+                                        load();
+                                      },
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, path),
+                  child: const Text('移动到这里'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
-    ctl.dispose();
-    if (folder == null || folder.isEmpty || folder == f.folderPath) return;
+  }
+
+  Future<void> _move(FileItem f) async {
+    final folder = await _pickFolder(
+      title: '移动到',
+      initialPath: _normalizePath(f.folderPath),
+    );
+    if (folder == null || folder == _normalizePath(f.folderPath)) return;
+
+    var target = _normalizePath(folder);
+    if (!target.endsWith('/')) target = '$target/';
+    if (f.isFolder) {
+      final source = _joinPath(f.folderPath, f.originalName);
+      if (target == '$source/' || target.startsWith('$source/')) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('不能移动到自身或子目录')),
+        );
+        return;
+      }
+    }
     try {
-      var target = folder;
-      if (!target.startsWith('/')) target = '/$target';
-      if (!target.endsWith('/')) target = '$target/';
       await ApiService().moveFile(f.id, target);
       await _loadFiles();
     } catch (e) {

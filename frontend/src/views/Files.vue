@@ -177,6 +177,32 @@
       />
     </div>
 
+    <el-dialog v-model="moveVisible" title="移动到" width="540px">
+      <div class="move-picker">
+        <div class="move-path">
+          <el-button v-if="movePath !== '/'" link @click="moveUp">上一级</el-button>
+          <code>{{ movePath }}</code>
+        </div>
+        <el-scrollbar height="320px">
+          <div v-if="moveLoading" class="move-empty">加载中…</div>
+          <div v-else-if="moveFolders.length === 0" class="move-empty">没有子文件夹</div>
+          <div
+            v-for="folder in moveFolders"
+            :key="folder.id"
+            class="move-folder"
+            @click="enterMoveFolder(folder)"
+          >
+            <el-icon><Folder /></el-icon>
+            <span>{{ folder.original_name }}</span>
+          </div>
+        </el-scrollbar>
+      </div>
+      <template #footer>
+        <el-button @click="moveVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmMove">移动到这里</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="previewVisible" :title="previewFileItem?.original_name" width="60%">
       <div v-if="previewFileItem">
         <p class="muted">
@@ -236,6 +262,11 @@ const previewSrc = ref('')
 const searchText = ref('')
 const currentPath = ref('/')
 const trashMode = ref(false)
+const moveVisible = ref(false)
+const moveTarget = ref<FileItem | null>(null)
+const movePath = ref('/')
+const moveFolders = ref<FileItem[]>([])
+const moveLoading = ref(false)
 interface UploadTask {
   id: number
   name: string
@@ -424,6 +455,81 @@ async function handleUpload(options: any) {
   }
 }
 
+function normalizeFolder(path: string | null | undefined): string {
+  const parts = (path || '/').split('/').filter(Boolean)
+  return '/' + parts.join('/')
+}
+
+function joinFolder(parent: string, name: string): string {
+  const base = normalizeFolder(parent)
+  return base === '/' ? `/${name}` : `${base}/${name}`
+}
+
+async function loadMoveFolders(path: string) {
+  moveLoading.value = true
+  try {
+    const res = await client.get('/files', {
+      params: {
+        page_size: 200,
+        status: 'active',
+        folder_path: normalizeFolder(path),
+        is_folder: true,
+      },
+    })
+    moveFolders.value = res.data.files || []
+  } catch (err: any) {
+    showError(err, '加载文件夹失败')
+    moveFolders.value = []
+  } finally {
+    moveLoading.value = false
+  }
+}
+
+async function openMove(file: FileItem) {
+  moveTarget.value = file
+  movePath.value = normalizeFolder(file.is_folder ? (file.folder_path || '/') : currentPath.value)
+  moveVisible.value = true
+  await loadMoveFolders(movePath.value)
+}
+
+async function enterMoveFolder(folder: FileItem) {
+  movePath.value = joinFolder(movePath.value, folder.original_name)
+  await loadMoveFolders(movePath.value)
+}
+
+async function moveUp() {
+  if (movePath.value === '/') return
+  const parts = movePath.value.split('/').filter(Boolean)
+  parts.pop()
+  movePath.value = '/' + parts.join('/')
+  await loadMoveFolders(movePath.value)
+}
+
+async function confirmMove() {
+  const file = moveTarget.value
+  if (!file) return
+  const target = normalizeFolder(movePath.value)
+  if (target === normalizeFolder(file.folder_path)) {
+    moveVisible.value = false
+    return
+  }
+  if (file.is_folder) {
+    const source = joinFolder(file.folder_path || '/', file.original_name)
+    if (target === source || target.startsWith(`${source}/`)) {
+      ElMessage.warning('不能移动到自身或子目录')
+      return
+    }
+  }
+  try {
+    await store.moveFile(file.id, target === '/' ? '/' : `${target}/`)
+    ElMessage.success('已移动')
+    moveVisible.value = false
+    await loadFiles()
+  } catch (err: any) {
+    showError(err, '移动失败')
+  }
+}
+
 async function handleCommand(cmd: string, file: FileItem) {
   if (cmd === 'rename') {
     try {
@@ -433,15 +539,7 @@ async function handleCommand(cmd: string, file: FileItem) {
       await loadFiles()
     } catch (err: any) { showError(err, '重命名失败') }
   } else if (cmd === 'move') {
-    try {
-      const target = file.is_folder
-        ? (file.folder_path || '/')
-        : currentPath.value
-      const { value } = await ElMessageBox.prompt('目标文件夹路径，例如 /项目/2026', '移动到', { inputValue: target })
-      await store.moveFile(file.id, value.trim())
-      ElMessage.success('已移动')
-      await loadFiles()
-    } catch (err: any) { showError(err, '移动失败') }
+    await openMove(file)
   } else if (cmd === 'delete') {
     try {
       await ElMessageBox.confirm(`确定把「${file.original_name}」移到回收站？`, '删除', { type: 'warning' })
@@ -569,6 +667,12 @@ onMounted(async () => {
 .file-meta { font-size:12px; color:#909399; margin-top:4px; }
 .card-actions { position:absolute; top:6px; right:6px; display:flex; gap:2px; }
 .name-cell { display:flex; align-items:center; gap:8px; }
+.move-picker { display: flex; flex-direction: column; gap: 8px; }
+.move-path { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--el-fill-color-lighter); border-radius: 6px; }
+.move-path code { font-size: 12px; }
+.move-folder { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 6px; cursor: pointer; }
+.move-folder:hover { background: var(--el-fill-color-light); }
+.move-empty { padding: 24px; text-align: center; color: var(--el-text-color-secondary); }
 .pager { display:flex; justify-content:center; margin-top:16px; }
 .preview-center { text-align:center; min-height:40px; }
 .text-preview {
