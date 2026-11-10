@@ -40,16 +40,8 @@
           <div>
             <h3>{{ selected.name }}</h3>
             <p class="muted">{{ selected.path }}</p>
-            <p class="muted">
-              <template v-if="selected.repos?.length">
-                多仓库工作区 · {{ selected.repos.length }} 个 Git 项目
-              </template>
-              <template v-else-if="selected.is_git">
-                Git 项目 · 默认分支 {{ selected.default_branch || 'master' }}
-                <template v-if="selected.repo_url"> · {{ selected.repo_url }}</template>
-              </template>
-              <template v-else>非 Git 项目 · 仅作为目录管理</template>
-            </p>
+            <p v-if="selected.description" class="muted">{{ selected.description }}</p>
+            <p class="muted">Git 项目 {{ selected.git_projects?.length || 0 }} 个</p>
           </div>
           <div class="head-actions">
             <el-button :icon="ChatDotRound" @click="askAssistant">让助手处理</el-button>
@@ -61,33 +53,46 @@
           </div>
         </div>
 
-        <div v-if="selected.repos?.length" class="page-card">
+        <div class="page-card">
           <div class="page-card-body">
             <div class="section-head">
               <div>
-                <h4>Git 仓库</h4>
-                <p>一个 workspace 可以包含多个独立仓库。</p>
+                <h4>Git 项目</h4>
+                <p>项目只是文件夹；Git 项目用相对路径挂载，可以有多个。</p>
               </div>
-              <el-button :icon="Refresh" @click="loadProjects">刷新</el-button>
+              <div>
+                <el-button :icon="Refresh" @click="loadProjects">刷新</el-button>
+                <el-button type="primary" :icon="Plus" @click="openGitCreate">添加 Git 项目</el-button>
+              </div>
             </div>
-            <div class="repo-list">
-              <div v-for="repo in selected.repos" :key="repo.id" class="repo-row">
-                <div class="repo-main">
-                  <span class="repo-name">{{ repo.name }}</span>
-                  <span class="repo-path">{{ repo.path }}/</span>
-                  <span class="repo-url">{{ repo.url }}</span>
-                </div>
-                <el-tag size="small" :type="repo.status === 'cloned' ? 'success' : repo.status === 'error' ? 'danger' : 'warning'">
-                  {{ repo.status }}
-                </el-tag>
-                <el-button
-                  v-if="repo.status !== 'cloned' && repo.status !== 'cloning'"
-                  size="small"
-                  :icon="Refresh"
-                  @click="cloneRepo(repo)"
-                >克隆</el-button>
-                <span v-if="repo.error" class="repo-error">{{ repo.error }}</span>
-              </div>
+            <el-table :data="selected.git_projects || []" size="small" empty-text="还没有 Git 项目">
+              <el-table-column prop="name" label="名称" width="140" />
+              <el-table-column label="相对路径" width="150">
+                <template #default="{ row }"><code>{{ row.relative_path }}/</code></template>
+              </el-table-column>
+              <el-table-column prop="url" label="仓库地址" min-width="240" show-overflow-tooltip />
+              <el-table-column prop="default_branch" label="分支" width="100" />
+              <el-table-column label="状态" width="110">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.status === 'cloned' ? 'success' : row.status === 'error' ? 'danger' : 'warning'">
+                    {{ row.status }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="180">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.status !== 'cloned' && row.status !== 'cloning'"
+                    link
+                    type="primary"
+                    @click="cloneGitProject(row)"
+                  >克隆</el-button>
+                  <el-button link type="danger" @click="deleteGitProject(row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div v-for="row in selected.git_projects || []" :key="`err-${row.id}`">
+              <p v-if="row.error" class="repo-error">{{ row.name }}: {{ row.error }}</p>
             </div>
           </div>
         </div>
@@ -143,30 +148,6 @@
         <el-form-item label="路径">
           <el-input v-model="form.path" :placeholder="pathPlaceholder" />
         </el-form-item>
-        <el-form-item label="Git 项目">
-          <el-checkbox v-model="form.is_git">这是一个 Git 仓库</el-checkbox>
-        </el-form-item>
-        <template v-if="form.is_git">
-          <el-form-item v-if="!form.repos_text.trim()" label="仓库地址" required>
-            <el-input v-model="form.repo_url" placeholder="必填，例如 git@github.com:user/repo.git" />
-          </el-form-item>
-          <el-form-item v-if="!form.repos_text.trim()" label="默认分支">
-            <el-input v-model="form.default_branch" placeholder="master" />
-          </el-form-item>
-          <el-form-item label="多仓库">
-            <el-input
-              v-model="form.repos_text"
-              type="textarea"
-              :rows="4"
-              placeholder="每行一个仓库：目录名 仓库地址 分支&#10;例如：gateway https://github.com/MQjehovah/gateway.git master"
-            />
-            <div class="form-hint">填写多仓库后，上面的单仓库地址会被忽略。项目会克隆到各自子目录。</div>
-          </el-form-item>
-          <el-form-item v-if="form.repos_text.trim()" label="自动克隆">
-            <el-checkbox v-model="form.clone">创建后自动执行 git clone</el-checkbox>
-            <span class="form-hint">服务器无法访问 GitHub 时可关闭，稍后手动放入仓库目录。</span>
-          </el-form-item>
-        </template>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="3" />
         </el-form-item>
@@ -174,6 +155,29 @@
       <template #footer>
         <el-button @click="createOpen = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="createProject">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="gitCreateOpen" title="添加 Git 项目" width="560px">
+      <el-form :model="gitForm" label-width="100px">
+        <el-form-item label="名称" required><el-input v-model="gitForm.name" /></el-form-item>
+        <el-form-item label="仓库地址" required>
+          <el-input v-model="gitForm.url" placeholder="https://github.com/user/repo.git" />
+        </el-form-item>
+        <el-form-item label="相对路径" required>
+          <el-input v-model="gitForm.relative_path" placeholder="例如 gateway；根仓库填 ." />
+          <div class="form-hint">相对于项目目录，例如 gateway / services/rag。</div>
+        </el-form-item>
+        <el-form-item label="默认分支">
+          <el-input v-model="gitForm.default_branch" placeholder="master" />
+        </el-form-item>
+        <el-form-item label="自动克隆">
+          <el-checkbox v-model="gitForm.clone">添加后自动执行 git clone</el-checkbox>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="gitCreateOpen = false">取消</el-button>
+        <el-button type="primary" :loading="gitSaving" @click="addGitProject">保存</el-button>
       </template>
     </el-dialog>
 
@@ -293,8 +297,13 @@ const commentsOpen = ref(false)
 const createOpen = ref(false)
 const saving = ref(false)
 const form = reactive({
-  name: '', path: '', is_git: true, repo_url: '', default_branch: 'master',
-  repos_text: '', clone: true, description: '',
+  name: '', path: '', description: '',
+})
+
+const gitCreateOpen = ref(false)
+const gitSaving = ref(false)
+const gitForm = reactive({
+  name: '', url: '', relative_path: '', default_branch: 'master', clone: true,
 })
 const pathPlaceholder = computed(() =>
   form.name.trim() ? `/workspace/${form.name.trim()}` : '/workspace/<名称>'
@@ -428,28 +437,8 @@ function retryRun() {
 }
 
 function openCreate() {
-  Object.assign(form, {
-    name: '', path: '', is_git: true, repo_url: '', default_branch: 'master',
-    repos_text: '', clone: true, description: '',
-  })
+  Object.assign(form, { name: '', path: '', description: '' })
   createOpen.value = true
-}
-
-function parseRepos() {
-  return form.repos_text
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => {
-      const [name, url, branch] = line.split(/\s+/)
-      return {
-        name,
-        url,
-        path: name,
-        default_branch: branch || 'master',
-      }
-    })
-    .filter(repo => repo.name && repo.url)
 }
 
 async function createProject() {
@@ -458,28 +447,17 @@ async function createProject() {
     ElMessage.warning('名称必填')
     return
   }
-  const repos = parseRepos()
-  if (form.is_git && !repos.length && !form.repo_url.trim()) {
-    ElMessage.warning('Git 项目必须填写仓库地址，或多仓库列表')
-    return
-  }
   const path = form.path.trim() || `/workspace/${name}`
   saving.value = true
   try {
     await client.post('/projects', {
       name,
       path,
-      is_git: form.is_git || repos.length > 0,
-      repo_url: repos.length ? undefined : form.repo_url.trim(),
-      default_branch: form.default_branch.trim() || 'master',
-      repos,
-      clone: form.clone,
       description: form.description,
     })
     createOpen.value = false
     await loadProjects()
-    ElMessage.success('项目已添加，仓库开始克隆')
-    window.setTimeout(loadProjects, 2500)
+    ElMessage.success('项目已添加')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '添加失败')
   } finally {
@@ -487,14 +465,61 @@ async function createProject() {
   }
 }
 
-async function cloneRepo(repo: any) {
+function openGitCreate() {
+  Object.assign(gitForm, {
+    name: '', url: '', relative_path: '', default_branch: 'master', clone: true,
+  })
+  gitCreateOpen.value = true
+}
+
+async function addGitProject() {
+  if (!selected.value) return
+  const name = gitForm.name.trim()
+  const url = gitForm.url.trim()
+  const relativePath = gitForm.relative_path.trim() || name
+  if (!name || !url || !relativePath) {
+    ElMessage.warning('名称、仓库地址和相对路径必填')
+    return
+  }
+  gitSaving.value = true
+  try {
+    await client.post(`/projects/${selected.value.id}/git-projects`, {
+      name,
+      url,
+      relative_path: relativePath,
+      default_branch: gitForm.default_branch.trim() || 'master',
+      clone: gitForm.clone,
+    })
+    gitCreateOpen.value = false
+    await loadProjects()
+    ElMessage.success(gitForm.clone ? 'Git 项目已添加，开始克隆' : 'Git 项目已添加')
+    if (gitForm.clone) window.setTimeout(loadProjects, 2500)
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '添加失败')
+  } finally {
+    gitSaving.value = false
+  }
+}
+
+async function cloneGitProject(repo: any) {
   if (!selected.value) return
   try {
-    await client.post(`/projects/${selected.value.id}/repos/${repo.id}/clone`)
+    await client.post(`/projects/${selected.value.id}/git-projects/${repo.id}/clone`)
     await loadProjects()
     ElMessage.success('克隆完成')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '克隆失败')
+  }
+}
+
+async function deleteGitProject(repo: any) {
+  if (!selected.value) return
+  try {
+    await client.delete(`/projects/${selected.value.id}/git-projects/${repo.id}`)
+    await loadProjects()
+    ElMessage.success('Git 项目已移除')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '删除失败')
   }
 }
 

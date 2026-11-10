@@ -3,19 +3,27 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class ProjectRepoCreate(BaseModel):
+class GitProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     url: str = Field(min_length=1, max_length=500)
-    path: str | None = None
+    relative_path: str = Field(min_length=1, max_length=300)
     default_branch: str | None = "master"
+    clone: bool = True
 
 
-class ProjectRepoOut(BaseModel):
+class GitProjectUpdate(BaseModel):
+    name: str | None = None
+    url: str | None = None
+    relative_path: str | None = None
+    default_branch: str | None = None
+
+
+class GitProjectOut(BaseModel):
     id: int
     project_id: int
     name: str
     url: str
-    path: str
+    relative_path: str
     default_branch: str | None = None
     status: str = "pending"
     error: str | None = None
@@ -27,20 +35,12 @@ class ProjectRepoOut(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     path: str = ""
-    is_git: bool = True
-    repo_url: str | None = None
-    default_branch: str | None = "master"
-    repos: list[ProjectRepoCreate] = Field(default_factory=list)
-    clone: bool = True
     description: str | None = None
 
 
 class ProjectUpdate(BaseModel):
     name: str | None = None
     path: str | None = None
-    is_git: bool | None = None
-    repo_url: str | None = None
-    default_branch: str | None = None
     description: str | None = None
     status: str | None = None
 
@@ -50,12 +50,9 @@ class ProjectOut(BaseModel):
     user_id: int
     name: str
     path: str
-    is_git: bool = True
-    repo_url: str | None = None
-    default_branch: str | None = None
     description: str | None = None
     status: str
-    repos: list[ProjectRepoOut] = Field(default_factory=list)
+    git_projects: list[GitProjectOut] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

@@ -218,6 +218,18 @@ async def _resolve_project(user_id: int, object_id: int) -> dict | None:
         )).scalar_one_or_none()
     if row is None:
         return None
+    from plugins.projects.backend.models import GitProject
+
+    async with async_session() as db:
+        git_projects = list(
+            (
+                await db.execute(
+                    select(GitProject)
+                    .where(GitProject.project_id == row.id)
+                    .order_by(GitProject.id.asc())
+                )
+            ).scalars().all()
+        )
     when = _fmt(row.updated_at or row.created_at)
     return {
         "type": "project",
@@ -230,7 +242,13 @@ async def _resolve_project(user_id: int, object_id: int) -> dict | None:
         "preview": _clip(row.description or "", 300),
         "url": f"/projects?project={row.id}",
         "status": row.status,
-        "metadata": {"path": row.path, "repo_url": row.repo_url},
+        "metadata": {
+            "path": row.path,
+            "git_projects": [
+                {"name": item.name, "relative_path": item.relative_path}
+                for item in git_projects
+            ],
+        },
     }
 
 

@@ -55,7 +55,7 @@ async def test_projects_are_scoped_per_user(client, tmp_path, monkeypatch):
 
     r = await client.post(
         "/api/projects",
-        json={"name": "A", "path": str(project_a), "is_git": False},
+        json={"name": "A", "path": str(project_a)},
         headers=auth(token_a),
     )
     assert r.status_code == 200, r.text
@@ -81,7 +81,7 @@ async def test_projects_are_scoped_per_user(client, tmp_path, monkeypatch):
     # B cannot register A's directory as its own project.
     r = await client.post(
         "/api/projects",
-        json={"name": "escape", "path": str(project_a), "is_git": False},
+        json={"name": "escape", "path": str(project_a)},
         headers=auth(token_b),
     )
     assert r.status_code == 422, r.text
@@ -102,7 +102,7 @@ async def test_project_path_traversal_is_rejected(tmp_path, monkeypatch):
     try:
         await service.create_project(
             2,
-            ProjectCreate(name="escape", path=str(other), is_git=False),
+            ProjectCreate(name="escape", path=str(other)),
         )
     except ValueError as exc:
         assert "项目不在工作区内" in str(exc)

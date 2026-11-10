@@ -124,7 +124,7 @@ async def _seed_user_data(user_id: int) -> None:
             file_id=file_row.id, file_path="/a.txt",
         ))
 
-        db.add(Project(user_id=user_id, name="p", path="/tmp/p", is_git=False))
+        db.add(Project(user_id=user_id, name="p", path="/tmp/p"))
         db.add(PluginNote(user_id=user_id, title="note"))
         db.add(PluginTodoItem(user_id=user_id, title="todo"))
         db.add(Event(user_id=user_id, title="event", start_time=datetime.now()))

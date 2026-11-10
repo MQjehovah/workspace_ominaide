@@ -251,7 +251,7 @@ async def test_project_service_crud(tmp_path, monkeypatch):
     from plugins.projects.backend.schemas import ProjectCreate, ProjectUpdate
 
     project = await service.create_project(
-        1, ProjectCreate(name="Demo", path=str(repo), is_git=False)
+        1, ProjectCreate(name="Demo", path=str(repo))
     )
     assert project.path == str(repo.resolve())
     assert any(p.id == project.id for p in await service.list_projects(1))
@@ -265,45 +265,20 @@ async def test_project_service_crud(tmp_path, monkeypatch):
     assert not repo.exists()
 
 
-async def test_project_default_path_and_git_fields(tmp_path, monkeypatch):
+async def test_project_default_path(tmp_path, monkeypatch):
     from core.config.settings import settings
 
     monkeypatch.setattr(settings, "coding_workspace_root", str(tmp_path))
     defaulted_dir = tmp_path / "Defaulted"
     defaulted_dir.mkdir()
-    git_dir = tmp_path / "GitDemo"
-    git_dir.mkdir()
 
     from plugins.projects.backend import service
     from plugins.projects.backend.schemas import ProjectCreate
 
     project = await service.create_project(
-        1, ProjectCreate(name="Defaulted", path="", is_git=False)
+        1, ProjectCreate(name="Defaulted", path="")
     )
     assert project.path == str(defaulted_dir.resolve())
-    assert project.default_branch is None
-    assert await service.delete_project(1, project.id)
-
-    try:
-        await service.create_project(
-            1,
-            ProjectCreate(name="GitDemo", path=str(git_dir), is_git=True, repo_url=""),
-        )
-    except ValueError as e:
-        assert "仓库地址" in str(e)
-    else:
-        raise AssertionError("git project without repo_url must be rejected")
-
-    project = await service.create_project(
-        1,
-        ProjectCreate(
-            name="GitDemo",
-            path=str(git_dir),
-            is_git=True,
-            repo_url="git@example.com:demo/repo.git",
-        ),
-    )
-    assert project.default_branch == "master"
     assert await service.delete_project(1, project.id)
 
 

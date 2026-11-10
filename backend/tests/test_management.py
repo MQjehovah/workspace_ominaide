@@ -94,7 +94,7 @@ async def test_memory_routine_and_project_tools(client, user_token, tmp_path, mo
     project_dir.mkdir()
     result = await management.project_create(
         uid,
-        {"name": "managed", "path": str(project_dir), "is_git": False},
+        {"name": "managed", "path": str(project_dir)},
     )
     assert not result.isError, result.content[0].text
     project_id = int(result.content[0].text.split("#")[1].split("：")[0])

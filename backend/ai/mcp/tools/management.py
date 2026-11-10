@@ -486,9 +486,6 @@ async def project_create(user_id: int, args: dict) -> MCPCallResponse:
             ProjectCreate(
                 name=name,
                 path=(args.get("path") or "").strip(),
-                is_git=bool(args.get("is_git", True)),
-                repo_url=(args.get("repo_url") or "").strip() or None,
-                default_branch=(args.get("default_branch") or "master").strip() or "master",
                 description=args.get("description"),
             ),
         )
@@ -507,7 +504,7 @@ async def project_update(user_id: int, args: dict) -> MCPCallResponse:
         return _err(str(e))
     fields = {
         key: args[key]
-        for key in ("name", "path", "is_git", "repo_url", "default_branch", "description")
+        for key in ("name", "path", "description", "status")
         if args.get(key) is not None
     }
     if not fields:
@@ -865,23 +862,18 @@ TOOLS = [
                 inputSchema={"type": "object", "properties": {
                     "name": {"type": "string"},
                     "path": {"type": "string"},
-                    "is_git": {"type": "boolean"},
-                    "repo_url": {"type": "string"},
-                    "default_branch": {"type": "string"},
                     "description": {"type": "string"},
                 }, "required": ["name"]}),
         project_create,
     ),
     (
-        MCPTool(name="project_update", description="修改项目的名称、路径、Git 属性、仓库地址或默认分支。",
+        MCPTool(name="project_update", description="修改项目的名称、路径、描述或状态。",
                 inputSchema={"type": "object", "properties": {
                     "project_id": {"type": "integer"},
                     "name": {"type": "string"},
                     "path": {"type": "string"},
-                    "is_git": {"type": "boolean"},
-                    "repo_url": {"type": "string"},
-                    "default_branch": {"type": "string"},
                     "description": {"type": "string"},
+                    "status": {"type": "string"},
                 }, "required": ["project_id"]}),
         project_update,
     ),

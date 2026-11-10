@@ -53,6 +53,35 @@ async def ensure_schema_migrations():
                 "WHERE name = 'rss'"
             ))
 
+        # Projects no longer own git semantics. Old project_repos rows become
+        # independent git_projects, and legacy project git columns are removed.
+        if "project_repos" in table_names and "git_projects" in table_names:
+            await conn.execute(text(
+                "INSERT INTO git_projects "
+                "(id, project_id, name, url, relative_path, default_branch, "
+                "status, error, created_at, updated_at) "
+                "SELECT id, project_id, name, url, path, default_branch, "
+                "status, error, created_at, updated_at FROM project_repos "
+                "WHERE NOT EXISTS (SELECT 1 FROM git_projects g "
+                "WHERE g.id = project_repos.id)"
+            ))
+            await conn.execute(text("DROP TABLE project_repos"))
+            table_names.discard("project_repos")
+        if "projects" in table_names:
+            cols = {c["name"] for c in await conn.run_sync(
+                lambda c: inspect(c).get_columns("projects")
+            )}
+            for legacy in ("is_git", "repo_url", "default_branch"):
+                if legacy in cols:
+                    try:
+                        await conn.execute(text(
+                            f"ALTER TABLE projects DROP COLUMN {legacy}"
+                        ))
+                    except Exception:
+                        # Very old SQLite versions cannot drop columns; the
+                        # ORM ignores them and inserts work on a fresh schema.
+                        pass
+
         # BotRun/BotRunStep/BotApproval -> Run/RunStep/Approval.
         # create_all has already created the new tables, so copy rows once.
         if "bot_runs" in table_names and "runs" in table_names:
@@ -133,7 +162,7 @@ async def ensure_schema_migrations():
         # Copying explicit ids does not advance PostgreSQL sequences. Move them
         # past the highest copied id so new runs/steps/approvals do not collide.
         if dialect == "postgresql":
-            for table in ("runs", "run_steps", "approvals"):
+            for table in ("runs", "run_steps", "approvals", "git_projects"):
                 if table not in table_names:
                     continue
                 await conn.execute(text(
@@ -285,10 +314,6 @@ async def ensure_schema_migrations():
             if "entity_type" not in cols:
                 result.append("entity_alias_type")
 
-        if "projects" in table_names:
-            cols = {c["name"] for c in inspector.get_columns("projects")}
-            if "is_git" not in cols:
-                result.append("projects_is_git")
         if "plugin_mail_accounts" in table_names:
             cols = {c["name"] for c in inspector.get_columns("plugin_mail_accounts")}
             if "sync_enabled" not in cols:
@@ -428,8 +453,6 @@ async def ensure_schema_migrations():
                 await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN last_error TEXT NULL"))
             elif table == "bot_routines_run_count":
                 await conn.execute(text("ALTER TABLE bot_routines ADD COLUMN run_count INTEGER DEFAULT 0"))
-            elif table == "projects_is_git":
-                await conn.execute(text(f"ALTER TABLE projects ADD COLUMN is_git BOOLEAN DEFAULT {bool_true}"))
             elif table == "mail_sync_state":
                 await conn.execute(text(f"ALTER TABLE plugin_mail_accounts ADD COLUMN sync_enabled BOOLEAN DEFAULT {bool_true}"))
                 await conn.execute(text("ALTER TABLE plugin_mail_accounts ADD COLUMN folder VARCHAR(100) DEFAULT 'INBOX'"))
