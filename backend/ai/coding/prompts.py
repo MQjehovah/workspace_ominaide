@@ -1,4 +1,4 @@
-"""Prompts and tool schema for the built-in coding engine."""
+"""Prompts and tool schema for the built-in coding agent loop."""
 
 TOOLS = [
     {
@@ -83,6 +83,36 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "skill_search",
+            "description": "Search Agent Skills enabled for this Bot. Use before skill_call; never guess a skill key.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Keywords, e.g. testing, review, frontend"},
+                    "limit": {"type": "number", "description": "Max results, default 5"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "skill_call",
+            "description": "Execute a skill returned by skill_search. Pass skill_key and an input object.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_key": {"type": "string", "description": "Skill key from skill_search"},
+                    "input": {"type": "object", "description": "Skill input parameters"},
+                },
+                "required": ["skill_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_command",
             "description": "Run a shell command in the project directory and return stdout/stderr/exit code. Use for builds and tests.",
             "parameters": {
@@ -116,6 +146,7 @@ def coding_system_prompt(project: str, developer: dict | None, context: str = ""
         "8. 如果用户只要求分析或报告，不要为了无关的测试失败无限排查；主要调查完成后及时输出报告。",
         "",
         "可用工具：list_dir / read_file / write_file / edit_file / search_text / run_command。",
+        "可用技能：先 skill_search 检索，再 skill_call 执行；不要猜测技能 key。",
         "",
         "【分支与交付】",
         "默认建议在 feature/* 分支开发；只有用户明确要求时才直接在 master 改动。",

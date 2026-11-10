@@ -238,7 +238,7 @@ async def _execute(run_id: int) -> None:
 
     coding = await _coding_run(run_id)
     if coding is not None:
-        await _execute_coding(run, bot, coding)
+        await _coding_loop(run, bot, coding)
         return
 
     checkpoint = run.checkpoint or {}
@@ -269,8 +269,8 @@ async def _execute(run_id: int) -> None:
     await _loop(run, bot, messages, seq)
 
 
-async def _execute_coding(run: Run, bot: Bot, coding) -> None:
-    from ai.coding.engine import run_coding
+async def _coding_loop(run: Run, bot: Bot, coding) -> None:
+    from ai.coding.loop import run_coding
 
     await _mark_running(run.id, run.started_at)
     seq = 0
@@ -310,9 +310,27 @@ async def _execute_coding(run: Run, bot: Bot, coding) -> None:
     async def cancelled() -> bool:
         return await _cancelled(run.id)
 
-    result = await run_coding(
-        run, bot, coding, on_event=emit, is_cancelled=cancelled
+    from ai.bots.context import (
+        reset_current_bot_id,
+        reset_current_run_id,
+        reset_current_session_id,
+        set_current_bot_id,
+        set_current_run_id,
+        set_current_session_id,
     )
+
+    bot_token = set_current_bot_id(bot.id)
+    run_token = set_current_run_id(run.id)
+    session_token = set_current_session_id(run.session_id)
+    try:
+        result = await run_coding(
+            run, bot, coding, on_event=emit, is_cancelled=cancelled
+        )
+    finally:
+        reset_current_session_id(session_token)
+        reset_current_run_id(run_token)
+        reset_current_bot_id(bot_token)
+
     await _finalize(
         run.id,
         result.get("status") or "done",

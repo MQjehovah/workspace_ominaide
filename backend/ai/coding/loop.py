@@ -1,8 +1,9 @@
-"""Built-in coding agent engine.
+"""Built-in coding agent loop.
 
-This is the replaceable Agent implementation used by coding Runs. It edits the
-workspace through the sandboxed workspace tools, then hands git delivery to
-``ai.coding.delivery`` so branch/verify/commit policy stays in one place.
+Independent Coding Agent execution: it reasons over the project, edits the
+workspace through sandboxed tools, can search/run shared Agent Skills, and
+returns a final answer. Git verification, commit and push are intentionally not
+part of this loop.
 """
 import json
 from ai.llm.usage import tracked_create
@@ -11,7 +12,7 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-from ai.coding import delivery, workspace
+from ai.coding import workspace
 from ai.coding.context import build_project_context
 from ai.coding.prompts import TOOLS, coding_system_prompt
 from core.config.settings import settings
@@ -61,27 +62,6 @@ def _assistant_message(msg) -> dict:
     return message
 
 
-def _delivery_line(summary: dict | None) -> str:
-    if not summary:
-        return ""
-    if summary.get("skipped"):
-        return f"交付：跳过（{summary.get('detail') or summary.get('reason') or '无改动'}）"
-    parts = []
-    if summary.get("branch"):
-        parts.append(f"分支 {summary['branch']}")
-    if summary.get("commit"):
-        parts.append(f"提交 {summary['commit']}")
-    if summary.get("pushed"):
-        parts.append("已推送")
-    elif summary.get("push_error"):
-        parts.append("推送失败")
-    elif summary.get("push_skipped"):
-        parts.append("未推送")
-    if summary.get("pr_url"):
-        parts.append(f"PR {summary['pr_url']}")
-    return "交付：" + "，".join(parts) if parts else ""
-
-
 def _resolve_project(user_id: int, project: str) -> Path:
     root = projects_root(user_id)
     path = Path(project).expanduser().resolve()
@@ -92,6 +72,45 @@ def _resolve_project(user_id: int, project: str) -> Path:
     return path
 
 
+def _mcp_text(result) -> str:
+    parts = []
+    for item in getattr(result, "content", None) or []:
+        text = getattr(item, "text", None)
+        if text:
+            parts.append(text)
+    if parts:
+        return "\n".join(parts)
+    try:
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception:
+        return str(result)
+
+
+async def _execute_tool(run, project, name, args, identity, ssh_key):
+    """Run a coding tool. Skills are shared with the chat agent."""
+    if name == "skill_search":
+        from ai.mcp.tools.skills import skill_search
+
+        result = await skill_search(run.user_id, args)
+        return _mcp_text(result), bool(getattr(result, "isError", False))
+    if name == "skill_call":
+        from ai.mcp.tools.skills import skill_call
+
+        result = await skill_call(run.user_id, args)
+        return _mcp_text(result), bool(getattr(result, "isError", False))
+    result = await workspace.execute_tool(
+        str(project),
+        name,
+        args,
+        allow_push=False,
+        allow_commit=False,
+        identity=identity,
+        ssh_key=ssh_key,
+    )
+    text = json.dumps(result, ensure_ascii=False, default=str)[:MAX_TOOL_RESULT_CHARS]
+    return text, bool(result.get("error"))
+
+
 async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
     """Execute one coding run and return ``{status, output, error}``."""
     try:
@@ -100,9 +119,6 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
         return {"status": "failed", "output": None, "error": str(e)}
 
     developer = await _load_developer(run.user_id)
-    perms = developer.get("permissions", []) if developer else []
-    allow_commit = isinstance(perms, list) and "commit" in perms
-    allow_push = isinstance(perms, list) and "push" in perms and settings.coding_auto_push
     identity = {
         "name": (developer or {}).get("github_username"),
         "email": (developer or {}).get("github_email"),
@@ -128,6 +144,14 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
             },
             {"role": "user", "content": run.input or ""},
         ]
+        try:
+            from ai.skills.runtime import build_skill_context
+
+            skill_ctx = await build_skill_context(bot)
+            if skill_ctx:
+                messages.append({"role": "system", "content": skill_ctx})
+        except Exception as e:
+            log.debug("[coding] skill context failed: %s", e)
 
     client = AsyncOpenAI(
         api_key=settings.llm_api_key, base_url=settings.llm_base_url
@@ -197,16 +221,9 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            result = await workspace.execute_tool(
-                str(project),
-                tc.function.name,
-                args,
-                allow_push=False,
-                allow_commit=False,
-                identity=identity,
-                ssh_key=ssh_key,
+            text, is_error = await _execute_tool(
+                run, project, tc.function.name, args, identity, ssh_key
             )
-            text = json.dumps(result, ensure_ascii=False, default=str)[:MAX_TOOL_RESULT_CHARS]
             messages.append(
                 {"role": "tool", "tool_call_id": tc.id, "content": text}
             )
@@ -216,7 +233,7 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
                     "name": tc.function.name,
                     "arguments": args,
                     "result": text,
-                    "status": "error" if result.get("error") else "ok",
+                    "status": "error" if is_error else "ok",
                 },
             )
         await on_event("checkpoint", {"messages": messages})
@@ -241,27 +258,5 @@ async def run_coding(run, bot, coding_run, *, on_event, is_cancelled) -> dict:
         )
         return {"status": "done", "output": f"{note}\n\n{final}", "error": None}
 
-    summary = None
-    if allow_commit:
-        async def on_delivery(stage: str, ok, detail: str = "", extra: dict | None = None):
-            await on_event("delivery", {"stage": stage, "ok": ok, "detail": detail})
-
-        summary = await delivery.deliver(
-            str(project),
-            run.input or "",
-            developer=developer,
-            allow_commit=allow_commit,
-            allow_push=allow_push,
-            verify_command=(developer or {}).get("verify_command")
-            or settings.coding_verify_command,
-            branch_prefix=settings.coding_branch_prefix,
-            branch=coding_run.branch,
-            allow_protected_push=bool(coding_run.branch),
-            timeout_ms=settings.coding_command_timeout_ms,
-            emit=on_delivery,
-        )
-
-    line = _delivery_line(summary)
-    output = f"{final}\n\n---\n{line}" if line else final
     await on_event("checkpoint", {"messages": messages})
-    return {"status": "done", "output": output, "error": None}
+    return {"status": "done", "output": final, "error": None}
