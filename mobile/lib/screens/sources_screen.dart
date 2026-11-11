@@ -81,20 +81,27 @@ class _SourcesScreenState extends State<SourcesScreen> {
 
   String _resolveImageUrl(String src, String baseUrl) {
     final value = src.trim();
-    if (value.startsWith('//')) return 'https:$value';
-    if (value.startsWith('http://') || value.startsWith('https://')) {
+    String resolved;
+    if (value.startsWith('//')) {
+      resolved = 'https:$value';
+    } else if (value.startsWith('http://') || value.startsWith('https://')) {
+      resolved = value;
+    } else if (value.startsWith('data:')) {
       return value;
-    }
-    if (value.startsWith('data:')) return value;
-    final base = Uri.tryParse(baseUrl);
-    if (base != null) {
-      try {
-        return base.resolve(value).toString();
-      } catch (_) {
-        // Fall through to the original value.
+    } else {
+      final base = Uri.tryParse(baseUrl);
+      resolved = value;
+      if (base != null) {
+        try {
+          resolved = base.resolve(value).toString();
+        } catch (_) {
+          // Keep the original value.
+        }
       }
     }
-    return value;
+    // Some image CDNs negotiate AVIF/WebP from Accept headers. Force a
+    // broadly supported JPEG so iOS/Android can decode every article image.
+    return resolved.replaceAll('format,f_auto', 'format,jpg');
   }
 
   String _prepareArticleHtml(String html, String baseUrl) {
