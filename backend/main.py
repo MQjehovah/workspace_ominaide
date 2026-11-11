@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
     import ai.cognition.models  # noqa
     import ai.memory.models  # noqa
     import ai.entities.models  # noqa
+    import plugins.books.backend.models  # noqa
     import plugins.sources.backend.models  # noqa
     from app.objects import models as _object_models  # noqa: F401
     async with engine.begin() as conn:

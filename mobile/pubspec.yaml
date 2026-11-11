@@ -53,6 +53,7 @@ dependencies:
   pdfx: 2.6.0
   flutter_html: ^3.0.0
   html: 0.15.6
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:

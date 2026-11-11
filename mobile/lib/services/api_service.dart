@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/file_item.dart';
+import '../models/book_models.dart';
 import '../models/chat_session.dart';
 import '../models/brief_models.dart';
 import 'chat_stream_stub.dart'
@@ -402,6 +403,117 @@ class ApiService {
   Future<void> deleteVibecodingMachine(String machineId) async {
     final res = await delete('/vibecoding/machines/$machineId');
     if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  // -- Book library --
+  Future<List<Book>> listBooks() async {
+    final res = await get('/books');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    final data = decodeJson(res);
+    final items = (data is Map ? data['books'] : null) as List? ?? const [];
+    return items
+        .whereType<Map>()
+        .map((item) => Book.fromJson(Map<String, dynamic>.from(item)))
+        .where((book) => book.id > 0)
+        .toList();
+  }
+
+  Future<Book> addBook(int fileId) async {
+    // Extraction can take a while for large PDF/EPUB files.
+    final res = await _http.post(
+      Uri.parse('$_baseUrl/api/books'),
+      headers: _headers,
+      body: jsonEncode({'file_id': fileId}),
+      timeout: const Duration(minutes: 5),
+    );
+    if (res.statusCode != 201 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return Book.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<BookDetail> bookDetail(int bookId) async {
+    final res = await _http.get(
+      Uri.parse('$_baseUrl/api/books/$bookId/content'),
+      headers: _headers,
+      timeout: const Duration(seconds: 90),
+    );
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return BookDetail.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<Book> updateBookProgress(
+    int bookId, {
+    required int position,
+    required double progress,
+    String? status,
+  }) async {
+    final res = await put('/books/$bookId/progress', {
+      'position': position,
+      'progress': progress.clamp(0.0, 1.0),
+      if (status != null) 'status': status,
+    });
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    return Book.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<void> deleteBook(int bookId) async {
+    final res = await delete('/books/$bookId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  Future<List<BookBookmark>> listBookBookmarks(int bookId) async {
+    final res = await get('/books/$bookId/bookmarks');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    final data = decodeJson(res);
+    final items = (data is Map ? data['bookmarks'] : null) as List? ?? const [];
+    return items
+        .whereType<Map>()
+        .map((item) => BookBookmark.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<BookBookmark> addBookBookmark(
+    int bookId, {
+    required int position,
+    String label = '',
+    String note = '',
+  }) async {
+    final res = await post('/books/$bookId/bookmarks', {
+      'position': position,
+      'label': label,
+      'note': note,
+    });
+    if (res.statusCode != 201 && res.statusCode != 200) {
+      throw Exception(_extractError(res));
+    }
+    return BookBookmark.fromJson(_asMap(decodeJson(res)));
+  }
+
+  Future<void> deleteBookBookmark(int bookId, int bookmarkId) async {
+    final res = await delete('/books/$bookId/bookmarks/$bookmarkId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
+  /// Upload an ebook into /books and return the created file id.
+  Future<int> uploadBookFile(String path, String filename) async {
+    final uri = Uri.parse(
+      '$_baseUrl/api/files/upload/direct?folder_path=%2Fbooks',
+    );
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll(_authHeaders)
+      ..files.add(
+          await http.MultipartFile.fromPath('file', path, filename: filename));
+    final streamed = await _http.send(
+      request,
+      timeout: const Duration(minutes: 10),
+    );
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+    final data = decodeJson(res);
+    final id = data['id'];
+    if (id is num) return id.toInt();
+    throw Exception('上传失败');
   }
 
   Future<List<dynamic>> listVibecodingMachines() async {

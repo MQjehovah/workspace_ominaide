@@ -136,6 +136,12 @@ List<SpaceGroupSpec> buildSpaceCatalog({
           color: blue,
         ),
         const SpaceItemSpec(
+          key: 'books',
+          label: '书库',
+          icon: Icons.menu_book_outlined,
+          color: orange,
+        ),
+        const SpaceItemSpec(
           key: 'lab',
           label: '实验室',
           icon: Icons.science_outlined,
