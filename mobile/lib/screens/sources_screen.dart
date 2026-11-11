@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/article_image.dart';
 
 class SourcesScreen extends StatefulWidget {
   const SourcesScreen({super.key});
@@ -81,27 +82,45 @@ class _SourcesScreenState extends State<SourcesScreen> {
 
   String _resolveImageUrl(String src, String baseUrl) {
     final value = src.trim();
-    String resolved;
-    if (value.startsWith('//')) {
-      resolved = 'https:$value';
-    } else if (value.startsWith('http://') || value.startsWith('https://')) {
-      resolved = value;
-    } else if (value.startsWith('data:')) {
+    if (value.startsWith('//')) return 'https:$value';
+    if (value.startsWith('data:')) return value;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
       return value;
-    } else {
-      final base = Uri.tryParse(baseUrl);
-      resolved = value;
-      if (base != null) {
-        try {
-          resolved = base.resolve(value).toString();
-        } catch (_) {
-          // Keep the original value.
-        }
+    }
+    final base = Uri.tryParse(baseUrl);
+    if (base != null) {
+      try {
+        return base.resolve(value).toString();
+      } catch (_) {
+        // Keep the original value.
       }
     }
-    // Keep the CDN's original image transformation. Forcing format,jpg
-    // returns HTTP 400 on some image hosts.
-    return resolved;
+    return value;
+  }
+
+  /// The IT Home CDN negotiates WebP/AVIF from the `Accept` header through
+  /// its `x-bce-process=image/format,f_auto` transform. Some mobile decoders
+  /// fail on those, so drop only the image-processing query to get the
+  /// original uploaded JPEG/PNG.
+  String _originalImageUrl(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.queryParameters.containsKey('x-bce-process')) {
+      return url;
+    }
+    final params = Map<String, String>.from(uri.queryParameters)
+      ..remove('x-bce-process');
+    final query = params.entries
+        .map((entry) =>
+            '${Uri.encodeQueryComponent(entry.key)}=${Uri.encodeQueryComponent(entry.value)}')
+        .join('&');
+    return uri.replace(query: query).toString();
+  }
+
+  List<String> _imageCandidates(String src, String baseUrl) {
+    final resolved = _resolveImageUrl(src, baseUrl);
+    if (resolved.isEmpty) return const [];
+    final original = _originalImageUrl(resolved);
+    return original == resolved ? [resolved] : [original, resolved];
   }
 
   String _prepareArticleHtml(String html, String baseUrl) {
@@ -115,8 +134,24 @@ class _SourcesScreenState extends State<SourcesScreen> {
         final resolved =
             _resolveImageUrl(src, baseUrl).replaceAll('"', '&quot;');
         final alt = (_htmlAttr(tag, ['alt']) ?? '').replaceAll('"', '&quot;');
-        return '<img src="$resolved" alt="$alt" '
-            'style="width:100%;height:auto;display:block;margin:8px 0;" />';
+        return '<img src="$resolved" alt="$alt" />';
+      },
+    );
+  }
+
+  /// flutter_html's built-in image renderer feeds the CSS width value straight
+  /// into `Image.network(width: ...)`, so a `100%` style becomes 100 logical
+  /// pixels. Render article images ourselves to keep them full width and to
+  /// retry with the original asset when a CDN transform fails.
+  ImageExtension _articleImageExtension(String baseUrl) {
+    return ImageExtension(
+      builder: (context) {
+        final src = context.attributes['src'];
+        if (src == null || src.isEmpty) return const SizedBox.shrink();
+        return ArticleImage(
+          candidates: _imageCandidates(src, baseUrl),
+          alt: context.attributes['alt'] ?? '',
+        );
       },
     );
   }
@@ -216,6 +251,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
                     child: Html(
                       data: rawHtml,
                       doNotRenderTheseTags: const {'script', 'style', 'iframe'},
+                      extensions: [_articleImageExtension(link)],
                       onLinkTap: (url, attributes, element) {
                         if (url != null && url.isNotEmpty) {
                           _openLink(url);
@@ -250,9 +286,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
                           textDecoration: TextDecoration.underline,
                         ),
                         'img': Style(
-                          width: Width(100, Unit.percent),
-                          display: Display.block,
-                          margin: Margins.only(top: 8, bottom: 8),
+                          margin: Margins.only(top: 4, bottom: 4),
                         ),
                         'blockquote': Style(
                           margin: Margins.only(top: 8, bottom: 8),
