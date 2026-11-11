@@ -19,6 +19,7 @@ let notifTimer: any = null
 const updateDialog = ref(false)
 const updateInfo = ref<any>({})
 const updateStatus = ref<any>({ status: 'idle' })
+const appVersion = ref('')
 let removeUpdateListener: (() => void) | null = null
 
 async function toggleNotifDropdown() {
@@ -167,7 +168,10 @@ function updateStatusText(status: any) {
   return '点击检查更新'
 }
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    appVersion.value = (await window.mqbox?.update?.info?.())?.version || ''
+  } catch { appVersion.value = '' }
   loadPlugins()
   removeUpdateListener = window.mqbox?.update?.onStatus?.((status: any) => {
     updateStatus.value = status
@@ -190,6 +194,7 @@ onUnmounted(() => {
     <div class="title-bar">
       <BrandMark class="app-mark" />
       <span class="title-text">OmniAide</span>
+      <span v-if="appVersion" class="title-ver">v{{ appVersion }}</span>
       <div class="title-actions">
         <button class="title-btn" @click="handleClose">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -228,6 +233,7 @@ onUnmounted(() => {
       </div>
 
       <div v-if="showUserMenu" class="user-menu" @click.stop>
+        <div class="menu-version">OmniAide v{{ appVersion || '—' }}</div>
         <button class="menu-item" @click="showUserMenu = false; openSearch()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> 搜索
         </button>
@@ -318,6 +324,8 @@ onUnmounted(() => {
 .title-bar { height:34px; background:transparent; display:flex; align-items:center; justify-content:space-between; padding:0 14px; -webkit-app-region:drag; }
 .app-mark { width: 18px; height: 18px; flex-shrink: 0; border-radius: 5px; overflow: hidden; }
 .title-text { font-size:13px; color:#6b7280; font-weight:600; letter-spacing:0.5px; }
+.title-ver { font-size:10px; color:#9aa3b2; font-weight:500; margin-left:6px; }
+.menu-version { padding:8px 12px 6px; font-size:10.5px; color:#9aa3b2; border-bottom:1px solid #eef1f5; margin-bottom:4px; }
 .title-actions { display:flex; gap:8px; -webkit-app-region:no-drag; }
 .title-btn { width:26px; height:26px; border-radius:13px; background:#e4e9f0; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#6b7280; box-shadow:3px 3px 6px rgba(163,177,198,0.5),-3px -3px 6px rgba(255,255,255,0.75); }
 .title-btn:hover { background:#f0f3f8; color:#e11d48; }

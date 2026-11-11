@@ -108,6 +108,24 @@ class VibecodingService {
     );
   }
 
+  /// Create a new OpenCode session in the given project directory.
+  void createSession({
+    required String requestId,
+    required String directory,
+    String? title,
+    String? machineId,
+  }) {
+    _request(
+      'session.create',
+      requestId: requestId,
+      machineId: machineId,
+      payload: {
+        'directory': directory,
+        if (title != null && title.isNotEmpty) 'title': title,
+      },
+    );
+  }
+
   /// Continue an existing OpenCode session with new input.
   void sendPrompt({
     required String requestId,

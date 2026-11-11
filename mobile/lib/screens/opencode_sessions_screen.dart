@@ -33,6 +33,9 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
   bool _loading = true;
   String? _error;
   String? _pending;
+  String? _pendingCreate;
+  String? _projectsRequest;
+  List<Map<String, dynamic>> _projects = [];
   String? _serverUrl;
   DateTime _loadedAt = DateTime.now();
 
@@ -67,7 +70,23 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
 
   void _onConnectionChanged() {
     if (!mounted) return;
-    if (_service.connected.value) _scheduleLoad();
+    if (_service.connected.value) {
+      _scheduleLoad();
+      _requestProjects();
+    }
+  }
+
+  void _requestProjects() {
+    if (!_service.connected.value) return;
+    if (_projectsRequest != null) return;
+    final requestId = _service.newRequestId();
+    _projectsRequest = requestId;
+    _service.requestProjects(requestId: requestId, machineId: _machineId);
+    Timer(const Duration(seconds: 8), () {
+      if (mounted && _projectsRequest == requestId) {
+        setState(() => _projectsRequest = null);
+      }
+    });
   }
 
   Future<void> _loadMachines() async {
@@ -139,8 +158,24 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
       });
       return;
     }
+    if (msg['type'] == 'projects.response') {
+      final requestId = (msg['request_id'] ?? '').toString();
+      if (requestId.isEmpty || requestId != _projectsRequest) return;
+      _projectsRequest = null;
+      final projects = ((msg['projects'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .where((item) => (item['path'] ?? '').toString().isNotEmpty)
+          .toList();
+      setState(() => _projects = projects);
+      return;
+    }
     if (msg['type'] == 'oc.response') {
       final requestId = (msg['request_id'] ?? '').toString();
+      if (requestId.isNotEmpty && requestId == _pendingCreate) {
+        _handleCreateResponse(msg);
+        return;
+      }
       if (requestId.isEmpty || requestId != _pending) return;
       _timeout?.cancel();
       final ok = msg['ok'] == true;
@@ -174,6 +209,209 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
         (msg['event'] ?? '') == 'sessions.changed') {
       _loadSessions();
     }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openNewSessionSheet() async {
+    if (!_service.connected.value) {
+      _snack('未连接到服务器，请检查网络');
+      return;
+    }
+    _requestProjects();
+    if (_projects.isEmpty) {
+      for (var i = 0; i < 12 && _projects.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (!mounted) return;
+      }
+    }
+    if (!mounted) return;
+
+    final palette = AppPalette.of(context);
+    final titleController = TextEditingController();
+    final directoryController = TextEditingController(
+      text: _projects.isNotEmpty
+          ? (_projects.first['path'] ?? '').toString()
+          : '',
+    );
+    var manual = _projects.isEmpty;
+    var selected = directoryController.text;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheet) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                0,
+                20,
+                MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '新建 OpenCode 会话',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: palette.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '会话会在桌面端的 OpenCode 2 里创建，随后可直接继续对话。',
+                    style: TextStyle(fontSize: 11.5, color: palette.muted),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '项目目录',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: palette.ink,
+                          ),
+                        ),
+                      ),
+                      if (_projects.isNotEmpty)
+                        TextButton(
+                          onPressed: () => setSheet(() => manual = !manual),
+                          child: Text(manual ? '选择项目' : '手动输入'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  if (!manual && _projects.isNotEmpty)
+                    DropdownButtonFormField<String>(
+                      value: _projects.any((p) => p['path'] == selected)
+                          ? selected
+                          : null,
+                      isExpanded: true,
+                      items: _projects
+                          .map(
+                            (project) => DropdownMenuItem<String>(
+                              value: (project['path'] ?? '').toString(),
+                              child: Text(
+                                '${project['name'] ?? ''} · ${project['path'] ?? ''}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12.5),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        selected = value ?? '';
+                        directoryController.text = selected;
+                        setSheet(() {});
+                      },
+                      decoration: InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    )
+                  else
+                    TextField(
+                      controller: directoryController,
+                      style: const TextStyle(fontSize: 12.5),
+                      decoration: InputDecoration(
+                        hintText: '例如 /Users/you/project 或 C:\\code\\project',
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: titleController,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: '会话标题（可选）',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        final directory = directoryController.text.trim();
+                        if (directory.isEmpty) {
+                          _snack('请选择或输入项目目录');
+                          return;
+                        }
+                        Navigator.of(context).pop();
+                        _createSession(directory, titleController.text.trim());
+                      },
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('创建并打开'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    titleController.dispose();
+    directoryController.dispose();
+  }
+
+  void _createSession(String directory, String title) {
+    final requestId = _service.newRequestId();
+    setState(() => _pendingCreate = requestId);
+    _service.createSession(
+      requestId: requestId,
+      machineId: _machineId,
+      directory: directory,
+      title: title,
+    );
+    Timer(const Duration(seconds: 30), () {
+      if (!mounted || _pendingCreate != requestId) return;
+      setState(() => _pendingCreate = null);
+      _snack('创建超时。请确认桌面端 OpenCode 2 已安装并启动');
+    });
+  }
+
+  void _handleCreateResponse(Map<String, dynamic> msg) {
+    setState(() => _pendingCreate = null);
+    if (msg['ok'] != true) {
+      _snack((msg['error'] ?? '创建会话失败').toString());
+      return;
+    }
+    final data = msg['data'];
+    final raw = data is Map ? data['session'] : null;
+    if (raw is Map) {
+      final session = OpenCodeSession.fromJson(Map<String, dynamic>.from(raw));
+      if (session.id.isNotEmpty) {
+        _openSession(session);
+        _loadSessions();
+        return;
+      }
+    }
+    _snack('创建成功，但桌面端没有返回会话信息');
+    _loadSessions();
   }
 
   String _machineName(Map<String, dynamic> machine) {
@@ -218,6 +456,17 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
                 backgroundColor: palette.card,
               ),
             ),
+          ),
+          IconButton(
+            tooltip: '新建会话',
+            onPressed: _pendingCreate == null ? _openNewSessionSheet : null,
+            icon: _pendingCreate == null
+                ? const Icon(Icons.add_circle_outline_rounded)
+                : const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
           ),
           IconButton(
             tooltip: '刷新',
@@ -291,8 +540,11 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
               setState(() {
                 _machineId = id;
                 _sessions = [];
+                _projects = [];
+                _projectsRequest = null;
               });
               _loadSessions();
+              _requestProjects();
             },
             avatar: Icon(
               Icons.computer_rounded,

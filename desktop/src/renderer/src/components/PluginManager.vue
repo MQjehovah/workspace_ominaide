@@ -7,6 +7,7 @@
           <button :class="{ active: tab === 'marketplace' }" @click="tab = 'marketplace'; loadMarketplace()">插件市场</button>
           <button :class="{ active: tab === 'shortcuts' }" @click="tab = 'shortcuts'">快捷键</button>
         </div>
+        <span v-if="appVersion" class="app-ver">v{{ appVersion }}</span>
         <button class="close-btn" @click="close">✕</button>
       </div>
 
@@ -28,9 +29,10 @@
           <div class="plugin-info">
             <span class="plugin-name">
               {{ p.manifest?.displayName || p.id }}
+              <span class="plugin-ver">v{{ p.manifest?.version || p.version || '—' }}</span>
               <span v-if="privacyNote(p.id)" class="privacy-tag" :title="privacyNote(p.id)">会读取本地数据</span>
             </span>
-            <span class="plugin-desc">{{ p.manifest?.description || '' }}{{ p.manifest?.version ? ' · v' + p.manifest.version : '' }}</span>
+            <span class="plugin-desc">{{ p.manifest?.description || '' }}</span>
             <span v-if="privacyNote(p.id)" class="privacy-note">{{ privacyNote(p.id) }}</span>
           </div>
           <div class="plugin-actions">
@@ -53,8 +55,12 @@
             <div class="plugin-dot" :style="{ background: isInstalled(p.id) ? '#28A745' : '#ccc' }"></div>
           </div>
           <div class="plugin-info">
-            <span class="plugin-name">{{ p.displayName }}</span>
-            <span class="plugin-desc">{{ p.description }} · v{{ p.version }}</span>
+            <span class="plugin-name">
+              {{ p.displayName }}
+              <span class="plugin-ver market">最新 v{{ p.version }}</span>
+              <span v-if="installedVersion(p.id)" class="plugin-ver current">当前 v{{ installedVersion(p.id) }}</span>
+            </span>
+            <span class="plugin-desc">{{ p.description }}</span>
           </div>
           <div class="plugin-actions">
             <button v-if="installingId === p.id" class="key-badge" disabled style="color:#999">安装中...</button>
@@ -112,6 +118,7 @@ const marketplacePlugins = ref<any[]>([])
 const marketplaceLoading = ref(false)
 const marketplaceError = ref('')
 const installingId = ref('')
+const appVersion = ref('')
 const builtinShortcuts = ref<any[]>([])
 const customShortcuts = ref<any[]>([])
 const showAddForm = ref(false)
@@ -185,6 +192,11 @@ async function loadMarketplace() {
 
 function isInstalled(id: string) {
   return plugins.value.some(p => p.id === id)
+}
+
+function installedVersion(id: string): string {
+  const plugin = plugins.value.find(p => p.id === id)
+  return plugin?.manifest?.version || plugin?.version || ''
 }
 
 function versionParts(value?: string): number[] {
@@ -297,6 +309,10 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 .plugin-dot { width:8px; height:8px; border-radius:4px; }
 .plugin-info { flex:1; }
 .plugin-name { font-size:13px; font-weight:500; display:block; }
+.plugin-ver { display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px; background:#eef2f7; color:#6b7280; font-size:10px; font-weight:500; line-height:16px; vertical-align:middle; }
+.plugin-ver.market { background:#eaf3ff; color:#2f6fbf; }
+.plugin-ver.current { background:#eefaf1; color:#1f8b4c; }
+.app-ver { flex-shrink:0; margin-right:8px; font-size:11px; color:#9aa3b2; -webkit-app-region:no-drag; }
 .privacy-banner { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; background:#f5f9ff; border:1px solid #d9e9ff; border-radius:10px; padding:10px 12px; margin-bottom:10px; }
 .privacy-title { font-size:13px; font-weight:600; color:#1a1a2e; }
 .privacy-desc { font-size:11px; color:#7a8290; line-height:1.6; margin-top:4px; }
