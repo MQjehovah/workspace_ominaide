@@ -67,6 +67,53 @@ class _SourcesScreenState extends State<SourcesScreen> {
     }
   }
 
+  String? _htmlAttr(String tag, List<String> names) {
+    for (final name in names) {
+      final match = RegExp(
+        '$name\\s*=\\s*["\']([^"\']*)["\']',
+        caseSensitive: false,
+      ).firstMatch(tag);
+      final value = match?.group(1)?.trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  String _resolveImageUrl(String src, String baseUrl) {
+    final value = src.trim();
+    if (value.startsWith('//')) return 'https:$value';
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    if (value.startsWith('data:')) return value;
+    final base = Uri.tryParse(baseUrl);
+    if (base != null) {
+      try {
+        return base.resolve(value).toString();
+      } catch (_) {
+        // Fall through to the original value.
+      }
+    }
+    return value;
+  }
+
+  String _prepareArticleHtml(String html, String baseUrl) {
+    if (html.trim().isEmpty) return '';
+    return html.replaceAllMapped(
+      RegExp(r'<img\b[^>]*>', caseSensitive: false),
+      (match) {
+        final tag = match.group(0) ?? '';
+        final src = _htmlAttr(tag, ['data-src', 'data-original', 'src']);
+        if (src == null) return '';
+        final resolved =
+            _resolveImageUrl(src, baseUrl).replaceAll('"', '&quot;');
+        final alt = (_htmlAttr(tag, ['alt']) ?? '').replaceAll('"', '&quot;');
+        return '<img src="$resolved" alt="$alt" '
+            'style="width:100%;height:auto;display:block;margin:8px 0;" />';
+      },
+    );
+  }
+
   String _formatPublished(dynamic value) {
     final text = (value ?? '').toString().trim();
     if (text.isEmpty) return '';
@@ -97,7 +144,10 @@ class _SourcesScreenState extends State<SourcesScreen> {
     final link = (entry['link'] ?? '').toString().trim();
     final content = (entry['content'] ?? '').toString().trim();
     final summary = (entry['summary'] ?? '').toString().trim();
-    final rawHtml = content.isNotEmpty ? content : summary;
+    final rawHtml = _prepareArticleHtml(
+      content.isNotEmpty ? content : summary,
+      link,
+    );
 
     await showModalBottomSheet<void>(
       context: context,
@@ -192,7 +242,11 @@ class _SourcesScreenState extends State<SourcesScreen> {
                           color: palette.primary,
                           textDecoration: TextDecoration.underline,
                         ),
-                        'img': Style(width: Width(100, Unit.percent)),
+                        'img': Style(
+                          width: Width(100, Unit.percent),
+                          display: Display.block,
+                          margin: Margins.only(top: 8, bottom: 8),
+                        ),
                         'blockquote': Style(
                           margin: Margins.only(top: 8, bottom: 8),
                           padding: HtmlPaddings.only(left: 12),
