@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/vibecoding_models.dart';
 import '../services/api_service.dart';
 import '../services/vibecoding_service.dart';
+import 'opencode_sessions_screen.dart';
 import 'vibecoding_task_screen.dart';
 
 class VibecodingScreen extends StatefulWidget {
@@ -49,7 +50,8 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
     setState(() {});
     if (_service.connected.value && !_projectsRequested) {
       _projectsRequested = true;
-      _service.requestProjects(requestId: 'proj-${DateTime.now().millisecondsSinceEpoch}');
+      _service.requestProjects(
+          requestId: 'proj-${DateTime.now().millisecondsSinceEpoch}');
     }
   }
 
@@ -71,17 +73,20 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
     switch (msg['type']) {
       case 'device.status':
         setState(() {
-          _machines = ((msg['machines'] as List?) ?? (msg['devices'] as List?) ?? [])
-              .whereType<Map>()
-              .map((d) => VibecodingMachine.fromJson(Map<String, dynamic>.from(d)))
-              .toList();
+          _machines =
+              ((msg['machines'] as List?) ?? (msg['devices'] as List?) ?? [])
+                  .whereType<Map>()
+                  .map((d) =>
+                      VibecodingMachine.fromJson(Map<String, dynamic>.from(d)))
+                  .toList();
         });
         break;
       case 'tasks.snapshot':
         setState(() {
           for (final item in (msg['tasks'] as List?) ?? []) {
             if (item is Map) {
-              final t = VibecodingTask.fromJson(Map<String, dynamic>.from(item));
+              final t =
+                  VibecodingTask.fromJson(Map<String, dynamic>.from(item));
               _tasks[t.taskId] = t;
             }
           }
@@ -94,7 +99,8 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
         setState(() {
           _projects = ((msg['projects'] as List?) ?? [])
               .whereType<Map>()
-              .map((p) => VibecodingProject.fromJson(Map<String, dynamic>.from(p)))
+              .map((p) =>
+                  VibecodingProject.fromJson(Map<String, dynamic>.from(p)))
               .toList();
           _tools = Map<String, bool>.from(msg['tools'] ?? {});
           if (_projects.isNotEmpty &&
@@ -102,7 +108,8 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
                   !_projects.any((p) => p.path == _selectedProject))) {
             _selectedProject = _projects.first.path;
           }
-          final available = _tools.entries.where((e) => e.value).map((e) => e.key).toSet();
+          final available =
+              _tools.entries.where((e) => e.value).map((e) => e.key).toSet();
           if (!available.contains(_selectedTool) && available.isNotEmpty) {
             _selectedTool = available.first;
           }
@@ -185,7 +192,8 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
       );
     });
     _service.ensureConnected();
-    _service.dispatchTask(taskId: taskId, tool: _selectedTool, project: project, input: input);
+    _service.dispatchTask(
+        taskId: taskId, tool: _selectedTool, project: project, input: input);
     _inputController.clear();
   }
 
@@ -203,9 +211,20 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
       appBar: AppBar(
         title: const Text('VibeCoding'),
         actions: [
+          IconButton(
+            tooltip: 'OpenCode 会话',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const OpenCodeSessionsScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.terminal_rounded),
+          ),
           Chip(
-            avatar: Icon(online ? Icons.link : Icons.link_off, size: 16, color: online ? Colors.green : scheme.outline),
-            label: Text(online ? '已连接' : '离线', style: const TextStyle(fontSize: 12)),
+            avatar: Icon(online ? Icons.link : Icons.link_off,
+                size: 16, color: online ? Colors.green : scheme.outline),
+            label: Text(online ? '已连接' : '离线',
+                style: const TextStyle(fontSize: 12)),
             visualDensity: VisualDensity.compact,
           ),
           const SizedBox(width: 8),
@@ -223,12 +242,18 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
             if (_machines.isNotEmpty) ..._buildMachineCard(scheme),
             _buildDispatchCard(scheme),
             const SizedBox(height: 16),
-            Text('最近任务', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: scheme.primary)),
+            Text('最近任务',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.primary)),
             const SizedBox(height: 8),
             if (_sortedTasks.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 32),
-                child: Center(child: Text('暂无任务，先在上方派发一个', style: TextStyle(color: scheme.outline))),
+                child: Center(
+                    child: Text('暂无任务，先在上方派发一个',
+                        style: TextStyle(color: scheme.outline))),
               )
             else
               ..._sortedTasks.map((t) => _taskTile(t, scheme)),
@@ -248,10 +273,18 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
             children: _machines
                 .map((d) => Row(
                       children: [
-                        const Icon(Icons.computer, size: 18, color: Colors.green),
+                        const Icon(Icons.computer,
+                            size: 18, color: Colors.green),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(d.name, style: const TextStyle(fontSize: 13))),
-                        Text(d.activeTask == null ? '空闲' : '执行中', style: TextStyle(fontSize: 12, color: d.activeTask == null ? scheme.outline : scheme.primary)),
+                        Expanded(
+                            child: Text(d.name,
+                                style: const TextStyle(fontSize: 13))),
+                        Text(d.activeTask == null ? '空闲' : '执行中',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: d.activeTask == null
+                                    ? scheme.outline
+                                    : scheme.primary)),
                       ],
                     ))
                 .toList(),
@@ -276,19 +309,27 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
               children: [
                 Icon(Icons.bolt, size: 18, color: scheme.primary),
                 const SizedBox(width: 6),
-                const Text('派发新任务', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                const Text('派发新任务',
+                    style:
+                        TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
               ],
             ),
             const SizedBox(height: 10),
             if (_projects.isEmpty)
-              Text('未获取到项目列表（桌面插件未连接或未扫描项目）', style: TextStyle(fontSize: 12, color: scheme.outline))
+              Text('未获取到项目列表（桌面插件未连接或未扫描项目）',
+                  style: TextStyle(fontSize: 12, color: scheme.outline))
             else
               DropdownButtonFormField<String>(
                 value: _selectedProject,
                 isDense: true,
-                decoration: const InputDecoration(labelText: '项目', border: OutlineInputBorder(), isDense: true),
+                decoration: const InputDecoration(
+                    labelText: '项目',
+                    border: OutlineInputBorder(),
+                    isDense: true),
                 items: _projects
-                    .map((p) => DropdownMenuItem(value: p.path, child: Text(p.name, overflow: TextOverflow.ellipsis)))
+                    .map((p) => DropdownMenuItem(
+                        value: p.path,
+                        child: Text(p.name, overflow: TextOverflow.ellipsis)))
                     .toList(),
                 onChanged: (v) => setState(() => _selectedProject = v),
               ),
@@ -317,7 +358,10 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: (_selectedProject != null && _inputController.text.trim().isNotEmpty) ? _dispatch : null,
+                onPressed: (_selectedProject != null &&
+                        _inputController.text.trim().isNotEmpty)
+                    ? _dispatch
+                    : null,
                 icon: const Icon(Icons.send_rounded, size: 18),
                 label: const Text('派发到桌面执行'),
               ),
@@ -379,7 +423,9 @@ class _VibecodingScreenState extends State<VibecodingScreen> {
   String _formatMeta(VibecodingTask t) {
     if (t.durationMs != null) {
       final s = t.durationMs! / 1000;
-      return s >= 60 ? '${(s / 60).toStringAsFixed(1)}min' : '${s.toStringAsFixed(1)}s';
+      return s >= 60
+          ? '${(s / 60).toStringAsFixed(1)}min'
+          : '${s.toStringAsFixed(1)}s';
     }
     final ts = t.startedTs;
     if (ts == null) return '';

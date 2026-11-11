@@ -61,6 +61,17 @@ async def rename_machine(
     return _machine_out(row, set(host_channel.machine_ids(user["id"])))
 
 
+@router.get("/api/vibecoding/tasks")
+async def list_vibecoding_tasks(
+    limit: int = 50,
+    user: dict = Depends(get_current_user),
+):
+    """Recent vibecoding tasks for cold-start replay on thin clients."""
+    from core.wschannel.vibecoding import recent_tasks
+
+    return {"tasks": recent_tasks(limit)}
+
+
 @router.websocket("/ws/host")
 async def host_channel_ws(websocket: WebSocket):
     """The single multiplexed channel for every client.

@@ -56,5 +56,97 @@ class VibecodingService {
         if (machineId != null && machineId.isNotEmpty) 'machine_id': machineId,
       });
 
+  String newRequestId() =>
+      'r-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}-${DateTime.now().microsecondsSinceEpoch % 10000}';
+
+  void _request(
+    String action, {
+    required String requestId,
+    required Map<String, dynamic> payload,
+    String? machineId,
+  }) {
+    _send({
+      'type': 'oc.request',
+      'request_id': requestId,
+      'action': action,
+      'payload': payload,
+      if (machineId != null && machineId.isNotEmpty) 'machine_id': machineId,
+    });
+  }
+
+  /// List OpenCode sessions on the selected desktop machine.
+  void requestSessions({
+    required String requestId,
+    String? machineId,
+    int limit = 100,
+  }) {
+    _request(
+      'sessions.list',
+      requestId: requestId,
+      machineId: machineId,
+      payload: {'limit': limit},
+    );
+  }
+
+  /// Fetch a page of messages. `cursor` loads the previous (older) page.
+  void requestHistory({
+    required String requestId,
+    required String sessionId,
+    String? machineId,
+    int limit = 60,
+    String? cursor,
+  }) {
+    _request(
+      'session.history',
+      requestId: requestId,
+      machineId: machineId,
+      payload: {
+        'session_id': sessionId,
+        'limit': limit,
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+  }
+
+  /// Continue an existing OpenCode session with new input.
+  void sendPrompt({
+    required String requestId,
+    required String sessionId,
+    required String text,
+    String? machineId,
+  }) {
+    _request(
+      'session.prompt',
+      requestId: requestId,
+      machineId: machineId,
+      payload: {'session_id': sessionId, 'text': text},
+    );
+  }
+
+  void interruptSession({
+    required String requestId,
+    required String sessionId,
+    String? machineId,
+  }) {
+    _request(
+      'session.interrupt',
+      requestId: requestId,
+      machineId: machineId,
+      payload: {'session_id': sessionId},
+    );
+  }
+
+  void requestOpenCodeStatus({
+    required String requestId,
+    String? machineId,
+  }) {
+    _request(
+      'server.status',
+      requestId: requestId,
+      machineId: machineId,
+      payload: const {},
+    );
+  }
+
   void stop() => _host.stop();
 }

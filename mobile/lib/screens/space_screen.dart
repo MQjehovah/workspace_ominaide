@@ -13,6 +13,7 @@ import 'agent_tasks_screen.dart';
 import 'automation_screen.dart';
 import 'device_screen.dart';
 import 'machine_screen.dart';
+import 'opencode_sessions_screen.dart';
 import 'dingtalk_conversations_screen.dart';
 import 'files_screen.dart';
 import 'goals_screen.dart';
@@ -264,6 +265,7 @@ class _SpaceScreenState extends State<SpaceScreen> {
       'music' => const MusicScreen(),
       'device' => const DeviceScreen(),
       'machine' => const MachineScreen(),
+      'sessions' => const OpenCodeSessionsScreen(),
       'lab' => const VibecodingScreen(),
       _ => null,
     };

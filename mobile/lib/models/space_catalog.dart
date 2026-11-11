@@ -130,6 +130,12 @@ List<SpaceGroupSpec> buildSpaceCatalog({
           color: green,
         ),
         const SpaceItemSpec(
+          key: 'sessions',
+          label: 'OpenCode',
+          icon: Icons.terminal_rounded,
+          color: blue,
+        ),
+        const SpaceItemSpec(
           key: 'lab',
           label: '实验室',
           icon: Icons.science_outlined,

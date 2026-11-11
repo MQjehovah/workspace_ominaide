@@ -57,9 +57,11 @@ def register_core_tools():
         tool_registry.register(tool, handler)
     for tool, handler in GATEWAY_TOOL_DEFS:
         tool_registry.register(tool, handler)
+    from core.wschannel import vibecoding as vibecoding_relay
     from core.wschannel.local_tools import register_channel
 
     register_channel()
+    vibecoding_relay.register_channel()
     tool_registry.register(
         MCPTool(
             name="search_files",

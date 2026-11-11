@@ -10,6 +10,7 @@ import { createChannelManager, CHANNEL_TYPES, type IncomingMessage } from './uti
 import { createVibeChannelClient, type VibeChannelClient } from './utils/channelClient'
 import { OutputParser, type ParsedEvent } from './utils/outputParser'
 import { runCodingAgent } from './utils/codingAgent'
+import { createOpenCodeBridge, type OpenCodeBridge } from './utils/opencodeBridge'
 
 type AgentTool = AiTool | 'omniaide'
 
@@ -26,6 +27,7 @@ let toolsCache: Record<AiTool, boolean> = { opencode: false, claude: false, code
 let activeAgent: { path: string; tool: AgentTool } | null = null
 let channelManager: any = null
 let reporter: VibeChannelClient | null = null
+let opencodeBridge: OpenCodeBridge | null = null
 let taskQueue: Promise<void> = Promise.resolve()
 let pluginCtx: any = null
 let latestCodingTaskId = ''
@@ -271,9 +273,16 @@ export default {
         handleControl(msg)
       } else if (msg?.type === 'projects.request') {
         handleProjectsRequest(msg)
+      } else if (msg?.type === 'oc.request') {
+        opencodeBridge?.handleRequest(msg)
       }
     })
     reporter.start()
+
+    // Bridge the local OpenCode 2 server (sessions/messages/streaming) to
+    // remote clients such as the mobile app.
+    opencodeBridge = createOpenCodeBridge(context, (msg) => reporter?.send(msg))
+    opencodeBridge.start()
 
     channelManager = createChannelManager(context.storage, async (msg: IncomingMessage) => {
       // Channel → agent run (session-aware), streamed to backend/mobile
@@ -494,6 +503,19 @@ export default {
     context.registerCommand('getBackendStatus', async () =>
       (await reporter?.status()) || { enabled: false, connected: false, machineId: '', queued: 0 })
 
+    context.registerCommand('getOpenCodeStatus', async () =>
+      (await opencodeBridge?.status()) || { available: false })
+
+    context.registerCommand('setOpenCodeServer', async (args: any) => {
+      try {
+        await context.storage.set('opencode_url', String(args?.url || '').trim())
+        await context.storage.set('opencode_password', String(args?.password || ''))
+        return true
+      } catch {
+        return false
+      }
+    })
+
     context.registerCommand('resetSession', async () => {
       resetSession()
       return true
@@ -600,6 +622,8 @@ export default {
   },
 
   deactivate() {
+    opencodeBridge?.stop()
+    opencodeBridge = null
     stopAllAcp()
     if (channelManager) channelManager.stopAll()
     reporter?.stop()
