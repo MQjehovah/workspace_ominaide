@@ -18,9 +18,38 @@ class _SourcesScreenState extends State<SourcesScreen> {
   List<Map<String, dynamic>> _entries = [];
   bool _loading = true;
   bool _error = false;
+  bool _onlyUnread = false;
 
   int get _unreadCount =>
       _entries.where((entry) => entry['read'] == false).length;
+
+  List<Map<String, dynamic>> get _visible => _onlyUnread
+      ? _entries.where((entry) => entry['read'] == false).toList()
+      : _entries;
+
+  String _preview(Map<String, dynamic> entry) {
+    final raw = (entry['summary'] ?? entry['content'] ?? '').toString();
+    if (raw.trim().isEmpty) return '';
+    var text = raw
+        .replaceAll(
+          RegExp(r'<(script|style)[^>]*>[\s\S]*?</\1>', caseSensitive: false),
+          ' ',
+        )
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&ldquo;', '“')
+        .replaceAll('&rdquo;', '”')
+        .replaceAll('&mdash;', '—')
+        .replaceAll('&hellip;', '…');
+    text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.length > 120) text = '${text.substring(0, 120)}…';
+    return text;
+  }
 
   @override
   void initState() {
@@ -332,6 +361,167 @@ class _SourcesScreenState extends State<SourcesScreen> {
     }
   }
 
+  Widget _filterChip(
+    AppPalette palette, {
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? palette.primary : palette.card,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? palette.primary : palette.line,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? Colors.white : palette.muted,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _entryTile(AppPalette palette, Map<String, dynamic> entry) {
+    final unread = entry['read'] == false;
+    final preview = _preview(entry);
+    final published = _formatPublished(entry['published']);
+    return AppCard(
+      onTap: () => _open(entry),
+      padding: EdgeInsets.zero,
+      color:
+          unread ? palette.primarySoft.withValues(alpha: 0.38) : palette.card,
+      borderColor:
+          unread ? palette.primary.withValues(alpha: 0.4) : palette.line,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 11, 13, 11),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 3,
+              height: 42,
+              margin: const EdgeInsets.only(top: 2, right: 10),
+              decoration: BoxDecoration(
+                color: unread ? palette.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          (entry['title'] ?? '').toString(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.4,
+                            fontWeight:
+                                unread ? FontWeight.w800 : FontWeight.w500,
+                            color: unread
+                                ? palette.ink
+                                : palette.ink.withValues(alpha: 0.62),
+                          ),
+                        ),
+                      ),
+                      if (unread) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: palette.primary,
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: const Text(
+                            '未读',
+                            style: TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (preview.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      preview,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        height: 1.5,
+                        color: unread
+                            ? palette.ink.withValues(alpha: 0.72)
+                            : palette.muted.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      if (unread) ...[
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: palette.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                      ],
+                      Expanded(
+                        child: Text(
+                          (entry['source_title'] ?? '资讯').toString(),
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            color: unread
+                                ? palette.primary
+                                : palette.muted.withValues(alpha: 0.85),
+                          ),
+                        ),
+                      ),
+                      if (published.isNotEmpty)
+                        Text(
+                          published,
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: palette.muted.withValues(alpha: 0.7),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -367,6 +557,26 @@ class _SourcesScreenState extends State<SourcesScreen> {
                 ),
               ],
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  _filterChip(
+                    palette,
+                    label: '全部 ${_entries.length}',
+                    selected: !_onlyUnread,
+                    onTap: () => setState(() => _onlyUnread = false),
+                  ),
+                  const SizedBox(width: 8),
+                  _filterChip(
+                    palette,
+                    label: '未读 $_unreadCount',
+                    selected: _onlyUnread,
+                    onTap: () => setState(() => _onlyUnread = true),
+                  ),
+                ],
+              ),
+            ),
             Expanded(
               child: _loading
                   ? Center(
@@ -382,17 +592,24 @@ class _SourcesScreenState extends State<SourcesScreen> {
                                 ErrorState(onRetry: _load),
                               ],
                             )
-                          : _entries.isEmpty
+                          : _visible.isEmpty
                               ? ListView(
                                   physics:
                                       const AlwaysScrollableScrollPhysics(),
-                                  children: const [
-                                    SizedBox(height: 50),
-                                    EmptyState(
-                                      icon: Icons.rss_feed_rounded,
-                                      title: '还没有内容',
-                                      subtitle: '在 Web 端添加资讯源后，内容会同步到这里。',
-                                    ),
+                                  children: [
+                                    const SizedBox(height: 50),
+                                    if (_onlyUnread)
+                                      EmptyState(
+                                        icon: Icons.mark_email_read_outlined,
+                                        title: '没有未读资讯',
+                                        subtitle: '全部内容都已读过了。',
+                                      )
+                                    else
+                                      const EmptyState(
+                                        icon: Icons.rss_feed_rounded,
+                                        title: '还没有内容',
+                                        subtitle: '在 Web 端添加资讯源后，内容会同步到这里。',
+                                      ),
                                   ],
                                 )
                               : ListView.builder(
@@ -400,73 +617,12 @@ class _SourcesScreenState extends State<SourcesScreen> {
                                       const AlwaysScrollableScrollPhysics(),
                                   padding:
                                       const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                                  itemCount: _entries.length,
+                                  itemCount: _visible.length,
                                   itemBuilder: (context, index) {
-                                    final entry = _entries[index];
+                                    final entry = _visible[index];
                                     return Padding(
                                       padding: const EdgeInsets.only(bottom: 8),
-                                      child: AppCard(
-                                        onTap: () => _open(entry),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              (entry['title'] ?? '').toString(),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w700,
-                                                color: palette.ink,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              (entry['summary'] ??
-                                                      entry['content'] ??
-                                                      '')
-                                                  .toString(),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 10.5,
-                                                height: 1.5,
-                                                color: palette.muted,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 5),
-                                            Row(
-                                              children: [
-                                                if (entry['read'] == false) ...[
-                                                  Container(
-                                                    width: 6,
-                                                    height: 6,
-                                                    decoration: BoxDecoration(
-                                                      color: palette.primary,
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 5),
-                                                ],
-                                                Expanded(
-                                                  child: Text(
-                                                    (entry['source_title'] ??
-                                                            '资讯')
-                                                        .toString(),
-                                                    style: TextStyle(
-                                                      fontSize: 9.5,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: palette.primary,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                      child: _entryTile(palette, entry),
                                     );
                                   },
                                 ),
