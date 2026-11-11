@@ -8,15 +8,16 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../services/api_service.dart';
+import '../services/clipboard_service.dart';
 import '../services/ocr_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 
 /// Fast capture composer.
 ///
-/// There is no "record type" step any more: type text, or attach a photo,
-/// video, recording or file, then send. The backend analyses and classifies
-/// everything afterwards.
+/// There is no "record type" step: type text (URLs can be pasted inline), or
+/// attach a photo, video, recording or file. The backend analyses and
+/// classifies everything afterwards.
 class QuickCaptureScreen extends StatefulWidget {
   const QuickCaptureScreen({
     super.key,
@@ -44,9 +45,8 @@ class _CaptureAttachment {
   final String path;
   final String name;
   final String mime;
-  final String kind; // image / video / audio / file / link
+  final String kind; // image / video / audio / file
 
-  bool get isLink => kind == 'link';
   bool get isImage => kind == 'image';
 }
 
@@ -70,14 +70,10 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
       _text.text = widget.initialText!;
     }
     if ((widget.initialUrl ?? '').isNotEmpty) {
-      _attachments.add(
-        _CaptureAttachment(
-          path: widget.initialUrl!,
-          name: widget.initialUrl!,
-          mime: 'text/uri-list',
-          kind: 'link',
-        ),
-      );
+      // Links are plain text now; the analyser picks them up later.
+      _text.text = _text.text.isEmpty
+          ? widget.initialUrl!
+          : '${_text.text}\n${widget.initialUrl!}';
     }
     if ((widget.initialImagePath ?? '').isNotEmpty) {
       _attachments.add(
@@ -223,43 +219,45 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     }
   }
 
-  Future<void> _addLink() async {
-    final controller = TextEditingController();
-    final value = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('添加链接'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.url,
-          decoration: const InputDecoration(hintText: 'https://…'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('添加'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    final url = (value ?? '').trim();
-    if (url.isEmpty) return;
-    if (_asUrl(url) == null) {
-      _toast('链接格式不对');
+  Future<void> _paste() async {
+    final payload = await ClipboardService().read();
+    if (payload.isEmpty) {
+      _toast('剪贴板里没有文字或图片');
       return;
     }
-    setState(() {
-      _attachments.add(
-        _CaptureAttachment(
-            path: url, name: url, mime: 'text/uri-list', kind: 'link'),
+    if (payload.hasImage) {
+      try {
+        final dir = await getTemporaryDirectory();
+        final mime = payload.mimeType ?? 'image/png';
+        final ext = mime.split('/').last.replaceAll('jpeg', 'jpg');
+        final path =
+            '${dir.path}/paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
+        await File(path).writeAsBytes(payload.imageBytes!);
+        if (!mounted) return;
+        _addPath(path, name: payload.name ?? '粘贴的图片.$ext', mime: mime);
+      } catch (e) {
+        _toast('粘贴图片失败：$e');
+      }
+    }
+    final text = payload.text;
+    if (text.isEmpty) return;
+    final value = _text.value;
+    final selection = value.selection;
+    if (selection.isValid) {
+      final next = value.text.replaceRange(
+        selection.start,
+        selection.end,
+        text,
       );
-    });
+      _text.value = TextEditingValue(
+        text: next,
+        selection: TextSelection.collapsed(
+          offset: selection.start + text.length,
+        ),
+      );
+    } else {
+      _text.text = value.text.isEmpty ? text : '${value.text}$text';
+    }
   }
 
   Future<void> _toggleRecording() async {
@@ -320,9 +318,10 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
   Future<void> _ocrFill(List<XFile> files) async {
     if (_text.text.trim().isNotEmpty) return;
     for (final file in files) {
-      if (!file.path.toLowerCase().endsWith('.png') &&
-          !file.path.toLowerCase().endsWith('.jpg') &&
-          !file.path.toLowerCase().endsWith('.jpeg')) {
+      final lower = file.path.toLowerCase();
+      if (!lower.endsWith('.png') &&
+          !lower.endsWith('.jpg') &&
+          !lower.endsWith('.jpeg')) {
         continue;
       }
       try {
@@ -335,16 +334,6 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
         // OCR is optional (iOS only today).
       }
     }
-  }
-
-  Uri? _asUrl(String value) {
-    final text = value.trim();
-    if (text.isEmpty || text.contains(RegExp(r'\s'))) return null;
-    final uri = Uri.tryParse(text);
-    if (uri == null) return null;
-    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
-    if (uri.host.isEmpty) return null;
-    return uri;
   }
 
   Future<void> _save() async {
@@ -360,46 +349,28 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     var textUsed = false;
     try {
       if (_attachments.isEmpty) {
-        final url = _asUrl(text);
-        if (url != null) {
-          await ApiService().createCapture(
-            kind: 'link',
-            url: url.toString(),
-            source: 'mobile',
-          );
-        } else {
-          await ApiService().createCapture(
-            kind: 'text',
-            text: text,
-            source: 'mobile',
-          );
-        }
+        await ApiService().createCapture(
+          kind: 'text',
+          text: text,
+          source: 'mobile',
+        );
         created = 1;
       } else {
         for (final attachment in _attachments) {
           final body = textUsed ? '' : text;
-          if (attachment.isLink) {
-            await ApiService().createCapture(
-              kind: 'link',
-              url: attachment.path,
-              text: body,
-              source: 'mobile',
-            );
-          } else {
-            final file = File(attachment.path);
-            final size = await file.length();
-            if (size > _maxBytes) {
-              throw Exception('${attachment.name} 超过 25MB');
-            }
-            final bytes = await file.readAsBytes();
-            await ApiService().uploadCapture(
-              bytes,
-              attachment.name,
-              text: body,
-              mimeType: attachment.mime,
-              source: 'mobile',
-            );
+          final file = File(attachment.path);
+          final size = await file.length();
+          if (size > _maxBytes) {
+            throw Exception('${attachment.name} 超过 25MB');
           }
+          final bytes = await file.readAsBytes();
+          await ApiService().uploadCapture(
+            bytes,
+            attachment.name,
+            text: body,
+            mimeType: attachment.mime,
+            source: 'mobile',
+          );
           textUsed = true;
           created++;
         }
@@ -453,7 +424,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                             color: palette.ink,
                           ),
                           decoration: InputDecoration(
-                            hintText: '想到什么就写下来…',
+                            hintText: '想到什么就写下来，也可以直接粘贴…',
                             hintStyle: TextStyle(
                               fontSize: 14,
                               color: palette.muted,
@@ -476,35 +447,90 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                             ],
                           ),
                         ],
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '支持粘贴文字或图片',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: palette.muted,
+                                ),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _paste,
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                foregroundColor: palette.primary,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                              ),
+                              icon: const Icon(
+                                Icons.content_paste_rounded,
+                                size: 14,
+                              ),
+                              label: const Text(
+                                '粘贴',
+                                style: TextStyle(fontSize: 11.5),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                  Row(
                     children: [
-                      _action(palette, Icons.photo_library_outlined, '相册',
-                          _pickFromGallery),
-                      _action(palette, Icons.photo_camera_outlined, '拍照',
-                          _takePhoto),
-                      _action(
-                          palette, Icons.videocam_outlined, '录像', _recordVideo),
-                      _action(
-                        palette,
-                        _recording
-                            ? Icons.stop_circle_outlined
-                            : Icons.mic_none_rounded,
-                        _recording ? '停止' : '录音',
-                        _toggleRecording,
-                        active: _recording,
+                      Expanded(
+                        child: _bigAction(
+                          palette,
+                          Icons.photo_camera_rounded,
+                          '拍照',
+                          _takePhoto,
+                        ),
                       ),
-                      _action(
-                          palette, Icons.attach_file_rounded, '文件', _pickFiles),
-                      _action(palette, Icons.link_rounded, '链接', _addLink),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _bigAction(
+                          palette,
+                          Icons.videocam_rounded,
+                          '录像',
+                          _recordVideo,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _bigAction(
+                          palette,
+                          _recording ? Icons.stop_rounded : Icons.mic_rounded,
+                          _recording ? '停止' : '录音',
+                          _toggleRecording,
+                          recording: _recording,
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      _smallAction(
+                        palette,
+                        Icons.photo_library_outlined,
+                        '相册',
+                        _pickFromGallery,
+                      ),
+                      _smallAction(
+                        palette,
+                        Icons.attach_file_rounded,
+                        '文件',
+                        _pickFiles,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _saving ? null : _save,
                     style: FilledButton.styleFrom(
@@ -525,8 +551,9 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      '不用先选类型，保存后会自动分析归类',
+                      '不用先选类型；文字里可以直接贴链接，保存后自动分析归类',
                       style: TextStyle(fontSize: 10.5, color: palette.muted),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ],
@@ -567,50 +594,66 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
               ),
             ),
           ),
-          TextButton(
-            onPressed: _stopRecording,
-            child: const Text('停止'),
-          ),
+          TextButton(onPressed: _stopRecording, child: const Text('停止')),
         ],
       ),
     );
   }
 
-  Widget _action(
+  Widget _bigAction(
     AppPalette palette,
     IconData icon,
     String label,
     Future<void> Function() onTap, {
-    bool active = false,
+    bool recording = false,
   }) {
+    final color = recording ? palette.accent : palette.primary;
     return Material(
-      color: active ? palette.primary : palette.card,
-      borderRadius: BorderRadius.circular(12),
+      color: color,
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: active ? palette.primary : palette.line),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+        child: SizedBox(
+          height: 52,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon,
-                  size: 17, color: active ? Colors.white : palette.primary),
-              const SizedBox(width: 6),
+              Icon(icon, size: 20, color: Colors.white),
+              const SizedBox(height: 3),
               Text(
                 label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: active ? Colors.white : palette.ink,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _smallAction(
+    AppPalette palette,
+    IconData icon,
+    String label,
+    Future<void> Function() onTap,
+  ) {
+    return Expanded(
+      child: TextButton.icon(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: palette.muted,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          visualDensity: VisualDensity.compact,
+        ),
+        icon: Icon(icon, size: 15),
+        label: Text(
+          label,
+          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500),
         ),
       ),
     );
@@ -622,12 +665,8 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
       'image' => Icons.image_outlined,
       'video' => Icons.videocam_outlined,
       'audio' => Icons.graphic_eq_rounded,
-      'link' => Icons.link_rounded,
       _ => Icons.insert_drive_file_outlined,
     };
-    final label = attachment.isLink
-        ? attachment.path.replaceFirst(RegExp(r'^https?://'), '')
-        : attachment.name;
     return Container(
       constraints: const BoxConstraints(maxWidth: 220),
       padding: const EdgeInsets.fromLTRB(8, 5, 4, 5),
@@ -655,7 +694,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              label,
+              attachment.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(

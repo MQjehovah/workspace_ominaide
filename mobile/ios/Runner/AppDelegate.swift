@@ -36,6 +36,7 @@ import Vision
     GeneratedPluginRegistrant.register(with: self)
     setupMediaChannel()
     setupOcrChannel()
+    setupClipboardChannel()
     setupShareChannel()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -50,6 +51,45 @@ import Vision
       return SwiftReceiveSharingIntentPlugin.instance.application(app, open: url, options: options)
     }
     return super.application(app, open: url, options: options)
+  }
+
+  private func setupClipboardChannel() {
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "omniaide/clipboard",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "readImage" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let pasteboard = UIPasteboard.general
+      guard pasteboard.hasImages, let image = pasteboard.image else {
+        result(nil)
+        return
+      }
+      var data = image.pngData()
+      var mime = "image/png"
+      var name = "clipboard.png"
+      if let png = data, png.count > 20 * 1024 * 1024,
+         let jpeg = image.jpegData(compressionQuality: 0.85) {
+        data = jpeg
+        mime = "image/jpeg"
+        name = "clipboard.jpg"
+      }
+      guard let payload = data else {
+        result(nil)
+        return
+      }
+      result([
+        "bytes": FlutterStandardTypedData(bytes: payload),
+        "mime": mime,
+        "name": name,
+      ])
+    }
   }
 
   private func setupShareChannel() {
