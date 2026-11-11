@@ -99,9 +99,9 @@ class _SourcesScreenState extends State<SourcesScreen> {
         }
       }
     }
-    // Some image CDNs negotiate AVIF/WebP from Accept headers. Force a
-    // broadly supported JPEG so iOS/Android can decode every article image.
-    return resolved.replaceAll('format,f_auto', 'format,jpg');
+    // Keep the CDN's original image transformation. Forcing format,jpg
+    // returns HTTP 400 on some image hosts.
+    return resolved;
   }
 
   String _prepareArticleHtml(String html, String baseUrl) {
