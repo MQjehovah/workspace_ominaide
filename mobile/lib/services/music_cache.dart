@@ -50,6 +50,24 @@ class MusicCache {
   File _targetFile(Directory dir, int fileId, String name) =>
       File('${dir.path}/${fileId}_${_safeName(name)}');
 
+  /// Return an already downloaded track, or null when it is not cached yet.
+  Future<File?> cachedTrack(int fileId, String name) async {
+    final dir = await _cacheDirectory();
+    final target = _targetFile(dir, fileId, name);
+    if (!await target.exists()) return null;
+    final length = await target.length();
+    if (length <= 0) {
+      try {
+        await target.delete();
+      } catch (_) {}
+      return null;
+    }
+    try {
+      await target.setLastModified(DateTime.now());
+    } catch (_) {}
+    return target;
+  }
+
   /// Return the cached track for [fileId], downloading it on first play.
   Future<File> cacheTrack(int fileId, String name) {
     return getOrDownload(fileId, name, download: (destination) async {
@@ -68,14 +86,14 @@ class MusicCache {
     try {
       final request = http.Request('GET', uri);
       request.headers.addAll(headers);
-      final response = await client
-          .send(request)
-          .timeout(const Duration(seconds: 30));
+      final response =
+          await client.send(request).timeout(const Duration(seconds: 30));
       if (response.statusCode != 200) {
         throw Exception('Download failed: ${response.statusCode}');
       }
       sink = destination.openWrite();
-      await for (final chunk in response.stream.timeout(const Duration(seconds: 120))) {
+      await for (final chunk
+          in response.stream.timeout(const Duration(seconds: 120))) {
         sink.add(chunk);
       }
       await sink.flush();

@@ -449,6 +449,24 @@ class ApiService {
     }
   }
 
+  /// Tokenized streaming URL with HTTP Range support, for audio/video playback.
+  Future<Uri> fileStreamUri(int fileId) async {
+    // Runs through the authenticated client so an expired token gets refreshed
+    // before we hand the URL to the platform player.
+    await _http.get(
+      Uri.parse('$_baseUrl/api/files/$fileId/download-url'),
+      headers: _headers,
+    );
+    final token = _token;
+    if (token == null || token.isEmpty) {
+      throw Exception('未登录');
+    }
+    return Uri.parse(
+      '$_baseUrl/api/files/$fileId/stream'
+      '?token=${Uri.encodeQueryComponent(token)}',
+    );
+  }
+
   /// Resolve the real download URL and headers without loading the bytes.
   /// Used by the music cache to stream large files to disk.
   Future<({Uri uri, Map<String, String> headers})> getFileDownloadRequest(
