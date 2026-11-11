@@ -116,7 +116,18 @@ async def _file_text(file_id: int) -> str:
             return ""
         async with async_session() as db:
             row = await db.get(File, file_id)
-        if row is None or (row.size or 0) > 20 * 1024 * 1024:
+        if row is None:
+            return ""
+        size = int(row.size or 0)
+        mime = (row.mime_type or "").lower()
+        if mime.startswith("audio/"):
+            if size > 300 * 1024 * 1024:
+                return ""
+            from ai.speech.asr import transcribe_minio_object
+
+            result = await transcribe_minio_object(row)
+            return _clean(str(result.get("text") or ""))
+        if size > 20 * 1024 * 1024:
             return ""
         data = await asyncio.to_thread(
             lambda: minio_client.get_object(row.bucket, row.object_key).read()

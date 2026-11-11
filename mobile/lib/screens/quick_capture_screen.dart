@@ -1,11 +1,22 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../services/api_service.dart';
 import '../services/ocr_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 
+/// Fast capture composer.
+///
+/// There is no "record type" step any more: type text, or attach a photo,
+/// video, recording or file, then send. The backend analyses and classifies
+/// everything afterwards.
 class QuickCaptureScreen extends StatefulWidget {
   const QuickCaptureScreen({
     super.key,
@@ -22,104 +33,385 @@ class QuickCaptureScreen extends StatefulWidget {
   State<QuickCaptureScreen> createState() => _QuickCaptureScreenState();
 }
 
+class _CaptureAttachment {
+  const _CaptureAttachment({
+    required this.path,
+    required this.name,
+    required this.mime,
+    required this.kind,
+  });
+
+  final String path;
+  final String name;
+  final String mime;
+  final String kind; // image / video / audio / file / link
+
+  bool get isLink => kind == 'link';
+  bool get isImage => kind == 'image';
+}
+
 class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
-  final _title = TextEditingController();
+  static const _maxBytes = 25 * 1024 * 1024;
+
   final _text = TextEditingController();
-  final _url = TextEditingController();
-  String _mode = 'text';
-  XFile? _image;
+  final _recorder = AudioRecorder();
+  final List<_CaptureAttachment> _attachments = [];
+
+  Timer? _timer;
+  Duration _elapsed = Duration.zero;
+  bool _recording = false;
   bool _saving = false;
+  String? _recordingPath;
 
   @override
   void initState() {
     super.initState();
-    if ((widget.initialUrl ?? '').isNotEmpty) {
-      _mode = 'link';
-      _url.text = widget.initialUrl!;
-    }
     if ((widget.initialText ?? '').isNotEmpty) {
       _text.text = widget.initialText!;
     }
+    if ((widget.initialUrl ?? '').isNotEmpty) {
+      _attachments.add(
+        _CaptureAttachment(
+          path: widget.initialUrl!,
+          name: widget.initialUrl!,
+          mime: 'text/uri-list',
+          kind: 'link',
+        ),
+      );
+    }
     if ((widget.initialImagePath ?? '').isNotEmpty) {
-      _mode = 'image';
-      _image = XFile(widget.initialImagePath!);
+      _attachments.add(
+        _CaptureAttachment(
+          path: widget.initialImagePath!,
+          name: widget.initialImagePath!.split('/').last,
+          mime: _mimeFor(widget.initialImagePath!),
+          kind: 'image',
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
-    _title.dispose();
+    _timer?.cancel();
     _text.dispose();
-    _url.dispose();
+    _recorder.dispose();
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-    setState(() => _image = picked);
-    try {
-      final text = await OcrService().recognize(picked.path);
-      if (text.trim().isNotEmpty && _text.text.trim().isEmpty) {
-        setState(() => _text.text = text.trim());
-      }
-    } catch (_) {
-      // OCR is optional and currently iOS-only.
+  String _stamp() {
+    final now = DateTime.now();
+    return '${now.month.toString().padLeft(2, '0')}'
+        '${now.day.toString().padLeft(2, '0')}_'
+        '${now.hour.toString().padLeft(2, '0')}'
+        '${now.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _mimeFor(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'heic':
+        return 'image/heic';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'mp4':
+        return 'video/mp4';
+      case 'mov':
+        return 'video/quicktime';
+      case 'm4v':
+        return 'video/x-m4v';
+      case 'm4a':
+        return 'audio/mp4';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'wav':
+        return 'audio/wav';
+      case 'aac':
+        return 'audio/aac';
+      case 'pdf':
+        return 'application/pdf';
+      default:
+        return 'application/octet-stream';
     }
   }
 
-  Future<void> _save() async {
-    setState(() => _saving = true);
-    try {
-      if (_mode == 'image') {
-        final file = _image;
-        if (file == null) {
-          _toast('请先选择图片');
-          return;
-        }
-        final bytes = await file.readAsBytes();
-        await ApiService().uploadCapture(
-          bytes,
-          file.name,
-          text: _text.text.trim(),
-          title: _title.text.trim(),
-        );
-      } else if (_mode == 'link') {
-        final url = _url.text.trim();
-        if (url.isEmpty) {
-          _toast('请填写链接');
-          return;
-        }
-        await ApiService().createCapture(
-          kind: 'link',
-          url: url,
-          text: _text.text.trim(),
-          title: _title.text.trim(),
-        );
-      } else {
-        final text = _text.text.trim();
-        if (text.isEmpty) {
-          _toast('请填写内容');
-          return;
-        }
-        await ApiService().createCapture(
-          kind: 'text',
-          text: text,
-          title: _title.text.trim(),
-        );
-      }
-      if (!mounted) return;
-      _toast('已收进随手记，正在分析');
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted) _toast('保存失败：$e');
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+  String _kindForMime(String mime) {
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+    if (mime.startsWith('audio/')) return 'audio';
+    return 'file';
   }
 
   void _toast(String text) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  void _addPath(String path, {String? name, String? mime}) {
+    if (_attachments.length >= 9) {
+      _toast('一次最多 9 个附件');
+      return;
+    }
+    final resolved = mime ?? _mimeFor(path);
+    setState(() {
+      _attachments.add(
+        _CaptureAttachment(
+          path: path,
+          name: name ?? path.split('/').last,
+          mime: resolved,
+          kind: _kindForMime(resolved),
+        ),
+      );
+    });
+  }
+
+  Future<void> _pickFromGallery() async {
+    try {
+      final files = await ImagePicker().pickMultiImage();
+      if (files.isEmpty) return;
+      for (final file in files) {
+        _addPath(file.path, name: file.name);
+      }
+      await _ocrFill(files);
+    } catch (e) {
+      _toast('选择图片失败：$e');
+    }
+  }
+
+  Future<void> _takePhoto() async {
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.camera);
+      if (file == null) return;
+      _addPath(file.path, name: file.name);
+      await _ocrFill([file]);
+    } catch (e) {
+      _toast('拍照失败：$e');
+    }
+  }
+
+  Future<void> _recordVideo() async {
+    try {
+      final file = await ImagePicker().pickVideo(
+        source: ImageSource.camera,
+        maxDuration: const Duration(minutes: 5),
+      );
+      if (file == null) return;
+      _addPath(file.path, name: file.name, mime: 'video/mp4');
+    } catch (e) {
+      _toast('录像失败：$e');
+    }
+  }
+
+  Future<void> _pickFiles() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+      if (result == null) return;
+      for (final file in result.files) {
+        final path = file.path;
+        if (path == null) continue;
+        _addPath(path, name: file.name);
+      }
+    } catch (e) {
+      _toast('选择文件失败：$e');
+    }
+  }
+
+  Future<void> _addLink() async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('添加链接'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(hintText: 'https://…'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final url = (value ?? '').trim();
+    if (url.isEmpty) return;
+    if (_asUrl(url) == null) {
+      _toast('链接格式不对');
+      return;
+    }
+    setState(() {
+      _attachments.add(
+        _CaptureAttachment(
+            path: url, name: url, mime: 'text/uri-list', kind: 'link'),
+      );
+    });
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_recording) {
+      await _stopRecording();
+      return;
+    }
+    try {
+      if (!await _recorder.hasPermission()) {
+        _toast('需要麦克风权限才能录音');
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path =
+          '${dir.path}/capture_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _recorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: path,
+      );
+      if (!mounted) return;
+      setState(() {
+        _recording = true;
+        _elapsed = Duration.zero;
+        _recordingPath = path;
+      });
+      _timer?.cancel();
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted && _recording) {
+          setState(() => _elapsed += const Duration(seconds: 1));
+        }
+      });
+    } catch (e) {
+      _toast('录音失败：$e');
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    if (!_recording) return;
+    _timer?.cancel();
+    String? path;
+    try {
+      path = await _recorder.stop();
+    } catch (_) {
+      path = _recordingPath;
+    }
+    if (!mounted) return;
+    setState(() {
+      _recording = false;
+      _recordingPath = null;
+    });
+    if (path == null) {
+      _toast('没有录到声音');
+      return;
+    }
+    _addPath(path, name: '录音_${_stamp()}.m4a', mime: 'audio/mp4');
+  }
+
+  Future<void> _ocrFill(List<XFile> files) async {
+    if (_text.text.trim().isNotEmpty) return;
+    for (final file in files) {
+      if (!file.path.toLowerCase().endsWith('.png') &&
+          !file.path.toLowerCase().endsWith('.jpg') &&
+          !file.path.toLowerCase().endsWith('.jpeg')) {
+        continue;
+      }
+      try {
+        final text = await OcrService().recognize(file.path);
+        if (text.trim().isNotEmpty && mounted && _text.text.trim().isEmpty) {
+          setState(() => _text.text = text.trim());
+          return;
+        }
+      } catch (_) {
+        // OCR is optional (iOS only today).
+      }
+    }
+  }
+
+  Uri? _asUrl(String value) {
+    final text = value.trim();
+    if (text.isEmpty || text.contains(RegExp(r'\s'))) return null;
+    final uri = Uri.tryParse(text);
+    if (uri == null) return null;
+    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
+    if (uri.host.isEmpty) return null;
+    return uri;
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    if (_recording) await _stopRecording();
+    final text = _text.text.trim();
+    if (_attachments.isEmpty && text.isEmpty) {
+      _toast('写点什么，或加张照片/录音');
+      return;
+    }
+    setState(() => _saving = true);
+    var created = 0;
+    var textUsed = false;
+    try {
+      if (_attachments.isEmpty) {
+        final url = _asUrl(text);
+        if (url != null) {
+          await ApiService().createCapture(
+            kind: 'link',
+            url: url.toString(),
+            source: 'mobile',
+          );
+        } else {
+          await ApiService().createCapture(
+            kind: 'text',
+            text: text,
+            source: 'mobile',
+          );
+        }
+        created = 1;
+      } else {
+        for (final attachment in _attachments) {
+          final body = textUsed ? '' : text;
+          if (attachment.isLink) {
+            await ApiService().createCapture(
+              kind: 'link',
+              url: attachment.path,
+              text: body,
+              source: 'mobile',
+            );
+          } else {
+            final file = File(attachment.path);
+            final size = await file.length();
+            if (size > _maxBytes) {
+              throw Exception('${attachment.name} 超过 25MB');
+            }
+            final bytes = await file.readAsBytes();
+            await ApiService().uploadCapture(
+              bytes,
+              attachment.name,
+              text: body,
+              mimeType: attachment.mime,
+              source: 'mobile',
+            );
+          }
+          textUsed = true;
+          created++;
+        }
+      }
+      if (!mounted) return;
+      _toast(created > 1 ? '已收进随手记 $created 条，稍后分析' : '已收进随手记，稍后分析');
+      Navigator.pop(context, true);
+    } catch (e) {
+      _toast('保存失败：${e.toString().replaceFirst('Exception: ', '')}');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -133,7 +425,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
             PageHeader(
               kicker: 'Capture',
               title: '随手记',
-              subtitle: '先收进来，稍后分析',
+              subtitle: '文字、照片、录像、录音，收进来就行',
               actions: [
                 RoundIconButton(
                   icon: Icons.close_rounded,
@@ -146,63 +438,242 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 children: [
                   AppCard(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: 'text', label: Text('文本'), icon: Icon(Icons.notes_rounded)),
-                            ButtonSegment(value: 'link', label: Text('链接'), icon: Icon(Icons.link_rounded)),
-                            ButtonSegment(value: 'image', label: Text('图片'), icon: Icon(Icons.image_rounded)),
-                          ],
-                          selected: {_mode},
-                          onSelectionChanged: (v) => setState(() => _mode = v.first),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _title,
-                          decoration: const InputDecoration(labelText: '标题（可选）'),
-                        ),
-                        if (_mode == 'link') ...[
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _url,
-                            keyboardType: TextInputType.url,
-                            decoration: const InputDecoration(labelText: '链接 URL'),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        if (_mode == 'image')
-                          OutlinedButton.icon(
-                            onPressed: _pickImage,
-                            icon: const Icon(Icons.photo_library_outlined),
-                            label: Text(_image?.name ?? '选择图片'),
-                          ),
-                        const SizedBox(height: 10),
                         TextField(
                           controller: _text,
-                          minLines: 5,
-                          maxLines: 12,
+                          autofocus: true,
+                          minLines: 4,
+                          maxLines: 10,
+                          style: TextStyle(
+                            fontSize: 15,
+                            height: 1.6,
+                            color: palette.ink,
+                          ),
                           decoration: InputDecoration(
-                            labelText: _mode == 'image' ? '图片说明（可选）' : '内容',
-                            alignLabelWithHint: true,
+                            hintText: '想到什么就写下来…',
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: palette.muted,
+                            ),
+                            border: InputBorder.none,
                           ),
                         ),
+                        if (_recording) ...[
+                          const SizedBox(height: 6),
+                          _recordingBar(palette),
+                        ],
+                        if (_attachments.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (var i = 0; i < _attachments.length; i++)
+                                _attachmentChip(palette, i),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _action(palette, Icons.photo_library_outlined, '相册',
+                          _pickFromGallery),
+                      _action(palette, Icons.photo_camera_outlined, '拍照',
+                          _takePhoto),
+                      _action(
+                          palette, Icons.videocam_outlined, '录像', _recordVideo),
+                      _action(
+                        palette,
+                        _recording
+                            ? Icons.stop_circle_outlined
+                            : Icons.mic_none_rounded,
+                        _recording ? '停止' : '录音',
+                        _toggleRecording,
+                        active: _recording,
+                      ),
+                      _action(
+                          palette, Icons.attach_file_rounded, '文件', _pickFiles),
+                      _action(palette, Icons.link_rounded, '链接', _addLink),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: _saving ? null : _save,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                    ),
                     icon: _saving
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.save_rounded),
-                    label: Text(_saving ? '保存中…' : '保存并分析'),
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.inbox_rounded),
+                    label: Text(_saving ? '保存中…' : '收进随手记'),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      '不用先选类型，保存后会自动分析归类',
+                      style: TextStyle(fontSize: 10.5, color: palette.muted),
+                    ),
                   ),
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _recordingBar(AppPalette palette) {
+    final minutes = _elapsed.inMinutes.toString().padLeft(2, '0');
+    final seconds = _elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: palette.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: palette.accent.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration:
+                BoxDecoration(color: palette.accent, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '正在录音  $minutes:$seconds',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: palette.accent,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _stopRecording,
+            child: const Text('停止'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _action(
+    AppPalette palette,
+    IconData icon,
+    String label,
+    Future<void> Function() onTap, {
+    bool active = false,
+  }) {
+    return Material(
+      color: active ? palette.primary : palette.card,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: active ? palette.primary : palette.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon,
+                  size: 17, color: active ? Colors.white : palette.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : palette.ink,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _attachmentChip(AppPalette palette, int index) {
+    final attachment = _attachments[index];
+    final icon = switch (attachment.kind) {
+      'image' => Icons.image_outlined,
+      'video' => Icons.videocam_outlined,
+      'audio' => Icons.graphic_eq_rounded,
+      'link' => Icons.link_rounded,
+      _ => Icons.insert_drive_file_outlined,
+    };
+    final label = attachment.isLink
+        ? attachment.path.replaceFirst(RegExp(r'^https?://'), '')
+        : attachment.name;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.fromLTRB(8, 5, 4, 5),
+      decoration: BoxDecoration(
+        color: palette.primarySoft,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (attachment.isImage)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.file(
+                File(attachment.path),
+                width: 26,
+                height: 26,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    Icon(icon, size: 15, color: palette.primary),
+              ),
+            )
+          else
+            Icon(icon, size: 15, color: palette.primary),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: palette.primary,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => setState(() => _attachments.removeAt(index)),
+            icon: Icon(Icons.close_rounded, size: 14, color: palette.primary),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+            padding: EdgeInsets.zero,
+            tooltip: '移除',
+          ),
+        ],
       ),
     );
   }
