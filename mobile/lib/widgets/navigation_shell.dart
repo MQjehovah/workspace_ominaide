@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'music_mini_player.dart';
+
 /// Four-tab application shell: 对话 / 工作台 / 空间 / 我的.
 class NavigationShell extends StatefulWidget {
   const NavigationShell({
@@ -62,16 +64,22 @@ class _NavigationShellState extends State<NavigationShell> {
             _loaded[i] ? widget.pages[i] : const SizedBox.shrink(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (value) {
-          setState(() {
-            _index = value;
-            if (value < _loaded.length) _loaded[value] = true;
-          });
-          widget.onTabChanged?.call(value);
-        },
-        destinations: _destinations,
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const MusicMiniPlayer(),
+          NavigationBar(
+            selectedIndex: _index,
+            onDestinationSelected: (value) {
+              setState(() {
+                _index = value;
+                if (value < _loaded.length) _loaded[value] = true;
+              });
+              widget.onTabChanged?.call(value);
+            },
+            destinations: _destinations,
+          ),
+        ],
       ),
     );
   }

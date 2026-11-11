@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'services/bot_selection_service.dart';
 import 'services/share_intent_service.dart';
+import 'services/music_player_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/quick_capture_screen.dart';
@@ -15,6 +16,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await appTheme.load();
   await ShareIntentService().init();
+  MusicPlayerService().initialize();
   ShareIntentService().onCapture = (capture) {
     final navigator = _navigatorKey.currentState;
     if (navigator == null || !ApiService().isLoggedIn) return;
@@ -102,16 +104,14 @@ class _SplashScreenState extends State<SplashScreen> {
       _pullRemoteAppearance();
     }
     if (!mounted) return;
-    final shared = ApiService().isLoggedIn
-        ? ShareIntentService().takePending()
-        : null;
+    final shared =
+        ApiService().isLoggedIn ? ShareIntentService().takePending() : null;
     ShareIntentService().markReady();
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => ApiService().isLoggedIn
-            ? const HomeScreen()
-            : const LoginScreen(),
+        builder: (_) =>
+            ApiService().isLoggedIn ? const HomeScreen() : const LoginScreen(),
       ),
     );
     if (shared != null) {
@@ -164,7 +164,8 @@ class _SplashScreenState extends State<SplashScreen> {
                   ),
                 ],
               ),
-              child: const Icon(Icons.auto_awesome, size: 34, color: Colors.white),
+              child:
+                  const Icon(Icons.auto_awesome, size: 34, color: Colors.white),
             ),
             const SizedBox(height: 18),
             Text(
