@@ -1202,6 +1202,27 @@ class ApiService {
   }
 
   // -- Audio --
+  /// Recent files across all folders (used by pickers, not folder browsing).
+  Future<List<FileItem>> listRecentFiles(
+      {int limit = 200, String? search}) async {
+    final size = limit.clamp(1, 200);
+    final params = <String, String>{'page_size': '$size'};
+    final query = (search ?? '').trim();
+    if (query.isNotEmpty) params['search'] = query;
+    final res = await _http.get(
+      Uri.parse('$_baseUrl/api/files').replace(queryParameters: params),
+      headers: _headers,
+    );
+    if (res.statusCode != 200) return [];
+    final data = decodeJson(res);
+    final items = (data['files'] as List?) ?? const [];
+    return items
+        .whereType<Map>()
+        .map((item) => FileItem.fromJson(Map<String, dynamic>.from(item)))
+        .where((file) => !file.isFolder)
+        .toList();
+  }
+
   Future<List<FileItem>> listAudioFiles() async {
     final res = await _http.get(
       Uri.parse('$_baseUrl/api/files?page_size=200'),

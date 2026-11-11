@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/book_models.dart';
+import '../models/file_item.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
@@ -41,6 +44,96 @@ class _BookLibraryScreenState extends State<BookLibraryScreen> {
       );
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _showAddMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_copy_outlined),
+              title: const Text('从文件库选择'),
+              subtitle: const Text('从已有的 MinIO 文件里挑选电子书'),
+              onTap: () => Navigator.pop(ctx, 'files'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_rounded),
+              title: const Text('上传本地文件'),
+              subtitle: const Text('从手机选择 EPUB / PDF / TXT / MD / DOCX'),
+              onTap: () => Navigator.pop(ctx, 'upload'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'files') {
+      await _addFromFileLibrary();
+    } else if (choice == 'upload') {
+      await _addBooks();
+    }
+  }
+
+  Future<void> _addFromFileLibrary() async {
+    if (_adding) return;
+    final selected = await showModalBottomSheet<List<int>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => _BookFilePicker(
+        existingFileIds: _books.map((book) => book.fileId).toSet(),
+      ),
+    );
+    if (selected == null || selected.isEmpty) return;
+    setState(() {
+      _adding = true;
+      _addingLabel = '0/${selected.length}';
+    });
+    var added = 0;
+    final errors = <String>[];
+    for (var i = 0; i < selected.length; i++) {
+      setState(() => _addingLabel = '${i + 1}/${selected.length}');
+      try {
+        await ApiService().addBook(selected[i]);
+        added++;
+      } catch (e) {
+        errors.add(
+            '文件 #${selected[i]}: ${e.toString().replaceFirst('Exception: ', '')}');
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _adding = false;
+      _addingLabel = '';
+    });
+    await _load();
+    if (!mounted) return;
+    if (added > 0) _toast('已加入书库 $added 本');
+    if (errors.isNotEmpty) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('部分文件未导入'),
+          content: SingleChildScrollView(
+            child: Text(
+              errors.join('\n\n'),
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
     }
   }
 
@@ -179,8 +272,8 @@ class _BookLibraryScreenState extends State<BookLibraryScreen> {
                 const SizedBox(width: 6),
                 RoundIconButton(
                   icon: Icons.add_rounded,
-                  tooltip: '从文件导入',
-                  onTap: _adding ? null : _addBooks,
+                  tooltip: '添加电子书',
+                  onTap: _adding ? null : _showAddMenu,
                 ),
                 const SizedBox(width: 6),
                 RoundIconButton(
@@ -229,9 +322,9 @@ class _BookLibraryScreenState extends State<BookLibraryScreen> {
                                 const SizedBox(height: 12),
                                 Center(
                                   child: FilledButton.icon(
-                                    onPressed: _addBooks,
+                                    onPressed: _showAddMenu,
                                     icon: const Icon(Icons.add_rounded),
-                                    label: const Text('从文件导入'),
+                                    label: const Text('添加电子书'),
                                   ),
                                 ),
                               ],
@@ -342,5 +435,233 @@ class _BookLibraryScreenState extends State<BookLibraryScreen> {
         ),
       ),
     );
+  }
+}
+
+class _BookFilePicker extends StatefulWidget {
+  const _BookFilePicker({required this.existingFileIds});
+
+  final Set<int> existingFileIds;
+
+  @override
+  State<_BookFilePicker> createState() => _BookFilePickerState();
+}
+
+class _BookFilePickerState extends State<_BookFilePicker> {
+  static const _extensions = [
+    '.epub',
+    '.pdf',
+    '.txt',
+    '.md',
+    '.markdown',
+    '.docx',
+  ];
+
+  final _search = TextEditingController();
+  final Set<int> _selected = {};
+  List<FileItem> _files = [];
+  bool _loading = true;
+  Timer? _searchTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _search.addListener(_onQueryChanged);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchTimer?.cancel();
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _onQueryChanged() {
+    setState(() {});
+    _searchTimer?.cancel();
+    _searchTimer = Timer(const Duration(milliseconds: 450), _load);
+  }
+
+  bool _isEbook(FileItem file) {
+    final name = file.originalName.toLowerCase();
+    return _extensions.any(name.endsWith);
+  }
+
+  Future<void> _load() async {
+    final query = _search.text.trim();
+    if (_files.isEmpty && mounted) setState(() => _loading = true);
+    List<FileItem> files = [];
+    try {
+      files = await ApiService().listRecentFiles(
+        limit: 200,
+        search: query.isEmpty ? null : query,
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _files = files.where(_isEbook).toList()
+        ..sort((a, b) => a.originalName.compareTo(b.originalName));
+      _loading = false;
+    });
+  }
+
+  List<FileItem> get _visible {
+    final query = _search.text.trim().toLowerCase();
+    if (query.isEmpty) return _files;
+    return _files
+        .where((file) => file.originalName.toLowerCase().contains(query))
+        .toList();
+  }
+
+  bool _isExisting(FileItem file) => widget.existingFileIds.contains(file.id);
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+    final visible = _visible;
+    return FractionallySizedBox(
+      heightFactor: 0.86,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 8, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '从文件库选择',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: palette.ink,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              controller: _search,
+              decoration: InputDecoration(
+                hintText: '搜索文件名…',
+                prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : visible.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            _files.isEmpty
+                                ? '文件库里还没有 EPUB / PDF / TXT 等电子书。\n可以先用「上传本地文件」导入，或在文件模块上传。'
+                                : '没有匹配的文件',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.7,
+                              color: palette.muted,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        itemCount: visible.length,
+                        itemBuilder: (_, index) {
+                          final file = visible[index];
+                          final existing = _isExisting(file);
+                          final selected = _selected.contains(file.id);
+                          final name = file.originalName;
+                          final ext = name.contains('.')
+                              ? name.split('.').last.toUpperCase()
+                              : 'FILE';
+                          return CheckboxListTile(
+                            value: existing || selected,
+                            onChanged: existing
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      if (value == true) {
+                                        _selected.add(file.id);
+                                      } else {
+                                        _selected.remove(file.id);
+                                      }
+                                    });
+                                  },
+                            controlAffinity: ListTileControlAffinity.leading,
+                            title: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: existing ? palette.muted : palette.ink,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              existing
+                                  ? '已在书库'
+                                  : '$ext · ${_fmtSize(file.size)} · ${file.folderPath}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: palette.muted,
+                              ),
+                            ),
+                            secondary: Icon(
+                              Icons.menu_book_rounded,
+                              size: 18,
+                              color: existing ? palette.muted : palette.primary,
+                            ),
+                          );
+                        },
+                      ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _selected.isEmpty
+                      ? null
+                      : () => Navigator.pop(context, _selected.toList()),
+                  child: Text(
+                    _selected.isEmpty
+                        ? '选择要加入书库的文件'
+                        : '加入书库（${_selected.length}）',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }

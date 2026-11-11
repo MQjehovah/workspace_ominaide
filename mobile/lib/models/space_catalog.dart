@@ -112,6 +112,12 @@ List<SpaceGroupSpec> buildSpaceCatalog({
           icon: Icons.music_note_outlined,
           color: orange,
         ),
+        const SpaceItemSpec(
+          key: 'books',
+          label: '书库',
+          icon: Icons.menu_book_outlined,
+          color: orange,
+        ),
       ],
     ),
     SpaceGroupSpec(
@@ -134,12 +140,6 @@ List<SpaceGroupSpec> buildSpaceCatalog({
           label: 'OpenCode',
           icon: Icons.terminal_rounded,
           color: blue,
-        ),
-        const SpaceItemSpec(
-          key: 'books',
-          label: '书库',
-          icon: Icons.menu_book_outlined,
-          color: orange,
         ),
         const SpaceItemSpec(
           key: 'lab',
