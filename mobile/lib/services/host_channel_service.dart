@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
@@ -35,6 +36,20 @@ class HostChannelService {
     await _connect();
   }
 
+  /// The access token lives in secure storage; older builds kept it in
+  /// SharedPreferences. Reading only the legacy key made the WS silently
+  /// never connect, which surfaced as "离线" in every realtime screen.
+  Future<String?> _readToken() async {
+    try {
+      final value =
+          await const FlutterSecureStorage().read(key: 'omniaide.token');
+      if (value != null && value.isNotEmpty) return value;
+    } catch (_) {}
+    final prefs = await SharedPreferences.getInstance();
+    final legacy = prefs.getString('token');
+    return legacy == null || legacy.isEmpty ? null : legacy;
+  }
+
   Future<void> _connect() async {
     if (_stopped || _connecting || connected.value) return;
     _connecting = true;
@@ -44,7 +59,7 @@ class HostChannelService {
         _connecting = false;
         return;
       }
-      final token = prefs.getString('token');
+      final token = await _readToken();
       final serverUrl = normalizeServerUrl(
         prefs.getString('serverUrl') ?? kDefaultServerUrl,
       );
@@ -55,7 +70,8 @@ class HostChannelService {
       final wsUrl = serverUrl
           .replaceFirst('http://', 'ws://')
           .replaceFirst('https://', 'wss://');
-      final socket = await WebSocket.connect('$wsUrl/ws/host?token=$token&role=viewer');
+      final socket =
+          await WebSocket.connect('$wsUrl/ws/host?token=$token&role=viewer');
       if (_stopped) {
         await socket.close();
         _connecting = false;
