@@ -111,6 +111,16 @@ class MusicMiniPlayer extends StatelessWidget {
                             color: palette.ink,
                           ),
                         ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: '关闭播放器',
+                          onPressed: player.close,
+                          icon: Icon(
+                            Icons.close_rounded,
+                            size: 18,
+                            color: palette.muted,
+                          ),
+                        ),
                       ],
                     ),
                   ),

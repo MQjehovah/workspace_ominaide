@@ -301,6 +301,21 @@ class MusicPlayerService extends ChangeNotifier {
     }
   }
 
+  /// Stop playback and clear the queue, so the mini player disappears.
+  Future<void> close() async {
+    try {
+      await _player.stop();
+    } catch (_) {}
+    _queue = [];
+    _index = null;
+    _playing = false;
+    _buffering = false;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    NowPlayingService().clear();
+    notifyListeners();
+  }
+
   Future<void> stop() async {
     try {
       await _player.stop();
