@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api_service.dart';
@@ -66,47 +67,6 @@ class _SourcesScreenState extends State<SourcesScreen> {
     }
   }
 
-  String _htmlToText(String html) {
-    if (html.trim().isEmpty) return '';
-    var text = html
-        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'</p\s*>', caseSensitive: false), '\n\n')
-        .replaceAll(RegExp(r'</div\s*>', caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'</h[1-6]\s*>', caseSensitive: false), '\n\n')
-        .replaceAll(RegExp(r'<li[^>]*>', caseSensitive: false), '• ')
-        .replaceAll(RegExp(r'</li\s*>', caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'<[^>]+>'), '')
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&#x27;', "'")
-        .replaceAll('&ldquo;', '“')
-        .replaceAll('&rdquo;', '”')
-        .replaceAll('&mdash;', '—')
-        .replaceAll('&hellip;', '…');
-    text = text.replaceAllMapped(RegExp(r'&#(x?[0-9a-fA-F]+);'), (match) {
-      final raw = match.group(1) ?? '';
-      try {
-        final code = raw.startsWith('x') || raw.startsWith('X')
-            ? int.parse(raw.substring(1), radix: 16)
-            : int.parse(raw);
-        return String.fromCharCode(code);
-      } catch (_) {
-        return match.group(0) ?? '';
-      }
-    });
-    return text.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
-  }
-
-  String _articleText(Map<String, dynamic> entry) {
-    final content = (entry['content'] ?? '').toString().trim();
-    final summary = (entry['summary'] ?? '').toString().trim();
-    return _htmlToText(content.isNotEmpty ? content : summary);
-  }
-
   String _formatPublished(dynamic value) {
     final text = (value ?? '').toString().trim();
     if (text.isEmpty) return '';
@@ -135,7 +95,9 @@ class _SourcesScreenState extends State<SourcesScreen> {
     final sourceTitle = (entry['source_title'] ?? '资讯').toString();
     final published = _formatPublished(entry['published']);
     final link = (entry['link'] ?? '').toString().trim();
-    final body = _articleText(entry);
+    final content = (entry['content'] ?? '').toString().trim();
+    final summary = (entry['summary'] ?? '').toString().trim();
+    final rawHtml = content.isNotEmpty ? content : summary;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -183,14 +145,73 @@ class _SourcesScreenState extends State<SourcesScreen> {
                 const SizedBox(height: 14),
                 Divider(color: palette.line),
                 const SizedBox(height: 10),
-                SelectableText(
-                  body.isEmpty ? '暂无正文，可打开原文查看。' : body,
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.85,
-                    color: palette.ink,
+                if (rawHtml.isEmpty)
+                  SelectableText(
+                    '暂无正文，可打开原文查看。',
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.85,
+                      color: palette.ink,
+                    ),
+                  )
+                else
+                  SelectionArea(
+                    child: Html(
+                      data: rawHtml,
+                      doNotRenderTheseTags: const {'script', 'style', 'iframe'},
+                      onLinkTap: (url, attributes, element) {
+                        if (url != null && url.isNotEmpty) {
+                          _openLink(url);
+                        }
+                      },
+                      style: {
+                        'body': Style(
+                          margin: Margins.zero,
+                          padding: HtmlPaddings.zero,
+                          fontSize: FontSize(14),
+                          lineHeight: LineHeight(1.85),
+                          color: palette.ink,
+                        ),
+                        'p': Style(margin: Margins.only(bottom: 10)),
+                        'h1': Style(
+                          fontSize: FontSize(21),
+                          lineHeight: LineHeight(1.35),
+                          margin: Margins.only(bottom: 10),
+                        ),
+                        'h2': Style(
+                          fontSize: FontSize(18),
+                          lineHeight: LineHeight(1.4),
+                          margin: Margins.only(top: 14, bottom: 8),
+                        ),
+                        'h3': Style(
+                          fontSize: FontSize(16),
+                          lineHeight: LineHeight(1.45),
+                          margin: Margins.only(top: 12, bottom: 6),
+                        ),
+                        'a': Style(
+                          color: palette.primary,
+                          textDecoration: TextDecoration.underline,
+                        ),
+                        'img': Style(width: Width(100, Unit.percent)),
+                        'blockquote': Style(
+                          margin: Margins.only(top: 8, bottom: 8),
+                          padding: HtmlPaddings.only(left: 12),
+                          border: Border(
+                            left: BorderSide(color: palette.line, width: 3),
+                          ),
+                        ),
+                        'li': Style(margin: Margins.only(bottom: 4)),
+                        'code': Style(
+                          backgroundColor: palette.background,
+                          fontFamily: 'monospace',
+                        ),
+                        'pre': Style(
+                          backgroundColor: palette.background,
+                          padding: HtmlPaddings.all(10),
+                        ),
+                      },
+                    ),
                   ),
-                ),
                 if (link.isNotEmpty) ...[
                   const SizedBox(height: 18),
                   OutlinedButton.icon(
