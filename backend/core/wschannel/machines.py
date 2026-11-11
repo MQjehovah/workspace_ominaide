@@ -92,3 +92,19 @@ async def rename(user_id: int, machine_id: str, name: str | None) -> Machine | N
         await db.commit()
         await db.refresh(row)
         return row
+
+
+async def remove(user_id: int, machine_id: str) -> bool:
+    """Forget a machine (rename history, last seen). Only offline machines."""
+    async with async_session() as db:
+        row = (await db.execute(
+            select(Machine).where(
+                Machine.user_id == user_id,
+                Machine.machine_id == machine_id,
+            )
+        )).scalar_one_or_none()
+        if row is None:
+            return False
+        await db.delete(row)
+        await db.commit()
+        return True

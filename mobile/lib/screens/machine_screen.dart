@@ -75,7 +75,66 @@ class _MachineScreenState extends State<MachineScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('改名失败：${e.toString().replaceFirst('Exception: ', '')}')),
+        SnackBar(
+            content:
+                Text('改名失败：${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
+  Future<void> _delete(Map<String, dynamic> machine) async {
+    final online = machine['online'] == true || machine['status'] == 'online';
+    if (online) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('该设备当前在线，请先在电脑上退出 OmniAide 登录后再删除'),
+        ),
+      );
+      return;
+    }
+    final name = (machine['name'] ??
+            machine['default_name'] ??
+            machine['machine_id'] ??
+            '本地机器')
+        .toString();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除本地机器'),
+        content: Text('确定要从列表中删除「$name」吗？\n设备下次登录后会重新出现。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ApiService().deleteVibecodingMachine(
+        (machine['machine_id'] ?? '').toString(),
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已删除')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '删除失败：${e.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
       );
     }
   }
@@ -112,7 +171,8 @@ class _MachineScreenState extends State<MachineScreen> {
             ),
             Expanded(
               child: _loading
-                  ? Center(child: CircularProgressIndicator(color: palette.primary))
+                  ? Center(
+                      child: CircularProgressIndicator(color: palette.primary))
                   : RefreshIndicator(
                       onRefresh: _load,
                       color: palette.primary,
@@ -135,7 +195,8 @@ class _MachineScreenState extends State<MachineScreen> {
                               itemBuilder: (context, index) {
                                 final raw = _machines[index];
                                 final machine = raw is Map
-                                    ? raw.map((k, v) => MapEntry(k.toString(), v))
+                                    ? raw.map(
+                                        (k, v) => MapEntry(k.toString(), v))
                                     : <String, dynamic>{};
                                 final name = (machine['name'] ??
                                         machine['default_name'] ??
@@ -144,10 +205,11 @@ class _MachineScreenState extends State<MachineScreen> {
                                     .toString();
                                 final online = machine['online'] == true ||
                                     machine['status'] == 'online';
-                                final platform = (machine['platform'] ?? 'desktop')
-                                    .toString();
-                                final lastSeen = (machine['last_seen'] ?? '')
-                                    .toString();
+                                final platform =
+                                    (machine['platform'] ?? 'desktop')
+                                        .toString();
+                                final lastSeen =
+                                    (machine['last_seen'] ?? '').toString();
                                 final seenShort = lastSeen.length > 16
                                     ? lastSeen.substring(0, 16)
                                     : lastSeen;
@@ -162,7 +224,8 @@ class _MachineScreenState extends State<MachineScreen> {
                                           decoration: BoxDecoration(
                                             color: palette.success
                                                 .withValues(alpha: 0.12),
-                                            borderRadius: BorderRadius.circular(11),
+                                            borderRadius:
+                                                BorderRadius.circular(11),
                                           ),
                                           child: Icon(
                                             Icons.computer_outlined,
@@ -202,6 +265,19 @@ class _MachineScreenState extends State<MachineScreen> {
                                           icon: const Icon(Icons.edit_outlined,
                                               size: 16),
                                           tooltip: '重命名',
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                        IconButton(
+                                          onPressed: () => _delete(machine),
+                                          icon: Icon(
+                                            Icons.delete_outline_rounded,
+                                            size: 17,
+                                            color: online
+                                                ? palette.muted
+                                                    .withValues(alpha: 0.4)
+                                                : palette.accent,
+                                          ),
+                                          tooltip: online ? '在线设备不能删除' : '删除',
                                           visualDensity: VisualDensity.compact,
                                         ),
                                         SourcePill(

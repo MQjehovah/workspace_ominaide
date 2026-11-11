@@ -399,6 +399,11 @@ class ApiService {
     if (res.statusCode != 200) throw Exception(_extractError(res));
   }
 
+  Future<void> deleteVibecodingMachine(String machineId) async {
+    final res = await delete('/vibecoding/machines/$machineId');
+    if (res.statusCode != 200) throw Exception(_extractError(res));
+  }
+
   Future<List<dynamic>> listVibecodingMachines() async {
     try {
       final res = await _http.get(

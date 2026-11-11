@@ -72,6 +72,23 @@ async def list_vibecoding_tasks(
     return {"tasks": recent_tasks(limit)}
 
 
+@router.delete("/api/vibecoding/machines/{machine_id}")
+async def delete_machine(
+    machine_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Remove an offline machine from the local machine list."""
+    if machine_id in host_channel.machine_ids(user["id"]):
+        raise HTTPException(
+            status_code=409,
+            detail="该设备当前在线，请先在设备上退出登录后再删除",
+        )
+    removed = await machine_service.remove(user["id"], machine_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    return {"deleted": True, "machine_id": machine_id}
+
+
 @router.websocket("/ws/host")
 async def host_channel_ws(websocket: WebSocket):
     """The single multiplexed channel for every client.
