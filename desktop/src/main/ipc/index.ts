@@ -239,7 +239,13 @@ export function registerIpcHandlers() {
 
       const pluginsDir = join(app.getPath('userData'), 'plugins')
       const dest = join(pluginsDir, pluginId)
-      if (existsSync(dest)) return { success: false, error: '插件已存在' }
+      // An existing copy means "upgrade": stop the running process, then
+      // replace the files so the plugin market can ship new versions.
+      const upgrading = existsSync(dest)
+      if (upgrading) {
+        removePlugin(pluginId)
+        rmSync(dest, { recursive: true, force: true })
+      }
       mkdirSync(dest, { recursive: true })
 
       const zipPath = join(dest, 'plugin.zip')

@@ -30,7 +30,7 @@
               {{ p.manifest?.displayName || p.id }}
               <span v-if="privacyNote(p.id)" class="privacy-tag" :title="privacyNote(p.id)">会读取本地数据</span>
             </span>
-            <span class="plugin-desc">{{ p.manifest?.description || '' }}</span>
+            <span class="plugin-desc">{{ p.manifest?.description || '' }}{{ p.manifest?.version ? ' · v' + p.manifest.version : '' }}</span>
             <span v-if="privacyNote(p.id)" class="privacy-note">{{ privacyNote(p.id) }}</span>
           </div>
           <div class="plugin-actions">
@@ -57,8 +57,9 @@
             <span class="plugin-desc">{{ p.description }} · v{{ p.version }}</span>
           </div>
           <div class="plugin-actions">
-            <button v-if="isInstalled(p.id)" class="key-badge" disabled style="color:#28A745;border-color:#28A745">已安装</button>
-            <button v-else-if="installingId === p.id" class="key-badge" disabled style="color:#999">安装中...</button>
+            <button v-if="installingId === p.id" class="key-badge" disabled style="color:#999">安装中...</button>
+            <button v-else-if="isInstalled(p.id) && hasUpdate(p)" class="key-badge install-btn" @click="installFromMarket(p)">更新到 v{{ p.version }}</button>
+            <button v-else-if="isInstalled(p.id)" class="key-badge" disabled style="color:#28A745;border-color:#28A745">已安装</button>
             <button v-else class="key-badge install-btn" @click="installFromMarket(p)">安装</button>
           </div>
         </div>
@@ -184,6 +185,25 @@ async function loadMarketplace() {
 
 function isInstalled(id: string) {
   return plugins.value.some(p => p.id === id)
+}
+
+function versionParts(value?: string): number[] {
+  return String(value || '0').split(/[.\-+]/).map(part => parseInt(part, 10) || 0)
+}
+
+function hasUpdate(p: any): boolean {
+  const installed = plugins.value.find(x => x.id === p.id)
+  if (!installed) return false
+  const current = versionParts(installed.manifest?.version)
+  const next = versionParts(p.version)
+  const size = Math.max(current.length, next.length)
+  for (let i = 0; i < size; i++) {
+    const a = current[i] || 0
+    const b = next[i] || 0
+    if (b > a) return true
+    if (b < a) return false
+  }
+  return false
 }
 
 async function installFromMarket(p: any) {

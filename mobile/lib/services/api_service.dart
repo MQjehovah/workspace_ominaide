@@ -13,6 +13,7 @@ import 'file_save_stub.dart'
     if (dart.library.html) 'file_save_web.dart'
     if (dart.library.io) 'file_save_io.dart';
 import '../config.dart';
+import 'host_channel_service.dart';
 import 'token_utils.dart';
 
 /// Thin wrapper around a single long-lived [http.Client] so requests reuse
@@ -318,6 +319,8 @@ class ApiService {
     _refreshToken = null;
     _handlingUnauthorized = false;
     await _clearStoredToken();
+    // Tear down the shared realtime socket; it authenticates with the old token.
+    HostChannelService().stop();
     // Keep serverUrl so the next login pre-fills the server the user chose.
   }
 

@@ -28,10 +28,15 @@ class NotificationService {
     });
   }
 
+  /// Stop listening for notification pushes.
+  ///
+  /// The underlying [HostChannelService] connection is shared by every realtime
+  /// consumer (notifications, vibecoding, local tools). Tearing it down here
+  /// used to drop the vibecoding session stream whenever the home screen was
+  /// rebuilt, which showed up as "离线" in the remote session screen.
   void stop() {
     _stopped = true;
     _sub?.cancel();
     _sub = null;
-    HostChannelService().stop();
   }
 }

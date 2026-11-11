@@ -25,6 +25,7 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
   final VibecodingService _service = VibecodingService();
   StreamSubscription<Map<String, dynamic>>? _sub;
   Timer? _timeout;
+  Timer? _reconnect;
 
   List<Map<String, dynamic>> _machines = [];
   String? _machineId;
@@ -44,11 +45,21 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
     _machineId = widget.machineId;
     _loadMachines();
     _scheduleLoad();
+    _reconnect = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      if (_service.connected.value) {
+        _reconnect?.cancel();
+        _reconnect = null;
+        return;
+      }
+      _service.ensureConnected();
+    });
   }
 
   @override
   void dispose() {
     _timeout?.cancel();
+    _reconnect?.cancel();
     _service.connected.removeListener(_onConnectionChanged);
     _sub?.cancel();
     super.dispose();
