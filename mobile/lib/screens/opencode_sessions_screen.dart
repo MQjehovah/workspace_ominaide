@@ -108,7 +108,7 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
         _loading = false;
         _error = _machineId == null || _machineId!.isEmpty
             ? '没有在线的桌面设备。请启动 OmniAide 桌面端并启用 VibeCoding Proxy 插件'
-            : '桌面端没有响应。请确认 OmniAide 桌面端在线，且本机已启动 OpenCode 2';
+            : '桌面端没有响应。请确认 OmniAide 桌面端在线、VibeCoding Proxy 插件已升级到 1.3.0，且本机已启动 OpenCode 2';
       });
     });
   }
