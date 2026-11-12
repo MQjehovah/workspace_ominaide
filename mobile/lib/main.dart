@@ -8,9 +8,11 @@ import 'screens/home_screen.dart';
 import 'screens/quick_capture_screen.dart';
 import 'theme/app_theme.dart';
 import 'widgets/app_lock_gate.dart';
+import 'widgets/global_run_bubble.dart';
 
 final _navigatorKey = GlobalKey<NavigatorState>();
 final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+final _popupObserver = _PopupRouteObserver();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +59,7 @@ class OmniAideApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: _messengerKey,
+          navigatorObservers: [_popupObserver],
           theme: appTheme.light,
           darkTheme: appTheme.dark,
           themeMode: appTheme.mode,
@@ -70,7 +73,16 @@ class OmniAideApp extends StatelessWidget {
                 behavior: HitTestBehavior.translucent,
                 onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
                 child: AppLockGate(
-                  child: child ?? const SizedBox.shrink(),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      child ?? const SizedBox.shrink(),
+                      GlobalRunBubble(
+                        navigatorKey: _navigatorKey,
+                        popups: _popupObserver.popups,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -79,6 +91,40 @@ class OmniAideApp extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+/// Counts open popup routes (bottom sheets and dialogs) so the floating run
+/// bubble can hide while a modal is on screen instead of floating above it.
+class _PopupRouteObserver extends NavigatorObserver {
+  final ValueNotifier<int> popups = ValueNotifier<int>(0);
+
+  void _bump(int delta) {
+    popups.value = (popups.value + delta).clamp(0, 99).toInt();
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute) _bump(1);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute) _bump(-1);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute) _bump(-1);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (newRoute is PopupRoute && oldRoute is! PopupRoute) {
+      _bump(1);
+    } else if (newRoute is! PopupRoute && oldRoute is PopupRoute) {
+      _bump(-1);
+    }
   }
 }
 

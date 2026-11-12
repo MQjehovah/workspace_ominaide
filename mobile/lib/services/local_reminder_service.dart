@@ -77,6 +77,45 @@ class LocalReminderService {
         ),
       );
 
+  /// Ask for notification permission (idempotent). Called when the user starts
+  /// their first coding task so completion alerts can reach them later.
+  Future<bool> ensurePermission() async {
+    await init();
+    return _ensurePermission();
+  }
+
+  /// Show an immediate local notification, e.g. when a coding session
+  /// finishes while the app is in the background.
+  Future<void> showNow({
+    required String title,
+    required String body,
+    int id = 3001,
+  }) async {
+    try {
+      await init();
+      if (!await _ensurePermission()) return;
+      await _plugin.show(
+        id,
+        title,
+        body,
+        const NotificationDetails(
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+          android: AndroidNotificationDetails(
+            'omniaide_coding',
+            'OmniAide 编程任务',
+            channelDescription: '编程会话完成与失败提醒',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+        ),
+      );
+    } catch (_) {}
+  }
+
   Future<void> syncSchedule(List<Map<String, dynamic>> events) async {
     try {
       final now = DateTime.now();

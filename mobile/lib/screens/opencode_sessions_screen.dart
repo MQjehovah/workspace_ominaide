@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/opencode_models.dart';
 import '../services/api_service.dart';
+import '../services/opencode_run_monitor.dart';
 import '../services/vibecoding_service.dart';
 import '../theme/app_theme.dart';
 import 'opencode_session_screen.dart';
@@ -23,6 +24,7 @@ class OpenCodeSessionsScreen extends StatefulWidget {
 
 class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
   final VibecodingService _service = VibecodingService();
+  final OpenCodeRunMonitor _monitor = OpenCodeRunMonitor();
   StreamSubscription<Map<String, dynamic>>? _sub;
   Timer? _timeout;
   Timer? _reconnect;
@@ -46,6 +48,7 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
     super.initState();
     _sub = _service.stream.listen(_onMessage);
     _service.connected.addListener(_onConnectionChanged);
+    _monitor.runs.addListener(_onRunStateChanged);
     _service.ensureConnected();
     _machineId = widget.machineId;
     _loadMachines();
@@ -65,9 +68,14 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
   void dispose() {
     _timeout?.cancel();
     _reconnect?.cancel();
+    _monitor.runs.removeListener(_onRunStateChanged);
     _service.connected.removeListener(_onConnectionChanged);
     _sub?.cancel();
     super.dispose();
+  }
+
+  void _onRunStateChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onConnectionChanged() {
@@ -186,6 +194,7 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
       _timeout?.cancel();
       final ok = msg['ok'] == true;
       final data = msg['data'];
+      List<OpenCodeSession>? loaded;
       setState(() {
         _pending = null;
         _loading = false;
@@ -201,14 +210,17 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
             _serverUrl = (server['url'] ?? '').toString();
           }
           final sessions = (data['sessions'] as List?) ?? [];
-          _sessions = sessions
+          loaded = sessions
               .whereType<Map>()
               .map((item) =>
                   OpenCodeSession.fromJson(Map<String, dynamic>.from(item)))
               .where((session) => session.id.isNotEmpty)
               .toList();
+          _sessions = loaded!;
         }
       });
+      final sessions = loaded;
+      if (sessions != null) _monitor.trackSessions(sessions, _machineId);
       return;
     }
     if (msg['type'] == 'oc.event' &&
@@ -736,7 +748,18 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
     return '…/${parts[parts.length - 2]}/${parts.last}';
   }
 
+  bool _isBusy(OpenCodeSession session) {
+    final machineId = _machineId;
+    if (machineId != null &&
+        machineId.isNotEmpty &&
+        _monitor.wasTracked(machineId, session.id)) {
+      return _monitor.isRunning(machineId, session.id);
+    }
+    return session.busy;
+  }
+
   Widget _sessionTile(AppPalette palette, OpenCodeSession session) {
+    final busy = _isBusy(session);
     final meta = [
       if (session.agent.isNotEmpty) session.agent,
       if (session.model.isNotEmpty) session.model,
@@ -775,7 +798,7 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
                   children: [
                     Row(
                       children: [
-                        if (session.busy) ...[
+                        if (busy) ...[
                           Container(
                             width: 6,
                             height: 6,
@@ -804,7 +827,7 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
                     Text(
                       [
                         if (meta.isNotEmpty) meta,
-                        if (session.busy) '运行中' else _relative(session.updated),
+                        if (busy) '运行中' else _relative(session.updated),
                       ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

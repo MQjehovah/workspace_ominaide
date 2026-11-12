@@ -112,6 +112,14 @@ class HostChannelService {
     });
   }
 
+  /// Drop a possibly-dead socket and connect again. Used after the app returns
+  /// from the background: iOS can suspend the socket without delivering a
+  /// close event, leaving `connected` stuck at true.
+  Future<void> reconnect() async {
+    stop();
+    await ensureConnected();
+  }
+
   void send(String channel, Map<String, dynamic> msg) {
     try {
       _socket?.add(jsonEncode({'channel': channel, ...msg}));

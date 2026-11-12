@@ -516,6 +516,23 @@ class ApiService {
     throw Exception('上传失败');
   }
 
+  /// Last-known coding sessions across all desktop machines. Returns `null`
+  /// when the index cannot be read, so callers can distinguish "no sessions"
+  /// from "request failed".
+  Future<Map<String, dynamic>?> listCodingSessions() async {
+    try {
+      final res = await _http.get(
+        Uri.parse('$_baseUrl/api/vibecoding/sessions'),
+        headers: _authHeaders,
+      );
+      if (res.statusCode != 200) return null;
+      final data = decodeJson(res);
+      return data is Map ? Map<String, dynamic>.from(data) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<dynamic>> listVibecodingMachines() async {
     try {
       final res = await _http.get(

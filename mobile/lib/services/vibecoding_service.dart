@@ -180,5 +180,11 @@ class VibecodingService {
     );
   }
 
+  /// Heartbeat used to notice half-open sockets that never delivered a close
+  /// event (common after mobile network switches / background suspensions).
+  void ping() => _send({'type': 'ping'});
+
+  Future<void> reconnect() => _host.reconnect();
+
   void stop() => _host.stop();
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/opencode_models.dart';
+import '../services/opencode_run_monitor.dart';
 import '../services/vibecoding_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_bubble.dart';
@@ -25,6 +26,7 @@ class OpenCodeSessionScreen extends StatefulWidget {
 
 class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   final VibecodingService _service = VibecodingService();
+  final OpenCodeRunMonitor _monitor = OpenCodeRunMonitor();
   final TextEditingController _input = TextEditingController();
   final ScrollController _scroll = ScrollController();
 
@@ -52,6 +54,12 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     _running = widget.session.busy;
     _sub = _service.stream.listen(_onMessage);
     _service.connected.addListener(_onConnectionChanged);
+    _monitor.runs.addListener(_onRunStateChanged);
+    _monitor.trackSession(
+      widget.session,
+      widget.machineId,
+      running: widget.session.busy,
+    );
     _service.ensureConnected();
     _loadHistory();
   }
@@ -59,11 +67,21 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   @override
   void dispose() {
     _historyTimer?.cancel();
+    _monitor.runs.removeListener(_onRunStateChanged);
     _service.connected.removeListener(_onConnectionChanged);
     _sub?.cancel();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _onRunStateChanged() {
+    if (!mounted || !_running) return;
+    if (!_monitor.wasTracked(widget.machineId, widget.session.id)) return;
+    if (_monitor.isRunning(widget.machineId, widget.session.id)) return;
+    if (!_service.connected.value) return;
+    setState(() => _running = false);
+    _scheduleHistoryRefresh();
   }
 
   bool get _atBottom {
@@ -73,7 +91,13 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
 
   void _onConnectionChanged() {
     if (!mounted) return;
-    if (_service.connected.value && _messages.isEmpty) _loadHistory();
+    if (!_service.connected.value) return;
+    if (_messages.isEmpty) {
+      _loadHistory();
+    } else {
+      // Reconnect may have missed a completion or final text delta.
+      _scheduleHistoryRefresh();
+    }
   }
 
   Future<void> _loadHistory({String? cursor}) async {
@@ -206,6 +230,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       _pendingPrompt = null;
       if (!ok) {
         final error = (msg['error'] ?? '发送失败').toString();
+        _monitor.markStopped(widget.machineId, widget.session.id);
         if (mounted) {
           setState(() => _running = false);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -281,6 +306,13 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   void _send() {
     final text = _input.text.trim();
     if (text.isEmpty) return;
+    if (!_service.connected.value) {
+      _service.ensureConnected();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('实时连接已断开，正在重连，请稍后重试')),
+      );
+      return;
+    }
     final requestId = _service.newRequestId();
     setState(() {
       _messages.add(
@@ -300,6 +332,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     });
     _input.clear();
     _service.ensureConnected();
+    _monitor.markPromptSent(widget.session, widget.machineId);
     _service.sendPrompt(
       requestId: requestId,
       sessionId: widget.session.id,
@@ -316,6 +349,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       _pendingInterrupt = requestId;
       _running = false;
     });
+    _monitor.markStopped(widget.machineId, widget.session.id);
     _service.interruptSession(
       requestId: requestId,
       sessionId: widget.session.id,
@@ -367,6 +401,41 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       ),
       body: Column(
         children: [
+          ValueListenableBuilder<bool>(
+            valueListenable: _service.connected,
+            builder: (context, online, _) {
+              if (online) return const SizedBox.shrink();
+              return Container(
+                width: double.infinity,
+                color: palette.accent.withValues(alpha: 0.08),
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.cloud_off_rounded,
+                      size: 15,
+                      color: palette.accent,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _running
+                            ? '实时连接已断开，正在重连。桌面端任务可能仍在运行，'
+                                '完成后会自动同步并通知。'
+                            : '实时连接已断开，正在重连…',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.45,
+                          color: palette.ink,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
           Expanded(child: _buildMessages(palette)),
           _buildComposer(palette),
         ],
@@ -509,9 +578,14 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        'OpenCode 正在执行，输出会实时同步',
-                        style: TextStyle(fontSize: 11, color: palette.muted),
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _service.connected,
+                        builder: (context, online, _) => Text(
+                          online
+                              ? 'OpenCode 正在执行，输出会实时同步'
+                              : 'OpenCode 正在执行，连接中断，恢复后自动同步',
+                          style: TextStyle(fontSize: 11, color: palette.muted),
+                        ),
                       ),
                     ],
                   ),
