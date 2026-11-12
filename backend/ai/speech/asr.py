@@ -90,7 +90,12 @@ class _SizedStream:
             pass
 
 
-def _post(file_record, diarize: bool) -> dict:
+def _post(
+    file_record,
+    diarize: bool,
+    model: str,
+    verbose: bool,
+) -> dict:
     from core.minio.client import minio_client
 
     if minio_client is None:
@@ -139,8 +144,8 @@ def _post(file_record, diarize: bool) -> dict:
         finally:
             stream.close()
 
-    data = {"model": settings.asr_model}
-    if settings.asr_verbose_json:
+    data = {"model": model}
+    if verbose:
         data["response_format"] = "verbose_json"
     if diarize:
         data["diarize"] = "true"
@@ -148,7 +153,7 @@ def _post(file_record, diarize: bool) -> dict:
     res = attempt(data)
     if res.status_code >= 400 and len(data) > 1:
         # Some OpenAI-compatible servers reject verbose_json/diarize.
-        res = attempt({"model": settings.asr_model})
+        res = attempt({"model": model})
     if res.status_code >= 400:
         raise AsrError(f"ASR 返回 {res.status_code}: {res.text[:500]}")
     content_type = res.headers.get("content-type", "")
@@ -158,15 +163,31 @@ def _post(file_record, diarize: bool) -> dict:
 
 
 
-async def transcribe_minio_object(file_record, *, diarize: bool | None = None) -> dict:
-    """Transcribe a MinIO file object without copying it through a temp file."""
+async def transcribe_minio_object(
+    file_record,
+    *,
+    diarize: bool | None = None,
+    model: str | None = None,
+    verbose: bool | None = None,
+) -> dict:
+    """Transcribe a MinIO file object without copying it through a temp file.
+
+    Meetings use ``voice-asr-moss`` with ``verbose_json`` so long recordings
+    (over the 300s limit of the default model) come back as speaker segments.
+    """
     if diarize is None:
         diarize = settings.asr_diarize
+    if model is None:
+        model = settings.asr_model
+    if verbose is None:
+        verbose = settings.asr_verbose_json
     from core.observability.recorder import trace_span
 
     try:
         async with trace_span("asr", file_record.original_name or "meeting"):
-            return await asyncio.to_thread(_post, file_record, diarize)
+            return await asyncio.to_thread(
+                _post, file_record, diarize, model, verbose
+            )
     except AsrError:
         raise
     except Exception as exc:

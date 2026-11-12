@@ -18,6 +18,8 @@ async def llm_json(
     *,
     bot=None,
     extra_system: str | None = None,
+    timeout: float = 15,
+    max_tokens: int = 1200,
 ) -> dict | None:
     """Ask the model for a JSON object, returning None when unavailable."""
     if not settings.llm_api_key:
@@ -55,8 +57,8 @@ async def llm_json(
                     )},
                 ],
                 temperature=float(temperature),
-                max_tokens=1200,
-                timeout=15,
+                max_tokens=max_tokens,
+                timeout=timeout,
             )
         finally:
             await client.close()

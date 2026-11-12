@@ -28,6 +28,7 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
   final _titleController = TextEditingController();
   Timer? _timer;
   Timer? _poll;
+  int _pollFailures = 0;
   Duration _elapsed = Duration.zero;
   bool _recording = false;
   bool _paused = false;
@@ -242,10 +243,12 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
 
   void _startPolling(int id) {
     _poll?.cancel();
+    _pollFailures = 0;
     _poll = Timer.periodic(const Duration(seconds: 2), (_) async {
       try {
         final job = await ApiService().getMeetingMinutes(id);
         if (!mounted) return;
+        _pollFailures = 0;
         setState(() => _job = job);
         final status = (job['status'] ?? '').toString();
         if (status == 'done' || status == 'failed') {
@@ -253,7 +256,13 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
           _loadHistory();
         }
       } catch (_) {
-        // Polling is best-effort; keep the last state.
+        _pollFailures += 1;
+        if (_pollFailures >= 5 && mounted) {
+          _poll?.cancel();
+          setState(() {
+            _error = '无法获取处理状态，请检查网络后重试';
+          });
+        }
       }
     });
   }
@@ -645,7 +654,7 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
                   ],
                 ),
               ),
-              if (!done)
+              if (!done && !failed)
                 CircularProgressIndicator(
                   strokeWidth: 2,
                   color: palette.primary,

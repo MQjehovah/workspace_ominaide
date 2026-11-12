@@ -108,6 +108,8 @@ async def _summarise_long(transcript: str, bot) -> dict:
                 _MINUTES_SYSTEM,
                 text,
                 bot=bot,
+                timeout=60,
+                max_tokens=4096,
             ),
             text,
         )
@@ -122,6 +124,8 @@ async def _summarise_long(transcript: str, bot) -> dict:
             "不要编造。",
             piece,
             bot=bot,
+            timeout=60,
+            max_tokens=4096,
         )
         if isinstance(result, dict):
             chunks.append(json.dumps(result, ensure_ascii=False))
@@ -132,6 +136,8 @@ async def _summarise_long(transcript: str, bot) -> dict:
             _MINUTES_SYSTEM,
             "以下是分段提炼结果，请合并为最终会议纪要：\n\n" + merged,
             bot=bot,
+            timeout=60,
+            max_tokens=4096,
         ),
         text,
     )
@@ -227,11 +233,41 @@ async def _run_job(job_id: int) -> None:
         if file_record is None:
             raise ValueError("录音文件不存在")
 
+        model = settings.meeting_asr_model or "voice-asr-moss"
         async with _asr_semaphore():
-            result = await transcribe_minio_object(file_record)
+            result = await transcribe_minio_object(
+                file_record,
+                diarize=True,
+                model=model,
+                verbose=True,
+            )
 
-        transcript = str(result.get("text") or "").strip()[: _MAX_TRANSCRIPT_CHARS]
         segments = result.get("segments") or []
+        if segments:
+            lines: list[str] = []
+            for row in segments:
+                if not isinstance(row, dict):
+                    continue
+                text = str(row.get("text") or "").strip()
+                if not text:
+                    continue
+                speaker = row.get("speaker")
+                label = (
+                    f"说话人 {speaker}"
+                    if speaker not in (None, "")
+                    else "发言人"
+                )
+                stamp = _clock(_seconds(row.get("start")))
+                prefix = f"[{stamp}] " if stamp else ""
+                lines.append(f"{prefix}{label}：{text}")
+            transcript = "\n".join(lines)
+        else:
+            transcript = str(result.get("text") or "").strip()
+        transcript = transcript[: _MAX_TRANSCRIPT_CHARS]
+        log.info(
+            f"[meetings] job {job_id} asr model={model} "
+            f"segments={len(segments)} chars={len(transcript)}"
+        )
         if not transcript:
             raise AsrError("没有识别到语音内容")
 

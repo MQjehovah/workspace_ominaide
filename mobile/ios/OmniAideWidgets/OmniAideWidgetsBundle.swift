@@ -90,17 +90,9 @@ struct CodingLiveActivityWidget: Widget {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } compactLeading: {
-                HStack(spacing: 4) {
-                    StatusIcon(state: context.state, size: 14)
-                    if context.state.count > 1 {
-                        Text("\(context.state.count)")
-                            .font(.caption2.weight(.bold))
-                            .monospacedDigit()
-                            .foregroundStyle(context.state.accent)
-                    }
-                }
+                StatusBadge(state: context.state)
             } compactTrailing: {
-                RunClock(state: context.state, compact: true)
+                CompactClock(state: context.state)
             } minimal: {
                 StatusIcon(state: context.state, size: 14)
             }
@@ -117,6 +109,50 @@ private struct StatusIcon: View {
         Image(systemName: state.symbol)
             .font(.system(size: size, weight: .semibold))
             .foregroundStyle(state.accent)
+    }
+}
+
+private struct StatusBadge: View {
+    let state: CodingActivityAttributes.ContentState
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            StatusIcon(state: state, size: 14)
+            if state.count > 1 {
+                Text("\(state.count)")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(2)
+                    .background(Circle().fill(state.accent))
+                    .offset(x: 7, y: -6)
+            }
+        }
+        .frame(width: 18, height: 18)
+    }
+}
+
+private struct CompactClock: View {
+    let state: CodingActivityAttributes.ContentState
+
+    var body: some View {
+        Group {
+            if state.isRunning {
+                Text(timerInterval: state.startedAt...Date.distantFuture, countsDown: false)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+            } else if state.isWaiting {
+                Text("待选")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(state.accent)
+            } else {
+                Text(state.isFailed ? "失败" : "完成")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(state.accent)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+        .frame(width: 34, alignment: .trailing)
     }
 }
 

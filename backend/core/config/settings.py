@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     asr_api_key: str = ""
     asr_base_url: str = "https://ai.xzrobot.com/v1"
     asr_model: str = "voice-asr"
+    # MOSS is the long-form/diarized model; the default voice-asr endpoint
+    # rejects audio longer than 300s.
+    meeting_asr_model: str = "voice-asr-moss"
     asr_verbose_json: bool = False
     # 0 means no application-level size limit (meeting audio goes through MinIO).
     asr_max_audio_mb: int = 0
