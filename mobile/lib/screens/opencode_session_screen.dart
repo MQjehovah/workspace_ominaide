@@ -79,7 +79,6 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     if (!mounted || !_running) return;
     if (!_monitor.wasTracked(widget.machineId, widget.session.id)) return;
     if (_monitor.isRunning(widget.machineId, widget.session.id)) return;
-    if (!_service.connected.value) return;
     setState(() => _running = false);
     _scheduleHistoryRefresh();
   }
@@ -92,6 +91,11 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   void _onConnectionChanged() {
     if (!mounted) return;
     if (!_service.connected.value) return;
+    if (_running &&
+        _monitor.wasTracked(widget.machineId, widget.session.id) &&
+        !_monitor.isRunning(widget.machineId, widget.session.id)) {
+      setState(() => _running = false);
+    }
     if (_messages.isEmpty) {
       _loadHistory();
     } else {
