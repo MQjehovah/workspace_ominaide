@@ -745,7 +745,7 @@ export default {
       if (agent === 'opencode') {
         if (!opencodeBridge) return { ok: false, error: 'OpenCode 桥接未就绪' }
         try {
-          const history = await opencodeBridge.history(sessionId, 150)
+          const history = await opencodeBridge.history(sessionId, 80)
           return {
             ok: true,
             session: {

@@ -24,6 +24,20 @@
       </span>
 
       <div class="toolbar-right">
+        <template v-if="scope === 'cloud'">
+          <span class="toolbar-label">设备</span>
+          <select
+            v-model="deviceFilter"
+            class="proj-select device-select"
+            title="按设备筛选"
+            @change="onDeviceChange"
+          >
+            <option value="">全部设备（{{ sessions.length }}）</option>
+            <option v-for="m in machineOptions" :key="m.machine_id" :value="m.machine_id">
+              {{ m.name }}（{{ m.count || 0 }}）{{ m.online ? '' : ' · 离线' }}
+            </option>
+          </select>
+        </template>
         <span class="toolbar-label">项目</span>
         <select v-model="selectedProjectKey" class="proj-select" title="按项目过滤">
           <option value="">全部项目（{{ sessions.length }}）</option>
@@ -42,9 +56,12 @@
       </div>
     </div>
 
-    <div v-if="scope === 'cloud' && error" class="cloud-error">
-      {{ error }}
-      <button class="btn sm" @click="setScope('local')">改用本机会话</button>
+    <div v-if="error" class="cloud-error">
+      <span class="error-text">{{ error }}</span>
+      <button v-if="scope === 'cloud'" class="btn sm" @click="setScope('local')">
+        改用本机会话
+      </button>
+      <button class="error-close" title="关闭" @click="error = ''">✕</button>
     </div>
 
     <div class="sessions-layout">
@@ -79,6 +96,15 @@
             </span>
             <span class="session-time">{{ timeAgo(s.updated) }}</span>
           </div>
+          <button
+            v-if="isRunning(s)"
+            class="session-stop"
+            title="停止运行"
+            :disabled="stopping"
+            @click.stop="stopSession(s)"
+          >
+            ■
+          </button>
           <button class="session-del" title="删除会话" @click.stop="deleteSession(s)">🗑</button>
         </div>
         <div v-if="!visibleSessions.length" class="pane-empty">
@@ -101,15 +127,24 @@
               </div>
             </div>
             <span v-if="detail.running" class="running-badge">
-              <span class="mini-spin"></span> 运行中
+              <span class="mini-spin"></span> 运行中{{ elapsedLabel ? ` ${elapsedLabel}` : '' }}
             </span>
-            <button v-if="detail.running" class="btn danger sm" @click="stop">■ 停止</button>
+            <button
+              v-if="detail.running"
+              class="btn danger sm"
+              :disabled="stopping"
+              @click="stop"
+            >
+              ■ 停止
+            </button>
           </div>
 
-          <div ref="messagesEl" class="chat-messages">
+          <div ref="messagesEl" class="chat-messages" @scroll="onMessagesScroll">
             <div v-if="detail.running || detail.liveTools.length" class="live-bar">
               <span v-if="detail.running" class="mini-spin big"></span>
-              <span class="live-title">{{ detail.running ? '正在执行' : '最近工具' }}</span>
+              <span class="live-title">
+                {{ detail.running ? '正在执行' : '最近工具' }}{{ elapsedLabel ? ` ${elapsedLabel}` : '' }}
+              </span>
               <span
                 v-for="(tool, ti) in detail.liveTools"
                 :key="ti"
@@ -124,7 +159,7 @@
             <div v-if="!shownMessages.length && !detail.streaming" class="chat-empty">
               这个会话还没有消息，直接在下面输入继续。
             </div>
-            <div v-for="(m, i) in shownMessages" :key="i" :class="['msg', m.role]">
+            <div v-for="(m, i) in renderMessages" :key="m.id || i" :class="['msg', m.role]">
               <div class="bubble">
                 <div v-if="m.tools && m.tools.length" class="msg-tools">
                   <span
@@ -151,7 +186,7 @@
                 <div
                   class="md-body"
                   @click="onMarkdownClick"
-                  v-html="renderMarkdown(detail.streaming)"
+                  v-html="renderMarkdown(streamingText)"
                 ></div>
               </div>
             </div>
@@ -163,14 +198,29 @@
               class="chat-input"
               rows="3"
               placeholder="继续这个会话…（Ctrl+Enter 发送）"
+              @keydown.enter.exact.prevent="send"
               @keydown.ctrl.enter.prevent="send"
               @keydown.meta.enter.prevent="send"
             ></textarea>
             <div class="composer-actions">
               <span class="composer-hint">
+                Enter 发送 · Shift+Enter 换行 ·
                 {{ scope === 'local' ? '在本机执行' : `在 ${machineName(detail.session.machine_id)} 上执行` }}
               </span>
-              <button class="btn primary" :disabled="!input.trim() || sending" @click="send">
+              <button
+                v-if="detail.running"
+                class="btn danger"
+                :disabled="stopping"
+                @click="stop"
+              >
+                ■ 停止
+              </button>
+              <button
+                class="btn primary"
+                :disabled="!input.trim() || sending"
+                @click="send"
+              >
+                <span v-if="sending" class="mini-spin"></span>
                 {{ sending ? '发送中…' : '发送' }}
               </button>
             </div>
@@ -242,6 +292,7 @@ const api = () => (window as any).mqbox?.api
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const markdownCache = new Map<string, string>()
+const MAX_RENDER_MESSAGES = 80
 
 function renderMarkdown(text: string): string {
   if (!text) return ''
@@ -253,8 +304,10 @@ function renderMarkdown(text: string): string {
   } catch {
     html = `<pre>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>`
   }
-  if (markdownCache.size > 240) markdownCache.clear()
-  markdownCache.set(text, html)
+  if (text.length <= 20000) {
+    if (markdownCache.size > 80) markdownCache.clear()
+    markdownCache.set(text, html)
+  }
   return html
 }
 
@@ -308,10 +361,16 @@ const scope = ref<'local' | 'cloud'>(
 const sessions = ref<any[]>([])
 const machines = ref<any[]>([])
 const selectedProjectKey = ref(localStorage.getItem('vibecoding.project.v2') || '')
+const deviceFilter = ref('')
+const stopping = ref(false)
+const runStartedAt = ref<number | null>(null)
+const nowTick = ref(Date.now())
+const atBottom = ref(true)
 const activeKey = ref('')
 const detail = ref<any>(null)
 const input = ref('')
 const loading = ref(false)
+const loadingDetail = ref(false)
 const sending = ref(false)
 const quickCreating = ref('')
 const onlyRunning = ref(false)
@@ -350,17 +409,35 @@ function sourceLabel(agent: string) {
 
 const machineOptions = computed(() => {
   const map = new Map<string, any>()
-  for (const m of machines.value) map.set(m.machine_id, m)
+  // Copy machine entries instead of using the reactive objects directly:
+  // writing counts back into machines.value inside a computed would
+  // invalidate the computed itself and loop forever.
+  for (const m of machines.value) {
+    map.set(m.machine_id, {
+      machine_id: m.machine_id,
+      name: m.name || m.machine_id,
+      online: !!m.online,
+      count: 0,
+      running: false,
+    })
+  }
   for (const s of sessions.value) {
     if (!map.has(s.machine_id)) {
       map.set(s.machine_id, {
         machine_id: s.machine_id,
         name: s.machine_name || s.machine_id,
         online: !!s.machine_online,
+        count: 0,
+        running: false,
       })
     }
+    const machine = map.get(s.machine_id)
+    machine.count = (machine.count || 0) + 1
+    machine.running = machine.running || !!s.running
   }
-  return Array.from(map.values())
+  return Array.from(map.values()).sort(
+    (a, b) => Number(b.online) - Number(a.online) || String(a.name).localeCompare(String(b.name)),
+  )
 })
 const onlineMachines = computed(() => machineOptions.value.filter((m) => m.online))
 
@@ -386,6 +463,7 @@ const projects = computed(() => {
     return item
   }
   for (const s of sessions.value) {
+    if (deviceFilter.value && s.machine_id !== deviceFilter.value) continue
     const item = ensure(s.machine_id, s.project || '')
     item.count += 1
     item.running = item.running || !!s.running
@@ -418,6 +496,33 @@ const runningCount = computed(
   () => sessions.value.filter((session) => isRunning(session)).length,
 )
 
+const elapsedLabel = computed(() => {
+  if (!runStartedAt.value) return ''
+  const seconds = Math.max(
+    0,
+    Math.floor((nowTick.value - runStartedAt.value) / 1000),
+  )
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
+})
+
+function onDeviceChange() {
+  if (
+    selectedProject.value &&
+    selectedProject.value.machine_id !== deviceFilter.value &&
+    deviceFilter.value
+  ) {
+    selectedProjectKey.value = ''
+    persistProject()
+  }
+}
+
+function onMessagesScroll() {
+  const el = messagesEl.value
+  if (!el) return
+  atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+}
+
 const shownMessages = computed(() => {
   const current = detail.value
   if (!current) return []
@@ -429,6 +534,15 @@ const shownMessages = computed(() => {
   return list
 })
 
+const renderMessages = computed(() =>
+  shownMessages.value.slice(-MAX_RENDER_MESSAGES),
+)
+
+const streamingText = computed(() => {
+  const text = detail.value?.streaming || ''
+  return text.length > 40000 ? text.slice(-40000) : text
+})
+
 const visibleSessions = computed(() => {
   let list = selectedProject.value
     ? sessions.value.filter(
@@ -437,6 +551,9 @@ const visibleSessions = computed(() => {
           (s.project || '') === selectedProject.value.path,
       )
     : sessions.value
+  if (deviceFilter.value) {
+    list = list.filter((s) => s.machine_id === deviceFilter.value)
+  }
   if (onlyRunning.value) list = list.filter((s) => isRunning(s))
   return [...list].sort(
     (a, b) =>
@@ -480,6 +597,7 @@ async function setScope(next: 'local' | 'cloud') {
 }
 
 async function loadSessions() {
+  if (loading.value) return
   if (scope.value === 'local') {
     loading.value = true
     try {
@@ -540,7 +658,16 @@ async function openSession(session: any) {
 
 async function loadDetail() {
   const current = detail.value
-  if (!current) return
+  if (!current || loadingDetail.value) return
+  loadingDetail.value = true
+  try {
+    await loadDetailInner(current)
+  } finally {
+    loadingDetail.value = false
+  }
+}
+
+async function loadDetailInner(current: any) {
   const session = current.session
   if (scope.value === 'local') {
     try {
@@ -554,7 +681,15 @@ async function loadDetail() {
         error.value = res?.error || '读取本机会话失败'
         return
       }
-      const previous = detail.value?.messages?.length || 0
+      const stick = atBottom.value
+      const wasRunning = !!detail.value?.running
+      const running = !!res.session?.running
+      const messages = (res.messages || []).slice(-MAX_RENDER_MESSAGES)
+      const signature = messages
+        .map((m: any) => `${m.id}:${(m.text || '').length}:${(m.tools || []).length}`)
+        .join('|')
+      const keepMessages =
+        detail.value?.signature === signature && detail.value?.messages
       detail.value = {
         session: {
           ...session,
@@ -562,17 +697,16 @@ async function loadDetail() {
           machine_id: 'local',
           machine_name: '本机',
         },
-        messages: res.messages || [],
+        messages: keepMessages ? detail.value!.messages : messages,
+        signature,
         streaming: res.streaming || '',
         streamingId: res.streaming_id || '',
         liveTools: res.live_tools || [],
-        running: !!res.session?.running,
+        running,
       }
-      if (
-        detail.value.running ||
-        detail.value.messages.length !== previous ||
-        detail.value.streaming
-      ) {
+      if (running && !wasRunning) runStartedAt.value = Date.now()
+      if (!running) runStartedAt.value = null
+      if (stick) {
         await nextTick()
         scrollToBottom()
       }
@@ -584,22 +718,29 @@ async function loadDetail() {
 
   try {
     const res = await api().get(
-      `/vibecoding/machines/${encodeURIComponent(session.machine_id)}/sessions/${encodeURIComponent(session.id)}`,
+      `/vibecoding/machines/${encodeURIComponent(session.machine_id)}/sessions/${encodeURIComponent(session.id)}?limit=${MAX_RENDER_MESSAGES}`,
     )
-    const previous = detail.value?.messages?.length || 0
+    const stick = atBottom.value
+    const wasRunning = !!detail.value?.running
+    const running = !!res?.running
+    const messages = (res?.messages || []).slice(-MAX_RENDER_MESSAGES)
+    const signature = messages
+      .map((m: any) => `${m.id}:${(m.text || '').length}:${(m.tools || []).length}`)
+      .join('|')
+    const keepMessages =
+      detail.value?.signature === signature && detail.value?.messages
     detail.value = {
       session: { ...session, ...(res?.session || {}) },
-      messages: res?.messages || [],
+      messages: keepMessages ? detail.value!.messages : messages,
+      signature,
       streaming: res?.streaming || '',
       streamingId: res?.streaming_id || '',
       liveTools: res?.live_tools || [],
-      running: !!res?.running,
+      running,
     }
-    if (
-      detail.value.running ||
-      detail.value.messages.length !== previous ||
-      detail.value.streaming
-    ) {
+    if (running && !wasRunning) runStartedAt.value = Date.now()
+    if (!running) runStartedAt.value = null
+    if (stick) {
       await nextTick()
       scrollToBottom()
     }
@@ -610,7 +751,9 @@ async function loadDetail() {
 
 function scrollToBottom() {
   const el = messagesEl.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+  atBottom.value = true
 }
 
 async function loadCloudMeta() {
@@ -833,6 +976,20 @@ async function send() {
   sending.value = true
   error.value = ''
   const session = detail.value.session
+  const optimistic = {
+    id: `local-${Date.now()}`,
+    role: 'user',
+    text,
+    tools: [],
+    ts: Date.now(),
+  }
+  const wasRunning = !!detail.value.running
+  detail.value.messages = [...(detail.value.messages || []), optimistic]
+  detail.value.running = true
+  runStartedAt.value = Date.now()
+  atBottom.value = true
+  await nextTick()
+  scrollToBottom()
   try {
     if (scope.value === 'local') {
       const res = await props.execute?.('sendAgentMessage', {
@@ -851,15 +1008,22 @@ async function send() {
     await loadDetail()
     await loadSessions()
   } catch (e: any) {
+    if (detail.value) {
+      detail.value.messages = (detail.value.messages || []).filter(
+        (message: any) => message.id !== optimistic.id,
+      )
+      detail.value.running = wasRunning
+      if (!wasRunning) runStartedAt.value = null
+    }
     error.value = e?.message || '发送失败'
   } finally {
     sending.value = false
   }
 }
 
-async function stop() {
-  if (!detail.value) return
-  const session = detail.value.session
+async function stopSession(session: any) {
+  if (!session || stopping.value) return
+  stopping.value = true
   try {
     if (scope.value === 'local') {
       await props.execute?.('stopAgentMessage', {
@@ -872,19 +1036,29 @@ async function stop() {
         {},
       )
     }
-    await loadDetail()
+    if (activeKey.value === sessionKey(session)) await loadDetail()
+    await loadSessions()
   } catch (e: any) {
     error.value = e?.message || '停止失败'
+  } finally {
+    stopping.value = false
   }
+}
+
+async function stop() {
+  if (!detail.value) return
+  await stopSession(detail.value.session)
 }
 
 function startPolling() {
   stopPolling()
   pollTimer = setInterval(async () => {
-    if (detail.value) await loadDetail()
-    tick += 1
-    if (tick % 5 === 0) await loadSessions()
-  }, 1200)
+    // Only poll while a session is actually running. Idle pages do no
+    // background work, which also avoids IPC/render churn.
+    if (document.hidden || !detail.value?.running) return
+    nowTick.value = Date.now()
+    await loadDetail()
+  }, 2500)
 }
 
 function stopPolling() {
@@ -918,13 +1092,16 @@ onUnmounted(stopPolling)
 .toolbar-label { font-size:11px; color:#64748b; }
 .proj-select { min-width:170px; max-width:280px; padding:6px 8px; border:1px solid #e2e8f0; border-radius:6px; font-size:12px; background:#fff; }
 .proj-select.wide { width:100%; max-width:none; margin-bottom:8px; }
+.device-select { min-width:150px; max-width:220px; }
 .quick-btn { padding:4px 10px; }
 .cloud-error { display:flex; align-items:center; gap:10px; background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:8px; padding:7px 10px; font-size:11.5px; }
+.error-text { flex:1; min-width:0; }
+.error-close { border:none; background:transparent; color:#92400e; cursor:pointer; font-size:13px; }
 .sessions-layout { display:grid; grid-template-columns:360px 1fr; gap:10px; min-height:calc(100vh - 220px); }
 .session-list { border:1px solid #e2e8f0; border-radius:10px; background:#fff; overflow-y:auto; max-height:calc(100vh - 220px); }
 .pane-head { display:flex; align-items:center; justify-content:space-between; padding:9px 12px; font-size:11.5px; font-weight:700; color:#475569; border-bottom:1px solid #f1f5f9; position:sticky; top:0; background:#fff; z-index:1; }
 .pane-count { font-size:10px; color:#94a3b8; font-weight:500; }
-.session-item { position:relative; padding:10px 32px 10px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; }
+.session-item { position:relative; padding:10px 48px 10px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; }
 .session-item:hover { background:#f8fafc; }
 .session-item.active { background:#eef2ff; border-left:3px solid #6366f1; }
 .session-item.running { background:#f0fdf4; }
@@ -942,7 +1119,9 @@ onUnmounted(stopPolling)
 .tag.idle { background:#f1f5f9; color:#64748b; }
 .tag.machine { background:#fef3c7; color:#b45309; }
 .session-time { font-size:9px; color:#94a3b8; margin-left:auto; }
-.session-del { position:absolute; right:4px; top:10px; border:none; background:transparent; cursor:pointer; opacity:0; font-size:11px; }
+.session-stop { position:absolute; right:24px; top:9px; border:none; background:#fef2f2; color:#dc2626; border-radius:5px; width:20px; height:20px; cursor:pointer; font-size:10px; line-height:1; opacity:.8; }
+.session-stop:hover { opacity:1; background:#fee2e2; }
+.session-del { position:absolute; right:4px; top:9px; border:none; background:transparent; cursor:pointer; opacity:0; font-size:11px; }
 .session-item:hover .session-del { opacity:.6; }
 .session-del:hover { opacity:1; }
 .pane-empty { padding:22px 12px; font-size:11px; color:#94a3b8; text-align:center; }
@@ -1009,4 +1188,6 @@ onUnmounted(stopPolling)
 .btn.primary:disabled { opacity:.5; cursor:default; }
 .btn.danger { background:#ef4444; border-color:#ef4444; color:#fff; }
 .btn.sm { padding:4px 9px; font-size:11px; }
+.btn.primary .mini-spin { border-color:#fff; border-top-color:transparent; margin-right:5px; }
+.btn.danger .mini-spin { border-color:#fff; border-top-color:transparent; }
 </style>

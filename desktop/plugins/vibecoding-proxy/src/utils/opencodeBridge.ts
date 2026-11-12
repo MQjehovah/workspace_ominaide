@@ -630,7 +630,7 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
       if (!state.messageId) {
         state.messageId = String(data?.assistantMessageID || '')
       }
-      state.text += String(data?.delta || '')
+      state.text = (state.text + String(data?.delta || '')).slice(-40000)
     } else if (name === 'session.text.ended') {
       const finalText = String(data?.text || '')
       if (finalText) state.text = finalText
