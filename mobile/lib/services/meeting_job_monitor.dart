@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
 
@@ -104,6 +105,11 @@ class MeetingJobMonitor with WidgetsBindingObserver {
                     ? '$title\n$error'
                     : title,
                 id: 3100,
+                payload: jsonEncode({
+                  'kind': 'meeting',
+                  'id': id,
+                  'title': title,
+                }),
               ),
             );
           }

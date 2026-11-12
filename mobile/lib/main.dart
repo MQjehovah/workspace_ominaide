@@ -1,9 +1,15 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'models/opencode_models.dart';
+import 'screens/meeting_minutes_screen.dart';
+import 'screens/opencode_session_screen.dart';
 import 'services/android_overlay_service.dart';
 import 'services/api_service.dart';
 import 'services/bot_selection_service.dart';
+import 'services/local_reminder_service.dart';
+import 'services/notification_router.dart';
 import 'services/share_intent_service.dart';
 import 'services/music_player_service.dart';
 import 'screens/login_screen.dart';
@@ -23,6 +29,11 @@ Future<void> main() async {
   await appTheme.load();
   await ShareIntentService().init();
   MusicPlayerService().initialize();
+  NotificationRouter.handler = _tryOpenNotificationPayload;
+  await LocalReminderService().init();
+  LocalReminderService().onTap = NotificationRouter.receive;
+  final launchPayload = LocalReminderService().takeLaunchPayload();
+  if (launchPayload != null) NotificationRouter.receive(launchPayload);
   AndroidOverlayService().onQuickCapture = () {
     final navigator = _navigatorKey.currentState;
     if (navigator == null || !ApiService().isLoggedIn) {
@@ -58,6 +69,55 @@ Future<void> main() async {
     });
   };
   runApp(const OmniAideApp());
+}
+
+bool _tryOpenNotificationPayload(String payload) {
+  if (!ApiService().isLoggedIn) return false;
+  final navigator = _navigatorKey.currentState;
+  if (navigator == null) return false;
+  return _openNotificationPayload(navigator, payload);
+}
+
+bool _openNotificationPayload(NavigatorState navigator, String payload) {
+  Map<String, dynamic>? data;
+  try {
+    final decoded = jsonDecode(payload);
+    if (decoded is Map) data = Map<String, dynamic>.from(decoded);
+  } catch (_) {
+    return false;
+  }
+  if (data == null) return false;
+  final payloadData = data;
+  final kind = (payloadData['kind'] ?? '').toString();
+  if (kind == 'meeting') {
+    final id = (payloadData['id'] as num?)?.toInt();
+    if (id == null) return false;
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => MeetingMinutesScreen(initialJobId: id),
+      ),
+    );
+    return true;
+  }
+  if (kind == 'opencode') {
+    final sessionId = (payloadData['session_id'] ?? '').toString();
+    if (sessionId.isEmpty) return false;
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => OpenCodeSessionScreen(
+          machineId: (payloadData['machine_id'] ?? '').toString(),
+          session: OpenCodeSession(
+            id: sessionId,
+            title: (payloadData['title'] ?? 'OpenCode 会话').toString(),
+            directory: (payloadData['directory'] ?? '').toString(),
+            busy: payloadData['busy'] == true,
+          ),
+        ),
+      ),
+    );
+    return true;
+  }
+  return false;
 }
 
 class OmniAideApp extends StatelessWidget {
@@ -202,6 +262,9 @@ class _SplashScreenState extends State<SplashScreen> {
         );
       });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationRouter.flush();
+    });
   }
 
   Future<void> _pullRemoteAppearance() async {

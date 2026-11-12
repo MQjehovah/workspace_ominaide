@@ -402,13 +402,20 @@ class _ChatScreenState extends State<ChatScreen> {
     _input.clear();
 
     final history = _messages
-        .where((m) => m.text.isNotEmpty && !m.error)
+        .where((m) => m.text.isNotEmpty)
         .toList()
         .reversed
         .take(20)
         .toList()
         .reversed
-        .map((m) => {'role': m.role, 'content': m.text})
+        .map((m) {
+          var content = m.text;
+          if (m.error) {
+            content = content.split('\n\n⚠️ ').first.trim();
+          }
+          return {'role': m.role, 'content': content};
+        })
+        .where((m) => (m['content'] ?? '').toString().isNotEmpty)
         .toList();
 
     final assistant = _Message('assistant', '');
@@ -487,6 +494,23 @@ class _ChatScreenState extends State<ChatScreen> {
     _streamSub = null;
     final done = _streamDone;
     if (done != null && !done.isCompleted) done.complete();
+  }
+
+  Future<void> _continueGeneration() async {
+    if (_loading || _messages.isEmpty) return;
+    final last = _messages.last;
+    if (last.role != 'assistant' || !last.error) return;
+    final partial = last.text.split('\n\n⚠️ ').first.trim();
+    if (partial.isEmpty) {
+      await _retry();
+      return;
+    }
+    setState(() {
+      last.text = partial;
+      last.error = false;
+    });
+    _input.text = '继续';
+    await _send();
   }
 
   Future<void> _resendLastUser() async {
@@ -1064,6 +1088,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                             error: message.error,
                                             onRetry:
                                                 message.error ? _retry : null,
+                                            onContinue: message.error &&
+                                                    message.text
+                                                        .split('\n\n⚠️ ')
+                                                        .first
+                                                        .trim()
+                                                        .isNotEmpty
+                                                ? _continueGeneration
+                                                : null,
                                           ),
                                         ),
                                         if (isLast &&

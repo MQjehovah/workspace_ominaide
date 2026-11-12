@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/opencode_models.dart';
 import '../services/local_reminder_service.dart';
 import '../services/meeting_job_monitor.dart';
+import '../services/notification_router.dart';
 import '../services/notification_service.dart';
 import '../services/opencode_run_monitor.dart';
 import '../services/refresh_bus.dart';
@@ -43,6 +44,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _runMonitor.start();
     _meetingMonitor.onCompleted = _onMeetingCompleted;
     _meetingMonitor.start();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationRouter.flush();
+    });
   }
 
   @override

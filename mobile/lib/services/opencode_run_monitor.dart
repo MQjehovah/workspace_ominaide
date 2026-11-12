@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
 
@@ -104,6 +105,17 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
   void Function(OpenCodeRun run)? onForm;
 
   bool get appActive => _appActive;
+
+  String _notificationPayload(OpenCodeRun run, {required bool busy}) {
+    return jsonEncode({
+      'kind': 'opencode',
+      'machine_id': run.machineId,
+      'session_id': run.sessionId,
+      'title': run.title,
+      'directory': run.directory,
+      'busy': busy,
+    });
+  }
 
   void start() {
     if (_started) return;
@@ -297,6 +309,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
         LocalReminderService().showNow(
           title: 'OpenCode 需要确认',
           body: '${run.title} · ${run.permissionAction}',
+          payload: _notificationPayload(run, busy: true),
         ),
       );
     }
@@ -340,6 +353,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
         LocalReminderService().showNow(
           title: 'OpenCode 需要你选择',
           body: '${run.title} · ${run.formTitle}',
+          payload: _notificationPayload(run, busy: true),
         ),
       );
     }
@@ -502,6 +516,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
         LocalReminderService().showNow(
           title: status == 'failed' ? '编程任务失败' : '编程任务完成',
           body: '${run.title} · 用时 ${formatRunDuration(run.elapsed)}',
+          payload: _notificationPayload(run, busy: false),
         ),
       );
     }

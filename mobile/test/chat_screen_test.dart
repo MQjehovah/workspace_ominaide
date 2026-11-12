@@ -42,7 +42,7 @@ void main() {
       ),
     );
     expect(find.text('回复失败'), findsOneWidget);
-    await tester.tap(find.text('点击重试'));
+    await tester.tap(find.text('重新生成'));
     expect(retried, isTrue);
   });
 }

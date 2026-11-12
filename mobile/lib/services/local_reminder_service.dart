@@ -15,6 +15,11 @@ class LocalReminderService {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   bool _permissionRequested = false;
+  String? _pendingLaunchPayload;
+
+  /// Called when the user taps a local notification. Payload format is
+  /// documented by the caller (meeting/opencode deep links).
+  void Function(String payload)? onTap;
 
   static const _scheduleBase = 1000;
   static const _todoBase = 2000;
@@ -35,7 +40,20 @@ class LocalReminderService {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
       const InitializationSettings(iOS: ios, android: android),
+      onDidReceiveNotificationResponse: (response) {
+        final payload = response.payload;
+        if (payload != null && payload.isNotEmpty) onTap?.call(payload);
+      },
     );
+    try {
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp == true) {
+        final payload = launch?.notificationResponse?.payload;
+        if (payload != null && payload.isNotEmpty) {
+          _pendingLaunchPayload = payload;
+        }
+      }
+    } catch (_) {}
     _initialized = true;
   }
 
@@ -86,10 +104,17 @@ class LocalReminderService {
 
   /// Show an immediate local notification, e.g. when a coding session
   /// finishes while the app is in the background.
+  String? takeLaunchPayload() {
+    final payload = _pendingLaunchPayload;
+    _pendingLaunchPayload = null;
+    return payload;
+  }
+
   Future<void> showNow({
     required String title,
     required String body,
     int id = 3001,
+    String? payload,
   }) async {
     try {
       await init();
@@ -112,6 +137,7 @@ class LocalReminderService {
             priority: Priority.high,
           ),
         ),
+        payload: payload,
       );
     } catch (_) {}
   }

@@ -13,6 +13,7 @@ class ChatBubble extends StatelessWidget {
     this.streaming = false,
     this.error = false,
     this.onRetry,
+    this.onContinue,
   });
 
   final String role;
@@ -20,6 +21,7 @@ class ChatBubble extends StatelessWidget {
   final bool streaming;
   final bool error;
   final VoidCallback? onRetry;
+  final VoidCallback? onContinue;
 
   @override
   Widget build(BuildContext context) {
@@ -145,23 +147,45 @@ class ChatBubble extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: _BlinkingCursor(color: palette.primary),
                   ),
-                if (error && onRetry != null)
+                if (error && (onContinue != null || onRetry != null))
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: InkWell(
-                      onTap: onRetry,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text(
-                          '点击重试',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: palette.primary,
+                    child: Wrap(
+                      spacing: 14,
+                      children: [
+                        if (onContinue != null)
+                          InkWell(
+                            onTap: onContinue,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Text(
+                                '继续生成',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: palette.primary,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
+                        if (onRetry != null)
+                          InkWell(
+                            onTap: onRetry,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Text(
+                                '重新生成',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: palette.muted,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
               ],

@@ -75,6 +75,35 @@ class FileTransferService {
     String filename,
     String folderPath, {
     void Function(int sent, int total)? onProgress,
+    int maxAttempts = 3,
+  }) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await _uploadOnce(
+          filePath,
+          filename,
+          folderPath,
+          onProgress: onProgress,
+        );
+      } catch (error) {
+        lastError = error;
+        if (attempt + 1 < maxAttempts) {
+          onProgress?.call(0, 0);
+          await Future<void>.delayed(
+            Duration(seconds: 1 + attempt * 2),
+          );
+        }
+      }
+    }
+    throw lastError ?? Exception('上传失败');
+  }
+
+  Future<Map<String, dynamic>> _uploadOnce(
+    String filePath,
+    String filename,
+    String folderPath, {
+    void Function(int sent, int total)? onProgress,
   }) async {
     final api = ApiService();
     final token = api.token;

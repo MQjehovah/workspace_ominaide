@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
 import '../services/file_transfer_service.dart';
@@ -17,9 +19,10 @@ import 'notes_screen.dart';
 /// that object from a server-side transcription job. Audio is retained until
 /// the user explicitly deletes the minutes.
 class MeetingMinutesScreen extends StatefulWidget {
-  const MeetingMinutesScreen({super.key, this.onOpenNote});
+  const MeetingMinutesScreen({super.key, this.onOpenNote, this.initialJobId});
 
   final void Function(int noteId, String title)? onOpenNote;
+  final int? initialJobId;
 
   @override
   State<MeetingMinutesScreen> createState() => _MeetingMinutesScreenState();
@@ -42,6 +45,7 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
   String _statusText = '';
   String _error = '';
   String? _recordingPath;
+  Map<String, dynamic>? _pendingUpload;
   StreamSubscription<RecordState>? _recordStateSub;
   Map<String, dynamic>? _job;
   List<Map<String, dynamic>> _history = [];
@@ -55,6 +59,13 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
           onError: (_) {},
         );
     _loadHistory();
+    _loadPendingUpload();
+    final initialJobId = widget.initialJobId;
+    if (initialJobId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openJob(initialJobId);
+      });
+    }
   }
 
   @override
@@ -147,7 +158,10 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
 
   Future<void> _openHistory(Map<String, dynamic> item) async {
     final id = (item['id'] as num?)?.toInt();
-    if (id == null) return;
+    if (id != null) await _openJob(id);
+  }
+
+  Future<void> _openJob(int id) async {
     setState(() {
       _busy = true;
       _statusText = '正在加载纪要…';
@@ -163,7 +177,11 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
         _elapsed = Duration.zero;
       });
       final status = (job['status'] ?? '').toString();
-      if (status != 'done' && status != 'failed') _startPolling(id);
+      if (status != 'done' && status != 'failed') {
+        _startPolling(id);
+      } else {
+        MeetingJobMonitor().untrack(id);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -228,8 +246,8 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
         );
         return;
       }
-      final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/meeting_${_stamp()}.m4a';
+      final recordings = await _recordingDir();
+      final path = '${recordings.path}/meeting_${_stamp()}.m4a';
       await _recorder.start(
         const RecordConfig(encoder: AudioEncoder.aacLc),
         path: path,
@@ -322,6 +340,14 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
 
     final filename = '会议录音_${_stamp()}.m4a';
     final title = _titleController.text.trim();
+    await _uploadAndCreate(path, filename, title);
+  }
+
+  Future<void> _uploadAndCreate(
+    String path,
+    String filename,
+    String title,
+  ) async {
     try {
       final uploaded = await FileTransferService().upload(
         path,
@@ -334,9 +360,6 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
       );
       final fileId = (uploaded['id'] as num?)?.toInt();
       if (fileId == null) throw Exception('上传结果缺少文件 ID');
-      try {
-        await File(path).delete();
-      } catch (_) {}
 
       if (mounted) {
         setState(() {
@@ -355,21 +378,137 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
           title: (job['title'] ?? '会议纪要').toString(),
         );
       }
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      final clearsPending = (_pendingUpload?['path'] ?? '') == path;
+      if (clearsPending) await _savePendingUpload(null);
       if (!mounted) return;
       setState(() {
+        if (clearsPending) _pendingUpload = null;
         _job = job;
         _busy = false;
         _statusText = '';
       });
       if (jobId != null) _startPolling(jobId);
     } catch (e) {
+      await _savePendingUpload({
+        'path': path,
+        'filename': filename,
+        'title': title,
+        'created_at': DateTime.now().toIso8601String(),
+      });
       if (!mounted) return;
       setState(() {
         _busy = false;
         _statusText = '';
-        _error = e.toString().replaceFirst('Exception: ', '');
+        _pendingUpload = {
+          'path': path,
+          'filename': filename,
+          'title': title,
+          'created_at': DateTime.now().toIso8601String(),
+        };
+        _error = '${e.toString().replaceFirst('Exception: ', '')}（录音已保留，可重试上传）';
       });
     }
+  }
+
+  static const _pendingUploadKey = 'meeting.pending_upload';
+
+  Future<Directory> _recordingDir() async {
+    final dir = await getApplicationSupportDirectory();
+    final recordings = Directory('${dir.path}/meeting_recordings');
+    if (!await recordings.exists()) {
+      await recordings.create(recursive: true);
+    }
+    return recordings;
+  }
+
+  Future<void> _savePendingUpload(Map<String, dynamic>? value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value == null) {
+      await prefs.remove(_pendingUploadKey);
+    } else {
+      await prefs.setString(_pendingUploadKey, jsonEncode(value));
+    }
+  }
+
+  Future<void> _loadPendingUpload() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_pendingUploadKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final data = Map<String, dynamic>.from(decoded);
+          final path = (data['path'] ?? '').toString();
+          final file = File(path);
+          if (path.isNotEmpty &&
+              await file.exists() &&
+              await file.length() > 0) {
+            if (mounted) setState(() => _pendingUpload = data);
+            return;
+          }
+        }
+      } catch (_) {}
+      await _savePendingUpload(null);
+    }
+    await _recoverOrphanRecording();
+  }
+
+  Future<void> _recoverOrphanRecording() async {
+    try {
+      final dir = await _recordingDir();
+      final files = await dir
+          .list()
+          .where((entity) => entity is File && entity.path.endsWith('.m4a'))
+          .cast<File>()
+          .toList();
+      if (files.isEmpty) return;
+      files
+          .sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+      final latest = files.first;
+      if (!await latest.exists() || await latest.length() == 0) return;
+      final data = {
+        'path': latest.path,
+        'filename': latest.uri.pathSegments.last,
+        'title': '',
+        'created_at': latest.lastModifiedSync().toIso8601String(),
+      };
+      await _savePendingUpload(data);
+      if (mounted) setState(() => _pendingUpload = data);
+    } catch (_) {}
+  }
+
+  Future<void> _resumePendingUpload() async {
+    final pending = _pendingUpload;
+    if (pending == null || _busy) return;
+    final path = (pending['path'] ?? '').toString();
+    if (path.isEmpty) return;
+    setState(() {
+      _busy = true;
+      _uploadProgress = 0;
+      _statusText = '正在上传录音…';
+      _error = '';
+    });
+    await _uploadAndCreate(
+      path,
+      (pending['filename'] ?? '会议录音.m4a').toString(),
+      (pending['title'] ?? '').toString(),
+    );
+  }
+
+  Future<void> _discardPendingUpload() async {
+    final pending = _pendingUpload;
+    if (pending == null) return;
+    final path = (pending['path'] ?? '').toString();
+    if (path.isNotEmpty) {
+      try {
+        await File(path).delete();
+      } catch (_) {}
+    }
+    await _savePendingUpload(null);
+    if (mounted) setState(() => _pendingUpload = null);
   }
 
   void _startPolling(int id) {
@@ -521,6 +660,10 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
+                    if (_pendingUpload != null && !_busy && _job == null) ...[
+                      _buildPendingUpload(palette),
+                      const SizedBox(height: 12),
+                    ],
                     if (_job == null && !_busy) _buildRecorder(palette),
                     if (_job == null && !_busy) ...[
                       const SizedBox(height: 12),
@@ -545,6 +688,65 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPendingUpload(AppPalette palette) {
+    final pending = _pendingUpload!;
+    final name = (pending['filename'] ?? '会议录音.m4a').toString();
+    final title = (pending['title'] ?? '').toString();
+    return AppCard(
+      color: palette.primarySoft,
+      borderColor: Colors.transparent,
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: palette.card,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.cloud_upload_outlined,
+              size: 18,
+              color: palette.primary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '有一次录音上传未完成',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: palette.ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  title.isEmpty ? name : '$title · $name',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10, color: palette.muted),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _discardPendingUpload,
+            child: const Text('删除'),
+          ),
+          const SizedBox(width: 4),
+          FilledButton(
+            onPressed: _resumePendingUpload,
+            child: const Text('继续上传'),
+          ),
+        ],
       ),
     );
   }
