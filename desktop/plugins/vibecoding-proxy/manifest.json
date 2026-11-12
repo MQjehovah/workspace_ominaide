@@ -3,7 +3,7 @@
   "name": "omniaide-vibecoding-proxy",
   "displayName": "VibeCoding Proxy",
   "description": "项目内运行 opencode/claude/codex 编程 agent，通过飞书/Telegram/Webhook 远程代理执行",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "icon": "FolderOpened",
   "keywords": [
     "vibecoding",
