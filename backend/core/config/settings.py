@@ -127,6 +127,9 @@ class Settings(BaseSettings):
     coding_temperature: float = 0.2
     # Engine: builtin | opencode
     coding_engine: str = "builtin"
+    # Provider used for new coding sessions (opencode / codex / claude).
+    # The backend resolves it against each machine's installed providers.
+    coding_default_provider: str = "opencode"
     coding_agent_home: str = "/data/agent-runtime/home"
     coding_agent_timeout_seconds: int = 1800
     coding_opencode_bin: str = ""

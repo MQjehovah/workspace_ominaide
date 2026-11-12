@@ -244,6 +244,255 @@ function handleControl(msg: any) {
   }
 }
 
+let snapshotTimer: any = null
+let snapshotInterval: any = null
+
+function preferredLocalAgent(): string {
+  const configured = (process.env.VIBECODING_DEFAULT_PROVIDER || '').trim()
+  const available: Record<string, boolean> = {
+    opencode: true,
+    codex: !!toolsCache.codex,
+    claude: !!toolsCache.claude,
+  }
+  if (configured && available[configured]) return configured
+  if (available.opencode) return 'opencode'
+  if (available.codex) return 'codex'
+  if (available.claude) return 'claude'
+  return 'opencode'
+}
+
+async function availableAgents(): Promise<any[]> {
+  let tools: any = { ...toolsCache }
+  try {
+    toolsCache = await checkAiTools()
+    tools = { ...toolsCache }
+  } catch {}
+  return [
+    { id: 'opencode', label: 'OpenCode 2', available: true, native: true, hint: '原生会话' },
+    { id: 'codex', label: 'Codex', available: !!tools.codex, native: false, hint: 'CLI 会话' },
+    { id: 'claude', label: 'Claude Code', available: !!tools.claude, native: false, hint: 'CLI 会话' },
+  ]
+}
+
+function scheduleSessionsSnapshot(delay = 900): void {
+  if (snapshotTimer) clearTimeout(snapshotTimer)
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null
+    void pushSessionsSnapshot()
+  }, delay)
+}
+
+async function collectLocalSessions(): Promise<any[]> {
+  const sessions: any[] = []
+  try {
+    const rows = (await opencodeBridge?.listSessions(100)) || []
+    for (const row of rows) {
+      sessions.push({
+        id: row.id,
+        agent: 'opencode',
+        title: row.title,
+        project: row.directory,
+        updated: row.updated || row.created || 0,
+        running: !!row.busy,
+        native: true,
+      })
+    }
+  } catch {}
+  try {
+    const rows = (await agentSessions?.list()) || []
+    for (const row of rows) {
+      sessions.push({
+        id: row.id,
+        agent: row.agent,
+        title: row.title,
+        project: row.project,
+        updated: row.updatedAt,
+        running: row.running,
+        native: false,
+      })
+    }
+  } catch {}
+  sessions.sort((a, b) => Number(b.updated || 0) - Number(a.updated || 0))
+  return sessions
+}
+
+async function pushSessionsSnapshot(): Promise<void> {
+  if (!reporter) return
+  const sessions = await collectLocalSessions()
+  reporter.send({ type: 'sessions.snapshot', sessions })
+}
+
+async function handleCliCodingRequest(
+  agent: string,
+  action: string,
+  payload: any,
+  respond: (body: Record<string, unknown>) => void,
+): Promise<void> {
+  if (!agentSessions) {
+    respond({ ok: false, error: '会话存储未就绪' })
+    return
+  }
+  const sessionId = String(payload?.session_id || '')
+  if (action === 'sessions.list') {
+    const rows = await agentSessions.list(agent)
+    respond({
+      ok: true,
+      data: {
+        sessions: rows.map((row) => ({
+          id: row.id,
+          agent: row.agent,
+          title: row.title,
+          directory: row.project,
+          updated: row.updatedAt,
+          busy: row.running,
+        })),
+        server: { mode: 'cli' },
+      },
+    })
+    return
+  }
+  if (action === 'session.create') {
+    const project = String(payload?.directory || payload?.project || '').trim()
+    if (!project) throw new Error('缺少项目目录')
+    const session = await agentSessions.create(agent, project, String(payload?.title || ''))
+    respond({
+      ok: true,
+      data: {
+        session: {
+          id: session.id,
+          agent: session.agent,
+          title: session.title,
+          directory: session.project,
+          updated: session.updatedAt,
+          busy: false,
+        },
+      },
+    })
+    scheduleSessionsSnapshot()
+    return
+  }
+  if (action === 'session.history') {
+    const session = await agentSessions.get(sessionId)
+    if (!session) throw new Error('会话不存在')
+    respond({
+      ok: true,
+      data: {
+        messages: session.messages,
+        streaming: session.streaming,
+        running: session.running,
+        cursor: null,
+      },
+    })
+    return
+  }
+  if (action === 'session.prompt') {
+    const text = String(payload?.text || '').trim()
+    if (!text) throw new Error('内容不能为空')
+    const session = await agentSessions.get(sessionId)
+    if (!session) throw new Error('会话不存在')
+    if (cliSessionRun) throw new Error('已有 CLI 会话正在执行，请先停止')
+    if (agent !== 'codex' && agent !== 'claude') throw new Error(`暂不支持 ${agent}`)
+    if (!toolsCache[agent]) throw new Error(`${agent} CLI 未安装或不在 PATH`)
+    await agentSessions.appendMessage(sessionId, {
+      role: 'user',
+      text,
+      ts: Date.now(),
+    })
+    await agentSessions.setRunning(sessionId, true)
+    cliSessionRun = sessionId
+    respond({ ok: true, data: { accepted: true } })
+    scheduleSessionsSnapshot(300)
+    let buffer = ''
+    void spawnAiProcess(agent, session.project, text, (chunk) => {
+      buffer += chunk
+      void agentSessions?.setStreaming(sessionId, buffer)
+    })
+      .then(async (result) => {
+        await agentSessions?.finishRun(sessionId, result?.combined || buffer, result?.error)
+        scheduleSessionsSnapshot(600)
+      })
+      .catch(async (error: any) => {
+        await agentSessions?.finishRun(sessionId, buffer, String(error?.message || error))
+        scheduleSessionsSnapshot(600)
+      })
+      .finally(() => {
+        cliSessionRun = null
+      })
+    return
+  }
+  if (action === 'session.interrupt') {
+    cancelActiveProcess()
+    await agentSessions.setRunning(sessionId, false)
+    cliSessionRun = null
+    respond({ ok: true, data: { interrupted: true } })
+    scheduleSessionsSnapshot(300)
+    return
+  }
+  if (action === 'session.delete') {
+    await agentSessions.remove(sessionId)
+    respond({ ok: true, data: { deleted: true } })
+    scheduleSessionsSnapshot(300)
+    return
+  }
+  throw new Error(`不支持的操作: ${action}`)
+}
+
+async function handleCodingRequest(msg: any): Promise<void> {
+  const requestId = String(msg?.request_id || '')
+  const action = String(msg?.action || '')
+  const payload = msg?.payload || {}
+  const agent = String(payload?.agent || msg?.agent || 'opencode')
+  const respond = (body: Record<string, unknown>) => {
+    reporter?.send({
+      type: 'oc.response',
+      request_id: requestId,
+      action,
+      machine_id: msg?.machine_id,
+      ...body,
+    })
+  }
+  try {
+    if (action === 'agents.list') {
+      respond({ ok: true, data: { agents: await availableAgents() } })
+      return
+    }
+    if (action === 'project.list') {
+      respond({
+        ok: true,
+        data: {
+          projects: getProjects().map((project: ProjectInfo) => ({
+            name: project.name,
+            path: project.path,
+            type: project.type,
+          })),
+          tools: { ...toolsCache, omniaide: true },
+        },
+      })
+      return
+    }
+    if (agent !== 'opencode') {
+      await handleCliCodingRequest(agent, action, payload, respond)
+      return
+    }
+    await opencodeBridge?.handleRequest(msg)
+    if (['session.create', 'session.delete', 'session.prompt', 'session.interrupt'].includes(action)) {
+      scheduleSessionsSnapshot(1500)
+    }
+    if (action === 'session.prompt') {
+      const sessionId = String(payload?.session_id || '')
+      const timer = setInterval(() => {
+        if (!opencodeBridge?.isBusy(sessionId)) {
+          clearInterval(timer)
+          scheduleSessionsSnapshot(300)
+        }
+      }, 2000)
+      setTimeout(() => clearInterval(timer), 15 * 60 * 1000)
+    }
+  } catch (error: any) {
+    respond({ ok: false, error: String(error?.message || error) })
+  }
+}
+
 async function handleProjectsRequest(msg: any) {
   let tools: Record<string, boolean> = { ...toolsCache }
   try { toolsCache = await checkAiTools(); tools = { ...toolsCache } } catch {}
@@ -277,7 +526,7 @@ export default {
       } else if (msg?.type === 'projects.request') {
         handleProjectsRequest(msg)
       } else if (msg?.type === 'oc.request') {
-        opencodeBridge?.handleRequest(msg)
+        void handleCodingRequest(msg)
       }
     })
     reporter.start()
@@ -287,6 +536,9 @@ export default {
     opencodeBridge = createOpenCodeBridge(context, (msg) => reporter?.send(msg))
     opencodeBridge.start()
     agentSessions = createAgentSessionStore(context.storage)
+    setTimeout(() => void pushSessionsSnapshot(), 2200)
+    if (snapshotInterval) clearInterval(snapshotInterval)
+    snapshotInterval = setInterval(() => void pushSessionsSnapshot(), 15_000)
 
     channelManager = createChannelManager(context.storage, async (msg: IncomingMessage) => {
       // Channel → agent run (session-aware), streamed to backend/mobile
@@ -385,17 +637,10 @@ export default {
         })
         .filter((message: any) => message.text || (message.tools || []).length)
 
-    context.registerCommand('listCodingAgents', async () => {
-      let tools: any = { ...toolsCache }
-      try {
-        toolsCache = await checkAiTools()
-        tools = { ...toolsCache }
-      } catch {}
-      return [
-        { id: 'opencode', label: 'OpenCode 2', available: true, native: true, hint: '原生会话' },
-        { id: 'codex', label: 'Codex', available: !!tools.codex, native: false, hint: 'CLI 会话' },
-        { id: 'claude', label: 'Claude Code', available: !!tools.claude, native: false, hint: 'CLI 会话' },
-      ]
+    context.registerCommand('listCodingAgents', async () => availableAgents())
+
+    context.registerCommand('listLocalSessions', async () => {
+      return await collectLocalSessions()
     })
 
     context.registerCommand('listAgentSessions', async (args: any) => {
@@ -431,7 +676,7 @@ export default {
     })
 
     context.registerCommand('createAgentSession', async (args: any) => {
-      const agent = String(args?.agent || 'opencode')
+      const agent = String(args?.agent || preferredLocalAgent())
       const project = String(args?.project || '').trim()
       const title = String(args?.title || '').trim()
       if (!project) return { ok: false, error: '请先选择项目目录' }
@@ -868,6 +1113,10 @@ export default {
   },
 
   deactivate() {
+    if (snapshotTimer) clearTimeout(snapshotTimer)
+    snapshotTimer = null
+    if (snapshotInterval) clearInterval(snapshotInterval)
+    snapshotInterval = null
     opencodeBridge?.stop()
     opencodeBridge = null
     stopAllAcp()

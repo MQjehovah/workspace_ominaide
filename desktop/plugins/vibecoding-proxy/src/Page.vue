@@ -3,10 +3,10 @@
     <header class="vibe-header">
       <div class="vibe-title">
         <h1>VibeCoding</h1>
-        <p>多 Agent 会话 · OpenCode 2 / Codex / Claude Code</p>
+        <p>按项目组织编程会话 · 本机与跨设备</p>
       </div>
       <button class="btn" @click="showProjects = true">
-        📂 项目管理
+        📂 项目
         <span v-if="projects.length" class="count">{{ projects.length }}</span>
       </button>
     </header>

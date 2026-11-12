@@ -810,7 +810,7 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
   }
 
   async function actionSessionCreate(payload: any): Promise<any> {
-    const directory = String(payload?.directory || '').trim()
+    const directory = String(payload?.directory || payload?.project || '').trim()
     if (!directory) throw new Error('缺少项目目录')
     const title = String(payload?.title || '').trim()
     const body: Record<string, unknown> = { location: { directory } }

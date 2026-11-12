@@ -2,11 +2,11 @@
   <div class="mask" @click.self="$emit('close')">
     <div class="dialog">
       <div class="dialog-head">
-        <h3>项目管理</h3>
+        <h3>项目</h3>
         <button class="close" @click="$emit('close')">✕</button>
       </div>
       <p class="hint">
-        会话需要项目目录。这里只负责添加 / 扫描 / 移除目录，不再绑定飞书或启动常驻 Agent。
+        编程会话按项目组织。这里只负责添加 / 扫描 / 移除本地项目目录，不再绑定飞书或启动常驻 Agent。
       </p>
       <div class="actions">
         <button class="btn primary" @click="addDirectory">＋ 添加目录</button>

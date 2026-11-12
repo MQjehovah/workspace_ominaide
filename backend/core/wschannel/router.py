@@ -3,8 +3,10 @@ from pydantic import BaseModel, Field
 
 from core.auth.dependencies import get_current_user
 from core.auth.jwt import decode_access_token
-from core.wschannel import machines as machine_service
+from core.config.settings import settings
+from core.wschannel import coding_sessions, machines as machine_service
 from core.wschannel.hub import host_channel
+from core.wschannel.vibecoding import machine_request
 
 router = APIRouter(tags=["wschannel"])
 
@@ -87,6 +89,226 @@ async def delete_machine(
     if not removed:
         raise HTTPException(status_code=404, detail="Machine not found")
     return {"deleted": True, "machine_id": machine_id}
+
+
+class CreateCodingSessionRequest(BaseModel):
+    # Optional override; normally the backend picks the configured provider.
+    agent: str = ""
+    project: str = ""
+    title: str = ""
+
+
+class CodingPromptRequest(BaseModel):
+    text: str = ""
+
+
+async def _machine_call(
+    user_id: int,
+    machine_id: str,
+    action: str,
+    payload: dict,
+    *,
+    timeout: float = 30.0,
+) -> dict:
+    try:
+        result = await machine_request(
+            user_id, machine_id, action, payload, timeout=timeout
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=502, detail=str(result.get("error") or "桌面端执行失败")
+        )
+    return result.get("data") or {}
+
+
+@router.get("/api/vibecoding/sessions")
+async def list_coding_sessions(user: dict = Depends(get_current_user)):
+    """All last-known coding sessions across the user's machines."""
+    rows = await coding_sessions.list_sessions(user["id"])
+    online = set(host_channel.machine_ids(user["id"]))
+    sessions = [
+        {
+            "id": row.session_id,
+            "session_id": row.session_id,
+            "machine_id": row.machine_id,
+            "machine_name": host_channel.machine_name(row.machine_id),
+            "machine_online": row.machine_id in online,
+            "agent": row.agent or "opencode",
+            "title": row.title or "未命名会话",
+            "project": row.project or "",
+            "native": bool(row.native),
+            "running": bool(row.running),
+            "updated": int(row.updated_ms or 0),
+            "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+        }
+        for row in rows
+    ]
+    machines = [
+        {
+            "machine_id": machine_id,
+            "name": host_channel.machine_name(machine_id),
+            "online": True,
+        }
+        for machine_id in online
+    ]
+    return {"sessions": sessions, "machines": machines}
+
+
+async def _pick_coding_agent(user_id: int, machine_id: str) -> str:
+    preferred = (settings.coding_default_provider or "opencode").strip() or "opencode"
+    try:
+        data = await _machine_call(
+            user_id, machine_id, "agents.list", {}, timeout=10
+        )
+        agents = data.get("agents") or []
+    except Exception:
+        return preferred if preferred in {"opencode", "codex", "claude"} else "opencode"
+    available = [
+        str(agent.get("id"))
+        for agent in agents
+        if isinstance(agent, dict) and agent.get("available")
+    ]
+    for candidate in (preferred, "opencode", "codex", "claude"):
+        if candidate in available:
+            return candidate
+    return available[0] if available else "opencode"
+
+
+@router.get("/api/vibecoding/machines/{machine_id}/agents")
+async def machine_coding_agents(
+    machine_id: str, user: dict = Depends(get_current_user)
+):
+    return await _machine_call(
+        user["id"], machine_id, "agents.list", {}, timeout=15
+    )
+
+
+@router.get("/api/vibecoding/machines/{machine_id}/projects")
+async def machine_coding_projects(
+    machine_id: str, user: dict = Depends(get_current_user)
+):
+    return await _machine_call(
+        user["id"], machine_id, "project.list", {}, timeout=15
+    )
+
+
+@router.post("/api/vibecoding/machines/{machine_id}/sessions")
+async def create_coding_session(
+    machine_id: str,
+    req: CreateCodingSessionRequest,
+    user: dict = Depends(get_current_user),
+):
+    if not req.project.strip():
+        raise HTTPException(status_code=422, detail="请选择项目目录")
+    agent = (req.agent or "").strip() or await _pick_coding_agent(
+        user["id"], machine_id
+    )
+    return await _machine_call(
+        user["id"],
+        machine_id,
+        "session.create",
+        {
+            "agent": agent,
+            "project": req.project.strip(),
+            "title": req.title.strip(),
+        },
+        timeout=90,
+    )
+
+
+@router.get("/api/vibecoding/machines/{machine_id}/sessions/{session_id}")
+async def coding_session_detail(
+    machine_id: str,
+    session_id: str,
+    limit: int = 150,
+    user: dict = Depends(get_current_user),
+):
+    row = await coding_sessions.get_session(user["id"], machine_id, session_id)
+    agent = row.agent if row is not None else "opencode"
+    data = await _machine_call(
+        user["id"],
+        machine_id,
+        "session.history",
+        {"agent": agent, "session_id": session_id, "limit": limit},
+        timeout=60,
+    )
+    return {
+        **data,
+        "session": {
+            "id": session_id,
+            "machine_id": machine_id,
+            "agent": agent,
+            "title": row.title if row is not None else "",
+            "project": row.project if row is not None else "",
+            "running": bool(data.get("running", row.running if row else False)),
+        },
+    }
+
+
+@router.post("/api/vibecoding/machines/{machine_id}/sessions/{session_id}/prompt")
+async def coding_session_prompt(
+    machine_id: str,
+    session_id: str,
+    req: CodingPromptRequest,
+    user: dict = Depends(get_current_user),
+):
+    if not req.text.strip():
+        raise HTTPException(status_code=422, detail="内容不能为空")
+    row = await coding_sessions.get_session(user["id"], machine_id, session_id)
+    agent = row.agent if row is not None else "opencode"
+    result = await _machine_call(
+        user["id"],
+        machine_id,
+        "session.prompt",
+        {
+            "agent": agent,
+            "session_id": session_id,
+            "text": req.text.strip(),
+        },
+        timeout=90,
+    )
+    await coding_sessions.set_running(user["id"], machine_id, session_id, True)
+    return result
+
+
+@router.post("/api/vibecoding/machines/{machine_id}/sessions/{session_id}/interrupt")
+async def coding_session_interrupt(
+    machine_id: str,
+    session_id: str,
+    user: dict = Depends(get_current_user),
+):
+    row = await coding_sessions.get_session(user["id"], machine_id, session_id)
+    agent = row.agent if row is not None else "opencode"
+    result = await _machine_call(
+        user["id"],
+        machine_id,
+        "session.interrupt",
+        {"agent": agent, "session_id": session_id},
+        timeout=30,
+    )
+    await coding_sessions.set_running(user["id"], machine_id, session_id, False)
+    return result
+
+
+@router.delete("/api/vibecoding/machines/{machine_id}/sessions/{session_id}")
+async def coding_session_delete(
+    machine_id: str,
+    session_id: str,
+    user: dict = Depends(get_current_user),
+):
+    row = await coding_sessions.get_session(user["id"], machine_id, session_id)
+    agent = row.agent if row is not None else "opencode"
+    result = await _machine_call(
+        user["id"],
+        machine_id,
+        "session.delete",
+        {"agent": agent, "session_id": session_id},
+        timeout=30,
+    )
+    await coding_sessions.remove_session(user["id"], machine_id, session_id)
+    return result
 
 
 @router.websocket("/ws/host")

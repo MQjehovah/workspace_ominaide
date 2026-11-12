@@ -20,7 +20,9 @@ machine -> viewer
 
 from __future__ import annotations
 
+import asyncio
 import time
+import uuid
 from collections import deque
 from typing import Any
 
@@ -34,6 +36,9 @@ CHANNEL = "vibecoding"
 # request_id -> (expires_at, user_id, viewer_websocket)
 _pending: dict[str, tuple[float, int, Any]] = {}
 PENDING_TTL_SECONDS = 180
+
+# request_id -> (future, user_id, machine_id) for REST-triggered calls.
+_futures: dict[str, tuple[asyncio.Future, int, str]] = {}
 
 # task_id -> machine_id, used to route controls when the caller omits it.
 _task_machine: dict[str, str] = {}
@@ -94,10 +99,52 @@ async def _on_machine_connect(user_id: int, machine_id: str) -> None:
     await _push_machine_status(user_id)
 
 
+async def machine_request(
+    user_id: int,
+    machine_id: str,
+    action: str,
+    payload: dict,
+    *,
+    timeout: float = 30.0,
+    extra: dict | None = None,
+) -> dict:
+    """Round-trip a request to one machine and await its oc.response."""
+    request_id = f"rest-{uuid.uuid4().hex}"
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future = loop.create_future()
+    _futures[request_id] = (future, user_id, machine_id)
+    message = {
+        "type": "oc.request",
+        "request_id": request_id,
+        "action": action,
+        "payload": payload,
+        **(extra or {}),
+    }
+    try:
+        sent = await host_channel.send_to_machine(
+            user_id, machine_id, CHANNEL, message
+        )
+        if not sent:
+            raise RuntimeError("桌面设备不在线")
+        return await asyncio.wait_for(future, timeout)
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError("桌面端响应超时") from exc
+    finally:
+        _futures.pop(request_id, None)
+
+
 async def _on_machine_disconnect(user_id: int, machine_id: str) -> None:
     for task_id, owner in list(_task_machine.items()):
         if owner == machine_id:
             _task_machine.pop(task_id, None)
+    for request_id, (future, call_user, call_machine) in list(_futures.items()):
+        if (
+            call_user == user_id
+            and call_machine == machine_id
+            and not future.done()
+        ):
+            future.set_exception(RuntimeError("桌面设备连接已断开"))
+            _futures.pop(request_id, None)
     await _push_machine_status(user_id)
 
 
@@ -221,6 +268,27 @@ async def _handle_message(user_id: int, machine_id: str, payload: dict, ws) -> N
     # ---- desktop -> viewers ------------------------------------------------
     if machine_id:
         payload.setdefault("machine_id", machine_id)
+        if message_type == "sessions.snapshot":
+            from core.wschannel import coding_sessions
+
+            sessions = payload.get("sessions")
+            if isinstance(sessions, list):
+                try:
+                    await coding_sessions.replace_snapshot(
+                        user_id, machine_id, sessions
+                    )
+                except Exception:
+                    log.exception("[vibecoding] session snapshot failed")
+            return
+        if message_type in ("oc.response", "projects.response"):
+            _cleanup_pending()
+            request_id = str(payload.get("request_id") or "")
+            pending_future = _futures.pop(request_id, None)
+            if pending_future is not None:
+                future, call_user, _ = pending_future
+                if call_user == user_id and not future.done():
+                    future.set_result(payload)
+                    return
         if message_type == "task.event":
             _remember_task(payload)
             await host_channel.broadcast_to_viewers(user_id, CHANNEL, payload)
