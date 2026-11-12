@@ -1,6 +1,6 @@
 {
   "name": "omniaide-vibecoding-proxy",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "displayName": "VibeCoding Proxy",
   "description": "项目内运行 opencode/claude/codex 编程 agent，通过飞书/Telegram/Webhook 远程代理执行",
   "main": "dist/index.js",
@@ -32,7 +32,7 @@
       "shell"
     ],
     "builtin": false,
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "dependencies": {
     "protobufjs": "^8.7.1",

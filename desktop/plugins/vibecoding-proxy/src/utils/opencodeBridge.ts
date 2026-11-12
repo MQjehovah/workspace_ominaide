@@ -23,6 +23,13 @@ export interface OpenCodeBridge {
   stop: () => void
   handleRequest: (payload: any) => Promise<void>
   status: () => Promise<Record<string, unknown>>
+  listSessions: (limit?: number) => Promise<any[]>
+  createSession: (directory: string, title?: string) => Promise<any>
+  deleteSession: (sessionId: string) => Promise<void>
+  history: (sessionId: string, limit?: number) => Promise<any>
+  prompt: (sessionId: string, text: string) => Promise<any>
+  interrupt: (sessionId: string) => Promise<any>
+  isBusy: (sessionId: string) => boolean
 }
 
 type Emit = (msg: Record<string, unknown>) => void
@@ -671,6 +678,7 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
                 text: state.text,
               })
             }
+            busySessions.delete(sessionId)
             emitEvent(sessionId, 'session.execution.succeeded', {})
             stopPolling(sessionId)
             return
@@ -689,6 +697,7 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
                 text: state.text,
               })
             }
+            busySessions.delete(sessionId)
             emitEvent(sessionId, 'session.execution.succeeded', {})
             stopPolling(sessionId)
             return
@@ -784,6 +793,20 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
     busySessions.delete(sessionId)
     stopPolling(sessionId)
     return { interrupted: true, session_id: sessionId }
+  }
+
+  async function actionSessionDelete(payload: any): Promise<any> {
+    const sessionId = String(payload?.session_id || '')
+    if (!sessionId) throw new Error('缺少 session_id')
+    await apiJson(
+      'DELETE',
+      `/api/session/${encodeURIComponent(sessionId)}`,
+      undefined,
+      30_000,
+    )
+    busySessions.delete(sessionId)
+    stopPolling(sessionId)
+    return { deleted: true, session_id: sessionId }
   }
 
   async function actionSessionCreate(payload: any): Promise<any> {
@@ -903,6 +926,9 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
         case 'session.create':
           respond({ ok: true, data: await actionSessionCreate(payload?.payload || {}) })
           return
+        case 'session.delete':
+          respond({ ok: true, data: await actionSessionDelete(payload?.payload || {}) })
+          return
         default:
           respond({ ok: false, error: `不支持的操作: ${action || '(空)'}` })
       }
@@ -931,6 +957,29 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
       streamAbort = null
     },
     handleRequest,
+    async listSessions(limit = 100) {
+      const data = await actionSessionsList({ limit })
+      return data.sessions || []
+    },
+    async createSession(directory: string, title?: string) {
+      const data = await actionSessionCreate({ directory, title })
+      return data.session
+    },
+    async deleteSession(sessionId: string) {
+      await actionSessionDelete({ session_id: sessionId })
+    },
+    history(sessionId: string, limit = 100) {
+      return actionSessionHistory({ session_id: sessionId, limit })
+    },
+    prompt(sessionId: string, text: string) {
+      return actionSessionPrompt({ session_id: sessionId, text })
+    },
+    interrupt(sessionId: string) {
+      return actionSessionInterrupt({ session_id: sessionId })
+    },
+    isBusy(sessionId: string) {
+      return busySessions.has(sessionId) || Boolean(polls.get(sessionId))
+    },
     async status() {
       const target = await resolveServer().catch(() => null)
       return {

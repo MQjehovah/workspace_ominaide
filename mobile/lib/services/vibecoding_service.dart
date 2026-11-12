@@ -126,6 +126,20 @@ class VibecodingService {
     );
   }
 
+  /// Delete a remote session.
+  void deleteSession({
+    required String requestId,
+    required String sessionId,
+    String? machineId,
+  }) {
+    _request(
+      'session.delete',
+      requestId: requestId,
+      machineId: machineId,
+      payload: {'session_id': sessionId},
+    );
+  }
+
   /// Continue an existing OpenCode session with new input.
   void sendPrompt({
     required String requestId,

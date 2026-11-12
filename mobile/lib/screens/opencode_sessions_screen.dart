@@ -34,6 +34,8 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
   String? _error;
   String? _pending;
   String? _pendingCreate;
+  String? _pendingDelete;
+  String? _deletingId;
   String? _projectsRequest;
   List<Map<String, dynamic>> _projects = [];
   String? _serverUrl;
@@ -174,6 +176,10 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
       final requestId = (msg['request_id'] ?? '').toString();
       if (requestId.isNotEmpty && requestId == _pendingCreate) {
         _handleCreateResponse(msg);
+        return;
+      }
+      if (requestId.isNotEmpty && requestId == _pendingDelete) {
+        _handleDeleteResponse(msg);
         return;
       }
       if (requestId.isEmpty || requestId != _pending) return;
@@ -392,6 +398,65 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
       setState(() => _pendingCreate = null);
       _snack('创建超时。请确认桌面端 OpenCode 2 已安装并启动');
     });
+  }
+
+  Future<void> _deleteSession(OpenCodeSession session) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除会话'),
+        content: Text('确定删除「${session.title}」吗？该操作会删除桌面端上的会话记录。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final requestId = _service.newRequestId();
+    setState(() {
+      _pendingDelete = requestId;
+      _deletingId = session.id;
+    });
+    _service.deleteSession(
+      requestId: requestId,
+      sessionId: session.id,
+      machineId: _machineId,
+    );
+    Timer(const Duration(seconds: 20), () {
+      if (!mounted || _pendingDelete != requestId) return;
+      setState(() {
+        _pendingDelete = null;
+        _deletingId = null;
+      });
+      _snack('删除超时，请确认桌面端在线');
+    });
+  }
+
+  void _handleDeleteResponse(Map<String, dynamic> msg) {
+    final sessionId = _deletingId;
+    setState(() {
+      _pendingDelete = null;
+      _deletingId = null;
+      if (msg['ok'] == true && sessionId != null) {
+        _sessions.removeWhere((session) => session.id == sessionId);
+      }
+    });
+    if (msg['ok'] != true) {
+      _snack((msg['error'] ?? '删除失败').toString());
+      return;
+    }
+    _snack('已删除会话');
+    _loadSessions();
   }
 
   void _handleCreateResponse(Map<String, dynamic> msg) {
@@ -748,6 +813,23 @@ class _OpenCodeSessionsScreenState extends State<OpenCodeSessionsScreen> {
                   ],
                 ),
               ),
+              if (_deletingId == session.id)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: '删除会话',
+                  onPressed: () => _deleteSession(session),
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    size: 17,
+                    color: palette.muted,
+                  ),
+                ),
               Icon(Icons.chevron_right_rounded, size: 18, color: palette.muted),
             ],
           ),

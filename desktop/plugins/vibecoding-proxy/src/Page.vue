@@ -1,13 +1,19 @@
 <template>
   <div class="devops-page">
     <header class="header">
-      <h1>DevOps 管理</h1>
+      <h1>VibeCoding</h1>
       <div class="tabs">
+        <button :class="['tab', tab === 'sessions' && 'active']" @click="tab = 'sessions'">💬 会话</button>
         <button :class="['tab', tab === 'projects' && 'active']" @click="tab = 'projects'">📂 项目</button>
         <button :class="['tab', tab === 'coding' && 'active']" @click="tab = 'coding'">🤖 开发</button>
         <button :class="['tab', tab === 'channels' && 'active']" @click="tab = 'channels'">🔌 通道</button>
       </div>
     </header>
+
+    <!-- Sessions Tab -->
+    <div v-if="tab === 'sessions'" class="content">
+      <SessionsPanel :execute="execute" :projects="projects" />
+    </div>
 
     <!-- Projects Tab -->
     <div v-if="tab === 'projects'" class="content">
@@ -174,10 +180,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import SessionsPanel from './SessionsPanel.vue'
 
 const { execute } = defineProps<{ data: any; execute: Function; close: Function }>()
 
-const tab = ref('projects')
+const tab = ref('sessions')
 const projects = ref<any[]>([])
 const projectFilter = ref('')
 const toolSelMap = ref<Record<string, string>>({})

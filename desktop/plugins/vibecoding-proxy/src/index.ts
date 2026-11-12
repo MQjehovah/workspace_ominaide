@@ -11,6 +11,7 @@ import { createVibeChannelClient, type VibeChannelClient } from './utils/channel
 import { OutputParser, type ParsedEvent } from './utils/outputParser'
 import { runCodingAgent } from './utils/codingAgent'
 import { createOpenCodeBridge, type OpenCodeBridge } from './utils/opencodeBridge'
+import { createAgentSessionStore, type AgentSessionStore } from './utils/agentSessions'
 
 type AgentTool = AiTool | 'omniaide'
 
@@ -28,6 +29,8 @@ let activeAgent: { path: string; tool: AgentTool } | null = null
 let channelManager: any = null
 let reporter: VibeChannelClient | null = null
 let opencodeBridge: OpenCodeBridge | null = null
+let agentSessions: AgentSessionStore | null = null
+let cliSessionRun: string | null = null
 let taskQueue: Promise<void> = Promise.resolve()
 let pluginCtx: any = null
 let latestCodingTaskId = ''
@@ -283,6 +286,7 @@ export default {
     // remote clients such as the mobile app.
     opencodeBridge = createOpenCodeBridge(context, (msg) => reporter?.send(msg))
     opencodeBridge.start()
+    agentSessions = createAgentSessionStore(context.storage)
 
     channelManager = createChannelManager(context.storage, async (msg: IncomingMessage) => {
       // Channel → agent run (session-aware), streamed to backend/mobile
@@ -354,6 +358,248 @@ export default {
             actionArgs: {},
           }
         }),
+      }
+    })
+
+    // Unified coding sessions across agents (OpenCode has a native store,
+    // Codex/Claude sessions are kept by the plugin).
+    const normalizeOpenCodeMessages = (messages: any[]) =>
+      (messages || [])
+        .map((message: any) => {
+          const parts = Array.isArray(message.parts) ? message.parts : []
+          const text = parts
+            .filter((part: any) => part.type === 'text')
+            .map((part: any) => part.text)
+            .join('\n\n')
+          const tools = parts
+            .filter((part: any) => part.type === 'tool')
+            .map((part: any) => {
+              const detail =
+                part.input?.command ||
+                part.input?.filePath ||
+                part.input?.path ||
+                ''
+              return `${part.name || 'tool'}${detail ? ': ' + String(detail).split('\n')[0].slice(0, 120) : ''}`
+            })
+          return { role: message.role, text, tools, ts: message.time }
+        })
+        .filter((message: any) => message.text || (message.tools || []).length)
+
+    context.registerCommand('listCodingAgents', async () => {
+      let tools: any = { ...toolsCache }
+      try {
+        toolsCache = await checkAiTools()
+        tools = { ...toolsCache }
+      } catch {}
+      return [
+        { id: 'opencode', label: 'OpenCode 2', available: true, native: true, hint: '原生会话' },
+        { id: 'codex', label: 'Codex', available: !!tools.codex, native: false, hint: 'CLI 会话' },
+        { id: 'claude', label: 'Claude Code', available: !!tools.claude, native: false, hint: 'CLI 会话' },
+      ]
+    })
+
+    context.registerCommand('listAgentSessions', async (args: any) => {
+      const agent = String(args?.agent || 'opencode')
+      if (agent === 'opencode') {
+        if (!opencodeBridge) return []
+        try {
+          const rows = await opencodeBridge.listSessions(100)
+          return rows.map((row: any) => ({
+            id: row.id,
+            agent: 'opencode',
+            title: row.title || '未命名会话',
+            project: row.directory || '',
+            updated: row.updated || row.created || 0,
+            running: !!row.busy,
+            native: true,
+          }))
+        } catch {
+          return []
+        }
+      }
+      if (!agentSessions) return []
+      const rows = await agentSessions.list(agent)
+      return rows.map((row) => ({
+        id: row.id,
+        agent: row.agent,
+        title: row.title,
+        project: row.project,
+        updated: row.updatedAt,
+        running: row.running,
+        native: false,
+      }))
+    })
+
+    context.registerCommand('createAgentSession', async (args: any) => {
+      const agent = String(args?.agent || 'opencode')
+      const project = String(args?.project || '').trim()
+      const title = String(args?.title || '').trim()
+      if (!project) return { ok: false, error: '请先选择项目目录' }
+      if (agent === 'opencode') {
+        if (!opencodeBridge) return { ok: false, error: 'OpenCode 桥接未就绪' }
+        try {
+          const session = await opencodeBridge.createSession(project, title)
+          return {
+            ok: true,
+            session: {
+              id: session.id,
+              agent: 'opencode',
+              title: session.title,
+              project: session.directory || project,
+              updated: session.updated,
+              running: false,
+              native: true,
+            },
+          }
+        } catch (error: any) {
+          return { ok: false, error: String(error?.message || error) }
+        }
+      }
+      if (!agentSessions) return { ok: false, error: '会话存储未就绪' }
+      const session = await agentSessions.create(agent, project, title)
+      return {
+        ok: true,
+        session: {
+          id: session.id,
+          agent: session.agent,
+          title: session.title,
+          project: session.project,
+          updated: session.updatedAt,
+          running: false,
+          native: false,
+        },
+      }
+    })
+
+    context.registerCommand('deleteAgentSession', async (args: any) => {
+      const agent = String(args?.agent || 'opencode')
+      const sessionId = String(args?.sessionId || '')
+      if (!sessionId) return { ok: false, error: '缺少 sessionId' }
+      try {
+        if (agent === 'opencode') {
+          await opencodeBridge?.deleteSession(sessionId)
+        } else {
+          await agentSessions?.remove(sessionId)
+        }
+        return { ok: true }
+      } catch (error: any) {
+        return { ok: false, error: String(error?.message || error) }
+      }
+    })
+
+    context.registerCommand('getAgentSession', async (args: any) => {
+      const agent = String(args?.agent || 'opencode')
+      const sessionId = String(args?.sessionId || '')
+      if (!sessionId) return { ok: false, error: '缺少 sessionId' }
+      if (agent === 'opencode') {
+        if (!opencodeBridge) return { ok: false, error: 'OpenCode 桥接未就绪' }
+        try {
+          const history = await opencodeBridge.history(sessionId, 150)
+          return {
+            ok: true,
+            session: {
+              id: sessionId,
+              agent: 'opencode',
+              title: String(args?.title || ''),
+              project: String(args?.project || ''),
+              running: opencodeBridge.isBusy(sessionId),
+              native: true,
+            },
+            messages: normalizeOpenCodeMessages(history?.messages || []),
+            streaming: '',
+          }
+        } catch (error: any) {
+          return { ok: false, error: String(error?.message || error) }
+        }
+      }
+      const session = await agentSessions?.get(sessionId)
+      if (!session) return { ok: false, error: '会话不存在' }
+      return {
+        ok: true,
+        session: {
+          id: session.id,
+          agent: session.agent,
+          title: session.title,
+          project: session.project,
+          running: session.running,
+          native: false,
+        },
+        messages: session.messages,
+        streaming: session.streaming,
+      }
+    })
+
+    context.registerCommand('sendAgentMessage', async (args: any) => {
+      const agent = String(args?.agent || 'opencode')
+      const sessionId = String(args?.sessionId || '')
+      const text = String(args?.text || '').trim()
+      if (!sessionId) return { ok: false, error: '缺少 sessionId' }
+      if (!text) return { ok: false, error: '内容不能为空' }
+      if (agent === 'opencode') {
+        if (!opencodeBridge) return { ok: false, error: 'OpenCode 桥接未就绪' }
+        try {
+          await opencodeBridge.prompt(sessionId, text)
+          return { ok: true }
+        } catch (error: any) {
+          return { ok: false, error: String(error?.message || error) }
+        }
+      }
+      if (!agentSessions) return { ok: false, error: '会话存储未就绪' }
+      if (cliSessionRun) return { ok: false, error: '已有 CLI 会话正在执行，请先停止' }
+      if (agent !== 'codex' && agent !== 'claude') {
+        return { ok: false, error: `暂不支持 ${agent}` }
+      }
+      if (!toolsCache[agent]) {
+        return { ok: false, error: `${agent} CLI 未安装或不在 PATH` }
+      }
+      const session = await agentSessions.get(sessionId)
+      if (!session) return { ok: false, error: '会话不存在' }
+      await agentSessions.appendMessage(sessionId, {
+        role: 'user',
+        text,
+        ts: Date.now(),
+      })
+      await agentSessions.setRunning(sessionId, true)
+      cliSessionRun = sessionId
+      let buffer = ''
+      void spawnAiProcess(agent, session.project, text, (chunk) => {
+        buffer += chunk
+        void agentSessions?.setStreaming(sessionId, buffer)
+      })
+        .then(async (result) => {
+          await agentSessions?.finishRun(
+            sessionId,
+            result?.combined || buffer,
+            result?.error,
+          )
+        })
+        .catch(async (error: any) => {
+          await agentSessions?.finishRun(
+            sessionId,
+            buffer,
+            String(error?.message || error),
+          )
+        })
+        .finally(() => {
+          cliSessionRun = null
+        })
+      return { ok: true }
+    })
+
+    context.registerCommand('stopAgentMessage', async (args: any) => {
+      const agent = String(args?.agent || 'opencode')
+      const sessionId = String(args?.sessionId || '')
+      try {
+        if (agent === 'opencode') {
+          await opencodeBridge?.interrupt(sessionId)
+        } else {
+          cancelActiveProcess()
+          if (agentSessions) await agentSessions.setRunning(sessionId, false)
+          cliSessionRun = null
+        }
+        return { ok: true }
+      } catch (error: any) {
+        return { ok: false, error: String(error?.message || error) }
       }
     })
 
