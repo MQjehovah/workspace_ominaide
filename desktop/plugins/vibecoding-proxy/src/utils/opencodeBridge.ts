@@ -34,6 +34,20 @@ export interface OpenCodeBridge {
 
 type Emit = (msg: Record<string, unknown>) => void
 
+interface LiveTool {
+  id: string
+  name: string
+  status: string
+  detail: string
+}
+
+interface LiveState {
+  text: string
+  messageId: string
+  tools: LiveTool[]
+  running: boolean
+}
+
 const EVENT_TYPES = [
   'session.text.started',
   'session.text.delta',
@@ -415,6 +429,7 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
   let lastStartAt = 0
   let startAttempted = false
   const busySessions = new Set<string>()
+  const live = new Map<string, LiveState>()
   const polls = new Map<string, { timer: any; msgId: string; text: string; idle: number }>()
 
   function cacheServer(target: OpenCodeServer): OpenCodeServer {
@@ -597,6 +612,57 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
       busySessions.delete(sessionId)
     }
 
+    const state =
+      live.get(sessionId) ||
+      ({ text: '', messageId: '', tools: [], running: false } as LiveState)
+    live.set(sessionId, state)
+    if (name === 'session.execution.started') {
+      state.running = true
+      state.text = ''
+      state.messageId = ''
+      state.tools = []
+    } else if (name === 'session.text.started') {
+      state.running = true
+      state.messageId = String(data?.assistantMessageID || '')
+      state.text = ''
+    } else if (name === 'session.text.delta') {
+      state.running = true
+      if (!state.messageId) {
+        state.messageId = String(data?.assistantMessageID || '')
+      }
+      state.text += String(data?.delta || '')
+    } else if (name === 'session.text.ended') {
+      const finalText = String(data?.text || '')
+      if (finalText) state.text = finalText
+    } else if (name === 'session.tool.called') {
+      state.running = true
+      const input = summarizeInput(data?.input)
+      const detail =
+        String(
+          input.command || input.filePath || input.path || input.preview || '',
+        )
+          .split('\n')[0]
+          .slice(0, 100)
+      state.tools.push({
+        id: String(data?.id || ''),
+        name: '工具调用',
+        status: 'running',
+        detail,
+      })
+    } else if (name === 'session.tool.success' || name === 'session.tool.failed') {
+      const callId = String(data?.id || '')
+      const tool = state.tools.find((item) => item.id === callId)
+      if (tool) {
+        tool.status = name === 'session.tool.success' ? 'success' : 'failed'
+      }
+    } else if (
+      name === 'session.execution.succeeded' ||
+      name === 'session.execution.failed' ||
+      name === 'session.execution.interrupted'
+    ) {
+      state.running = false
+    }
+
     if (name === 'session.renamed' || name === 'session.deleted' || name === 'session.forked') {
       emit({ type: 'oc.event', session_id: sessionId, event: 'sessions.changed', data: {} })
       return
@@ -753,12 +819,49 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
       `/api/session/${encodeURIComponent(sessionId)}/message?${query.toString()}`,
     )
     const items = Array.isArray(response?.data) ? response.data : []
-    const messages = items.map(normalizeMessage).filter((m: any) => m.id || m.parts.length)
+    const messages = items
+      .map(normalizeMessage)
+      .filter((m: any) => m.id || m.parts.length)
+      .map((message: any) => {
+        const parts = Array.isArray(message.parts) ? message.parts : []
+        const text = parts
+          .filter((part: any) => part.type === 'text')
+          .map((part: any) => part.text)
+          .join('\n\n')
+        const tools = parts
+          .filter((part: any) => part.type === 'tool')
+          .map((part: any) => {
+            const icon =
+              part.status === 'running'
+                ? '⏳'
+                : part.status === 'failed'
+                  ? '✗'
+                  : part.status === 'completed' || part.status === 'success'
+                    ? '✓'
+                    : '🛠'
+            const detail =
+              part.input?.command ||
+              part.input?.filePath ||
+              part.input?.path ||
+              part.input?.preview ||
+              ''
+            const suffix = detail
+              ? `: ${String(detail).split('\n')[0].slice(0, 100)}`
+              : ''
+            return `${icon} ${part.name}${suffix}`
+          })
+        return { ...message, text, tools }
+      })
     messages.reverse()
+    const state = live.get(sessionId)
     return {
       session_id: sessionId,
       messages,
       cursor: response?.cursor?.previous || null,
+      running: busySessions.has(sessionId) || !!state?.running,
+      streaming: state?.text || '',
+      streaming_id: state?.messageId || '',
+      live_tools: state?.tools || [],
     }
   }
 
@@ -774,6 +877,7 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
       60_000,
     )
     busySessions.add(sessionId)
+    live.set(sessionId, { text: '', messageId: '', tools: [], running: true })
     if (!streamAbort) {
       emitEvent(sessionId, 'session.execution.started', {})
       startPolling(sessionId)

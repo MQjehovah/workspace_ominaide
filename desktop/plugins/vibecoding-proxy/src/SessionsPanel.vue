@@ -12,6 +12,13 @@
 
       <button class="btn primary" @click="openCreate()">＋ 新建会话</button>
       <button class="btn" @click="refreshAll">刷新</button>
+      <button
+        :class="['filter-chip', onlyRunning && 'active']"
+        :title="onlyRunning ? '显示全部会话' : '只看运行中的会话'"
+        @click="onlyRunning = !onlyRunning"
+      >
+        <span class="filter-dot"></span> 运行中 {{ runningCount }}
+      </button>
       <span class="hint">
         {{ scope === 'local' ? '本机会话，离线可用' : '所有设备的会话，需要联网' }}
       </span>
@@ -49,18 +56,23 @@
         <div
           v-for="s in visibleSessions"
           :key="sessionKey(s)"
-          :class="['session-item', activeKey === sessionKey(s) && 'active']"
+          :class="[
+            'session-item',
+            isRunning(s) && 'running',
+            activeKey === sessionKey(s) && 'active',
+          ]"
           @click="openSession(s)"
         >
           <div class="session-title-row">
-            <span v-if="s.running" class="run-dot"></span>
+            <span v-if="isRunning(s)" class="run-dot"></span>
             <span class="session-title">{{ s.title }}</span>
           </div>
           <div class="session-path" :title="s.project">{{ s.project || '未指定项目路径' }}</div>
           <div class="session-tags">
             <span class="tag source">{{ sourceLabel(s.agent) }}</span>
-            <span :class="['tag', s.running ? 'running' : 'idle']">
-              {{ s.running ? '运行中' : '空闲' }}
+            <span :class="['tag', isRunning(s) ? 'running' : 'idle']">
+              <span v-if="isRunning(s)" class="mini-spin"></span>
+              {{ isRunning(s) ? '运行中' : '空闲' }}
             </span>
             <span v-if="scope === 'cloud' && !selectedProject" class="tag machine">
               {{ s.machine_name || s.machine_id }}
@@ -88,25 +100,49 @@
                 </span>
               </div>
             </div>
-            <span v-if="detail.running" class="running-badge">运行中</span>
+            <span v-if="detail.running" class="running-badge">
+              <span class="mini-spin"></span> 运行中
+            </span>
             <button v-if="detail.running" class="btn danger sm" @click="stop">■ 停止</button>
           </div>
 
           <div ref="messagesEl" class="chat-messages">
-            <div v-if="!detail.messages.length && !detail.streaming" class="chat-empty">
+            <div v-if="detail.running || detail.liveTools.length" class="live-bar">
+              <span v-if="detail.running" class="mini-spin big"></span>
+              <span class="live-title">{{ detail.running ? '正在执行' : '最近工具' }}</span>
+              <span
+                v-for="(tool, ti) in detail.liveTools"
+                :key="ti"
+                :class="['live-tool', tool.status]"
+              >
+                <span>{{ tool.status === 'running' ? '⏳' : tool.status === 'failed' ? '✗' : '✓' }}</span>
+                <span class="live-tool-name">{{ tool.name }}</span>
+                <span v-if="tool.detail" class="live-tool-detail">{{ tool.detail }}</span>
+              </span>
+            </div>
+            <div v-if="!shownMessages.length && !detail.streaming" class="chat-empty">
               这个会话还没有消息，直接在下面输入继续。
             </div>
-            <div v-for="(m, i) in detail.messages" :key="i" :class="['msg', m.role]">
+            <div v-for="(m, i) in shownMessages" :key="i" :class="['msg', m.role]">
               <div class="bubble">
                 <div v-if="m.tools && m.tools.length" class="msg-tools">
                   <span v-for="(t, ti) in m.tools" :key="ti">🛠 {{ t }}</span>
                 </div>
-                <pre v-if="m.text">{{ m.text }}</pre>
+                <div
+                  v-if="m.text"
+                  class="md-body"
+                  @click="onMarkdownClick"
+                  v-html="renderMarkdown(m.text)"
+                ></div>
               </div>
             </div>
             <div v-if="detail.streaming" class="msg assistant">
               <div class="bubble streaming">
-                <pre>{{ detail.streaming }}</pre>
+                <div
+                  class="md-body"
+                  @click="onMarkdownClick"
+                  v-html="renderMarkdown(detail.streaming)"
+                ></div>
               </div>
             </div>
           </div>
@@ -188,10 +224,40 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import MarkdownIt from 'markdown-it'
 
 const props = defineProps<{ execute?: Function; projects?: any[] }>()
 
 const api = () => (window as any).mqbox?.api
+
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const markdownCache = new Map<string, string>()
+
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+  const cached = markdownCache.get(text)
+  if (cached !== undefined) return cached
+  let html = ''
+  try {
+    html = md.render(text)
+  } catch {
+    html = `<pre>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>`
+  }
+  if (markdownCache.size > 240) markdownCache.clear()
+  markdownCache.set(text, html)
+  return html
+}
+
+function onMarkdownClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  const anchor = target?.closest('a')
+  if (!anchor) return
+  const href = anchor.getAttribute('href') || ''
+  if (!href) return
+  event.preventDefault()
+  const shell = (window as any).mqbox?.shell
+  if (shell?.openExternal) shell.openExternal(href)
+}
 
 const scope = ref<'local' | 'cloud'>(
   (localStorage.getItem('vibecoding.scope') as 'local' | 'cloud') || 'local',
@@ -205,6 +271,7 @@ const input = ref('')
 const loading = ref(false)
 const sending = ref(false)
 const quickCreating = ref('')
+const onlyRunning = ref(false)
 const error = ref('')
 const messagesEl = ref<HTMLElement | null>(null)
 let pollTimer: any = null
@@ -297,15 +364,42 @@ const selectedProject = computed(() =>
   projects.value.find((p) => p.key === selectedProjectKey.value) || null,
 )
 
+function isRunning(session: any) {
+  if (activeKey.value === sessionKey(session) && detail.value) {
+    return !!detail.value.running
+  }
+  return !!session.running
+}
+
+const runningCount = computed(
+  () => sessions.value.filter((session) => isRunning(session)).length,
+)
+
+const shownMessages = computed(() => {
+  const current = detail.value
+  if (!current) return []
+  const list = current.messages || []
+  const streamingId = current.streamingId
+  if (current.streaming && streamingId) {
+    return list.filter((message: any) => message.id !== streamingId)
+  }
+  return list
+})
+
 const visibleSessions = computed(() => {
-  const list = selectedProject.value
+  let list = selectedProject.value
     ? sessions.value.filter(
         (s) =>
           s.machine_id === selectedProject.value.machine_id &&
           (s.project || '') === selectedProject.value.path,
       )
     : sessions.value
-  return [...list].sort((a, b) => Number(b.updated || 0) - Number(a.updated || 0))
+  if (onlyRunning.value) list = list.filter((s) => isRunning(s))
+  return [...list].sort(
+    (a, b) =>
+      Number(isRunning(b)) - Number(isRunning(a)) ||
+      Number(b.updated || 0) - Number(a.updated || 0),
+  )
 })
 
 function sessionKey(session: any) {
@@ -394,6 +488,8 @@ async function openSession(session: any) {
     session: { ...session },
     messages: [],
     streaming: '',
+    streamingId: '',
+    liveTools: [],
     running: !!session.running,
   }
   await loadDetail()
@@ -425,6 +521,8 @@ async function loadDetail() {
         },
         messages: res.messages || [],
         streaming: res.streaming || '',
+        streamingId: res.streaming_id || '',
+        liveTools: res.live_tools || [],
         running: !!res.session?.running,
       }
       if (
@@ -450,6 +548,8 @@ async function loadDetail() {
       session: { ...session, ...(res?.session || {}) },
       messages: res?.messages || [],
       streaming: res?.streaming || '',
+      streamingId: res?.streaming_id || '',
+      liveTools: res?.live_tools || [],
       running: !!res?.running,
     }
     if (
@@ -764,6 +864,13 @@ onUnmounted(stopPolling)
 .scope-tab { border:none; background:transparent; color:#64748b; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer; }
 .scope-tab.active { background:#fff; color:#4f46e5; box-shadow:0 1px 4px rgba(15,23,42,.08); font-weight:600; }
 .hint { font-size:10.5px; color:#94a3b8; }
+.filter-chip { display:flex; align-items:center; gap:5px; padding:5px 10px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; color:#64748b; font-size:11.5px; cursor:pointer; }
+.filter-chip.active { background:#f0fdf4; border-color:#86efac; color:#15803d; font-weight:600; }
+.filter-dot { width:7px; height:7px; border-radius:50%; background:#22c55e; }
+.mini-spin { width:9px; height:9px; border:1.5px solid currentColor; border-top-color:transparent; border-radius:50%; display:inline-block; animation:spin 0.8s linear infinite; vertical-align:middle; }
+.mini-spin.big { width:12px; height:12px; border-width:2px; color:#16a34a; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(34,197,94,.5); } 50% { box-shadow:0 0 0 4px rgba(34,197,94,0); } }
 .toolbar-right { display:flex; align-items:center; gap:6px; margin-left:auto; }
 .toolbar-label { font-size:11px; color:#64748b; }
 .proj-select { min-width:170px; max-width:280px; padding:6px 8px; border:1px solid #e2e8f0; border-radius:6px; font-size:12px; background:#fff; }
@@ -777,6 +884,10 @@ onUnmounted(stopPolling)
 .session-item { position:relative; padding:10px 32px 10px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; }
 .session-item:hover { background:#f8fafc; }
 .session-item.active { background:#eef2ff; border-left:3px solid #6366f1; }
+.session-item.running { background:#f0fdf4; }
+.session-item.running.active { background:#eef2ff; }
+.session-item.running .run-dot { animation:pulse 1.4s infinite; }
+.session-item.running .tag.running { display:inline-flex; align-items:center; gap:4px; font-weight:600; }
 .session-title-row { display:flex; align-items:center; gap:5px; }
 .session-title { font-size:12.5px; font-weight:600; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .run-dot { width:6px; height:6px; flex-shrink:0; border-radius:50%; background:#22c55e; }
@@ -797,7 +908,14 @@ onUnmounted(stopPolling)
 .chat-head-text { flex:1; min-width:0; }
 .chat-title { font-size:13px; font-weight:700; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .chat-sub { font-size:10px; color:#94a3b8; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.running-badge { font-size:10px; color:#15803d; background:#dcfce7; border-radius:4px; padding:2px 7px; }
+.running-badge { display:inline-flex; align-items:center; gap:5px; font-size:10px; color:#15803d; background:#dcfce7; border-radius:4px; padding:2px 7px; font-weight:600; }
+.live-bar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:7px 9px; border:1px solid #bbf7d0; background:#f0fdf4; border-radius:8px; font-size:11px; color:#15803d; }
+.live-title { font-weight:700; }
+.live-tool { display:inline-flex; align-items:center; gap:4px; padding:1px 6px; border-radius:5px; background:#fff; border:1px solid #dcfce7; color:#166534; }
+.live-tool.failed { border-color:#fecaca; background:#fef2f2; color:#b91c1c; }
+.live-tool.success { color:#15803d; }
+.live-tool-name { font-weight:600; }
+.live-tool-detail { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#475569; font-family:ui-monospace,Menlo,monospace; font-size:10px; }
 .chat-messages { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; background:#f8fafc; }
 .chat-empty { margin:auto; color:#94a3b8; font-size:12px; text-align:center; padding:30px; }
 .msg { display:flex; }
@@ -806,6 +924,21 @@ onUnmounted(stopPolling)
 .msg.user .bubble { background:#eef2ff; border-color:#c7d2fe; }
 .bubble.streaming { border-style:dashed; }
 .bubble pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family:inherit; font-size:12px; line-height:1.65; color:#334155; }
+.md-body { font-size:12px; line-height:1.7; color:#334155; word-break:break-word; }
+.md-body p { margin:0 0 6px; }
+.md-body p:last-child { margin-bottom:0; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 { margin:6px 0 4px; font-weight:700; color:#1e293b; }
+.md-body h1 { font-size:17px; } .md-body h2 { font-size:15px; } .md-body h3 { font-size:13.5px; }
+.md-body ul, .md-body ol { margin:2px 0 6px; padding-left:18px; }
+.md-body li { margin:1px 0; }
+.md-body code { background:#eef2ff; color:#4f46e5; padding:1px 4px; border-radius:3px; font-size:11px; font-family:ui-monospace,Menlo,monospace; }
+.md-body pre { background:#0f172a; color:#e2e8f0; padding:8px 10px; border-radius:6px; overflow-x:auto; margin:4px 0 6px; }
+.md-body pre code { background:transparent; color:inherit; padding:0; font-size:11px; }
+.md-body blockquote { border-left:3px solid #cbd5e1; margin:4px 0; padding:2px 8px; color:#64748b; }
+.md-body a { color:#4f46e5; text-decoration:underline; }
+.md-body table { border-collapse:collapse; margin:4px 0 6px; }
+.md-body th, .md-body td { border:1px solid #e2e8f0; padding:3px 6px; font-size:11px; }
+.md-body hr { border:none; border-top:1px solid #e2e8f0; margin:8px 0; }
 .msg-tools { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
 .msg-tools span { font-size:9.5px; color:#4f46e5; background:#eef2ff; border-radius:4px; padding:1px 5px; }
 .chat-composer { border-top:1px solid #f1f5f9; padding:10px 12px; }

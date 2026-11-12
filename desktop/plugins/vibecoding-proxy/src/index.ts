@@ -747,11 +747,13 @@ export default {
               agent: 'opencode',
               title: String(args?.title || ''),
               project: String(args?.project || ''),
-              running: opencodeBridge.isBusy(sessionId),
+              running: Boolean(history?.running ?? opencodeBridge.isBusy(sessionId)),
               native: true,
             },
             messages: normalizeOpenCodeMessages(history?.messages || []),
-            streaming: '',
+            streaming: String(history?.streaming || ''),
+            streaming_id: String(history?.streaming_id || ''),
+            live_tools: history?.live_tools || [],
           }
         } catch (error: any) {
           return { ok: false, error: String(error?.message || error) }
@@ -771,6 +773,8 @@ export default {
         },
         messages: session.messages,
         streaming: session.streaming,
+        streaming_id: '',
+        live_tools: [],
       }
     })
 

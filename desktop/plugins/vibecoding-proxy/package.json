@@ -1,6 +1,6 @@
 {
   "name": "omniaide-vibecoding-proxy",
-  "version": "1.7.5",
+  "version": "1.7.7",
   "displayName": "VibeCoding Proxy",
   "description": "项目内运行 opencode/claude/codex 编程 agent，通过飞书/Telegram/Webhook 远程代理执行",
   "main": "dist/index.js",
@@ -32,12 +32,13 @@
       "shell"
     ],
     "builtin": false,
-    "version": "1.7.5"
+    "version": "1.7.7"
   },
   "dependencies": {
     "protobufjs": "^8.7.1",
     "vue": "^3.5.40",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "markdown-it": "^14.3.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",
