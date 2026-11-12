@@ -212,17 +212,12 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     final machineId = (msg['machine_id'] ?? '').toString();
     if (sessionId.isEmpty) return;
     final event = (msg['event'] ?? '').toString();
+    // Only lightweight lifecycle events are needed app-wide. Text deltas and
+    // tool calls are delivered by the backend only to the open session screen.
     switch (event) {
       case 'session.execution.started':
       case 'session.text.started':
         _markRunning(machineId, sessionId);
-        break;
-      case 'session.text.delta':
-      case 'session.reasoning.delta':
-      case 'session.tool.called':
-      case 'session.tool.success':
-      case 'session.tool.failed':
-        _touch(machineId, sessionId);
         break;
       case 'session.execution.succeeded':
         _finish(machineId, sessionId, 'completed');
@@ -338,15 +333,6 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
       // completion with a permission prompt.
       unawaited(LocalReminderService().ensurePermission());
     }
-  }
-
-  void _touch(String machineId, String sessionId) {
-    final run = _byKey[_key(machineId, sessionId)];
-    if (run == null) {
-      _markRunning(machineId, sessionId);
-      return;
-    }
-    run.lastEventAt = DateTime.now();
   }
 
   void _finish(String machineId, String sessionId, String status) {

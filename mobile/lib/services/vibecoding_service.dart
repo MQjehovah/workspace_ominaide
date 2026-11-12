@@ -11,9 +11,54 @@ class VibecodingService {
 
   static final VibecodingService _instance = VibecodingService._();
   factory VibecodingService() => _instance;
-  VibecodingService._();
+  VibecodingService._() {
+    _host.connected.addListener(_onConnected);
+  }
 
   static const String channel = 'vibecoding';
+
+  /// Sessions whose message detail this client is currently displaying.
+  final Set<String> _watchedSessions = <String>{};
+
+  void _onConnected() {
+    if (!_host.connected.value) return;
+    _sendPrefs();
+    for (final sessionId in _watchedSessions) {
+      _send({
+        'type': 'session.watch',
+        'session_id': sessionId,
+        'watching': true,
+      });
+    }
+  }
+
+  void _sendPrefs() {
+    _send({'type': 'viewer.prefs', 'detail_events': 'watched'});
+  }
+
+  /// Keep the websocket connected but only receive text/tool deltas for the
+  /// session that is actually open on screen.
+  void watchSession(String sessionId) {
+    if (sessionId.isEmpty) return;
+    if (_watchedSessions.add(sessionId)) {
+      _send({
+        'type': 'session.watch',
+        'session_id': sessionId,
+        'watching': true,
+      });
+    }
+  }
+
+  void unwatchSession(String sessionId) {
+    if (sessionId.isEmpty) return;
+    if (_watchedSessions.remove(sessionId)) {
+      _send({
+        'type': 'session.watch',
+        'session_id': sessionId,
+        'watching': false,
+      });
+    }
+  }
 
   /// Broadcast stream of vibecoding messages (device.status / task.event /
   /// tasks.snapshot / projects.response / dispatch.error / pong).
@@ -22,7 +67,10 @@ class VibecodingService {
 
   ValueNotifier<bool> get connected => _host.connected;
 
-  Future<void> ensureConnected() => _host.ensureConnected();
+  Future<void> ensureConnected() async {
+    await _host.ensureConnected();
+    if (_host.connected.value) _sendPrefs();
+  }
 
   void _send(Map<String, dynamic> msg) => _host.send(channel, msg);
 

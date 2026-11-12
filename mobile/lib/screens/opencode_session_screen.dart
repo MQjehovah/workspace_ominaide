@@ -60,6 +60,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       widget.machineId,
       running: widget.session.busy,
     );
+    _service.watchSession(widget.session.id);
     _service.ensureConnected();
     _loadHistory();
   }
@@ -67,6 +68,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   @override
   void dispose() {
     _historyTimer?.cancel();
+    _service.unwatchSession(widget.session.id);
     _monitor.runs.removeListener(_onRunStateChanged);
     _service.connected.removeListener(_onConnectionChanged);
     _sub?.cancel();

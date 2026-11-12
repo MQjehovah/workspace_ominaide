@@ -64,6 +64,59 @@ _TASK_FIELDS = (
     "error",
 )
 
+# High-frequency OpenCode events. Viewers that opt into watched-only delivery
+# (the mobile app) only receive these for the session currently on screen,
+# while lightweight status events are still broadcast to everyone.
+_DETAIL_EVENTS = {
+    "session.text.delta",
+    "session.text.ended",
+    "session.reasoning.delta",
+    "session.tool.called",
+    "session.tool.success",
+    "session.tool.failed",
+}
+
+# user_id -> viewer websockets that requested watched-only detail delivery.
+_detail_viewers: dict[int, set[Any]] = {}
+# user_id -> websocket -> watched session_ids.
+_watches: dict[int, dict[Any, set[str]]] = {}
+
+
+def _prune_watchers(user_id: int) -> None:
+    current = set(host_channel.viewer_sockets(user_id))
+    detail = _detail_viewers.get(user_id)
+    if detail is not None:
+        detail.intersection_update(current)
+        if not detail:
+            _detail_viewers.pop(user_id, None)
+    watches = _watches.get(user_id)
+    if watches is not None:
+        for ws in list(watches):
+            if ws not in current:
+                watches.pop(ws, None)
+        if not watches:
+            _watches.pop(user_id, None)
+
+
+async def _broadcast_coding_event(user_id: int, payload: dict) -> None:
+    """Broadcast a coding event, filtering heavy detail for watch-only viewers."""
+    event = str(payload.get("event") or "")
+    if event not in _DETAIL_EVENTS:
+        await host_channel.broadcast_to_viewers(user_id, CHANNEL, payload)
+        return
+
+    _prune_watchers(user_id)
+    detail = _detail_viewers.get(user_id) or set()
+    watches = _watches.get(user_id) or {}
+    session_id = str(payload.get("session_id") or "")
+    for ws in host_channel.viewer_sockets(user_id):
+        if ws in detail and session_id not in (watches.get(ws) or set()):
+            continue
+        if not await host_channel.send_to_ws(ws, CHANNEL, payload):
+            host_channel.disconnect_viewer(user_id, ws)
+            detail.discard(ws)
+            watches.pop(ws, None)
+
 
 def register_channel() -> None:
     """Register the relay handler (idempotent)."""
@@ -307,12 +360,38 @@ async def _handle_message(user_id: int, machine_id: str, payload: dict, ws) -> N
                         return
             await host_channel.broadcast_to_viewers(user_id, CHANNEL, payload)
             return
-        if message_type in ("oc.event", "oc.sessions", "oc.machines"):
+        if message_type == "oc.event":
+            await _broadcast_coding_event(user_id, payload)
+            return
+        if message_type in ("oc.sessions", "oc.machines"):
             await host_channel.broadcast_to_viewers(user_id, CHANNEL, payload)
             return
         return
 
     # ---- viewers -> desktop ------------------------------------------------
+    # Mobile keeps one socket open all the time but only wants message detail
+    # for the session currently on screen. It opts in once with viewer.prefs,
+    # then subscribes/unsubscribes per session.
+    if message_type == "viewer.prefs":
+        if str(payload.get("detail_events") or "") == "watched":
+            _detail_viewers.setdefault(user_id, set()).add(ws)
+        else:
+            detail = _detail_viewers.get(user_id)
+            if detail is not None:
+                detail.discard(ws)
+            (_watches.get(user_id) or {}).pop(ws, None)
+        return
+
+    if message_type == "session.watch":
+        session_id = str(payload.get("session_id") or "")
+        if session_id:
+            sessions = _watches.setdefault(user_id, {}).setdefault(ws, set())
+            if payload.get("watching") is False:
+                sessions.discard(session_id)
+            else:
+                sessions.add(session_id)
+        return
+
     if message_type == "task.dispatch":
         target = str(payload.get("machine_id") or "")
         if not target:

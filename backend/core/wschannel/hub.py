@@ -90,6 +90,10 @@ class HostChannelHub:
     def machine_ids(self, user_id: int) -> list:
         return list((self.machines.get(user_id) or {}).keys())
 
+    def viewer_sockets(self, user_id: int) -> list:
+        """Current viewer websockets for a user (used for selective delivery)."""
+        return list(self.viewers.get(user_id) or ())
+
     def machine_name(self, machine_id: str) -> str:
         return self.machine_names.get(machine_id, machine_id)
 
