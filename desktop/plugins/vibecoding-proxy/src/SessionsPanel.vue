@@ -15,6 +15,24 @@
       <span class="hint">
         {{ scope === 'local' ? '本机会话，离线可用' : '所有设备的会话，需要联网' }}
       </span>
+
+      <div class="toolbar-right">
+        <span class="toolbar-label">项目</span>
+        <select v-model="selectedProjectKey" class="proj-select" title="按项目过滤">
+          <option value="">全部项目（{{ sessions.length }}）</option>
+          <option v-for="p in projects" :key="p.key" :value="p.key">
+            {{ p.name }}（{{ p.count }}）{{ scope === 'cloud' ? ` · ${p.machine_name}` : '' }}
+          </option>
+        </select>
+        <button
+          class="btn quick-btn"
+          :disabled="!!quickCreating"
+          :title="selectedProject ? '在选中项目快速开始' : '选择项目后可快速开始'"
+          @click="quickStart"
+        >
+          {{ quickCreating ? '…' : '＋' }}
+        </button>
+      </div>
     </div>
 
     <div v-if="scope === 'cloud' && error" class="cloud-error">
@@ -23,56 +41,10 @@
     </div>
 
     <div class="sessions-layout">
-      <aside class="folder-list">
-        <div class="pane-head">
-          <span>项目</span>
-          <span class="pane-count">{{ folders.length }}</span>
-        </div>
-        <div
-          :class="['folder-item', !selectedFolderKey && 'active']"
-          @click="selectFolder(null)"
-        >
-          <div class="folder-name">全部会话</div>
-          <div class="folder-meta">{{ sessions.length }} 个会话</div>
-        </div>
-        <div
-          v-for="f in folders"
-          :key="f.key"
-          :class="['folder-item', selectedFolderKey === f.key && 'active']"
-          @click="selectFolder(f)"
-        >
-          <div class="folder-main">
-            <div class="folder-name">
-              <span v-if="f.running" class="run-dot"></span>
-              {{ f.name }}
-            </div>
-            <div class="folder-meta">
-              <span v-if="scope === 'cloud'">{{ f.machine_name }} · </span>{{ f.count }} 个会话
-            </div>
-          </div>
-          <button
-            class="folder-add"
-            title="在这个项目开始新会话"
-            :disabled="!!quickCreating"
-            @click.stop="quickCreate(f)"
-          >
-            {{ quickCreating === f.key ? '…' : '＋' }}
-          </button>
-        </div>
-        <div v-if="!folders.length" class="pane-empty">
-          {{ loading ? '加载中…' : '还没有项目' }}
-        </div>
-      </aside>
-
       <aside class="session-list">
         <div class="pane-head">
-          <span>{{ selectedFolder ? selectedFolder.name : '全部会话' }}</span>
-          <button
-            v-if="selectedFolder"
-            class="pane-add"
-            title="在此文件夹开始新会话"
-            @click="quickCreate(selectedFolder)"
-          >＋</button>
+          <span>{{ selectedProject ? selectedProject.name : '全部会话' }}</span>
+          <span class="pane-count">{{ visibleSessions.length }}</span>
         </div>
         <div
           v-for="s in visibleSessions"
@@ -80,20 +52,25 @@
           :class="['session-item', activeKey === sessionKey(s) && 'active']"
           @click="openSession(s)"
         >
-          <div class="session-title">
+          <div class="session-title-row">
             <span v-if="s.running" class="run-dot"></span>
-            {{ s.title }}
+            <span class="session-title">{{ s.title }}</span>
           </div>
-          <div class="session-meta">
-            <span v-if="scope === 'cloud' && !selectedFolder">
-              {{ s.machine_name || s.machine_id }} ·
+          <div class="session-path" :title="s.project">{{ s.project || '未指定项目路径' }}</div>
+          <div class="session-tags">
+            <span class="tag source">{{ sourceLabel(s.agent) }}</span>
+            <span :class="['tag', s.running ? 'running' : 'idle']">
+              {{ s.running ? '运行中' : '空闲' }}
             </span>
-            {{ timeAgo(s.updated) }}
+            <span v-if="scope === 'cloud' && !selectedProject" class="tag machine">
+              {{ s.machine_name || s.machine_id }}
+            </span>
+            <span class="session-time">{{ timeAgo(s.updated) }}</span>
           </div>
           <button class="session-del" title="删除会话" @click.stop="deleteSession(s)">🗑</button>
         </div>
         <div v-if="!visibleSessions.length" class="pane-empty">
-          {{ loading ? '加载中…' : '这个项目还没有会话' }}
+          {{ loading ? '加载中…' : (selectedProject ? '这个项目还没有会话' : '还没有会话') }}
         </div>
       </aside>
 
@@ -103,16 +80,15 @@
             <div class="chat-head-text">
               <div class="chat-title">{{ detail.session.title || '会话' }}</div>
               <div class="chat-sub">
-                <template v-if="scope === 'cloud'">
-                  {{ machineName(detail.session.machine_id) }} ·
-                  {{ projectName(detail.session.project) }}
-                </template>
-                <template v-else>
-                  本机 · {{ projectName(detail.session.project) }}
-                </template>
+                <span>{{ sourceLabel(detail.session.agent) }}</span>
+                <span> · </span>
+                <span :title="detail.session.project">{{ detail.session.project || '未指定项目' }}</span>
+                <span v-if="scope === 'cloud'">
+                  · {{ machineName(detail.session.machine_id) }}
+                </span>
               </div>
             </div>
-            <span v-if="detail.running" class="running-badge">执行中</span>
+            <span v-if="detail.running" class="running-badge">运行中</span>
             <button v-if="detail.running" class="btn danger sm" @click="stop">■ 停止</button>
           </div>
 
@@ -156,7 +132,7 @@
         </template>
         <div v-else class="chat-empty">
           {{ scope === 'local'
-            ? '选择项目和会话，或直接在文件夹上点 ＋ 开始开发。'
+            ? '选择项目和会话，或直接在选中的项目上点 ＋ 开始开发。'
             : '选择任意设备上的项目和会话，或点 ＋ 开始开发。' }}
         </div>
       </section>
@@ -179,7 +155,7 @@
         <select v-if="!manualProject" v-model="createProject" class="proj-select wide">
           <option value="">选择项目…</option>
           <option v-for="p in createProjects" :key="p.path" :value="p.path">
-            {{ folderName(p.path) }} — {{ p.path }}
+            {{ projectName(p.path) }} — {{ p.path }}
           </option>
         </select>
         <input
@@ -222,7 +198,7 @@ const scope = ref<'local' | 'cloud'>(
 )
 const sessions = ref<any[]>([])
 const machines = ref<any[]>([])
-const selectedFolderKey = ref('')
+const selectedProjectKey = ref(localStorage.getItem('vibecoding.project') || '')
 const activeKey = ref('')
 const detail = ref<any>(null)
 const input = ref('')
@@ -243,18 +219,23 @@ const manualProject = ref(false)
 const creating = ref(false)
 const metaError = ref('')
 
-function folderKey(machineId: string, path: string) {
+function projectKey(machineId: string, path: string) {
   return `${machineId}|${path || ''}`
 }
 
-function folderName(path: string) {
-  if (!path) return '未指定文件夹'
+function projectName(path: string) {
+  if (!path) return '未指定项目'
   const parts = String(path).split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] || path
 }
 
-function projectName(path: string) {
-  return path ? folderName(path) : '未指定项目'
+function sourceLabel(agent: string) {
+  const value = String(agent || '').toLowerCase()
+  if (value === 'opencode') return 'OpenCode'
+  if (value === 'codex') return 'Codex'
+  if (value === 'claude') return 'Claude Code'
+  if (value === 'omniaide') return 'OmniAide'
+  return agent || '未知'
 }
 
 const machineOptions = computed(() => {
@@ -273,10 +254,10 @@ const machineOptions = computed(() => {
 })
 const onlineMachines = computed(() => machineOptions.value.filter((m) => m.online))
 
-const folders = computed(() => {
+const projects = computed(() => {
   const map = new Map<string, any>()
   const ensure = (machineId: string, path: string) => {
-    const key = folderKey(machineId, path)
+    const key = projectKey(machineId, path)
     let item = map.get(key)
     if (!item) {
       const machine = machineOptions.value.find((m) => m.machine_id === machineId)
@@ -286,7 +267,7 @@ const folders = computed(() => {
         machine_name: machine?.name || (machineId === 'local' ? '本机' : machineId),
         online: machineId === 'local' || !!machine?.online,
         path: path || '',
-        name: folderName(path),
+        name: projectName(path),
         count: 0,
         running: false,
       }
@@ -312,16 +293,16 @@ const folders = computed(() => {
   )
 })
 
-const selectedFolder = computed(() =>
-  folders.value.find((f) => f.key === selectedFolderKey.value) || null,
+const selectedProject = computed(() =>
+  projects.value.find((p) => p.key === selectedProjectKey.value) || null,
 )
 
 const visibleSessions = computed(() => {
-  const list = selectedFolder.value
+  const list = selectedProject.value
     ? sessions.value.filter(
         (s) =>
-          s.machine_id === selectedFolder.value.machine_id &&
-          (s.project || '') === selectedFolder.value.path,
+          s.machine_id === selectedProject.value.machine_id &&
+          (s.project || '') === selectedProject.value.path,
       )
     : sessions.value
   return [...list].sort((a, b) => Number(b.updated || 0) - Number(a.updated || 0))
@@ -346,29 +327,19 @@ function timeAgo(ms: number) {
   return `${Math.floor(diff / 86_400_000)} 天前`
 }
 
+function persistProject() {
+  localStorage.setItem('vibecoding.project', selectedProjectKey.value)
+}
+
 async function setScope(next: 'local' | 'cloud') {
   if (scope.value === next) return
   scope.value = next
   localStorage.setItem('vibecoding.scope', next)
-  selectedFolderKey.value = ''
+  selectedProjectKey.value = ''
   activeKey.value = ''
   detail.value = null
   error.value = ''
   await loadSessions()
-}
-
-function selectFolder(folder: any) {
-  selectedFolderKey.value = folder?.key || ''
-  if (detail.value) {
-    const current = detail.value.session
-    if (
-      folder &&
-      (current.machine_id !== folder.machine_id || (current.project || '') !== folder.path)
-    ) {
-      activeKey.value = ''
-      detail.value = null
-    }
-  }
 }
 
 async function loadSessions() {
@@ -388,19 +359,25 @@ async function loadSessions() {
     } finally {
       loading.value = false
     }
-    return
+  } else {
+    loading.value = true
+    try {
+      const res = await api().get('/vibecoding/sessions')
+      sessions.value = res?.sessions || []
+      machines.value = res?.machines || []
+      error.value = ''
+    } catch (e: any) {
+      error.value = e?.message || '无法读取跨设备会话（可能离线）'
+    } finally {
+      loading.value = false
+    }
   }
-
-  loading.value = true
-  try {
-    const res = await api().get('/vibecoding/sessions')
-    sessions.value = res?.sessions || []
-    machines.value = res?.machines || []
-    error.value = ''
-  } catch (e: any) {
-    error.value = e?.message || '无法读取跨设备会话（可能离线）'
-  } finally {
-    loading.value = false
+  if (
+    selectedProjectKey.value &&
+    !projects.value.some((p) => p.key === selectedProjectKey.value)
+  ) {
+    selectedProjectKey.value = ''
+    persistProject()
   }
 }
 
@@ -411,8 +388,9 @@ async function refreshAll() {
 
 async function openSession(session: any) {
   activeKey.value = sessionKey(session)
-  if (!selectedFolderKey.value && session.project) {
-    selectedFolderKey.value = folderKey(session.machine_id, session.project || '')
+  if (!selectedProjectKey.value && session.project) {
+    selectedProjectKey.value = projectKey(session.machine_id, session.project || '')
+    persistProject()
   }
   detail.value = {
     session: { ...session },
@@ -527,17 +505,17 @@ function loadLocalMeta() {
   manualProject.value = createProjects.value.length === 0
 }
 
-async function openCreate(folder?: any) {
+async function openCreate(project?: any) {
   error.value = ''
   metaError.value = ''
   createTitle.value = ''
-  createProject.value = folder?.path || ''
+  createProject.value = project?.path || selectedProject.value?.path || ''
   manualProject.value = false
 
   if (scope.value === 'local') {
     showCreate.value = true
     loadLocalMeta()
-    if (folder?.path) createProject.value = folder.path
+    if (createProject.value) createProject.value = project?.path || selectedProject.value?.path || createProject.value
     return
   }
 
@@ -545,7 +523,7 @@ async function openCreate(folder?: any) {
     error.value = '没有在线设备'
     return
   }
-  const target = folder?.machine_id
+  const target = project?.machine_id || selectedProject.value?.machine_id
   if (target && onlineMachines.value.some((m) => m.machine_id === target)) {
     createMachine.value = target
   } else if (
@@ -556,18 +534,29 @@ async function openCreate(folder?: any) {
   }
   showCreate.value = true
   await loadCloudMeta()
-  if (folder?.path) createProject.value = folder.path
+  if (project?.path || selectedProject.value?.path) {
+    createProject.value = project?.path || selectedProject.value?.path || ''
+  }
 }
 
-async function quickCreate(folder: any) {
+async function quickStart() {
+  if (selectedProject.value) {
+    await quickCreate(selectedProject.value)
+  } else {
+    await openCreate()
+  }
+}
+
+async function quickCreate(project: any) {
   if (quickCreating.value) return
-  quickCreating.value = folder.key
+  quickCreating.value = project.key
   error.value = ''
-  selectedFolderKey.value = folder.key
+  selectedProjectKey.value = project.key
+  persistProject()
   try {
     if (scope.value === 'local') {
       const res = await props.execute?.('createAgentSession', {
-        project: folder.path,
+        project: project.path,
         title: '',
       })
       if (!res?.ok) throw new Error(res?.error || '创建失败')
@@ -580,7 +569,7 @@ async function quickCreate(folder: any) {
           machine_online: true,
           agent: res.session.agent || '',
           title: res.session.title || '新会话',
-          project: res.session.project || folder.path,
+          project: res.session.project || project.path,
           running: false,
           updated: res.session.updated || Date.now(),
         })
@@ -589,20 +578,20 @@ async function quickCreate(folder: any) {
     }
 
     const res = await api().post(
-      `/vibecoding/machines/${encodeURIComponent(folder.machine_id)}/sessions`,
-      { project: folder.path, title: '' },
+      `/vibecoding/machines/${encodeURIComponent(project.machine_id)}/sessions`,
+      { project: project.path, title: '' },
     )
     await loadSessions()
     const created = res?.session
     if (created?.id) {
       await openSession({
         id: created.id,
-        machine_id: folder.machine_id,
-        machine_name: folder.machine_name,
+        machine_id: project.machine_id,
+        machine_name: project.machine_name,
         machine_online: true,
         agent: '',
         title: created.title || '新会话',
-        project: created.directory || folder.path,
+        project: created.directory || project.path,
         running: false,
         updated: Date.now(),
       })
@@ -660,7 +649,8 @@ async function createSession() {
     showCreate.value = false
     await loadSessions()
     if (created?.id) {
-      selectedFolderKey.value = folderKey(created.machine_id, created.project || '')
+      selectedProjectKey.value = projectKey(created.machine_id, created.project || '')
+      persistProject()
       await openSession(created)
     }
   } catch (e: any) {
@@ -772,29 +762,32 @@ onUnmounted(stopPolling)
 .scope-tabs { display:flex; gap:4px; background:#f1f5f9; border-radius:8px; padding:3px; }
 .scope-tab { border:none; background:transparent; color:#64748b; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer; }
 .scope-tab.active { background:#fff; color:#4f46e5; box-shadow:0 1px 4px rgba(15,23,42,.08); font-weight:600; }
-.hint { font-size:10.5px; color:#94a3b8; margin-left:auto; }
+.hint { font-size:10.5px; color:#94a3b8; }
+.toolbar-right { display:flex; align-items:center; gap:6px; margin-left:auto; }
+.toolbar-label { font-size:11px; color:#64748b; }
 .proj-select { min-width:170px; max-width:280px; padding:6px 8px; border:1px solid #e2e8f0; border-radius:6px; font-size:12px; background:#fff; }
 .proj-select.wide { width:100%; max-width:none; margin-bottom:8px; }
+.quick-btn { padding:4px 10px; }
 .cloud-error { display:flex; align-items:center; gap:10px; background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:8px; padding:7px 10px; font-size:11.5px; }
-.sessions-layout { display:grid; grid-template-columns:210px 290px 1fr; gap:10px; min-height:calc(100vh - 220px); }
-.folder-list, .session-list { border:1px solid #e2e8f0; border-radius:10px; background:#fff; overflow-y:auto; max-height:calc(100vh - 220px); }
+.sessions-layout { display:grid; grid-template-columns:360px 1fr; gap:10px; min-height:calc(100vh - 220px); }
+.session-list { border:1px solid #e2e8f0; border-radius:10px; background:#fff; overflow-y:auto; max-height:calc(100vh - 220px); }
 .pane-head { display:flex; align-items:center; justify-content:space-between; padding:9px 12px; font-size:11.5px; font-weight:700; color:#475569; border-bottom:1px solid #f1f5f9; position:sticky; top:0; background:#fff; z-index:1; }
 .pane-count { font-size:10px; color:#94a3b8; font-weight:500; }
-.pane-add { border:none; background:#eef2ff; color:#4f46e5; border-radius:5px; width:20px; height:20px; cursor:pointer; font-size:12px; line-height:1; }
-.folder-item { position:relative; padding:9px 38px 9px 12px; border-bottom:1px solid #f8fafc; cursor:pointer; }
-.folder-item:hover { background:#f8fafc; }
-.folder-item.active { background:#eef2ff; border-left:3px solid #6366f1; }
-.folder-name { font-size:12.5px; font-weight:600; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.folder-meta { font-size:10px; color:#94a3b8; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.folder-add { position:absolute; right:5px; top:9px; border:none; background:#eef2ff; color:#4f46e5; border-radius:5px; width:22px; height:22px; cursor:pointer; font-size:13px; line-height:1; opacity:.55; }
-.folder-item:hover .folder-add { opacity:1; }
-.session-item { position:relative; padding:9px 32px 9px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; }
+.session-item { position:relative; padding:10px 32px 10px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; }
 .session-item:hover { background:#f8fafc; }
 .session-item.active { background:#eef2ff; border-left:3px solid #6366f1; }
+.session-title-row { display:flex; align-items:center; gap:5px; }
 .session-title { font-size:12.5px; font-weight:600; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.session-meta { font-size:10px; color:#94a3b8; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.run-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#22c55e; margin-right:5px; }
-.session-del { position:absolute; right:4px; top:9px; border:none; background:transparent; cursor:pointer; opacity:0; font-size:11px; }
+.run-dot { width:6px; height:6px; flex-shrink:0; border-radius:50%; background:#22c55e; }
+.session-path { margin-top:3px; font-size:10px; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.session-tags { display:flex; align-items:center; gap:5px; margin-top:5px; flex-wrap:wrap; }
+.tag { font-size:9px; line-height:15px; padding:0 5px; border-radius:4px; background:#f1f5f9; color:#64748b; }
+.tag.source { background:#eef2ff; color:#4f46e5; }
+.tag.running { background:#dcfce7; color:#15803d; }
+.tag.idle { background:#f1f5f9; color:#64748b; }
+.tag.machine { background:#fef3c7; color:#b45309; }
+.session-time { font-size:9px; color:#94a3b8; margin-left:auto; }
+.session-del { position:absolute; right:4px; top:10px; border:none; background:transparent; cursor:pointer; opacity:0; font-size:11px; }
 .session-item:hover .session-del { opacity:.6; }
 .session-del:hover { opacity:1; }
 .pane-empty { padding:22px 12px; font-size:11px; color:#94a3b8; text-align:center; }
