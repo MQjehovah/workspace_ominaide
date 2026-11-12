@@ -131,8 +131,8 @@ class LocalReminderService {
           ),
           android: AndroidNotificationDetails(
             'omniaide_coding',
-            'OmniAide 编程任务',
-            channelDescription: '编程会话完成与失败提醒',
+            'OmniAide 任务提醒',
+            channelDescription: '编程与会议任务完成提醒',
             importance: Importance.high,
             priority: Priority.high,
           ),
