@@ -198,7 +198,7 @@ const scope = ref<'local' | 'cloud'>(
 )
 const sessions = ref<any[]>([])
 const machines = ref<any[]>([])
-const selectedProjectKey = ref(localStorage.getItem('vibecoding.project') || '')
+const selectedProjectKey = ref(localStorage.getItem('vibecoding.project.v2') || '')
 const activeKey = ref('')
 const detail = ref<any>(null)
 const input = ref('')
@@ -328,7 +328,7 @@ function timeAgo(ms: number) {
 }
 
 function persistProject() {
-  localStorage.setItem('vibecoding.project', selectedProjectKey.value)
+  localStorage.setItem('vibecoding.project.v2', selectedProjectKey.value)
 }
 
 async function setScope(next: 'local' | 'cloud') {
@@ -388,10 +388,8 @@ async function refreshAll() {
 
 async function openSession(session: any) {
   activeKey.value = sessionKey(session)
-  if (!selectedProjectKey.value && session.project) {
-    selectedProjectKey.value = projectKey(session.machine_id, session.project || '')
-    persistProject()
-  }
+  // Opening a session must not change the project filter, otherwise the rest
+  // of the list disappears.
   detail.value = {
     session: { ...session },
     messages: [],
@@ -649,8 +647,11 @@ async function createSession() {
     showCreate.value = false
     await loadSessions()
     if (created?.id) {
-      selectedProjectKey.value = projectKey(created.machine_id, created.project || '')
-      persistProject()
+      const createdKey = projectKey(created.machine_id, created.project || '')
+      if (selectedProjectKey.value && selectedProjectKey.value !== createdKey) {
+        selectedProjectKey.value = createdKey
+        persistProject()
+      }
       await openSession(created)
     }
   } catch (e: any) {
