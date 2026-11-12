@@ -234,15 +234,20 @@ async def coding_session_detail(
         {"agent": agent, "session_id": session_id, "limit": limit},
         timeout=60,
     )
+    running = bool(data.get("running", row.running if row is not None else False))
     return {
         **data,
+        "running": running,
+        "streaming": data.get("streaming", ""),
+        "streaming_id": data.get("streaming_id", ""),
+        "live_tools": data.get("live_tools", []),
         "session": {
             "id": session_id,
             "machine_id": machine_id,
             "agent": agent,
             "title": row.title if row is not None else "",
             "project": row.project if row is not None else "",
-            "running": bool(data.get("running", row.running if row else False)),
+            "running": running,
         },
     }
 

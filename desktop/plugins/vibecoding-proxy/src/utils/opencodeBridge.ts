@@ -831,34 +831,38 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
         const tools = parts
           .filter((part: any) => part.type === 'tool')
           .map((part: any) => {
-            const icon =
-              part.status === 'running'
-                ? '⏳'
-                : part.status === 'failed'
-                  ? '✗'
-                  : part.status === 'completed' || part.status === 'success'
-                    ? '✓'
-                    : '🛠'
             const detail =
               part.input?.command ||
               part.input?.filePath ||
               part.input?.path ||
               part.input?.preview ||
               ''
-            const suffix = detail
-              ? `: ${String(detail).split('\n')[0].slice(0, 100)}`
-              : ''
-            return `${icon} ${part.name}${suffix}`
+            return {
+              name: part.name || 'tool',
+              status: part.status || '',
+              detail: String(detail).split('\n')[0].slice(0, 120),
+            }
           })
         return { ...message, text, tools }
       })
     messages.reverse()
     const state = live.get(sessionId)
+    let running = busySessions.has(sessionId) || !!state?.running
+    if (!running) {
+      // The plugin may have started after the execution began, so SSE missed
+      // the start event. Ask the server which sessions are active.
+      try {
+        const active = await apiJson('GET', '/api/session/active', undefined, 5000)
+        running = String(active?.data?.[sessionId]?.type || '') === 'running'
+      } catch {
+        // Keep the cached value.
+      }
+    }
     return {
       session_id: sessionId,
       messages,
       cursor: response?.cursor?.previous || null,
-      running: busySessions.has(sessionId) || !!state?.running,
+      running,
       streaming: state?.text || '',
       streaming_id: state?.messageId || '',
       live_tools: state?.tools || [],

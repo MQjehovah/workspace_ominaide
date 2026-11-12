@@ -115,7 +115,8 @@
                 :key="ti"
                 :class="['live-tool', tool.status]"
               >
-                <span>{{ tool.status === 'running' ? '⏳' : tool.status === 'failed' ? '✗' : '✓' }}</span>
+                <span v-if="tool.status === 'running'" class="mini-spin"></span>
+                <span v-else class="tool-mark">{{ tool.status === 'failed' ? '✗' : '✓' }}</span>
                 <span class="live-tool-name">{{ tool.name }}</span>
                 <span v-if="tool.detail" class="live-tool-detail">{{ tool.detail }}</span>
               </span>
@@ -126,7 +127,16 @@
             <div v-for="(m, i) in shownMessages" :key="i" :class="['msg', m.role]">
               <div class="bubble">
                 <div v-if="m.tools && m.tools.length" class="msg-tools">
-                  <span v-for="(t, ti) in m.tools" :key="ti">🛠 {{ t }}</span>
+                  <span
+                    v-for="(t, ti) in m.tools"
+                    :key="ti"
+                    :class="['tool-chip', toolStatus(t)]"
+                  >
+                    <span v-if="isToolRunning(t)" class="mini-spin"></span>
+                    <span v-else class="tool-mark">{{ toolMark(t) }}</span>
+                    <span class="tool-name">{{ toolName(t) }}</span>
+                    <span v-if="toolDetail(t)" class="tool-detail">{{ toolDetail(t) }}</span>
+                  </span>
                 </div>
                 <div
                   v-if="m.text"
@@ -246,6 +256,39 @@ function renderMarkdown(text: string): string {
   if (markdownCache.size > 240) markdownCache.clear()
   markdownCache.set(text, html)
   return html
+}
+
+function toolObj(tool: any) {
+  if (typeof tool === 'string') return { name: tool, status: '', detail: '' }
+  return tool || {}
+}
+
+function toolName(tool: any) {
+  return toolObj(tool).name || 'tool'
+}
+
+function toolDetail(tool: any) {
+  return toolObj(tool).detail || ''
+}
+
+function toolStatus(tool: any) {
+  const status = toolObj(tool).status
+  if (status === 'failed') return 'failed'
+  if (status === 'running' || status === 'pending') return 'running'
+  if (status === 'completed' || status === 'success') return 'success'
+  return ''
+}
+
+function isToolRunning(tool: any) {
+  const status = toolObj(tool).status
+  return status === 'running' || status === 'pending'
+}
+
+function toolMark(tool: any) {
+  const status = toolObj(tool).status
+  if (status === 'failed') return '✗'
+  if (status === 'completed' || status === 'success') return '✓'
+  return '🛠'
 }
 
 function onMarkdownClick(event: MouseEvent) {
@@ -939,8 +982,14 @@ onUnmounted(stopPolling)
 .md-body table { border-collapse:collapse; margin:4px 0 6px; }
 .md-body th, .md-body td { border:1px solid #e2e8f0; padding:3px 6px; font-size:11px; }
 .md-body hr { border:none; border-top:1px solid #e2e8f0; margin:8px 0; }
-.msg-tools { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
-.msg-tools span { font-size:9.5px; color:#4f46e5; background:#eef2ff; border-radius:4px; padding:1px 5px; }
+.msg-tools { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:6px; }
+.tool-chip { display:inline-flex; align-items:center; gap:4px; padding:1px 6px; border-radius:5px; background:#eef2ff; color:#4f46e5; border:1px solid #e0e7ff; font-size:9.5px; }
+.tool-chip.running { background:#ecfdf5; border-color:#86efac; color:#15803d; }
+.tool-chip.failed { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+.tool-mark { font-size:10px; line-height:1; }
+.tool-name { font-weight:600; }
+.tool-detail { max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace,Menlo,monospace; font-size:9px; color:#475569; }
+.tool-chip.running .mini-spin { color:#16a34a; width:8px; height:8px; border-width:1.5px; }
 .chat-composer { border-top:1px solid #f1f5f9; padding:10px 12px; }
 .chat-input { width:100%; box-sizing:border-box; resize:vertical; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:12px; font-family:inherit; outline:none; }
 .chat-input:focus { border-color:#6366f1; }

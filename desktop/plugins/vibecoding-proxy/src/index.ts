@@ -623,16 +623,22 @@ export default {
             .filter((part: any) => part.type === 'text')
             .map((part: any) => part.text)
             .join('\n\n')
-          const tools = parts
-            .filter((part: any) => part.type === 'tool')
-            .map((part: any) => {
-              const detail =
-                part.input?.command ||
-                part.input?.filePath ||
-                part.input?.path ||
-                ''
-              return `${part.name || 'tool'}${detail ? ': ' + String(detail).split('\n')[0].slice(0, 120) : ''}`
-            })
+          const tools = Array.isArray(message.tools)
+            ? message.tools
+            : parts
+                .filter((part: any) => part.type === 'tool')
+                .map((part: any) => {
+                  const detail =
+                    part.input?.command ||
+                    part.input?.filePath ||
+                    part.input?.path ||
+                    ''
+                  return {
+                    name: part.name || 'tool',
+                    status: part.status || '',
+                    detail: String(detail).split('\n')[0].slice(0, 120),
+                  }
+                })
           return { role: message.role, text, tools, ts: message.time }
         })
         .filter((message: any) => message.text || (message.tools || []).length)
