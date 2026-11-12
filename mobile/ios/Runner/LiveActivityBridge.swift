@@ -25,7 +25,12 @@ final class CodingLiveActivityManager {
             action: action
         )
         let content = ActivityContent(state: state, staleDate: nil)
-        if let activity = Activity<CodingActivityAttributes>.activities.first {
+        let activities = Activity<CodingActivityAttributes>.activities
+        if let activity = activities.first {
+            // Clean up duplicates left over from a previous install/launch.
+            for extra in activities.dropFirst() {
+                await extra.end(nil, dismissalPolicy: .immediate)
+            }
             await activity.update(content)
             return
         }

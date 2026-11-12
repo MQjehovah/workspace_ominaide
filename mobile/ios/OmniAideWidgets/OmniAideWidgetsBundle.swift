@@ -9,60 +9,114 @@ struct OmniAideWidgetsBundle: WidgetBundle {
     }
 }
 
+private extension CodingActivityAttributes.ContentState {
+    var isRunning: Bool { status == "running" }
+    var isWaiting: Bool { status == "waiting" }
+    var isFailed: Bool { status == "failed" }
+
+    var accent: Color {
+        if isWaiting { return Color(red: 0.96, green: 0.62, blue: 0.04) }
+        if isFailed { return Color(red: 0.94, green: 0.35, blue: 0.30) }
+        if status == "completed" { return Color(red: 0.20, green: 0.75, blue: 0.45) }
+        if status == "interrupted" { return Color(red: 0.62, green: 0.65, blue: 0.72) }
+        return Color(red: 0.35, green: 0.60, blue: 1.0)
+    }
+
+    var statusText: String {
+        if isWaiting { return "等待你的选择" }
+        if isFailed { return "执行失败" }
+        if status == "completed" { return "已完成" }
+        if status == "interrupted" { return "已停止" }
+        return "运行中"
+    }
+
+    var symbol: String {
+        if isWaiting { return "questionmark.circle.fill" }
+        if isFailed { return "exclamationmark.triangle.fill" }
+        if status == "completed" { return "checkmark.circle.fill" }
+        if status == "interrupted" { return "stop.circle.fill" }
+        return "terminal.fill"
+    }
+}
+
 struct CodingLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: CodingActivityAttributes.self) { context in
             LockScreenRunView(state: context.state)
-                .activityBackgroundTint(Color(red: 0.07, green: 0.09, blue: 0.14))
+                .activityBackgroundTint(Color(red: 0.055, green: 0.07, blue: 0.11))
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 7) {
-                        RunIcon()
-                        Text(context.state.count > 1
-                             ? "\(context.state.count) 个任务"
-                             : "OpenCode")
+                        StatusIcon(state: context.state, size: 17)
+                        Text(context.state.statusText)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(context.state.accent)
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     RunClock(state: context.state, compact: false)
                 }
+                DynamicIslandExpandedRegion(.center) {
+                    Text(context.state.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(context.state.title)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                            .foregroundStyle(.white)
-                        Text(context.state.status == "running"
-                             ? "在桌面端运行中"
-                             : context.state.status == "failed" ? "执行失败" : "已完成")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.6))
+                    VStack(alignment: .leading, spacing: 5) {
+                        if context.state.isWaiting && !context.state.action.isEmpty {
+                            Text(context.state.action)
+                                .font(.caption2.weight(.medium))
+                                .lineLimit(1)
+                                .foregroundStyle(context.state.accent)
+                        }
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(context.state.accent)
+                                .frame(width: 5, height: 5)
+                            Text(context.state.count > 1
+                                 ? "\(context.state.count) 个任务"
+                                 : "OmniAide")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.55))
+                            Spacer()
+                            Text(context.state.isRunning ? "实时同步" : "点按回到 App")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } compactLeading: {
-                RunIcon()
+                HStack(spacing: 4) {
+                    StatusIcon(state: context.state, size: 14)
+                    if context.state.count > 1 {
+                        Text("\(context.state.count)")
+                            .font(.caption2.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(context.state.accent)
+                    }
+                }
             } compactTrailing: {
-                Text("\(context.state.count)")
-                    .font(.caption2.weight(.bold))
-                    .monospacedDigit()
+                RunClock(state: context.state, compact: true)
             } minimal: {
-                RunIcon()
+                StatusIcon(state: context.state, size: 14)
             }
-            .keylineTint(Color(red: 0.28, green: 0.55, blue: 1.0))
+            .keylineTint(context.state.accent)
         }
     }
 }
 
-private struct RunIcon: View {
+private struct StatusIcon: View {
+    let state: CodingActivityAttributes.ContentState
+    let size: CGFloat
+
     var body: some View {
-        Image(systemName: "terminal.fill")
-            .font(.system(size: 12, weight: .bold))
-            .foregroundStyle(Color(red: 0.55, green: 0.75, blue: 1.0))
+        Image(systemName: state.symbol)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(state.accent)
     }
 }
 
@@ -71,19 +125,25 @@ private struct RunClock: View {
     let compact: Bool
 
     var body: some View {
-        if state.status == "running" {
+        if state.isRunning {
             Text(timerInterval: state.startedAt...Date.distantFuture, countsDown: false)
-                .font(compact ? .caption.monospacedDigit() : .title3.monospacedDigit())
+                .font(clockFont)
+                .monospacedDigit()
                 .foregroundStyle(.white)
-        } else if state.status == "waiting" {
-            Text("待选择")
-                .font(compact ? .caption : .title3)
-                .foregroundStyle(Color.orange)
+        } else if state.isWaiting {
+            Text(compact ? "待选" : "待选择")
+                .font(compact ? .caption2.weight(.bold) : .title3.weight(.semibold))
+                .foregroundStyle(state.accent)
         } else {
-            Text(state.duration.isEmpty ? (state.status == "failed" ? "失败" : "完成") : state.duration)
-                .font(compact ? .caption.monospacedDigit() : .title3.monospacedDigit())
-                .foregroundStyle(state.status == "failed" ? Color.orange : Color.green)
+            Text(state.duration.isEmpty ? state.statusText : state.duration)
+                .font(clockFont)
+                .monospacedDigit()
+                .foregroundStyle(state.accent)
         }
+    }
+
+    private var clockFont: Font {
+        compact ? .caption.monospacedDigit().weight(.semibold) : .title3.monospacedDigit()
     }
 }
 
@@ -91,28 +151,46 @@ private struct LockScreenRunView: View {
     let state: CodingActivityAttributes.ContentState
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 13) {
             ZStack {
-                Circle()
-                    .fill(Color(red: 0.15, green: 0.22, blue: 0.36))
-                    .frame(width: 36, height: 36)
-                RunIcon()
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(state.accent.opacity(0.16))
+                    .frame(width: 42, height: 42)
+                StatusIcon(state: state, size: 21)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(state.status == "waiting"
-                 ? "OpenCode 需要你的选择"
-                 : state.count > 1 ? "\(state.count) 个 OpenCode 任务" : "OpenCode 运行中")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(state.accent)
+                        .frame(width: 5, height: 5)
+                    Text(state.statusText)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(state.accent)
+                    if state.count > 1 {
+                        Text("· \(state.count) 个任务")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
+                }
                 Text(state.title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                     .lineLimit(1)
                     .foregroundStyle(.white)
+                if state.isWaiting && !state.action.isEmpty {
+                    Text(state.action)
+                        .font(.caption2)
+                        .lineLimit(1)
+                        .foregroundStyle(state.accent.opacity(0.9))
+                } else {
+                    Text(state.isRunning ? "OpenCode 正在桌面端执行" : "OpenCode")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.45))
+                }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
             RunClock(state: state, compact: false)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 13)
     }
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../models/opencode_models.dart';
+import 'android_overlay_service.dart';
 import 'api_service.dart';
 import 'live_activity_service.dart';
 import 'local_reminder_service.dart';
@@ -75,6 +76,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
   final ValueNotifier<bool> active = ValueNotifier<bool>(false);
 
   final LiveActivityService _liveActivity = LiveActivityService();
+  final AndroidOverlayService _overlay = AndroidOverlayService();
   final Map<String, OpenCodeRun> _byKey = <String, OpenCodeRun>{};
   final Map<String, DateTime> _completedAt = <String, DateTime>{};
   final Map<String, String> _titles = <String, String>{};
@@ -114,6 +116,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     _lastPongAt = DateTime.now();
     _lastPingAt = DateTime.now();
     _timer = Timer.periodic(const Duration(seconds: 10), (_) => _tick());
+    unawaited(_overlay.startIfEnabled());
     unawaited(reconcile());
   }
 
@@ -137,6 +140,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     _machineNames.clear();
     _lastPingAt = null;
     _lastPongAt = null;
+    unawaited(_overlay.stop());
     runs.value = const [];
     justCompleted.value = null;
   }
@@ -146,6 +150,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         _appActive = true;
+        unawaited(_overlay.refreshActive());
         final since = _backgroundedAt;
         _backgroundedAt = null;
         if (since != null &&
@@ -588,6 +593,31 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
       ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
     runs.value = List<OpenCodeRun>.unmodifiable(list);
     if (_byKey.isNotEmpty) _syncLiveActivity();
+    _syncOverlay();
+  }
+
+  void refreshOverlay() => _syncOverlay();
+
+  void _syncOverlay() {
+    final list = _byKey.values.toList();
+    final forms = list.where((run) => run.awaitingForm).length;
+    final permissions = list.where((run) => run.awaitingPermission).length;
+    final String label;
+    final String state;
+    if (forms > 0) {
+      label = '$forms 待选择';
+      state = 'waiting';
+    } else if (permissions > 0) {
+      label = '$permissions 待确认';
+      state = 'waiting';
+    } else if (list.isNotEmpty) {
+      label = '${list.length} 运行中';
+      state = 'running';
+    } else {
+      label = '随手记';
+      state = 'idle';
+    }
+    unawaited(_overlay.sync(label: label, state: state));
   }
 
   void _syncLiveActivity() {

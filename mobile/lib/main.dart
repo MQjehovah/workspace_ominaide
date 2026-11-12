@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'services/android_overlay_service.dart';
 import 'services/api_service.dart';
 import 'services/bot_selection_service.dart';
 import 'services/share_intent_service.dart';
@@ -13,12 +16,23 @@ import 'widgets/global_run_bubble.dart';
 final _navigatorKey = GlobalKey<NavigatorState>();
 final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 final _popupObserver = _PopupRouteObserver();
+bool _pendingOverlayQuickCapture = false;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await appTheme.load();
   await ShareIntentService().init();
   MusicPlayerService().initialize();
+  AndroidOverlayService().onQuickCapture = () {
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null || !ApiService().isLoggedIn) {
+      _pendingOverlayQuickCapture = true;
+      return;
+    }
+    navigator.push(
+      MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
+    );
+  };
   ShareIntentService().onCapture = (capture) {
     final navigator = _navigatorKey.currentState;
     if (navigator == null || !ApiService().isLoggedIn) return;
@@ -77,10 +91,17 @@ class OmniAideApp extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       child ?? const SizedBox.shrink(),
-                      GlobalRunBubble(
-                        navigatorKey: _navigatorKey,
-                        popups: _popupObserver.popups,
-                      ),
+                      if (Platform.isAndroid)
+                        ValueListenableBuilder<bool>(
+                          valueListenable: AndroidOverlayService().active,
+                          builder: (context, overlayActive, _) {
+                            if (overlayActive) return const SizedBox.shrink();
+                            return GlobalRunBubble(
+                              navigatorKey: _navigatorKey,
+                              popups: _popupObserver.popups,
+                            );
+                          },
+                        ),
                     ],
                   ),
                 ),
@@ -170,6 +191,14 @@ class _SplashScreenState extends State<SplashScreen> {
               initialImagePath: shared.imagePath,
             ),
           ),
+        );
+      });
+    }
+    if (_pendingOverlayQuickCapture && ApiService().isLoggedIn) {
+      _pendingOverlayQuickCapture = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
         );
       });
     }

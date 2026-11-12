@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import '../services/android_overlay_service.dart';
 import '../services/api_service.dart';
 import '../services/app_lock_service.dart';
 import '../services/music_cache.dart';
+import '../services/opencode_run_monitor.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import '../widgets/server_settings_dialog.dart';
@@ -20,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _serverUrl = '';
   int _cacheBytes = 0;
   bool _appLock = false;
+  bool _overlayEnabled = false;
   String _dingtalkLabel = '检查中';
 
   @override
@@ -28,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _serverUrl = ApiService().baseUrl;
     _loadCacheSize();
     _loadAppLock();
+    _loadOverlay();
     _loadDingtalk();
   }
 
@@ -35,8 +41,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final status = await ApiService().dingtalkStatus();
       if (!mounted) return;
-      setState(() => _dingtalkLabel =
-          status['authenticated'] == true ? '已绑定' : '未绑定');
+      setState(() =>
+          _dingtalkLabel = status['authenticated'] == true ? '已绑定' : '未绑定');
     } catch (_) {
       if (mounted) setState(() => _dingtalkLabel = '读取失败');
     }
@@ -66,6 +72,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     await AppLockService().setEnabled(value);
     if (mounted) setState(() => _appLock = value);
+  }
+
+  Future<void> _loadOverlay() async {
+    if (!Platform.isAndroid) return;
+    final enabled = await AndroidOverlayService().isEnabled();
+    if (mounted) setState(() => _overlayEnabled = enabled);
+  }
+
+  Future<void> _toggleOverlay(bool value) async {
+    if (!value) {
+      await AndroidOverlayService().setEnabled(false);
+      await AndroidOverlayService().stop();
+      if (mounted) setState(() => _overlayEnabled = false);
+      return;
+    }
+    final granted = await AndroidOverlayService().hasPermission();
+    if (!granted) {
+      await AndroidOverlayService().requestPermission();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请在系统设置中允许「显示在其他应用上层」，然后回来再次开启'),
+        ),
+      );
+      return;
+    }
+    await AndroidOverlayService().setEnabled(true);
+    final ok = await AndroidOverlayService().start(
+      label: '随手记',
+      state: 'idle',
+    );
+    if (!mounted) return;
+    if (!ok) {
+      await AndroidOverlayService().setEnabled(false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('悬浮按钮启动失败，请检查悬浮窗权限')),
+      );
+      return;
+    }
+    OpenCodeRunMonitor().refreshOverlay();
+    setState(() => _overlayEnabled = true);
   }
 
   Future<void> _loadCacheSize() async {
@@ -188,9 +236,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           subtitle: Text(
                             '打开或切回前台时使用 Face ID / 设备密码',
-                            style: TextStyle(fontSize: 10.5, color: palette.muted),
+                            style:
+                                TextStyle(fontSize: 10.5, color: palette.muted),
                           ),
                         ),
+                        if (Platform.isAndroid) ...[
+                          Divider(height: 18, color: palette.line),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            value: _overlayEnabled,
+                            onChanged: _toggleOverlay,
+                            title: Text(
+                              '全局悬浮按钮',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: palette.ink,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '在其他 App 上显示任务状态和随手记入口',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: palette.muted,
+                              ),
+                            ),
+                          ),
+                        ],
                         Divider(height: 18, color: palette.line),
                         _row(palette, '版本', '1.0.0'),
                         Divider(height: 18, color: palette.line),
@@ -215,7 +288,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: _logout,
                     style: OutlinedButton.styleFrom(
                       foregroundColor: palette.accent,
-                      side: BorderSide(color: palette.accent.withValues(alpha: 0.4)),
+                      side: BorderSide(
+                          color: palette.accent.withValues(alpha: 0.4)),
                       minimumSize: const Size.fromHeight(44),
                     ),
                     child: const Text('退出登录'),
