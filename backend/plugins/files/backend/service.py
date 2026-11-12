@@ -27,6 +27,14 @@ def _normalize_path(path: str | None) -> str:
     return p.rstrip("/") or "/"
 
 
+def _folder_variants(path: str | None) -> set[str]:
+    """Match legacy rows that were stored with or without a trailing slash."""
+    normalized = _normalize_path(path)
+    if normalized == "/":
+        return {"/", ""}
+    return {normalized, normalized + "/"}
+
+
 def _join_path(parent: str | None, name: str) -> str:
     parent = _normalize_path(parent)
     name = (name or "").strip("/")
@@ -71,7 +79,7 @@ async def create_folder(
         object_key=object_key,
         original_name=req.name,
         is_folder=True,
-        folder_path=req.parent_path,
+        folder_path=_normalize_path(req.parent_path),
         mime_type="application/folder",
         status="active",
     )
@@ -99,7 +107,7 @@ async def generate_upload_url(
         object_key=object_key,
         original_name=req.filename,
         mime_type=mime_type,
-        folder_path=req.folder_path,
+        folder_path=_normalize_path(req.folder_path),
         status="uploading",
     )
     db.add(file_record)
@@ -161,7 +169,7 @@ async def get_files(
     if params.favorite is not None:
         query = query.where(File.is_favorite == params.favorite)
     if params.folder_path is not None:
-        query = query.where(File.folder_path == params.folder_path)
+        query = query.where(File.folder_path.in_(_folder_variants(params.folder_path)))
     if params.is_folder is not None:
         query = query.where(File.is_folder == params.is_folder)
     if params.search:

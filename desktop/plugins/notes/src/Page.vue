@@ -42,7 +42,9 @@
           <button class="del-btn" @click="deleteNote">删除</button>
         </div>
       </div>
-      <TipTapEditor ref="editorRef" :key="currentId" v-model="content" @update:model-value="markDirty" @open-note="openEmbeddedNote" />
+      <div class="editor-host">
+        <TipTapEditor ref="editorRef" :key="currentId" v-model="content" @update:model-value="markDirty" @open-note="openEmbeddedNote" />
+      </div>
     </div>
     <div class="empty-area" v-else>
       <p>选择或创建一篇笔记</p>
@@ -510,6 +512,8 @@ onUnmounted(() => {
 .notes-list { flex:1; overflow-y:auto; }
 .editor-area { flex:1; display:flex; flex-direction:column; padding:12px 20px; min-width:0; }
 .editor-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:12px; }
+.editor-host { flex:1; min-height:0; display:flex; flex-direction:column; }
+.editor-host :deep(.tiptap-editor) { flex:1 1 auto; min-height:0; height:auto; }
 .title-input { flex:1; font-size:22px; font-weight:700; border:none; outline:none; padding:4px 0; }
 .header-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
 .save-status { font-size:11px; color:#67c23a; transition:opacity 0.3s; }

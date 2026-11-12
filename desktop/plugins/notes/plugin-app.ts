@@ -1,4 +1,6 @@
 import { createApp, defineComponent, ref, h, type Component } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
 
 export function mountPlugin(Page: Component, pluginId: string): void {
   const Container = defineComponent({
@@ -30,5 +32,10 @@ export function mountPlugin(Page: Component, pluginId: string): void {
     }
   })
 
-  createApp(Container).mount('#app')
+  const app = createApp(Container)
+  // The shared notes editor uses Element Plus dialogs/dropdowns/popovers.
+  // Without registering it they render as unknown inline elements and steal
+  // the editor's height, which looks like "content is cut off".
+  app.use(ElementPlus)
+  app.mount('#app')
 }

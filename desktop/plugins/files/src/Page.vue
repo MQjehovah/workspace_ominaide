@@ -47,7 +47,7 @@
 
         <div class="pan-list">
           <!-- Folders -->
-          <div v-for="f in folders" :key="f.id" class="pan-row" @dblclick="enterFolder(f)">
+          <div v-for="f in folders" :key="f.id" class="pan-row" @click="enterFolder(f)" @dblclick="enterFolder(f)">
             <div class="pr-icon" @click="enterFolder(f)">
               <svg class="fi-folder" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
             </div>
