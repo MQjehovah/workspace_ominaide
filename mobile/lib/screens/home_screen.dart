@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/opencode_models.dart';
 import '../services/local_reminder_service.dart';
+import '../services/meeting_job_monitor.dart';
 import '../services/notification_service.dart';
 import '../services/opencode_run_monitor.dart';
 import '../services/refresh_bus.dart';
 import '../widgets/navigation_shell.dart';
 import 'chat_screen.dart';
+import 'meeting_minutes_screen.dart';
 import 'opencode_session_screen.dart';
 import 'profile_screen.dart';
 import 'space_screen.dart';
@@ -28,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   final OpenCodeRunMonitor _runMonitor = OpenCodeRunMonitor();
+  final MeetingJobMonitor _meetingMonitor = MeetingJobMonitor();
 
   @override
   void initState() {
@@ -38,6 +41,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _runMonitor.onPermission = _onPermission;
     _runMonitor.onForm = _onForm;
     _runMonitor.start();
+    _meetingMonitor.onCompleted = _onMeetingCompleted;
+    _meetingMonitor.start();
   }
 
   @override
@@ -46,6 +51,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _runMonitor.onPermission = null;
     _runMonitor.onForm = null;
     _runMonitor.stop();
+    _meetingMonitor.onCompleted = null;
+    _meetingMonitor.stop();
     NotificationService().stop();
     super.dispose();
   }
@@ -97,6 +104,28 @@ class _HomeScreenState extends State<HomeScreen> {
         action: SnackBarAction(
           label: '去选择',
           onPressed: () => _openRun(run, busy: true),
+        ),
+      ),
+    );
+  }
+
+  void _onMeetingCompleted(Map<String, dynamic> job) {
+    if (!mounted) return;
+    final failed = (job['status'] ?? '') == 'failed';
+    final title = (job['title'] ?? '会议纪要').toString();
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('$title ${failed ? '生成失败' : '已生成'}'),
+        duration: const Duration(seconds: 7),
+        action: SnackBarAction(
+          label: '查看',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MeetingMinutesScreen()),
+            );
+          },
         ),
       ),
     );

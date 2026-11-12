@@ -7,6 +7,7 @@ import 'package:record/record.dart';
 
 import '../services/api_service.dart';
 import '../services/file_transfer_service.dart';
+import '../services/meeting_job_monitor.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'notes_screen.dart';
@@ -23,7 +24,8 @@ class MeetingMinutesScreen extends StatefulWidget {
   State<MeetingMinutesScreen> createState() => _MeetingMinutesScreenState();
 }
 
-class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
+class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
+    with WidgetsBindingObserver {
   final _recorder = AudioRecorder();
   final _titleController = TextEditingController();
   Timer? _timer;
@@ -33,25 +35,103 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
   bool _recording = false;
   bool _paused = false;
   bool _busy = false;
+  bool _stopping = false;
+  bool _manualPause = false;
   double _uploadProgress = 0;
   String _statusText = '';
   String _error = '';
+  String? _recordingPath;
+  StreamSubscription<RecordState>? _recordStateSub;
   Map<String, dynamic>? _job;
   List<Map<String, dynamic>> _history = [];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _recordStateSub = _recorder.onStateChanged().listen(
+          _onRecorderState,
+          onError: (_) {},
+        );
     _loadHistory();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _poll?.cancel();
+    _recordStateSub?.cancel();
+    if (_recording) {
+      // Make sure the last audio chunk is flushed even when the route is
+      // removed programmatically without going through the back handler.
+      _recorder.stop().catchError((_) => null);
+    }
     _recorder.dispose();
     _titleController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _recording) {
+      _recorder.isRecording().then((active) {
+        if (!active && mounted && _recording && !_stopping) {
+          _stopAndCreate(interrupted: true);
+        }
+      }).catchError((_) {});
+    }
+  }
+
+  void _onRecorderState(RecordState state) {
+    if (!mounted || !_recording || _stopping) return;
+    if (state == RecordState.stop) {
+      // The OS may stop the audio session for a call or another app. Give
+      // the plugin a moment to flush the file, then save what we have.
+      Future<void>.delayed(const Duration(milliseconds: 350), () {
+        if (mounted && _recording && !_stopping) {
+          _stopAndCreate(interrupted: true);
+        }
+      });
+    } else if (state == RecordState.pause && !_manualPause) {
+      setState(() => _paused = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('录音被系统暂停，已暂停录音'),
+          action: SnackBarAction(label: '继续', onPressed: _pauseResume),
+        ),
+      );
+    } else if (state == RecordState.record && _paused && !_manualPause) {
+      setState(() => _paused = false);
+    }
+  }
+
+  Future<void> _handleBack() async {
+    if (!_recording) {
+      Navigator.maybePop(context);
+      return;
+    }
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('正在录音'),
+        content: const Text('结束录音并保存已录内容？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('继续录音'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('结束并保存'),
+          ),
+        ],
+      ),
+    );
+    if (save == true && mounted) {
+      await _stopAndCreate();
+      if (mounted) Navigator.maybePop(context);
+    }
   }
 
   Future<void> _loadHistory() async {
@@ -101,6 +181,18 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
         '${dt.minute.toString().padLeft(2, '0')}';
   }
 
+  String _jobAge(Map<String, dynamic> job) {
+    final raw = job['started_at'] ?? job['created_at'];
+    final started = DateTime.tryParse('${raw ?? ''}')?.toLocal();
+    if (started == null) return '';
+    final diff = DateTime.now().difference(started);
+    if (diff.inSeconds < 60) return '${diff.inSeconds} 秒';
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes} 分 ${diff.inSeconds.remainder(60)} 秒';
+    }
+    return '${diff.inHours} 小时 ${diff.inMinutes.remainder(60)} 分';
+  }
+
   String _stamp() {
     final now = DateTime.now();
     return '${now.year}${now.month.toString().padLeft(2, '0')}'
@@ -142,6 +234,9 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
         path: path,
       );
       if (!mounted) return;
+      _recordingPath = path;
+      _stopping = false;
+      _manualPause = false;
       setState(() {
         _recording = true;
         _paused = false;
@@ -166,19 +261,28 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
         await _recorder.resume();
         if (mounted) setState(() => _paused = false);
       } else {
-        await _recorder.pause();
+        _manualPause = true;
+        try {
+          await _recorder.pause();
+        } finally {
+          _manualPause = false;
+        }
         if (mounted) setState(() => _paused = true);
       }
     } catch (_) {}
   }
 
-  Future<void> _stopAndCreate() async {
-    if (!_recording) return;
+  Future<void> _stopAndCreate({bool interrupted = false}) async {
+    if (!_recording || _stopping) return;
+    _stopping = true;
     _timer?.cancel();
     String? path;
     try {
       path = await _recorder.stop();
     } catch (_) {}
+    path ??= _recordingPath;
+    _recordingPath = null;
+    _stopping = false;
     if (!mounted) return;
     setState(() {
       _recording = false;
@@ -196,8 +300,27 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
       );
       return;
     }
+    final audioFile = File(path);
+    if (!await audioFile.exists() || await audioFile.length() == 0) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _statusText = '';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('录音文件为空，未能保存')),
+        );
+      }
+      return;
+    }
+    if (interrupted && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('录音被系统中断，已自动保存已录部分')),
+      );
+    }
 
     final filename = '会议录音_${_stamp()}.m4a';
+    final title = _titleController.text.trim();
     try {
       final uploaded = await FileTransferService().upload(
         path,
@@ -214,23 +337,30 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
         await File(path).delete();
       } catch (_) {}
 
-      if (!mounted) return;
-      setState(() {
-        _uploadProgress = 1;
-        _statusText = '正在创建转写任务…';
-      });
-      final title = _titleController.text.trim();
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 1;
+          _statusText = '正在创建转写任务…';
+        });
+      }
       final job = await ApiService().createMeetingMinutes(
         fileId: fileId,
         title: title.isEmpty ? null : title,
       );
+      final jobId = (job['id'] as num?)?.toInt();
+      if (jobId != null) {
+        MeetingJobMonitor().track(
+          jobId,
+          title: (job['title'] ?? '会议纪要').toString(),
+        );
+      }
       if (!mounted) return;
       setState(() {
         _job = job;
         _busy = false;
         _statusText = '';
       });
-      _startPolling((job['id'] as num).toInt());
+      if (jobId != null) _startPolling(jobId);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -242,6 +372,10 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
   }
 
   void _startPolling(int id) {
+    MeetingJobMonitor().track(
+      id,
+      title: (_job?['title'] ?? '会议纪要').toString(),
+    );
     _poll?.cancel();
     _pollFailures = 0;
     _poll = Timer.periodic(const Duration(seconds: 2), (_) async {
@@ -308,6 +442,7 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
     if (deleteAudio == null || !mounted) return;
     try {
       await ApiService().deleteMeetingMinutes(id, deleteAudio: deleteAudio);
+      MeetingJobMonitor().untrack(id);
       if (!mounted) return;
       setState(() {
         _job = null;
@@ -345,48 +480,54 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     final status = (_job?['status'] ?? '').toString();
-    return Scaffold(
-      backgroundColor: palette.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            PageHeader(
-              kicker: 'Minutes',
-              title: '录音纪要',
-              subtitle: '录音只上传一次，原文件默认保留',
-              actions: [
-                RoundIconButton(
-                  icon: Icons.arrow_back_rounded,
-                  onTap: () => Navigator.maybePop(context),
-                ),
-              ],
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                children: [
-                  if (_job == null && !_busy) _buildRecorder(palette),
-                  if (_job == null && !_busy) ...[
-                    const SizedBox(height: 12),
-                    _buildHistory(palette),
-                  ],
-                  if (_busy) _buildBusy(palette),
-                  if (_job != null && !_busy) _buildJob(palette, status),
-                  if (_error.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    if (_job != null) InlineErrorBanner(onRetry: _retry),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        _error,
-                        style: TextStyle(fontSize: 11, color: palette.muted),
-                      ),
-                    ),
-                  ],
+    return PopScope(
+      canPop: !_recording,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _recording) _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: palette.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              PageHeader(
+                kicker: 'Minutes',
+                title: '录音纪要',
+                subtitle: '录音只上传一次，原文件默认保留',
+                actions: [
+                  RoundIconButton(
+                    icon: Icons.arrow_back_rounded,
+                    onTap: _handleBack,
+                  ),
                 ],
               ),
-            ),
-          ],
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  children: [
+                    if (_job == null && !_busy) _buildRecorder(palette),
+                    if (_job == null && !_busy) ...[
+                      const SizedBox(height: 12),
+                      _buildHistory(palette),
+                    ],
+                    if (_busy) _buildBusy(palette),
+                    if (_job != null && !_busy) _buildJob(palette, status),
+                    if (_error.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      if (_job != null) InlineErrorBanner(onRetry: _retry),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          _error,
+                          style: TextStyle(fontSize: 11, color: palette.muted),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -435,6 +576,14 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
                 _recording ? (_paused ? '已暂停' : '正在录音…') : '点击开始录音',
                 style: TextStyle(fontSize: 12, color: palette.muted),
               ),
+              if (_recording) ...[
+                const SizedBox(height: 5),
+                Text(
+                  '锁屏后仍会继续录音；来电或系统中断会自动保存已录部分。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 10, color: palette.muted),
+                ),
+              ],
               const SizedBox(height: 18),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -651,6 +800,14 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen> {
                         color: failed ? palette.accent : palette.muted,
                       ),
                     ),
+                    if (!done && !failed)
+                      Text(
+                        '已等待 ${_jobAge(job)} · MOSS 长录音通常需要几分钟',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          color: palette.muted,
+                        ),
+                      ),
                   ],
                 ),
               ),
