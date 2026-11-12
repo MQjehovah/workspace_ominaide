@@ -10,6 +10,7 @@ import '../services/file_transfer_service.dart';
 import '../services/meeting_job_monitor.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'meeting_transcript_screen.dart';
 import 'notes_screen.dart';
 
 /// Record a meeting, upload the original file to MinIO once, then reference
@@ -461,6 +462,21 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
     }
   }
 
+  void _openTranscript() {
+    final job = _job;
+    if (job == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MeetingTranscriptScreen(
+          title: (job['title'] ?? '会议纪要').toString(),
+          transcript: (job['transcript'] ?? '').toString(),
+          segments: (job['segments'] as List?) ?? const [],
+        ),
+      ),
+    );
+  }
+
   void _openNote() {
     final noteId = (_job?['note_id'] as num?)?.toInt();
     final title = (_job?['title'] ?? '会议纪要').toString();
@@ -867,6 +883,55 @@ class _MeetingMinutesScreenState extends State<MeetingMinutesScreen>
               ],
             ),
           ),
+          if (((job['transcript'] ?? '') as String).isNotEmpty ||
+              ((job['segments'] as List?)?.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 10),
+            AppCard(
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: palette.primarySoft,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.subject_rounded,
+                      size: 18,
+                      color: palette.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '原文转写',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: palette.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${(job['segments'] as List?)?.length ?? 0} 段 · '
+                          '${((job['transcript'] ?? '') as String).replaceAll(RegExp(r'\s+'), '').length} 字',
+                          style: TextStyle(fontSize: 10, color: palette.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  OutlinedButton(
+                    onPressed: _openTranscript,
+                    child: const Text('查看原文'),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
