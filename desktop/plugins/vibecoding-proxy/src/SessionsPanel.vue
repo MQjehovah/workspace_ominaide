@@ -40,7 +40,7 @@
         </template>
         <span class="toolbar-label">项目</span>
         <select v-model="selectedProjectKey" class="proj-select" title="按项目过滤">
-          <option value="">全部项目（{{ sessions.length }}）</option>
+          <option value="">全部项目（{{ deviceSessionCount }}）</option>
           <option v-for="p in projects" :key="p.key" :value="p.key">
             {{ p.name }}（{{ p.count }}）{{ scope === 'cloud' ? ` · ${p.machine_name}` : '' }}
           </option>
@@ -441,6 +441,12 @@ const machineOptions = computed(() => {
 })
 const onlineMachines = computed(() => machineOptions.value.filter((m) => m.online))
 
+const deviceSessionCount = computed(() =>
+  deviceFilter.value
+    ? sessions.value.filter((s) => s.machine_id === deviceFilter.value).length
+    : sessions.value.length,
+)
+
 const projects = computed(() => {
   const map = new Map<string, any>()
   const ensure = (machineId: string, path: string) => {
@@ -653,6 +659,9 @@ async function openSession(session: any) {
     liveTools: [],
     running: !!session.running,
   }
+  // Seed the elapsed timer from the click: loadDetail would otherwise see a
+  // placeholder that is already "running" and never start the timer.
+  runStartedAt.value = session.running ? Date.now() : null
   await loadDetail()
 }
 
