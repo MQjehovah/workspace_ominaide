@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/opencode_models.dart';
 import 'api_service.dart';
+import 'live_activity_service.dart';
 import 'local_reminder_service.dart';
 import 'vibecoding_service.dart';
 
@@ -28,6 +29,15 @@ class OpenCodeRun {
   DateTime? finishedAt;
   String status = 'running';
   bool connectionLost = false;
+  bool awaitingPermission = false;
+  String permissionId = '';
+  String permissionAction = '';
+  List<String> permissionResources = const [];
+  String permissionMessage = '';
+  bool awaitingForm = false;
+  String formId = '';
+  String formTitle = '';
+  List<Map<String, dynamic>> formFields = const [];
 
   String get key => '$machineId|$sessionId';
 
@@ -64,6 +74,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
       ValueNotifier<OpenCodeRun?>(null);
   final ValueNotifier<bool> active = ValueNotifier<bool>(false);
 
+  final LiveActivityService _liveActivity = LiveActivityService();
   final Map<String, OpenCodeRun> _byKey = <String, OpenCodeRun>{};
   final Map<String, DateTime> _completedAt = <String, DateTime>{};
   final Map<String, String> _titles = <String, String>{};
@@ -83,6 +94,12 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
 
   /// Called when a run completes while the app is in the foreground.
   void Function(OpenCodeRun run)? onCompleted;
+
+  /// Called when a run is blocked on a permission choice.
+  void Function(OpenCodeRun run)? onPermission;
+
+  /// Called when a run is blocked on an ask_user form.
+  void Function(OpenCodeRun run)? onForm;
 
   bool get appActive => _appActive;
 
@@ -104,6 +121,7 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     if (!_started) return;
     _started = false;
     active.value = false;
+    if (_byKey.isNotEmpty) unawaited(_liveActivity.endAll());
     _timer?.cancel();
     _timer = null;
     _completedTimer?.cancel();
@@ -212,8 +230,11 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     final machineId = (msg['machine_id'] ?? '').toString();
     if (sessionId.isEmpty) return;
     final event = (msg['event'] ?? '').toString();
-    // Only lightweight lifecycle events are needed app-wide. Text deltas and
-    // tool calls are delivered by the backend only to the open session screen.
+    final data = msg['data'] is Map
+        ? Map<String, dynamic>.from(msg['data'] as Map)
+        : const <String, dynamic>{};
+    // Only lightweight lifecycle/permission events are needed app-wide. Text
+    // deltas and tool calls go only to the open session screen.
     switch (event) {
       case 'session.execution.started':
       case 'session.text.started':
@@ -228,9 +249,105 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
       case 'session.execution.interrupted':
         _finish(machineId, sessionId, 'interrupted');
         break;
+      case 'permission.asked':
+        _permissionAsked(machineId, sessionId, data);
+        break;
+      case 'permission.replied':
+        clearPermission(machineId, sessionId);
+        break;
+      case 'form.created':
+        _formAsked(machineId, sessionId, data);
+        break;
+      case 'form.replied':
+      case 'form.cancelled':
+        clearForm(machineId, sessionId);
+        break;
       default:
         break;
     }
+  }
+
+  void _permissionAsked(
+    String machineId,
+    String sessionId,
+    Map<String, dynamic> data,
+  ) {
+    _markRunning(machineId, sessionId);
+    final run = _byKey[_key(machineId, sessionId)];
+    if (run == null) return;
+    run.awaitingPermission = true;
+    run.permissionId = (data['request_id'] ?? data['id'] ?? '').toString();
+    run.permissionAction =
+        (data['action'] ?? data['title'] ?? '需要确认').toString();
+    run.permissionMessage = (data['message'] ?? '').toString();
+    run.permissionResources = ((data['resources'] as List?) ?? const [])
+        .map((value) => value.toString())
+        .where((value) => value.isNotEmpty)
+        .toList();
+    _publish();
+    if (_appActive) {
+      onPermission?.call(run);
+    } else {
+      unawaited(
+        LocalReminderService().showNow(
+          title: 'OpenCode 需要确认',
+          body: '${run.title} · ${run.permissionAction}',
+        ),
+      );
+    }
+  }
+
+  void clearPermission(String? machineId, String sessionId) {
+    final run = _byKey[_key(machineId ?? '', sessionId)];
+    if (run == null || !run.awaitingPermission) return;
+    run.awaitingPermission = false;
+    run.permissionId = '';
+    run.permissionAction = '';
+    run.permissionMessage = '';
+    run.permissionResources = const [];
+    _publish();
+  }
+
+  void _formAsked(
+    String machineId,
+    String sessionId,
+    Map<String, dynamic> data,
+  ) {
+    _markRunning(machineId, sessionId);
+    final run = _byKey[_key(machineId, sessionId)];
+    if (run == null) return;
+    final raw = data['form'] is Map
+        ? Map<String, dynamic>.from(data['form'] as Map)
+        : data;
+    final fields = (raw['fields'] as List?) ?? const [];
+    run.awaitingForm = true;
+    run.formId = (raw['form_id'] ?? raw['id'] ?? '').toString();
+    run.formTitle = (raw['title'] ?? '需要你的选择').toString();
+    run.formFields = fields
+        .whereType<Map>()
+        .map((field) => Map<String, dynamic>.from(field))
+        .toList();
+    _publish();
+    if (_appActive) {
+      onForm?.call(run);
+    } else {
+      unawaited(
+        LocalReminderService().showNow(
+          title: 'OpenCode 需要你选择',
+          body: '${run.title} · ${run.formTitle}',
+        ),
+      );
+    }
+  }
+
+  void clearForm(String? machineId, String sessionId) {
+    final run = _byKey[_key(machineId ?? '', sessionId)];
+    if (run == null || !run.awaitingForm) return;
+    run.awaitingForm = false;
+    run.formId = '';
+    run.formTitle = '';
+    run.formFields = const [];
+    _publish();
   }
 
   String _key(String machineId, String sessionId) => '$machineId|$sessionId';
@@ -281,6 +398,17 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     run.status = 'interrupted';
     _completedAt[run.key] = run.finishedAt!;
     _publish();
+    if (_byKey.isEmpty) {
+      unawaited(
+        _liveActivity.end(
+          title: run.title,
+          count: 1,
+          startedAt: run.startedAt,
+          status: 'interrupted',
+          duration: formatRunDuration(run.elapsed),
+        ),
+      );
+    }
   }
 
   bool isRunning(String? machineId, String sessionId) =>
@@ -343,6 +471,17 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     run.status = status;
     _completedAt[key] = run.finishedAt!;
     _publish();
+    if (_byKey.isEmpty) {
+      unawaited(
+        _liveActivity.end(
+          title: run.title,
+          count: 1,
+          startedAt: run.startedAt,
+          status: status,
+          duration: formatRunDuration(run.elapsed),
+        ),
+      );
+    }
     if (status == 'interrupted') return;
 
     _completedTimer?.cancel();
@@ -448,5 +587,33 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     final list = _byKey.values.toList()
       ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
     runs.value = List<OpenCodeRun>.unmodifiable(list);
+    if (_byKey.isNotEmpty) _syncLiveActivity();
+  }
+
+  void _syncLiveActivity() {
+    final list = _byKey.values.toList();
+    if (list.isEmpty) return;
+    final forms = list.where((run) => run.awaitingForm).toList();
+    final permissions = list.where((run) => run.awaitingPermission).toList();
+    final waiting = forms.isNotEmpty ? forms : permissions;
+    final primary = waiting.isNotEmpty
+        ? waiting.first
+        : list.reduce((a, b) => a.lastEventAt.isAfter(b.lastEventAt) ? a : b);
+    final earliest = list
+        .map((run) => run.startedAt)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    unawaited(
+      _liveActivity.sync(
+        title: primary.title,
+        count: list.length,
+        startedAt: earliest,
+        status: waiting.isNotEmpty ? 'waiting' : 'running',
+        action: forms.isNotEmpty
+            ? '等待选择：${primary.formTitle}'
+            : permissions.isNotEmpty
+                ? '等待确认：${primary.permissionAction}'
+                : '',
+      ),
+    );
   }
 }

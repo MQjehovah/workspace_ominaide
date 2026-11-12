@@ -38,6 +38,7 @@ import Vision
     setupOcrChannel()
     setupClipboardChannel()
     setupShareChannel()
+    setupLiveActivityChannel(window: window)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

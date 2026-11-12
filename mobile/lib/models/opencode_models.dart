@@ -44,6 +44,66 @@ class OpenCodeSession {
       updated > 0 ? DateTime.fromMillisecondsSinceEpoch(updated) : null;
 }
 
+/// A pending OpenCode permission choice (allow once / always / reject).
+class OpenCodePermission {
+  final String requestId;
+  final String action;
+  final String message;
+  final List<String> resources;
+
+  const OpenCodePermission({
+    required this.requestId,
+    this.action = '需要确认',
+    this.message = '',
+    this.resources = const [],
+  });
+
+  factory OpenCodePermission.fromJson(Map<String, dynamic> json) {
+    return OpenCodePermission(
+      requestId: (json['request_id'] ?? json['id'] ?? '').toString(),
+      action: (json['action'] ?? json['title'] ?? '需要确认').toString(),
+      message: (json['message'] ?? '').toString(),
+      resources: ((json['resources'] as List?) ?? const [])
+          .whereType<Object>()
+          .map((value) => value.toString())
+          .where((value) => value.isNotEmpty)
+          .toList(),
+    );
+  }
+
+  bool get isNotEmpty => requestId.isNotEmpty;
+}
+
+/// A pending OpenCode form (the `ask_user` tool renders these).
+class OpenCodeForm {
+  final String formId;
+  final String title;
+  final List<Map<String, dynamic>> fields;
+
+  const OpenCodeForm({
+    required this.formId,
+    this.title = '需要你的选择',
+    this.fields = const [],
+  });
+
+  factory OpenCodeForm.fromJson(Map<String, dynamic> json) {
+    final raw = json['form'] is Map
+        ? Map<String, dynamic>.from(json['form'] as Map)
+        : json;
+    final rawFields = (raw['fields'] as List?) ?? const [];
+    return OpenCodeForm(
+      formId: (raw['form_id'] ?? raw['id'] ?? '').toString(),
+      title: (raw['title'] ?? '需要你的选择').toString(),
+      fields: rawFields
+          .whereType<Map>()
+          .map((field) => Map<String, dynamic>.from(field))
+          .toList(),
+    );
+  }
+
+  bool get isNotEmpty => formId.isNotEmpty;
+}
+
 class OpenCodePart {
   final String type; // text / reasoning / tool / file
   final String text;

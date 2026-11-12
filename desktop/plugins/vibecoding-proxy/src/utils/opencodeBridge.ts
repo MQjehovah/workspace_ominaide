@@ -68,6 +68,10 @@ const EVENT_TYPES = [
   'session.deleted',
   'session.forked',
   'permission.asked',
+  'permission.replied',
+  'form.created',
+  'form.replied',
+  'form.cancelled',
 ]
 
 function eventQuery(): string {
@@ -386,6 +390,30 @@ function normalizeMessage(raw: any) {
   }
 }
 
+function normalizeForm(raw: any): Record<string, unknown> {
+  const form = raw?.form && typeof raw.form === 'object' ? raw.form : raw
+  return {
+    form_id: String(form?.id || ''),
+    title: String(form?.title || '需要你的选择'),
+    fields: Array.isArray(form?.fields) ? form.fields : [],
+    state: form?.state || raw?.state || null,
+  }
+}
+
+function normalizePermission(raw: any): Record<string, unknown> {
+  return {
+    request_id: String(raw?.id || ''),
+    action: String(raw?.action || raw?.permission || '需要确认'),
+    resources: Array.isArray(raw?.resources)
+      ? raw.resources.map((value: any) => String(value))
+      : [],
+    message: String(raw?.message || ''),
+    save: Array.isArray(raw?.save)
+      ? raw.save.map((value: any) => String(value))
+      : [],
+  }
+}
+
 function eventData(name: string, data: any): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   switch (name) {
@@ -408,8 +436,32 @@ function eventData(name: string, data: any): Record<string, unknown> {
       out.call_id = String(data?.id || '')
       break
     case 'permission.asked':
-      out.title = String(data?.title || data?.permission || '需要确认')
-      out.kind = String(data?.type || data?.permission || '')
+      out.request_id = String(data?.id || '')
+      out.action = String(data?.action || data?.permission || '需要确认')
+      out.resources = Array.isArray(data?.resources)
+        ? data.resources.map((value: any) => String(value))
+        : []
+      out.message = String(data?.message || '')
+      out.title = out.action
+      out.kind = String(data?.permission || data?.action || '')
+      break
+    case 'permission.replied':
+      out.request_id = String(data?.requestID || data?.id || '')
+      out.reply = String(data?.reply || '')
+      break
+    case 'form.created':
+      out.form = data?.form || {}
+      out.form_id = String(data?.form?.id || '')
+      out.title = String(data?.form?.title || '需要你的选择')
+      out.fields = Array.isArray(data?.form?.fields) ? data.form.fields : []
+      break
+    case 'form.replied':
+      out.form_id = String(data?.id || '')
+      out.answer = data?.answer || {}
+      break
+    case 'form.cancelled':
+      out.form_id = String(data?.id || '')
+      out.message = String(data?.message || '')
       break
     default:
       break
@@ -599,7 +651,9 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
     }
     const name = String(payload?.type || eventName || '')
     const data = payload?.data || {}
-    const sessionId = String(data?.sessionID || '')
+    const sessionId = String(
+      data?.sessionID || data?.form?.sessionID || '',
+    )
     if (!sessionId) return
     lastEventAt = Date.now()
 
@@ -667,7 +721,14 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
       emit({ type: 'oc.event', session_id: sessionId, event: 'sessions.changed', data: {} })
       return
     }
-    if (!name.startsWith('session.') && name !== 'permission.asked') return
+    if (
+      !name.startsWith('session.') &&
+      !name.startsWith('form.') &&
+      name !== 'permission.asked' &&
+      name !== 'permission.replied'
+    ) {
+      return
+    }
 
     emit({
       type: 'oc.event',
@@ -846,6 +907,34 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
         return { ...message, text, tools }
       })
     messages.reverse()
+    let permissions: any[] = []
+    try {
+      const pending = await apiJson(
+        'GET',
+        `/api/session/${encodeURIComponent(sessionId)}/permission`,
+        undefined,
+        5_000,
+      )
+      permissions = (Array.isArray(pending?.data) ? pending.data : [])
+        .map(normalizePermission)
+        .filter((item: any) => item.request_id)
+    } catch {
+      // Older OpenCode versions may not expose the permission list.
+    }
+    let forms: any[] = []
+    try {
+      const pending = await apiJson(
+        'GET',
+        `/api/session/${encodeURIComponent(sessionId)}/form`,
+        undefined,
+        5_000,
+      )
+      forms = (Array.isArray(pending?.data) ? pending.data : [])
+        .map(normalizeForm)
+        .filter((item: any) => item.form_id)
+    } catch {
+      // Older OpenCode versions may not expose the form API.
+    }
     const state = live.get(sessionId)
     let running = busySessions.has(sessionId) || !!state?.running
     if (!running) {
@@ -866,6 +955,8 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
       streaming: state?.text || '',
       streaming_id: state?.messageId || '',
       live_tools: state?.tools || [],
+      permissions,
+      forms,
     }
   }
 
@@ -887,6 +978,49 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
       startPolling(sessionId)
     }
     return { accepted: true, session_id: sessionId, message: response?.data || null }
+  }
+
+  async function actionSessionPermissionReply(payload: any): Promise<any> {
+    const sessionId = String(payload?.session_id || '')
+    const permissionId = String(
+      payload?.permission_id || payload?.request_id || '',
+    )
+    const decision = String(payload?.decision || 'once')
+    if (!sessionId) throw new Error('缺少 session_id')
+    if (!permissionId) throw new Error('缺少 permission_id')
+    if (!['once', 'always', 'reject'].includes(decision)) {
+      throw new Error(`不支持的确认结果: ${decision}`)
+    }
+    await apiJson(
+      'POST',
+      `/api/session/${encodeURIComponent(sessionId)}/permission/${encodeURIComponent(permissionId)}/reply`,
+      { decision },
+      30_000,
+    )
+    return {
+      replied: true,
+      session_id: sessionId,
+      permission_id: permissionId,
+      decision,
+    }
+  }
+
+  async function actionSessionFormReply(payload: any): Promise<any> {
+    const sessionId = String(payload?.session_id || '')
+    const formId = String(payload?.form_id || payload?.id || '')
+    const answer = payload?.answer
+    if (!sessionId) throw new Error('缺少 session_id')
+    if (!formId) throw new Error('缺少 form_id')
+    if (!answer || typeof answer !== 'object') {
+      throw new Error('缺少选择结果')
+    }
+    await apiJson(
+      'POST',
+      `/api/session/${encodeURIComponent(sessionId)}/form/${encodeURIComponent(formId)}/reply`,
+      { answer },
+      30_000,
+    )
+    return { replied: true, session_id: sessionId, form_id: formId }
   }
 
   async function actionSessionInterrupt(payload: any): Promise<any> {
@@ -1027,6 +1161,12 @@ export function createOpenCodeBridge(context: any, emit: Emit): OpenCodeBridge {
           return
         case 'session.prompt':
           respond({ ok: true, data: await actionSessionPrompt(payload?.payload || {}) })
+          return
+        case 'session.permission.reply':
+          respond({ ok: true, data: await actionSessionPermissionReply(payload?.payload || {}) })
+          return
+        case 'session.form.reply':
+          respond({ ok: true, data: await actionSessionFormReply(payload?.payload || {}) })
           return
         case 'session.interrupt':
           respond({ ok: true, data: await actionSessionInterrupt(payload?.payload || {}) })

@@ -8,20 +8,26 @@
 
 /* Begin PBXBuildFile section */
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
+		17FF60CA413DE824EF0A7D01 /* OmniAideWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF29724FCACA197C0456429B /* OmniAideWidgetsBundle.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		4F03470F966FE3D7AF510114 /* SharedMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FBA538A8995D9BE3FCE6398 /* SharedMedia.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		8A5270A73622F5282190C0B5 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D69F9C295CA703D2A87AF041 /* ShareViewController.swift */; };
+		90531C95460086D21B350B82 /* OmniAideWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B634A3A2342A3D10537BD892 /* OmniAideWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		94547589549CAAE4C9048A35 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F0B73D1E54C04A688FB0660D /* Foundation.framework */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		A51E993AB9A5DF17C6F23F2F /* CodingActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239DD214B4A6A969774EBD86 /* CodingActivityAttributes.swift */; };
 		ABF554727AEF3EC726B721AC /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E66EEEA1F2B08A61B710AC3 /* Pods_RunnerTests.framework */; };
 		AD1F119A548100C18B38167D /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C0A62497C923391FA40A5BF /* SceneDelegate.swift */; };
 		B1AFD6E341F3D762936879EB /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 820483227CD6743A1131BE91 /* Pods_Runner.framework */; };
+		C3FC447951AD80E038F1EE1D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F0B73D1E54C04A688FB0660D /* Foundation.framework */; };
 		D3136BB41BA85A4CEF54E6B3 /* RSIShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B33879503E0BF564B753A99C /* RSIShareViewController.swift */; };
+		E4E8B54FC7901E36ACFE3A3B /* LiveActivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF41246271BEA258D7BC57C8 /* LiveActivityBridge.swift */; };
 		E7B12D03DAF478175DCC64FD /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AD2BD121002ECFB3305A3E91 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F69BFA5BE7656EB31718D810 /* CodingActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239DD214B4A6A969774EBD86 /* CodingActivityAttributes.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +44,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 2CBD9F8187EAE199032BE3BF;
 			remoteInfo = ShareExtension;
+		};
+		ABB62A08F7048B36D816C941 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A7A736086BAAA4BB93D92D20;
+			remoteInfo = OmniAideWidgets;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -59,6 +72,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				E7B12D03DAF478175DCC64FD /* ShareExtension.appex in Embed Foundation Extensions */,
+				90531C95460086D21B350B82 /* OmniAideWidgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -68,6 +82,7 @@
 /* Begin PBXFileReference section */
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
+		239DD214B4A6A969774EBD86 /* CodingActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodingActivityAttributes.swift; sourceTree = "<group>"; };
 		32D974636E41D9FBA7EAC0A8 /* ShareExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -90,8 +105,10 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A940EEB977106D0923E65528 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AD2BD121002ECFB3305A3E91 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B33879503E0BF564B753A99C /* RSIShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RSIShareViewController.swift; sourceTree = "<group>"; };
+		B634A3A2342A3D10537BD892 /* OmniAideWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OmniAideWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		BBB01866579595CB1EDA7857 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		BD7A5FA8A432295A428665E6 /* Runner.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		D69F9C295CA703D2A87AF041 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
@@ -99,6 +116,8 @@
 		E59CB76630AE6FF889561544 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		F0B73D1E54C04A688FB0660D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		F1D9100F8A2EC0360E0AE73C /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FF29724FCACA197C0456429B /* OmniAideWidgetsBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OmniAideWidgetsBundle.swift; sourceTree = "<group>"; };
+		FF41246271BEA258D7BC57C8 /* LiveActivityBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveActivityBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -107,6 +126,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				ABF554727AEF3EC726B721AC /* Pods_RunnerTests.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5E6339267BE9DD7F67767013 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C3FC447951AD80E038F1EE1D /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -129,12 +156,31 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2016A3CFB1F958B9C5A86041 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				239DD214B4A6A969774EBD86 /* CodingActivityAttributes.swift */,
+			);
+			name = Shared;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		331C8082294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
 			);
 			path = RunnerTests;
+			sourceTree = "<group>";
+		};
+		429E558E7FBA7B2907D2EBB0 /* OmniAideWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				FF29724FCACA197C0456429B /* OmniAideWidgetsBundle.swift */,
+				A940EEB977106D0923E65528 /* Info.plist */,
+			);
+			name = OmniAideWidgets;
+			path = OmniAideWidgets;
 			sourceTree = "<group>";
 		};
 		8AB12E16C64B38F63B6AEE24 /* ShareExtension */ = {
@@ -172,6 +218,8 @@
 				BB1804A3C7C7DBC85D51990C /* Pods */,
 				F3E9325CA9CC9C52DC40D23C /* Frameworks */,
 				8AB12E16C64B38F63B6AEE24 /* ShareExtension */,
+				429E558E7FBA7B2907D2EBB0 /* OmniAideWidgets */,
+				2016A3CFB1F958B9C5A86041 /* Shared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -181,6 +229,7 @@
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 				AD2BD121002ECFB3305A3E91 /* ShareExtension.appex */,
+				B634A3A2342A3D10537BD892 /* OmniAideWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -198,6 +247,7 @@
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				6C0A62497C923391FA40A5BF /* SceneDelegate.swift */,
 				BD7A5FA8A432295A428665E6 /* Runner.entitlements */,
+				FF41246271BEA258D7BC57C8 /* LiveActivityBridge.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -291,11 +341,29 @@
 			);
 			dependencies = (
 				26FD327F0518210B813F3E29 /* PBXTargetDependency */,
+				E3D4D238F57DD5D39C22DFF5 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A7A736086BAAA4BB93D92D20 /* OmniAideWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7437DFD0D9D98F6A8DAC6A82 /* Build configuration list for PBXNativeTarget "OmniAideWidgets" */;
+			buildPhases = (
+				BC7B47B8FB6D3CBE68EE80DF /* Sources */,
+				5E6339267BE9DD7F67767013 /* Frameworks */,
+				D44B8EA75E91BC48627DB6FE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OmniAideWidgets;
+			productName = OmniAideWidgets;
+			productReference = B634A3A2342A3D10537BD892 /* OmniAideWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -333,6 +401,7 @@
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
 				2CBD9F8187EAE199032BE3BF /* ShareExtension */,
+				A7A736086BAAA4BB93D92D20 /* OmniAideWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -360,6 +429,13 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D44B8EA75E91BC48627DB6FE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -476,6 +552,17 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				AD1F119A548100C18B38167D /* SceneDelegate.swift in Sources */,
+				F69BFA5BE7656EB31718D810 /* CodingActivityAttributes.swift in Sources */,
+				E4E8B54FC7901E36ACFE3A3B /* LiveActivityBridge.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BC7B47B8FB6D3CBE68EE80DF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				17FF60CA413DE824EF0A7D01 /* OmniAideWidgetsBundle.swift in Sources */,
+				A51E993AB9A5DF17C6F23F2F /* CodingActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -502,6 +589,12 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		E3D4D238F57DD5D39C22DFF5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = OmniAideWidgets;
+			target = A7A736086BAAA4BB93D92D20 /* OmniAideWidgets */;
+			targetProxy = ABB62A08F7048B36D816C941 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -602,6 +695,33 @@
 			};
 			name = Profile;
 		};
+		294F32FEEED4AA7FCDD14E1C /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KHA2KGF2V4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = OmniAideWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omniaide.omniaideMobile.OmniAideWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Profile;
+		};
 		331C8088294A63A400263BE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 81598A0DA12BA7C087A155A6 /* Pods-RunnerTests.debug.xcconfig */;
@@ -651,6 +771,33 @@
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
 			};
 			name = Profile;
+		};
+		6BC80533D8E0A257782CA60B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KHA2KGF2V4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = OmniAideWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omniaide.omniaideMobile.OmniAideWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
 		};
 		855B5F66F6442410788FA43D /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -867,6 +1014,32 @@
 			};
 			name = Release;
 		};
+		B77F1D770F9FA3B8A3CFDB35 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KHA2KGF2V4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = OmniAideWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omniaide.omniaideMobile.OmniAideWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		F038C075D36CA99AD8B7D222 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 97B7CC6E35AB617195564DAF /* ShareExtension.xcconfig */;
@@ -913,6 +1086,16 @@
 				331C8088294A63A400263BE5 /* Debug */,
 				331C8089294A63A400263BE5 /* Release */,
 				331C808A294A63A400263BE5 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7437DFD0D9D98F6A8DAC6A82 /* Build configuration list for PBXNativeTarget "OmniAideWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6BC80533D8E0A257782CA60B /* Release */,
+				B77F1D770F9FA3B8A3CFDB35 /* Debug */,
+				294F32FEEED4AA7FCDD14E1C /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

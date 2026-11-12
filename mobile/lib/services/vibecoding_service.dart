@@ -203,6 +203,47 @@ class VibecodingService {
     );
   }
 
+  /// Answer an OpenCode `ask_user` form with the selected values.
+  void replyForm({
+    required String requestId,
+    required String sessionId,
+    required String formId,
+    required Map<String, dynamic> answer,
+    String? machineId,
+  }) {
+    _request(
+      'session.form.reply',
+      requestId: requestId,
+      machineId: machineId,
+      payload: {
+        'session_id': sessionId,
+        'form_id': formId,
+        'answer': answer,
+      },
+    );
+  }
+
+  /// Answer an OpenCode permission prompt. [decision] is `once`, `always` or
+  /// `reject`.
+  void replyPermission({
+    required String requestId,
+    required String sessionId,
+    required String permissionId,
+    required String decision,
+    String? machineId,
+  }) {
+    _request(
+      'session.permission.reply',
+      requestId: requestId,
+      machineId: machineId,
+      payload: {
+        'session_id': sessionId,
+        'permission_id': permissionId,
+        'decision': decision,
+      },
+    );
+  }
+
   void interruptSession({
     required String requestId,
     required String sessionId,

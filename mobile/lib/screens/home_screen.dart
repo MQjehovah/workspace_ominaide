@@ -35,12 +35,16 @@ class _HomeScreenState extends State<HomeScreen> {
     NotificationService().start(_showNotification);
     LocalReminderService().syncAll();
     _runMonitor.onCompleted = _onRunCompleted;
+    _runMonitor.onPermission = _onPermission;
+    _runMonitor.onForm = _onForm;
     _runMonitor.start();
   }
 
   @override
   void dispose() {
     _runMonitor.onCompleted = null;
+    _runMonitor.onPermission = null;
+    _runMonitor.onForm = null;
     _runMonitor.stop();
     NotificationService().stop();
     super.dispose();
@@ -60,21 +64,55 @@ class _HomeScreenState extends State<HomeScreen> {
         duration: const Duration(seconds: 6),
         action: SnackBarAction(
           label: '查看',
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => OpenCodeSessionScreen(
-                  machineId: run.machineId,
-                  session: OpenCodeSession(
-                    id: run.sessionId,
-                    title: run.title,
-                    directory: run.directory,
-                    busy: false,
-                  ),
-                ),
-              ),
-            );
-          },
+          onPressed: () => _openRun(run, busy: false),
+        ),
+      ),
+    );
+  }
+
+  void _onPermission(OpenCodeRun run) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('${run.title} 需要确认：${run.permissionAction}'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: '去处理',
+          onPressed: () => _openRun(run, busy: true),
+        ),
+      ),
+    );
+  }
+
+  void _onForm(OpenCodeRun run) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('${run.title} 需要你选择：${run.formTitle}'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: '去选择',
+          onPressed: () => _openRun(run, busy: true),
+        ),
+      ),
+    );
+  }
+
+  void _openRun(OpenCodeRun run, {required bool busy}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OpenCodeSessionScreen(
+          machineId: run.machineId,
+          session: OpenCodeSession(
+            id: run.sessionId,
+            title: run.title,
+            directory: run.directory,
+            busy: busy,
+          ),
         ),
       ),
     );

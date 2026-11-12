@@ -100,6 +100,9 @@ class _GlobalRunBubbleState extends State<GlobalRunBubble> {
         final completed = _monitor.justCompleted.value;
         final showCompleted = completed != null && runs.isEmpty;
         final online = _service.connected.value;
+        final waitingForms = runs.where((run) => run.awaitingForm).length;
+        final waitingPermissions =
+            runs.where((run) => run.awaitingPermission).length;
 
         late final Color background;
         late final Color foreground;
@@ -107,7 +110,17 @@ class _GlobalRunBubbleState extends State<GlobalRunBubble> {
         late final String label;
 
         if (runs.isNotEmpty) {
-          if (!online) {
+          if (waitingForms > 0) {
+            background = const Color(0xFFF59E0B);
+            foreground = Colors.white;
+            icon = Icons.help_outline_rounded;
+            label = '$waitingForms 待选择';
+          } else if (waitingPermissions > 0) {
+            background = const Color(0xFFF59E0B);
+            foreground = Colors.white;
+            icon = Icons.help_outline_rounded;
+            label = '$waitingPermissions 待确认';
+          } else if (!online) {
             background = const Color(0xFFF59E0B);
             foreground = Colors.white;
             icon = Icons.wifi_off_rounded;
@@ -172,7 +185,10 @@ class _GlobalRunBubbleState extends State<GlobalRunBubble> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (runs.isNotEmpty && online)
+                      if (runs.isNotEmpty &&
+                          online &&
+                          waitingForms == 0 &&
+                          waitingPermissions == 0)
                         SizedBox(
                           width: 15,
                           height: 15,
@@ -281,6 +297,9 @@ class _RunSheetState extends State<_RunSheet> {
         final runs = _monitor.runs.value;
         final completed = _monitor.justCompleted.value;
         final online = _service.connected.value;
+        final waiting = runs.where(
+          (run) => run.awaitingForm || run.awaitingPermission,
+        );
         final stillRunning =
             completed != null && runs.any((run) => run.key == completed.key);
 
@@ -324,6 +343,38 @@ class _RunSheetState extends State<_RunSheet> {
                       ),
                     ],
                   ),
+                  if (waiting.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.help_outline_rounded,
+                            size: 15,
+                            color: Color(0xFFB45309),
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              '有任务在等待你的选择，点开任务完成选择后会自动继续。',
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.45,
+                                color: const Color(0xFF92400E),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (!online && runs.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Container(
@@ -478,14 +529,21 @@ class _RunTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: palette.primary,
+              if (run.awaitingForm || run.awaitingPermission)
+                Icon(
+                  Icons.help_outline_rounded,
+                  size: 19,
+                  color: const Color(0xFFF59E0B),
+                )
+              else
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: palette.primary,
+                  ),
                 ),
-              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(

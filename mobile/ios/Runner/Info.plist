@@ -56,6 +56,8 @@
 	<string>用于从相册选择图片进行文字识别</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>用于把语音转换成文字</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

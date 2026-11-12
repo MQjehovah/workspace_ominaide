@@ -7,6 +7,7 @@ import '../services/opencode_run_monitor.dart';
 import '../services/vibecoding_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/opencode_form_sheet.dart';
 
 /// Live view of one remote OpenCode session: history, streaming output and a
 /// composer that continues the same session on the desktop machine.
@@ -46,6 +47,11 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   String? _pendingOlder;
   String? _pendingPrompt;
   String? _pendingInterrupt;
+  OpenCodePermission? _permission;
+  String? _pendingPermissionReply;
+  OpenCodeForm? _form;
+  String? _pendingFormReply;
+  String? _openedFormId;
   Timer? _historyTimer;
 
   @override
@@ -219,13 +225,85 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
         _running = false;
         _scheduleHistoryRefresh();
         break;
+      case 'permission.asked':
+        final permission = OpenCodePermission.fromJson(data);
+        if (permission.isNotEmpty) {
+          _permission = permission;
+          _running = true;
+        }
+        break;
+      case 'permission.replied':
+        _permission = null;
+        _monitor.clearPermission(widget.machineId, widget.session.id);
+        break;
+      case 'form.created':
+        final form = OpenCodeForm.fromJson(data);
+        if (form.isNotEmpty) {
+          _form = form;
+          _running = true;
+          _scheduleFormSheet();
+        }
+        break;
+      case 'form.replied':
+      case 'form.cancelled':
+        final formId = (data['form_id'] ?? data['id'] ?? '').toString();
+        if (formId.isEmpty || _form?.formId == formId) {
+          _form = null;
+          _openedFormId = null;
+        }
+        _monitor.clearForm(widget.machineId, widget.session.id);
+        break;
       default:
         break;
     }
-    if (event.startsWith('session.')) {
+    if (event.startsWith('session.') ||
+        event.startsWith('form.') ||
+        event.startsWith('permission.')) {
       setState(() {});
       _scrollToBottom();
     }
+  }
+
+  void _scheduleFormSheet() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final form = _form;
+      if (form == null || _openedFormId == form.formId) return;
+      _openFormSheet();
+    });
+  }
+
+  Future<void> _openFormSheet() async {
+    final form = _form;
+    if (form == null) return;
+    _openedFormId = form.formId;
+    final palette = AppPalette.of(context);
+    final answer = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: palette.card,
+      builder: (_) => OpenCodeFormSheet(form: form),
+    );
+    if (!mounted || answer == null) return;
+    await _submitForm(form, answer);
+  }
+
+  Future<void> _submitForm(
+    OpenCodeForm form,
+    Map<String, dynamic> answer,
+  ) async {
+    if (_pendingFormReply != null) return;
+    final requestId = _service.newRequestId();
+    setState(() => _pendingFormReply = requestId);
+    _service.replyForm(
+      requestId: requestId,
+      sessionId: widget.session.id,
+      formId: form.formId,
+      answer: answer,
+      machineId: widget.machineId,
+    );
   }
 
   void _handleResponse(Map<String, dynamic> msg) {
@@ -243,6 +321,41 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
             SnackBar(content: Text(error)),
           );
         }
+      }
+      return;
+    }
+    if (requestId.isNotEmpty && requestId == _pendingPermissionReply) {
+      _pendingPermissionReply = null;
+      if (!ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text((msg['error'] ?? '提交确认失败').toString()),
+            ),
+          );
+        }
+        return;
+      }
+      _monitor.clearPermission(widget.machineId, widget.session.id);
+      if (mounted) setState(() => _permission = null);
+      return;
+    }
+    if (requestId.isNotEmpty && requestId == _pendingFormReply) {
+      _pendingFormReply = null;
+      if (!ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text((msg['error'] ?? '提交选择失败').toString())),
+          );
+        }
+        return;
+      }
+      _monitor.clearForm(widget.machineId, widget.session.id);
+      if (mounted) {
+        setState(() {
+          _form = null;
+          _openedFormId = null;
+        });
       }
       return;
     }
@@ -277,6 +390,26 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
             (item) => OpenCodeMessage.fromJson(Map<String, dynamic>.from(item)))
         .where((message) => message.parts.isNotEmpty)
         .toList();
+    OpenCodePermission? pendingPermission;
+    for (final rawPermission in (payload['permissions'] as List?) ?? const []) {
+      if (rawPermission is! Map) continue;
+      final permission = OpenCodePermission.fromJson(
+        Map<String, dynamic>.from(rawPermission),
+      );
+      if (permission.isNotEmpty) {
+        pendingPermission = permission;
+        break;
+      }
+    }
+    OpenCodeForm? pendingForm;
+    for (final rawForm in (payload['forms'] as List?) ?? const []) {
+      if (rawForm is! Map) continue;
+      final form = OpenCodeForm.fromJson(Map<String, dynamic>.from(rawForm));
+      if (form.isNotEmpty) {
+        pendingForm = form;
+        break;
+      }
+    }
     setState(() {
       if (isLatest) {
         _pendingHistory = null;
@@ -286,6 +419,8 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
         _loading = false;
         _error = null;
         _cursor = payload['cursor']?.toString();
+        if (pendingPermission != null) _permission = pendingPermission;
+        if (pendingForm != null) _form = pendingForm;
         _draftText = '';
         _draftReasoning = '';
         _draftTools.clear();
@@ -294,6 +429,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
         _messages.insertAll(0, loaded);
       }
     });
+    if (isLatest && pendingForm != null) _scheduleFormSheet();
     _scrollToBottom();
   }
 
@@ -443,6 +579,8 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
             },
           ),
           Expanded(child: _buildMessages(palette)),
+          if (_permission != null) _buildPermissionCard(palette),
+          if (_form != null) _buildFormCard(palette),
           _buildComposer(palette),
         ],
       ),
@@ -557,7 +695,168 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     );
   }
 
+  Future<void> _replyPermission(String decision) async {
+    final permission = _permission;
+    if (permission == null || _pendingPermissionReply != null) return;
+    final requestId = _service.newRequestId();
+    setState(() => _pendingPermissionReply = requestId);
+    _service.replyPermission(
+      requestId: requestId,
+      sessionId: widget.session.id,
+      permissionId: permission.requestId,
+      decision: decision,
+      machineId: widget.machineId,
+    );
+  }
+
+  Widget _buildPermissionCard(AppPalette palette) {
+    final permission = _permission!;
+    final submitting = _pendingPermissionReply != null;
+    final resources = permission.resources.join('\n');
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        border: Border(top: BorderSide(color: palette.line)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.shield_outlined,
+                size: 17,
+                color: palette.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'OpenCode 需要确认：${permission.action}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: palette.ink,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (resources.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(25, 4, 0, 0),
+              child: Text(
+                resources,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10.5, color: palette.muted),
+              ),
+            ),
+          if (permission.message.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(25, 2, 0, 0),
+              child: Text(
+                permission.message,
+                style: TextStyle(fontSize: 10.5, color: palette.muted),
+              ),
+            ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: submitting ? null : () => _replyPermission('reject'),
+                child: const Text('拒绝'),
+              ),
+              const SizedBox(width: 4),
+              OutlinedButton(
+                onPressed: submitting ? null : () => _replyPermission('always'),
+                child: const Text('总是允许'),
+              ),
+              const SizedBox(width: 6),
+              FilledButton(
+                onPressed: submitting ? null : () => _replyPermission('once'),
+                child: submitting
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('允许一次'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormCard(AppPalette palette) {
+    final form = _form!;
+    final submitting = _pendingFormReply != null;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        border: Border(top: BorderSide(color: palette.line)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Row(
+        children: [
+          Icon(
+            Icons.help_outline_rounded,
+            size: 18,
+            color: palette.primary,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'OpenCode 正在等待你的选择',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: palette.ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  form.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: palette.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: submitting ? null : _openFormSheet,
+            child: submitting
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('去选择'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildComposer(AppPalette palette) {
+    final blocked = _permission != null ||
+        _pendingPermissionReply != null ||
+        _form != null ||
+        _pendingFormReply != null;
     return Container(
       decoration: BoxDecoration(
         color: palette.card,
@@ -607,7 +906,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
                       textInputAction: TextInputAction.newline,
                       style: TextStyle(fontSize: 14, color: palette.ink),
                       decoration: InputDecoration(
-                        hintText: '继续这个会话…',
+                        hintText: blocked ? '请先处理上面的确认/选择' : '继续这个会话…',
                         hintStyle:
                             TextStyle(fontSize: 13, color: palette.muted),
                         isDense: true,
@@ -636,7 +935,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
                   ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _input,
                     builder: (context, value, _) {
-                      final enabled = value.text.trim().isNotEmpty;
+                      final enabled = !blocked && value.text.trim().isNotEmpty;
                       return SizedBox(
                         width: 44,
                         height: 44,
