@@ -1,4 +1,13 @@
-import { BrowserWindow, desktopCapturer, screen, clipboard, nativeImage } from 'electron'
+import {
+  BrowserWindow,
+  desktopCapturer,
+  screen,
+  clipboard,
+  nativeImage,
+  systemPreferences,
+  dialog,
+  shell,
+} from 'electron'
 import { join } from 'path'
 
 let screenshotWindows: BrowserWindow[] = []
@@ -205,10 +214,16 @@ export async function captureAllScreens(): Promise<{ displays: DisplayInfo[]; im
   const dipVirtualWidth = Math.max(...displays.map(d => d.bounds.x + d.bounds.width)) - dipVirtualLeft
   const dipVirtualHeight = Math.max(...displays.map(d => d.bounds.y + d.bounds.height)) - dipVirtualTop
 
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: { width: layout.totalWidth, height: layout.totalHeight },
-  })
+  let sources: Electron.DesktopCapturerSource[] = []
+  try {
+    sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: layout.totalWidth, height: layout.totalHeight },
+    })
+  } catch (e) {
+    console.error('[screenshot] getSources failed:', e)
+    return { displays, images: [] }
+  }
 
   const images: string[] = []
   if (sources.length === 0) return { displays, images }
@@ -438,10 +453,16 @@ async function captureRegionFromDesktopCapturer(
   screenX: number, screenY: number, width: number, height: number,
 ): Promise<string | null> {
   const layout = computePhysicalLayout(allDisplays)
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: { width: layout.totalWidth, height: layout.totalHeight },
-  })
+  let sources: Electron.DesktopCapturerSource[] = []
+  try {
+    sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: layout.totalWidth, height: layout.totalHeight },
+    })
+  } catch (e) {
+    console.error('[screenshot] getSources failed:', e)
+    return null
+  }
   if (sources.length === 0) return null
 
   if (sources.length === 1 && allDisplays.length > 1) {
@@ -537,17 +558,55 @@ async function captureRegionFromDesktopCapturer(
   return compositeUrl
 }
 
+async function ensureScreenCapturePermission(): Promise<boolean> {
+  if (process.platform !== 'darwin') return true
+  const status = systemPreferences.getMediaAccessStatus('screen')
+  console.log('[screenshot] screen capture permission:', status)
+  if (status === 'granted') return true
+  const result = await dialog.showMessageBox({
+    type: 'warning',
+    title: '需要屏幕录制权限',
+    message: 'OmniAide 需要「屏幕录制」权限才能截图。',
+    detail:
+      '请在系统设置 → 隐私与安全性 → 屏幕录制中勾选 OmniAide。' +
+      '如果列表里已有旧条目，请先移除再重新添加（应用签名更新后系统可能保留旧记录）。' +
+      '授权后请完全退出并重新打开 OmniAide。',
+    buttons: ['打开系统设置', '取消'],
+    defaultId: 0,
+    cancelId: 1,
+  })
+  if (result.response === 0) {
+    shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+    )
+  }
+  return false
+}
+
 export async function startScreenshot(): Promise<void> {
   if (screenshotWindows.length > 0) {
     for (const w of screenshotWindows) { w.show(); w.focus() }
     return
   }
 
+  if (!(await ensureScreenCapturePermission())) return
+
   try {
     cachedScreenshot = await captureAllScreens()
   } catch (e) {
     console.error('Pre-capture failed:', e)
     cachedScreenshot = null
+  }
+  if (!cachedScreenshot || cachedScreenshot.images.length === 0) {
+    await dialog.showMessageBox({
+      type: 'error',
+      title: '截图失败',
+      message: '无法读取屏幕画面。',
+      detail:
+        '请确认已授予屏幕录制权限；如果刚授权，请完全退出并重新打开 OmniAide。',
+      buttons: ['好'],
+    })
+    return
   }
 
   const allDisplays = screen.getAllDisplays()
@@ -611,6 +670,7 @@ export function cancelScreenshot(): void {
 }
 
 export async function captureFullscreen(): Promise<string | null> {
+  if (!(await ensureScreenCapturePermission())) return null
   const result = await captureAllScreens()
   const primaryIdx = result.displays.findIndex(d => d.isPrimary)
   if (primaryIdx < 0 || !result.images[primaryIdx]) return null
