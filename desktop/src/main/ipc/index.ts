@@ -3,7 +3,8 @@ import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream, rmSync } from 'fs'
 import { writeLog } from '../logger'
-import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled } from '../plugin/host'
+import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems } from '../plugin/host'
+import * as selectionBar from '../selectionBar'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
 import * as screenshot from '../screenshot'
@@ -120,7 +121,7 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('plugin:get-panel-data', async (_, pluginId: string) => {
     try {
-      const result = await executeCommand(pluginId, 'getPanelData')
+      const result: any = await executeCommand(pluginId, 'getPanelData')
       if (result && typeof result === 'object' && !result.error) {
         return {
           title: result.title || pluginId,
@@ -144,6 +145,36 @@ export function registerIpcHandlers() {
           buttons: (result.buttons || []).map((b: any) => ({
             label: b.label || '',
             command: b.command || '',
+          })),
+          forms: (result.forms || []).map((f: any) => ({
+            fields: (f.fields || []).map((field: any) => ({
+              key: field.key || '',
+              label: field.label || undefined,
+              type: field.type || 'text',
+              placeholder: field.placeholder || undefined,
+              value: field.value,
+              options: Array.isArray(field.options)
+                ? field.options.map((o: any) => ({ label: o.label || String(o.value), value: String(o.value) }))
+                : undefined,
+              required: !!field.required,
+            })),
+            submitLabel: f.submitLabel || '提交',
+            command: f.command || '',
+            commandArgs: f.commandArgs || undefined,
+          })),
+          progress: (result.progress || []).map((p: any) => ({
+            label: p.label || undefined,
+            value: Number(p.value) || 0,
+            max: p.max !== undefined ? Number(p.max) : undefined,
+            tone: p.tone || undefined,
+            hint: p.hint || undefined,
+          })),
+          charts: (result.charts || []).map((c: any) => ({
+            label: c.label || undefined,
+            type: c.type === 'line' ? 'line' : 'bar',
+            labels: Array.isArray(c.labels) ? c.labels.map(String) : [],
+            values: Array.isArray(c.values) ? c.values.map(Number) : [],
+            unit: c.unit || undefined,
           })),
         }
       }
@@ -313,6 +344,7 @@ export function registerIpcHandlers() {
     }
     return results.slice(0, 20)
   })
+  ipcMain.handle('palette:list', async () => getPaletteItems())
   ipcMain.handle('search:get-providers', async () => {
     const allPlugins = getPlugins()
     const providers: any[] = []
@@ -324,6 +356,13 @@ export function registerIpcHandlers() {
     }
     return providers
   })
+
+  // Selection bar (system-wide selected-text actions)
+  ipcMain.handle('selection:show', async (_, text?: string) => selectionBar.openSelectionBar(text))
+  ipcMain.handle('selection:capture', async () => selectionBar.captureSelectedText())
+  ipcMain.handle('selection:run', async (_, key: string) => selectionBar.runSelectionAction(key))
+  ipcMain.on('selection:close', () => selectionBar.closeSelectionBar())
+  ipcMain.on('selection:resize', (_, height: number) => selectionBar.resizeSelectionBar(height))
 
   // API proxy
   async function tryRefresh(): Promise<boolean> {

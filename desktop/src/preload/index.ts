@@ -69,6 +69,22 @@ contextBridge.exposeInMainWorld('mqbox', {
     getBounds: () => ipcRenderer.invoke('window:get-bounds'),
     setBounds: (bounds: { x: number; y: number }) => ipcRenderer.invoke('window:set-bounds', bounds),
   },
+  palette: {
+    list: () => ipcRenderer.invoke('palette:list'),
+    onUpdated: (callback: () => void) => {
+      ipcRenderer.on('palette:updated', () => callback())
+    },
+  },
+  selection: {
+    onInit: (callback: (data: any) => void) => {
+      ipcRenderer.on('selection:init', (_, data) => callback(data))
+    },
+    run: (key: string) => ipcRenderer.invoke('selection:run', key),
+    close: () => ipcRenderer.send('selection:close'),
+    capture: () => ipcRenderer.invoke('selection:capture'),
+    show: (text?: string) => ipcRenderer.invoke('selection:show', text),
+    resize: (height: number) => ipcRenderer.send('selection:resize', height),
+  },
   clipboard: {
     writeImage: (dataUrl: string) => ipcRenderer.invoke('clipboard:write-image', dataUrl),
     readText: () => ipcRenderer.invoke('clipboard:read-text'),

@@ -5,6 +5,7 @@
     <SearchBox v-else-if="view === 'search'" />
     <PluginPage v-else-if="view === 'plugin-page'" />
     <ScreenshotPanel v-else-if="view === 'screenshot'" />
+    <SelectionBar v-else-if="view === 'selection-bar'" />
     <ScreenshotEditor v-else-if="view === 'screenshot-editor'" />
     <PluginManager v-else-if="view === 'plugin-manager'" />
     <QuickCapture v-else-if="view === 'quick-capture'" />
@@ -22,6 +23,7 @@ import PluginPage from './components/PluginPage.vue'
 import PluginManager from './components/PluginManager.vue'
 import LoginPage from './components/LoginPage.vue'
 import ScreenshotPanel from './components/ScreenshotPanel.vue'
+import SelectionBar from './components/SelectionBar.vue'
 import ScreenshotEditor from './components/ScreenshotEditor.vue'
 import QuickCapture from './components/QuickCapture.vue'
 

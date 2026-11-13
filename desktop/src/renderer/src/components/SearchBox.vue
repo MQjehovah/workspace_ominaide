@@ -6,6 +6,7 @@ const results = ref<any[]>([])
 const selectedIndex = ref(0)
 const isLoading = ref(false)
 const providers = ref<{ keyword: string; name: string }[]>([])
+const paletteItems = ref<any[]>([])
 
 let debounceTimer: number | null = null
 const inputRef = ref<HTMLInputElement>()
@@ -15,10 +16,42 @@ async function loadProviders() {
   catch { providers.value = [] }
 }
 
+async function loadPalette() {
+  try { paletteItems.value = await window.mqbox?.palette?.list() || [] }
+  catch { paletteItems.value = [] }
+}
+
+function matchPalette(query: string) {
+  const q = query.toLowerCase()
+  if (!q) return paletteItems.value.slice(0, 8)
+  return paletteItems.value.filter((item: any) => {
+    const haystack = [item.title, item.subtitle, ...(item.keywords || [])]
+      .filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(q)
+  }).slice(0, 6)
+}
+
+function paletteResults(query: string) {
+  return matchPalette(query).map((item: any) => ({
+    title: item.title,
+    subtitle: item.subtitle || '命令',
+    pluginId: item.pluginId,
+    action: item.command,
+    actionArgs: item.args,
+    _palette: true,
+    _icon: item.icon,
+  }))
+}
+
 function handleInput() {
   if (debounceTimer) clearTimeout(debounceTimer)
   const q = query.value.trim()
-  if (!q) { results.value = []; isLoading.value = false; return }
+  if (!q) {
+    results.value = paletteResults('')
+    selectedIndex.value = 0
+    isLoading.value = false
+    return
+  }
   isLoading.value = true
   debounceTimer = window.setTimeout(async () => {
     const parts = q.split(/\s+/)
@@ -33,12 +66,14 @@ function handleInput() {
     }
     try {
       const pluginResults = await window.mqbox?.search?.plugin(searchKeyword, searchQuery) || []
-      results.value = pluginResults.map((r: any) => ({
+      const mapped = pluginResults.map((r: any) => ({
         title: r.title, subtitle: r.subtitle || '',
         action: r.action, actionArgs: r.actionArgs, pluginId: r.pluginId,
       }))
+      // Commands first, then search results.
+      results.value = [...paletteResults(q), ...mapped]
       selectedIndex.value = 0
-    } catch { results.value = [] }
+    } catch { results.value = paletteResults(q) }
     isLoading.value = false
   }, 200)
 }
@@ -57,6 +92,15 @@ function selectIndex(i: number) {
   selectedIndex.value = i
   const r = results.value[i]
   if (!r?.action || !r.pluginId) { window.mqbox?.window.hide(); return }
+  if (r._palette) {
+    const p = doAction(r.pluginId, r.action, r.actionArgs)
+    if (p?.then) {
+      p.then(() => { clearSearch(); window.mqbox?.window.hide() }).catch(() => {})
+    } else {
+      clearSearch(); window.mqbox?.window.hide()
+    }
+    return
+  }
   const action = r.action.includes(':') ? r.action.split(':').slice(1).join(':') : r.action
   r._loading = true
   const p = doAction(r.pluginId, action, r.actionArgs)
@@ -87,6 +131,8 @@ function clearSearch() { query.value = ''; results.value = []; selectedIndex.val
 
 onMounted(() => {
   loadProviders()
+  loadPalette()
+  window.mqbox?.palette?.onUpdated?.(loadPalette)
   nextTick(() => inputRef.value?.focus())
 })
 
@@ -112,7 +158,9 @@ onUnmounted(() => { if (debounceTimer) clearTimeout(debounceTimer) })
     <div v-if="results.length > 0" class="results-panel">
         <div v-for="(r, i) in results" :key="i" :class="['result-item', { active: i === selectedIndex }]" @click="selectIndex(i)" @mouseenter="selectedIndex = i">
         <div class="r-icon">
-          <svg v-if="!r._loading" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z"/></svg>
+          <span v-if="r._palette && r._icon" class="r-emoji">{{ r._icon }}</span>
+          <svg v-else-if="r._palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m13 2-2 7h6l-8 13 2-9H5l8-11z"/></svg>
+          <svg v-else-if="!r._loading" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14 2z"/></svg>
           <svg v-else class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
         </div>
         <div class="r-body">

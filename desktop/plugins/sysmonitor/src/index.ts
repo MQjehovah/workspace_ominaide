@@ -15,6 +15,7 @@ let ctx: any = null
 let timer: any = null
 let lastCpu = sampleCpuTimes()
 let inFlight = false
+let cpuHistory: number[] = []
 
 interface CpuTimes { idle: number; total: number }
 
@@ -158,6 +159,8 @@ export default {
         const diskUsed = s.disks.reduce((a, d) => a + d.used, 0)
         const diskPct = diskTotal ? Math.round((diskUsed / diskTotal) * 100) : 0
         const cpuColor = s.cpu > 80 ? '#e11d48' : s.cpu > 50 ? '#f59e0b' : '#10b981'
+        cpuHistory.push(s.cpu)
+        if (cpuHistory.length > 24) cpuHistory.shift()
         return {
           title: '系统监控',
           subtitle: `${s.platform} · 运行 ${s.uptime}`,
@@ -166,6 +169,30 @@ export default {
             { title: '内存', subtitle: `${s.mem.usedGB}/${s.mem.totalGB} GB · ${s.mem.percent}%`, action: undefined },
             { title: '磁盘', subtitle: s.disks.length ? `已用 ${diskPct}%` : '—', action: undefined },
             { title: 'GPU', subtitle: s.gpu ? `${s.gpuUtil ?? '—'}%` : '无', action: undefined },
+          ],
+          progress: [
+            {
+              label: 'CPU',
+              value: s.cpu,
+              max: 100,
+              tone: s.cpu > 80 ? 'danger' : s.cpu > 50 ? 'warning' : 'default',
+            },
+            {
+              label: '内存',
+              value: s.mem.percent,
+              max: 100,
+              tone: s.mem.percent > 90 ? 'danger' : s.mem.percent > 75 ? 'warning' : 'default',
+              hint: `${s.mem.usedGB}/${s.mem.totalGB} GB`,
+            },
+            ...(diskTotal ? [{ label: '磁盘', value: diskPct, max: 100 }] : []),
+          ],
+          charts: [
+            {
+              label: 'CPU 趋势',
+              type: 'line',
+              labels: cpuHistory.map((_: number, i: number) => (i % 6 === 0 ? `${i + 1}` : '')),
+              values: [...cpuHistory],
+            },
           ],
           buttons: [{ label: '详情 / 清理', command: 'open' }],
         }

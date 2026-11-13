@@ -159,6 +159,10 @@ export function createChildContext(info: PluginInfo): PluginContext {
     } : null,
     openPage: (pluginId: string, query?: string) => { rpc('openPage', pluginId, query) },
     registerCommand: (name: string, handler: Function) => { commands.set(name, handler) },
+    showContextMenu: (items: any[]) => rpc('menu:show', items) as Promise<string | null>,
+    setTrayItems: (items: any[]) => { rpc('tray:set', items).catch(() => {}) },
+    registerPaletteItem: (item: any) => { rpc('palette:register', item).catch(() => {}) },
+    registerSelectionAction: (action: any) => { rpc('selection:register', action).catch(() => {}) },
     signal: (method: string, ...args: any[]) => rpc(method, ...args),
     registerSearchProvider: (provider: SearchProvider) => {
       providers.push({ ...provider, pluginId: info.id })

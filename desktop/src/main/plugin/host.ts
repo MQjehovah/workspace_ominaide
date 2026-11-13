@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { app, clipboard, BrowserWindow, Notification, shell, dialog, desktopCapturer, screen } from 'electron'
+import { app, clipboard, BrowserWindow, Notification, shell, dialog, desktopCapturer, screen, Menu } from 'electron'
 import { readClipboardTextSafe } from '../clipboard'
 import { existsSync } from 'fs'
 import { Low } from 'lowdb'
@@ -8,7 +8,15 @@ import { getConfig, setConfig } from '../config'
 import * as screenshot from '../screenshot'
 import { showEditor } from '../pinWindow'
 import { writeLog } from '../logger'
-import type { PluginInfo, PluginPanel, SearchProvider } from '../../shared/types'
+import type {
+  PluginInfo,
+  PluginPanel,
+  SearchProvider,
+  ContextMenuItem,
+  TrayMenuItem,
+  PaletteItem,
+  SelectionAction,
+} from '../../shared/types'
 import { loadPlugins } from './loader'
 import { PluginProcessManager } from './child-process'
 import { channelSend, channelStatus, setInboundDispatcher } from '../backendChannel'
@@ -17,6 +25,44 @@ import { handleLocalToolMessage } from '../localTools'
 const processManager = new PluginProcessManager()
 const plugins = new Map<string, PluginInfo>()
 const panels: PluginPanel[] = []
+
+// ---- Plugin-contributed extension points --------------------------------
+const trayItemsByPlugin = new Map<string, TrayMenuItem[]>()
+const paletteItems = new Map<string, PaletteItem & { pluginId: string; key: string }>()
+const selectionActions = new Map<string, SelectionAction & { pluginId: string; key: string }>()
+let trayChangedHandler: (() => void) | null = null
+
+export function onTrayItemsChanged(cb: () => void): void {
+  trayChangedHandler = cb
+}
+
+function clearPluginExtensions(pluginId: string): void {
+  trayItemsByPlugin.delete(pluginId)
+  for (const [key, item] of paletteItems) if (item.pluginId === pluginId) paletteItems.delete(key)
+  for (const [key, item] of selectionActions) if (item.pluginId === pluginId) selectionActions.delete(key)
+}
+
+export function getTrayItems(): Array<TrayMenuItem & { pluginId: string; key: string }> {
+  const out: Array<TrayMenuItem & { pluginId: string; key: string }> = []
+  for (const [pluginId, items] of trayItemsByPlugin) {
+    for (const [index, item] of items.entries()) {
+      out.push({ ...item, pluginId, key: `${pluginId}:tray:${index}:${item.id}` })
+    }
+  }
+  return out
+}
+
+export function getPaletteItems(): Array<PaletteItem & { pluginId: string; key: string }> {
+  return [...paletteItems.values()]
+}
+
+export function getSelectionActions(): Array<SelectionAction & { pluginId: string; key: string }> {
+  return [...selectionActions.values()]
+}
+
+export function getSelectionAction(key: string) {
+  return selectionActions.get(key) || null
+}
 
 // channel namespace -> pluginId that subscribed to it
 const channelSubscriptions = new Map<string, string>()
@@ -155,6 +201,8 @@ function startClipboardMonitoring() {
 
 function registerBridgeHandlers(proc: import('./child-process').PluginChildProcess): void {
   const store = { db: null as Low<any> | null }
+
+  clearPluginExtensions(proc.pluginId)
 
   proc.registerBridgeHandler('log:write', async ([level, message]) => {
     writeLog(proc.pluginId, level, message)
@@ -426,6 +474,86 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     })
   })
 
+  // ---- Rich UI / extension points ---------------------------------------
+  proc.registerBridgeHandler('menu:show', async ([items]) => {
+    return new Promise<string | null>((resolve) => {
+      let resolved = false
+      const finish = (value: string | null) => {
+        if (resolved) return
+        resolved = true
+        resolve(value)
+      }
+      const build = (list: ContextMenuItem[]): Electron.MenuItemConstructorOptions[] => {
+        const out: Electron.MenuItemConstructorOptions[] = []
+        for (const [index, item] of (list || []).entries()) {
+          if (item.type === 'separator') { out.push({ type: 'separator' }); continue }
+          const id = item.id || `item-${index}`
+          out.push({
+            label: item.label || id,
+            type: item.type === 'checkbox' ? 'checkbox' : 'normal',
+            checked: item.checked,
+            enabled: item.enabled !== false,
+            submenu: item.submenu ? build(item.submenu) : undefined,
+            click: () => finish(id),
+          })
+        }
+        return out
+      }
+      try {
+        const menu = Menu.buildFromTemplate(build(items || []))
+        menu.popup({
+          window: BrowserWindow.getFocusedWindow() || undefined,
+          callback: () => setTimeout(() => finish(null), 0),
+        })
+      } catch (e) {
+        console.error('[menu:show] failed:', e)
+        finish(null)
+      }
+    })
+  })
+
+  proc.registerBridgeHandler('tray:set', async ([items]) => {
+    const list = Array.isArray(items)
+      ? items.filter((i: TrayMenuItem) => !!i && (i.type === 'separator' || !!i.id)).slice(0, 30)
+      : []
+    trayItemsByPlugin.set(proc.pluginId, list)
+    trayChangedHandler?.()
+  })
+
+  proc.registerBridgeHandler('palette:register', async ([item]) => {
+    if (!item?.id || !item?.title || !item?.command) return
+    const key = `${proc.pluginId}:${item.id}`
+    paletteItems.set(key, {
+      id: String(item.id),
+      title: String(item.title),
+      subtitle: item.subtitle ? String(item.subtitle) : undefined,
+      keywords: Array.isArray(item.keywords) ? item.keywords.map(String) : [],
+      icon: item.icon,
+      command: String(item.command),
+      args: item.args,
+      pluginId: proc.pluginId,
+      key,
+    })
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('palette:updated')
+    })
+  })
+
+  proc.registerBridgeHandler('selection:register', async ([action]) => {
+    if (!action?.id || !action?.title || !action?.command) return
+    const key = `${proc.pluginId}:${action.id}`
+    selectionActions.set(key, {
+      id: String(action.id),
+      title: String(action.title),
+      description: action.description ? String(action.description) : undefined,
+      icon: action.icon,
+      command: String(action.command),
+      args: action.args && typeof action.args === 'object' ? action.args : {},
+      pluginId: proc.pluginId,
+      key,
+    })
+  })
+
   // PTY (pseudo-terminal) for interactive AI sessions
   const ptySessions = new Map<string, any>()
   let ptyCounter = 0
@@ -517,6 +645,8 @@ export function removePlugin(id: string): boolean {
     proc.stop()
     processManager.stopPlugin(id)
   }
+  clearPluginExtensions(id)
+  trayChangedHandler?.()
   // remove from panels array
   const idx = panels.findIndex(p => p.pluginId === id)
   if (idx >= 0) panels.splice(idx, 1)

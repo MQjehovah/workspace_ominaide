@@ -28,6 +28,7 @@ export async function setupShortcut(callbacks: Record<string, () => void>) {
     toggle: 'Ctrl+Shift+Space',
     search: 'Ctrl+Space',
     quickCapture: 'Ctrl+Shift+N',
+    selection: 'Ctrl+Shift+D',
     ...(config.shortcut || {}),
   }
   for (const [key, acc] of Object.entries(builtins)) {
@@ -88,6 +89,7 @@ export async function getBuiltinShortcuts(): Promise<BuiltinShortcut[]> {
     { key: 'toggle', label: '打开/隐藏面板', accelerator: s.toggle || 'Ctrl+Shift+Space', editable: true },
     { key: 'search', label: '全局搜索', accelerator: s.search || 'Ctrl+Space', editable: true },
     { key: 'quickCapture', label: '快速记录', accelerator: s.quickCapture || 'Ctrl+Shift+N', editable: true },
+    { key: 'selection', label: '划词动作', accelerator: s.selection || 'Ctrl+Shift+D', editable: true },
   ]
 }
 

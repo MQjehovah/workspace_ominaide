@@ -166,6 +166,12 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     registerSearchProvider: (provider: any) => {
       searchProviders.push(provider)
     },
+    // Legacy in-process sandbox: extension points are only supported by the
+    // child-process host. Keep no-op implementations for API compatibility.
+    showContextMenu: async () => null,
+    setTrayItems: () => {},
+    registerPaletteItem: () => {},
+    registerSelectionAction: () => {},
     signal: (_method: string, ..._args: any[]) => Promise.resolve(),
     log: (level: string, message: string) => {
       console.error(`[plugin:${pluginInfo.id}] [${level.toUpperCase()}] ${message}`)

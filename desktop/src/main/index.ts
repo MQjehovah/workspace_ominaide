@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, protocol, net, session } from 'electron'
 import { join, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { initPlugins, getProcessManager, setPluginEnabled } from './plugin/host'
+import { initPlugins, getProcessManager, setPluginEnabled, getTrayItems, onTrayItemsChanged, getPlugins } from './plugin/host'
 import { writeLog } from './logger'
 import { monitorEventLoopDelay } from 'perf_hooks'
 import { registerIpcHandlers } from './ipc'
@@ -14,6 +14,7 @@ import { registerMcpIpc } from './mcp/ipc'
 import { initMcpManager, disposeAll } from './mcp/mcp-manager'
 import { registerUpdaterIpc } from './updater'
 import { setHandoffHandler } from './backendChannel'
+import { openSelectionBar } from './selectionBar'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
@@ -108,6 +109,72 @@ function showSearchWindow() {
   })
 }
 
+let trayMenuTimer: NodeJS.Timeout | null = null
+
+function buildTrayMenu(): Menu {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    { label: '打开 OmniAide', click: showMainPanel },
+    { label: '快速记录', click: showQuickCapture },
+    { label: '划词动作', click: () => { openSelectionBar() } },
+  ]
+
+  // Plugin-contributed tray items (rich UI extension point).
+  const pluginItems = getTrayItems().slice(0, 20)
+  if (pluginItems.length > 0) {
+    const byPlugin = new Map<string, typeof pluginItems>()
+    for (const item of pluginItems) {
+      if (!byPlugin.has(item.pluginId)) byPlugin.set(item.pluginId, [])
+      byPlugin.get(item.pluginId)!.push(item)
+    }
+    template.push({ type: 'separator' })
+    for (const [pluginId, items] of byPlugin) {
+      const label = getPluginLabel(pluginId)
+      template.push({
+        label,
+        submenu: items.map(item => ({
+          label: item.label,
+          type: item.type === 'separator' ? 'separator' : 'normal',
+          enabled: item.enabled !== false,
+          click: item.type === 'separator' ? undefined : () => {
+            executeTrayCommand(pluginId, item.command, item.args)
+          },
+        })),
+      })
+    }
+  }
+
+  template.push({ type: 'separator' })
+  template.push({ label: '退出', click: () => { isQuitting = true; app.quit() } })
+  return Menu.buildFromTemplate(template)
+}
+
+function getPluginLabel(pluginId: string): string {
+  const plugin = getPlugins().find(p => p.id === pluginId)
+  return plugin?.manifest?.displayName || pluginId
+}
+
+function executeTrayCommand(pluginId: string, command: string, args?: unknown): void {
+  Promise.resolve()
+    .then(() => import('./plugin/host'))
+    .then((host) => host.executeCommand(pluginId, command, args))
+    .catch((e) => console.error('[tray] plugin command failed:', e))
+}
+
+function refreshTrayMenu(): void {
+  const current = tray
+  if (!current) return
+  if (trayMenuTimer) clearTimeout(trayMenuTimer)
+  // Plugin registration happens in bursts at startup; debounce the rebuild.
+  trayMenuTimer = setTimeout(() => {
+    trayMenuTimer = null
+    try {
+      current.setContextMenu(buildTrayMenu())
+    } catch (e) {
+      console.error('[tray] rebuild failed:', e)
+    }
+  }, 150)
+}
+
 function createTray() {
   const isMac = process.platform === 'darwin'
   const iconPath = isMac
@@ -117,14 +184,9 @@ function createTray() {
   if (isMac) icon.setTemplateImage(true)
   tray = new Tray(icon)
   tray.setToolTip('OmniAide')
-  const contextMenu = Menu.buildFromTemplate([
-    { label: '打开 OmniAide', click: showMainPanel },
-    { label: '快速记录', click: showQuickCapture },
-    { type: 'separator' },
-    { label: '退出', click: () => { isQuitting = true; app.quit() } },
-  ])
-  tray.setContextMenu(contextMenu)
+  tray.setContextMenu(buildTrayMenu())
   tray.on('click', showMainPanel)
+  onTrayItemsChanged(refreshTrayMenu)
 }
 
 app.whenReady().then(async () => {
@@ -186,6 +248,7 @@ app.whenReady().then(async () => {
     search: showSearchWindow,
     toggle: showMainPanel,
     quickCapture: showQuickCapture,
+    selection: () => { openSelectionBar() },
   }
   await setupShortcut(shortcutCallbacks)
   if (cfg.token) {
