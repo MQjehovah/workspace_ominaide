@@ -21,7 +21,8 @@
     "permissions": [
       "storage",
       "notification",
-      "shell"
+      "shell",
+      "api"
     ],
     "builtin": true
   },

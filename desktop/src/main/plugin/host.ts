@@ -17,6 +17,15 @@ import type {
   PaletteItem,
   SelectionAction,
 } from '../../shared/types'
+import {
+  PERMISSIONS,
+  expandPermissions,
+  requiredPermissionsForBridge,
+  describePermissions,
+  isHighRisk,
+  type PermissionId,
+} from '../permissions'
+import type { PluginManifest } from '../../shared/types'
 import { loadPlugins } from './loader'
 import { PluginProcessManager } from './child-process'
 import { channelSend, channelStatus, setInboundDispatcher } from '../backendChannel'
@@ -62,6 +71,347 @@ export function getSelectionActions(): Array<SelectionAction & { pluginId: strin
 
 export function getSelectionAction(key: string) {
   return selectionActions.get(key) || null
+}
+
+// ---- Permission policy --------------------------------------------------
+
+export interface PluginGrant {
+  permissions: PermissionId[]
+  declared: PermissionId[]
+  version: string
+  approvedAt: number
+  /** Plugin existed before the permission system; undeclared uses are grandfathered. */
+  legacy?: boolean
+  /** The user explicitly declined the request; do not prompt again. */
+  denied?: boolean
+  /** Permissions the user explicitly revoked; never auto-restore these. */
+  revoked?: PermissionId[]
+}
+
+export interface PluginPermissionState {
+  pluginId: string
+  displayName: string
+  declared: PermissionId[]
+  granted: PermissionId[]
+  pending: PermissionId[]
+  legacy: boolean
+  denied: boolean
+}
+
+const grants = new Map<string, PluginGrant>()
+let baselineIds = new Set<string>()
+
+function isTrustedPlugin(info: PluginInfo): boolean {
+  // Bundled plugins ship with the app; dev plugins come from the repo.
+  if (!app.isPackaged) return true
+  return info.path.startsWith(join(process.resourcesPath, 'plugins'))
+}
+
+async function persistGrants(): Promise<void> {
+  const data: Record<string, PluginGrant> = {}
+  for (const [id, grant] of grants) data[id] = grant
+  await setConfig('pluginGrants', data)
+}
+
+function makeGrant(info: PluginInfo, approved: PermissionId[], legacy: boolean): PluginGrant {
+  return {
+    permissions: [...new Set(approved)],
+    declared: expandPermissions(info.manifest.permissions),
+    version: info.manifest.version || '',
+    approvedAt: Date.now(),
+    legacy,
+  }
+}
+
+async function initPermissionPolicy(loaded: Map<string, PluginInfo>): Promise<void> {
+  const cfg = await getConfig()
+  grants.clear()
+  const stored = (cfg.pluginGrants || {}) as Record<string, PluginGrant>
+  for (const [id, grant] of Object.entries(stored)) {
+    if (!grant) continue
+    grants.set(id, {
+      permissions: Array.isArray(grant.permissions) ? grant.permissions : [],
+      declared: Array.isArray(grant.declared) ? grant.declared : [],
+      version: grant.version || '',
+      approvedAt: grant.approvedAt || Date.now(),
+      legacy: !!grant.legacy,
+      denied: !!grant.denied,
+      revoked: Array.isArray(grant.revoked) ? grant.revoked : [],
+    })
+  }
+
+  const hasBaseline = Array.isArray(cfg.pluginPermissionBaseline)
+  const baseline = new Set<string>(hasBaseline ? cfg.pluginPermissionBaseline : [])
+  if (!hasBaseline) {
+    // First run after the permission system shipped: grandfather everything
+    // currently installed so upgrades do not break working plugins.
+    for (const id of loaded.keys()) baseline.add(id)
+    await setConfig('pluginPermissionBaseline', [...baseline])
+    if (baseline.size > 0) {
+      writeLog('system', 'system', `permission baseline created for ${baseline.size} plugins`)
+    }
+  }
+  baselineIds = baseline
+
+  for (const [id, info] of loaded) {
+    const declared = expandPermissions(info.manifest.permissions)
+    const existing = grants.get(id)
+    const legacy = baseline.has(id)
+    if (existing) {
+      // Keep the declaration in sync with the on-disk manifest.
+      existing.declared = declared
+      existing.version = info.manifest.version || existing.version
+      if (legacy) {
+        existing.legacy = true
+        const revoked = new Set(existing.revoked || [])
+        for (const perm of declared) {
+          if (revoked.has(perm)) continue
+          if (!existing.permissions.includes(perm)) existing.permissions.push(perm)
+        }
+      }
+      continue
+    }
+    const approved = declared.filter((perm) => !isHighRisk(perm) || legacy || isTrustedPlugin(info))
+    grants.set(id, makeGrant(info, approved, legacy))
+  }
+
+  await persistGrants()
+}
+
+const runtimePrompted = new Set<string>()
+
+/**
+ * A plugin installed before its manifest declared a capability may still call
+ * it. Ask the user once at runtime instead of silently breaking the plugin or
+ * silently granting dangerous access.
+ */
+async function promptUndeclaredPermission(
+  pluginId: string,
+  info: PluginInfo,
+  permission: PermissionId,
+): Promise<boolean> {
+  const key = `${pluginId}:${permission}`
+  if (runtimePrompted.has(key)) return false
+  if (grants.get(pluginId)?.revoked?.includes(permission)) return false
+  runtimePrompted.add(key)
+
+  const meta = PERMISSIONS[permission]
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: '插件请求额外权限',
+    message: `「${info.manifest.displayName || pluginId}」想使用「${meta.label}」`,
+    detail:
+      `${meta.description}\n\n` +
+      '该插件没有在清单里声明这个权限，可能由旧版本安装。' +
+      '允许后本次会话内不再询问，也可以在「插件管理 → 权限」中收回。',
+    buttons: ['允许', '拒绝'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  })
+
+  if (response !== 0) {
+    writeLog(pluginId, 'warn', `runtime permission declined: ${permission}`)
+    return false
+  }
+
+  let grant = grants.get(pluginId)
+  if (!grant) {
+    grant = makeGrant(info, [], baselineIds.has(pluginId))
+    grants.set(pluginId, grant)
+  }
+  if (!grant.permissions.includes(permission)) grant.permissions.push(permission)
+  grant.approvedAt = Date.now()
+  await persistGrants()
+  writeLog(pluginId, 'system', `runtime permission granted: ${permission}`)
+  return true
+}
+
+export async function checkBridgePermission(
+  pluginId: string,
+  method: string,
+): Promise<{ allowed: boolean; error?: string }> {
+  const required = requiredPermissionsForBridge(method)
+  if (required.length === 0) return { allowed: true }
+
+  const info = knownPlugins.get(pluginId)
+  if (!info) return { allowed: false, error: '插件未注册，无法调用该能力' }
+
+  let grant = grants.get(pluginId)
+  if (!grant) {
+    grant = makeGrant(info, [], baselineIds.has(pluginId))
+    grants.set(pluginId, grant)
+  }
+
+  if (grant.revoked?.some((perm) => required.includes(perm))) {
+    const blocked = required.filter((perm) => grant.revoked!.includes(perm))
+    writeLog(pluginId, 'warn', `permission denied (revoked): ${blocked.join(', ')} via ${method}`)
+    return {
+      allowed: false,
+      error: `权限已被收回：${blocked.map((p) => `「${PERMISSIONS[p].label}」`).join('、')}`,
+    }
+  }
+
+  const missing: PermissionId[] = []
+  for (const perm of required) {
+    if (grant.permissions.includes(perm)) continue
+
+    if (grant.legacy) {
+      // Legacy plugins may use capabilities they never declared. Grant once,
+      // audit it, and let the user review/revoke it in the plugin manager.
+      grant.permissions.push(perm)
+      writeLog(
+        pluginId,
+        'warn',
+        `legacy permission auto-granted: ${perm} via ${method} — review in 插件管理 → 权限`,
+      )
+      persistGrants().catch(() => {})
+      continue
+    }
+
+    if (!grant.declared.includes(perm)) {
+      if (isHighRisk(perm)) {
+        const approved = await promptUndeclaredPermission(pluginId, info, perm)
+        if (approved) continue
+      }
+      writeLog(pluginId, 'warn', `permission denied: ${method} uses undeclared permission ${perm}`)
+      return {
+        allowed: false,
+        error: `权限不足：${method} 需要「${PERMISSIONS[perm].label}」，但插件未声明该权限`,
+      }
+    }
+    missing.push(perm)
+  }
+
+  if (missing.length > 0) {
+    writeLog(pluginId, 'warn', `permission denied: ${method} requires ${missing.join(', ')}`)
+    return {
+      allowed: false,
+      error: `权限不足：${method} 需要 ${missing.map((p) => `「${PERMISSIONS[p].label}」`).join('、')}`,
+    }
+  }
+  return { allowed: true }
+}
+
+export function getPluginPermissionStates(): PluginPermissionState[] {
+  return [...knownPlugins.values()].map((info) => {
+    const declared = expandPermissions(info.manifest.permissions)
+    const grant = grants.get(info.id)
+    const granted = grant?.permissions || []
+    return {
+      pluginId: info.id,
+      displayName: info.manifest.displayName || info.id,
+      declared,
+      granted,
+      pending: declared.filter((perm) => !granted.includes(perm)),
+      legacy: !!grant?.legacy,
+      denied: !!grant?.denied,
+    }
+  }).sort((a, b) => a.pluginId.localeCompare(b.pluginId))
+}
+
+export async function setPluginPermission(
+  pluginId: string,
+  permission: PermissionId,
+  enabled: boolean,
+): Promise<{ success: boolean; error?: string }> {
+  const info = knownPlugins.get(pluginId)
+  if (!info) return { success: false, error: '插件不存在' }
+  if (!PERMISSIONS[permission]) return { success: false, error: '未知权限' }
+
+  let grant = grants.get(pluginId)
+  if (!grant) {
+    grant = makeGrant(info, [], baselineIds.has(pluginId))
+    grants.set(pluginId, grant)
+  }
+  const declared = expandPermissions(info.manifest.permissions)
+  if (!declared.includes(permission) && !grant.permissions.includes(permission)) {
+    return { success: false, error: '插件未声明该权限' }
+  }
+
+  const revoked = new Set(grant.revoked || [])
+  if (enabled) {
+    if (!grant.permissions.includes(permission)) grant.permissions.push(permission)
+    revoked.delete(permission)
+    grant.denied = false
+  } else {
+    grant.permissions = grant.permissions.filter((p) => p !== permission)
+    revoked.add(permission)
+  }
+  grant.revoked = [...revoked]
+  grant.approvedAt = Date.now()
+  await persistGrants()
+  writeLog(pluginId, 'system', `permission ${enabled ? 'granted' : 'revoked'}: ${permission}`)
+  broadcastPluginUpdate()
+  return { success: true }
+}
+
+async function requestPermissionConsent(
+  manifest: PluginManifest,
+  pluginId: string,
+  sourceLabel?: string,
+): Promise<boolean> {
+  const declared = expandPermissions(manifest.permissions)
+  const highRisk = declared.filter(isHighRisk)
+  if (highRisk.length === 0) return true
+
+  const existing = grants.get(pluginId)
+  if (existing?.denied && sourceLabel !== 'install') return false
+
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: '插件权限确认',
+    message: `「${manifest.displayName || pluginId}」请求 ${highRisk.length} 项敏感权限`,
+    detail:
+      describePermissions(highRisk) +
+      '\n\n允许后可在「插件管理 → 权限」中随时收回。' +
+      (sourceLabel === 'install' ? '\n拒绝将取消安装。' : '\n拒绝后插件仍会启动，但相关功能不可用。'),
+    buttons: ['允许', '拒绝'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  })
+
+  if (response !== 0) {
+    if (existing) {
+      existing.denied = true
+      existing.approvedAt = Date.now()
+      persistGrants().catch(() => {})
+    }
+    writeLog(pluginId, 'warn', 'sensitive permissions declined by user')
+    return false
+  }
+
+  const info = knownPlugins.get(pluginId)
+  const approved = info
+    ? makeGrant(info, declared, baselineIds.has(pluginId))
+    : {
+        permissions: [...declared],
+        declared,
+        version: manifest.version || '',
+        approvedAt: Date.now(),
+        legacy: false,
+      }
+  approved.denied = false
+  grants.set(pluginId, approved)
+  await persistGrants()
+  writeLog(pluginId, 'system', `permissions approved: ${declared.join(', ') || 'none'}`)
+  return true
+}
+
+/** Called by install flows before files are copied. */
+export async function requestInstallConsent(
+  manifest: PluginManifest,
+  pluginId: string,
+): Promise<boolean> {
+  return requestPermissionConsent(manifest, pluginId, 'install')
+}
+
+function pendingHighRisk(info: PluginInfo): PermissionId[] {
+  const declared = expandPermissions(info.manifest.permissions)
+  const grant = grants.get(info.id)
+  if (grant?.legacy) return []
+  return declared.filter((perm) => !grant?.permissions.includes(perm)).filter(isHighRisk)
 }
 
 // ---- Runtime lifecycle & observability -----------------------------------
@@ -182,6 +532,14 @@ async function startPluginInstance(info: PluginInfo): Promise<boolean> {
       writeLog(id, 'error', `main entry not found: ${modulePath}`)
       patchRuntime(id, { state: 'crashed', lastError: '入口文件不存在' })
       return false
+    }
+
+    // Sensitive permissions must be approved before the plugin can use them.
+    if (!isTrustedPlugin(info)) {
+      const pending = pendingHighRisk(info)
+      if (pending.length > 0) {
+        await requestPermissionConsent(info.manifest, id, 'startup')
+      }
     }
 
     // A fresh start must not inherit a stale "user stopped it" flag.
@@ -343,6 +701,8 @@ export async function initPlugins() {
   disabledPlugins.clear()
   for (const id of cfg.disabledPlugins || []) disabledPlugins.add(id)
 
+  await initPermissionPolicy(loaded)
+
   for (const [id, info] of loaded) {
     knownPlugins.set(id, info)
     if (disabledPlugins.has(id)) {
@@ -411,6 +771,10 @@ function startClipboardMonitoring() {
 
 function registerBridgeHandlers(proc: import('./child-process').PluginChildProcess): void {
   const store = { db: null as Low<any> | null }
+
+  // Central enforcement point: every bridge call (including context.signal)
+  // is checked against the plugin's approved permissions.
+  proc.setPermissionCheck((method) => checkBridgePermission(proc.pluginId, method))
 
   clearPluginExtensions(proc.pluginId)
 

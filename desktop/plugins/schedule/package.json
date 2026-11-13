@@ -12,8 +12,16 @@
     "id": "schedule",
     "displayName": "日程",
     "icon": "Calendar",
-    "keywords": ["schedule","calendar","日程","日历"],
-    "permissions": ["storage"],
+    "keywords": [
+      "schedule",
+      "calendar",
+      "日程",
+      "日历"
+    ],
+    "permissions": [
+      "storage",
+      "api"
+    ],
     "builtin": true
   },
   "devDependencies": {

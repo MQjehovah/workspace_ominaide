@@ -12,7 +12,11 @@
   ],
   "permissions": [
     "storage",
-    "selection"
+    "selection",
+    "api",
+    "clipboard:write",
+    "tray",
+    "palette"
   ],
   "builtin": true,
   "main": "dist/index.js"

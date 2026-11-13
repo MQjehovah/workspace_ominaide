@@ -29,7 +29,10 @@
     "permissions": [
       "storage",
       "notification",
-      "shell"
+      "shell",
+      "api",
+      "pty",
+      "channel"
     ],
     "builtin": false,
     "version": "1.8.5"

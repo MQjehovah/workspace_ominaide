@@ -21,6 +21,7 @@ export class PluginChildProcess extends EventEmitter {
   private _searchProviders: Array<{ keyword: string; name: string; priority?: number }> = []
   private _commandHandlers = new Map<string, Function>()
   private bridgeHandlers: Map<string, (args: any[]) => Promise<any>> = new Map()
+  private permissionCheck: ((method: string) => Promise<{ allowed: boolean; error?: string }>) | null = null
   private rpcBuffer = ''
 
   private _exitCode: number | null = null
@@ -107,6 +108,11 @@ export class PluginChildProcess extends EventEmitter {
     this.bridgeHandlers.set(method, handler)
   }
 
+  /** Gate every bridge RPC (including context.signal calls) on permissions. */
+  setPermissionCheck(check: (method: string) => Promise<{ allowed: boolean; error?: string }>): void {
+    this.permissionCheck = check
+  }
+
   get searchProviders() { return this._searchProviders }
   get commandHandlers() { return this._commandHandlers }
 
@@ -175,15 +181,29 @@ export class PluginChildProcess extends EventEmitter {
     }
   }
 
-  private handleParentRpc(msg: any): void {
+  private async handleParentRpc(msg: any): Promise<void> {
     const handler = this.bridgeHandlers.get(msg.method)
     if (!handler) {
       this.writeToChild({ id: msg.id, type: 'error', error: `Unknown bridge method: ${msg.method}` })
       return
     }
-    handler(msg.args || [])
-      .then(result => this.writeToChild({ id: msg.id, type: 'result', data: result }))
-      .catch(err => this.writeToChild({ id: msg.id, type: 'error', error: err.message }))
+    try {
+      if (this.permissionCheck) {
+        const check = await this.permissionCheck(msg.method)
+        if (!check.allowed) {
+          this.writeToChild({
+            id: msg.id,
+            type: 'error',
+            error: check.error || `Permission denied: ${msg.method}`,
+          })
+          return
+        }
+      }
+      const result = await handler(msg.args || [])
+      this.writeToChild({ id: msg.id, type: 'result', data: result })
+    } catch (err: any) {
+      this.writeToChild({ id: msg.id, type: 'error', error: err?.message || String(err) })
+    }
   }
 
   private rejectAll(err: Error): void {

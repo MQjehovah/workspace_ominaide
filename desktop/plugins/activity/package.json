@@ -12,8 +12,17 @@
     "id": "activity",
     "displayName": "用户行为采集",
     "icon": "DataAnalysis",
-    "keywords": ["activity", "behavior", "monitor", "采集"],
-    "permissions": ["storage", "notification"],
+    "keywords": [
+      "activity",
+      "behavior",
+      "monitor",
+      "采集"
+    ],
+    "permissions": [
+      "storage",
+      "notification",
+      "clipboard:read"
+    ],
     "builtin": true
   },
   "devDependencies": {

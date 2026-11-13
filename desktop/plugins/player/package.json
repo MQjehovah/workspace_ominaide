@@ -12,8 +12,17 @@
     "id": "player",
     "displayName": "播放器",
     "icon": "Headset",
-    "keywords": ["player", "play"],
-    "permissions": ["storage", "files:read", "notification", "shell"],
+    "keywords": [
+      "player",
+      "play"
+    ],
+    "permissions": [
+      "storage",
+      "files:read",
+      "notification",
+      "shell",
+      "config"
+    ],
     "builtin": true
   },
   "devDependencies": {

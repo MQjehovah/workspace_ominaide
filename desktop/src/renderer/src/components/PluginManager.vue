@@ -36,9 +36,13 @@
             <span class="plugin-status" :style="{ color: statusColor(p.id) }" :title="statusTitle(p.id)">
               {{ statusText(p.id) }}
             </span>
+            <span class="plugin-perms" :class="{ danger: permHasDangerous(p.id), pending: permPendingCount(p.id) > 0 }">
+              {{ permSummary(p.id) }}
+            </span>
             <span v-if="privacyNote(p.id)" class="privacy-note">{{ privacyNote(p.id) }}</span>
           </div>
           <div class="plugin-actions">
+            <button class="cfg-btn" title="权限" @click="openPermissions(p)">🛡</button>
             <button class="cfg-btn" title="查看日志" @click="openLogs(p)">📄</button>
             <button v-if="p.enabled" class="cfg-btn" title="重启插件" @click="restartPlugin(p)">↻</button>
             <button class="cfg-btn" title="配置" @click="openConfig(p)">⚙</button>
@@ -66,6 +70,7 @@
               <span v-if="installedVersion(p.id)" class="plugin-ver current">当前 v{{ installedVersion(p.id) }}</span>
             </span>
             <span class="plugin-desc">{{ p.description }}</span>
+            <span class="plugin-perms">{{ marketPermSummary(p) }}</span>
           </div>
           <div class="plugin-actions">
             <button v-if="installingId === p.id" class="key-badge" disabled style="color:#999">安装中...</button>
@@ -134,6 +139,40 @@
       </div>
     </div>
 
+    <div v-if="permOpen" class="perm-drawer">
+      <div class="perm-hd">
+        <span class="perm-title">{{ permPluginName }} · 权限</span>
+        <button class="log-btn" @click="restartFromPerm">重启插件</button>
+        <button class="log-close" @click="permOpen = false">✕</button>
+      </div>
+      <div class="perm-body">
+        <div v-if="permState?.legacy" class="perm-note">
+          历史插件：升级前已安装，未声明的能力会在首次使用时自动授权。建议复核下面的权限。
+        </div>
+        <div v-else-if="permPendingCount(permPluginId) > 0" class="perm-note warn">
+          有 {{ permPendingCount(permPluginId) }} 项敏感权限未授权，相关功能可能不可用。
+        </div>
+        <div v-if="!currentPerms.length" class="perm-empty">此插件未声明任何权限</div>
+        <div v-for="perm in currentPerms" :key="perm" class="perm-row">
+          <div class="perm-main">
+            <div class="perm-name">
+              {{ permLabel(perm) }}
+              <span class="risk-chip" :class="permRisk(perm)">{{ permRiskText(perm) }}</span>
+              <span v-if="permGranted(perm) && !permState?.declared?.includes(perm)" class="risk-chip extra">运行时授权</span>
+            </div>
+            <div class="perm-desc">{{ permDesc(perm) }}</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" :checked="permGranted(perm)" @change="togglePermission(perm, ($event.target as HTMLInputElement).checked)" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="perm-foot">
+        权限变更立即生效。正在运行的功能可能需要重启插件才能完全恢复。
+      </div>
+    </div>
+
     <PluginConfig v-if="configPluginId" :plugin-id="configPluginId" @close="configPluginId = ''" />
   </div>
 </template>
@@ -169,6 +208,12 @@ let logTimer: any = null
 let statusTimer: any = null
 let clockTimer: any = null
 
+const permOpen = ref(false)
+const permPluginId = ref('')
+const permPluginName = ref('')
+const permCatalog = ref<any[]>([])
+const permStates = ref<Record<string, any>>({})
+
 const pluginColors: Record<string, string> = { screenshot: '#28A745', 'clipboard-history': '#0078D4', todo: '#FF9800', player: '#E91E63', files: '#2196F3', notes: '#FF9800', calculator: '#9C27B0', everything: '#666', activity: '#8b5cf6', translator: '#0ea5e9', sysmonitor: '#10b981', pomodoro: '#ef4444' }
 function getColor(id: string) { return pluginColors[id] || '#666' }
 
@@ -176,7 +221,102 @@ async function load() {
   plugins.value = await window.mqbox.plugin.listAll()
   builtinShortcuts.value = await window.mqbox.shortcut.getBuiltin()
   customShortcuts.value = await window.mqbox.shortcut.list()
-  await loadStatuses()
+  await Promise.all([loadStatuses(), loadPermissions()])
+}
+
+async function loadPermissions() {
+  try {
+    const result = await window.mqbox.plugin.permissions()
+    permCatalog.value = result?.catalog || []
+    const map: Record<string, any> = {}
+    for (const state of result?.states || []) map[state.pluginId] = state
+    permStates.value = map
+  } catch {}
+}
+
+function permStateOf(id: string): any {
+  return permStates.value[id] || null
+}
+
+function permCatalogEntry(id: string): any {
+  return permCatalog.value.find(p => p.id === id) || null
+}
+
+function permLabel(id: string): string {
+  return permCatalogEntry(id)?.label || id
+}
+
+function permDesc(id: string): string {
+  return permCatalogEntry(id)?.description || ''
+}
+
+function permRisk(id: string): string {
+  return permCatalogEntry(id)?.risk || 'normal'
+}
+
+function permRiskText(id: string): string {
+  const risk = permRisk(id)
+  return risk === 'dangerous' ? '高危' : risk === 'sensitive' ? '敏感' : '普通'
+}
+
+const RISK_ORDER: Record<string, number> = { dangerous: 0, sensitive: 1, normal: 2 }
+
+function permListOf(id: string): string[] {
+  const state = permStateOf(id)
+  if (!state) return []
+  return [...new Set([...(state.declared || []), ...(state.granted || [])])]
+    .sort((a, b) => RISK_ORDER[permRisk(a)] - RISK_ORDER[permRisk(b)])
+}
+
+function permGranted(id: string): boolean {
+  return !!permStateOf(permPluginId.value)?.granted?.includes(id)
+}
+
+function permPendingCount(pluginId: string): number {
+  return permStateOf(pluginId)?.pending?.length || 0
+}
+
+function permHasDangerous(pluginId: string): boolean {
+  return (permListOf(pluginId) || []).some(p => permRisk(p) === 'dangerous')
+}
+
+function permSummary(pluginId: string): string {
+  const state = permStateOf(pluginId)
+  if (!state) return ''
+  const total = permListOf(pluginId).length
+  if (!total) return '无需权限'
+  const pending = permPendingCount(pluginId)
+  const dangerous = permHasDangerous(pluginId) ? ' · 含高危' : ''
+  return `${total} 项权限${dangerous}${pending ? ` · ${pending} 项待授权` : ''}`
+}
+
+function marketPermSummary(p: any): string {
+  const ids = Array.isArray(p.permissions) ? p.permissions : []
+  if (!ids.length) return '无需特殊权限'
+  const risks = ids.map((id: string) => permRisk(id))
+  const dangerous = risks.includes('dangerous') ? ' · 含高危' : risks.includes('sensitive') ? ' · 含敏感' : ''
+  return `需要 ${ids.length} 项权限${dangerous}`
+}
+
+function openPermissions(p: any) {
+  permPluginId.value = p.id
+  permPluginName.value = p.manifest?.displayName || p.id
+  permOpen.value = true
+}
+
+const currentPerms = computed(() => permListOf(permPluginId.value))
+const permState = computed(() => permStateOf(permPluginId.value))
+
+async function togglePermission(permission: string, enabled: boolean) {
+  const result = await window.mqbox.plugin.setPermission(permPluginId.value, permission, enabled)
+  if (!result?.success) alert(result?.error || '权限修改失败')
+  await loadPermissions()
+}
+
+async function restartFromPerm() {
+  const result = await window.mqbox.plugin.restart(permPluginId.value)
+  if (!result?.success) alert(result?.error || '重启失败')
+  await Promise.all([loadStatuses(), loadPermissions()])
 }
 
 async function loadStatuses() {
@@ -494,6 +634,27 @@ onUnmounted(() => {
 .privacy-note { font-size:10px; color:#a0a4ad; margin-top:2px; }
 .plugin-desc { font-size:11px; color:#999; }
 .plugin-status { display:block; font-size:10.5px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.plugin-perms { display:block; font-size:10px; color:#8a94a8; margin-top:2px; }
+.plugin-perms.danger { color:#c45656; }
+.plugin-perms.pending { color:#b26a00; }
+
+/* Permission drawer */
+.perm-drawer { position:absolute; inset:0; background:#fff; display:flex; flex-direction:column; z-index:21; }
+.perm-hd { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid #eceef3; }
+.perm-title { flex:1; font-size:13px; font-weight:600; color:#1f2430; }
+.perm-body { flex:1; overflow-y:auto; padding:12px 16px; }
+.perm-note { background:#fff8e6; border:1px solid #f3dfae; color:#8a6100; font-size:11px; line-height:1.6; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
+.perm-note.warn { background:#fff3f2; border-color:#f5c7c3; color:#a8322a; }
+.perm-empty { color:#9aa3b2; font-size:12px; text-align:center; padding:24px 0; }
+.perm-row { display:flex; align-items:flex-start; gap:12px; padding:10px 0; border-bottom:1px solid #f4f5f8; }
+.perm-main { flex:1; min-width:0; }
+.perm-name { display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:#2f3542; }
+.perm-desc { font-size:11px; color:#8a94a8; line-height:1.5; margin-top:3px; }
+.risk-chip { display:inline-block; padding:1px 6px; border-radius:4px; font-size:9.5px; font-weight:600; background:#eef2f7; color:#6b7280; }
+.risk-chip.sensitive { background:#fff4e5; color:#b26a00; }
+.risk-chip.dangerous { background:#fdecea; color:#c0392b; }
+.risk-chip.extra { background:#eaf3ff; color:#2f6fbf; }
+.perm-foot { padding:8px 16px; border-top:1px solid #eceef3; font-size:10.5px; color:#9aa3b2; }
 
 /* Log drawer */
 .log-drawer { position:absolute; inset:0; background:#1e1f26; display:flex; flex-direction:column; z-index:20; }

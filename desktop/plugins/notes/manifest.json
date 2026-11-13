@@ -14,7 +14,8 @@
   ],
   "permissions": [
     "storage",
-    "notification"
+    "notification",
+    "api"
   ],
   "builtin": false,
   "main": "dist/index.js"

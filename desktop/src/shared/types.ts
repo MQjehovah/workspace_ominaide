@@ -48,6 +48,25 @@ export interface PluginLogEntry {
   message: string
 }
 
+export type PermissionRisk = 'normal' | 'sensitive' | 'dangerous'
+
+export interface PermissionDescriptor {
+  id: string
+  label: string
+  description: string
+  risk: PermissionRisk
+}
+
+export interface PluginPermissionState {
+  pluginId: string
+  displayName: string
+  declared: string[]
+  granted: string[]
+  pending: string[]
+  legacy: boolean
+  denied: boolean
+}
+
 export interface PluginPanel {
   id: string
   pluginId: string
@@ -299,6 +318,8 @@ declare global {
         restart: (pluginId: string) => Promise<{ success: boolean; error?: string }>
         logs: (pluginId: string, limit?: number) => Promise<PluginLogEntry[]>
         openLogFile: () => Promise<void>
+        permissions: () => Promise<{ catalog: PermissionDescriptor[]; states: PluginPermissionState[] }>
+        setPermission: (pluginId: string, permission: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>
         onUpdated: (callback: () => void) => void
       }
       search: {

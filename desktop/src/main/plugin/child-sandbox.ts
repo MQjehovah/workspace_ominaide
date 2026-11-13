@@ -126,7 +126,15 @@ export function createChildContext(info: PluginInfo): PluginContext {
       put: (path: string, body?: any) => rpc('api:put', path, body),
       delete: (path: string) => rpc('api:delete', path),
     },
-    clipboard: null,
+    // Exposed only when the manifest declares clipboard access. The host still
+    // enforces read/write separately per call.
+    clipboard: (has('clipboard') || has('clipboard:read') || has('clipboard:write'))
+      ? ({
+          readText: () => rpc('clipboard:readText'),
+          writeText: (text: string) => { rpc('clipboard:writeText', text) },
+          clear: () => { rpc('clipboard:writeText', '') },
+        } as any)
+      : null,
     // Manifest permissions are enforced here, not just displayed in the UI.
     shell: has('shell') ? {
       openPath: async (path: string) => rpc('shell:openPath', path) as Promise<string>,

@@ -12,8 +12,17 @@
     "id": "sources",
     "displayName": "资讯",
     "icon": "Rss",
-    "keywords": ["sources","news","资讯","订阅"],
-    "permissions": ["storage","notification"],
+    "keywords": [
+      "sources",
+      "news",
+      "资讯",
+      "订阅"
+    ],
+    "permissions": [
+      "storage",
+      "notification",
+      "api"
+    ],
     "builtin": true
   },
   "devDependencies": {

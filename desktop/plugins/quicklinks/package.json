@@ -11,8 +11,18 @@
     "id": "quicklinks",
     "displayName": "快捷指令",
     "icon": "Zap",
-    "keywords": ["quick", "快捷", "启动", "app", "命令"],
-    "permissions": ["storage", "shell"],
+    "keywords": [
+      "quick",
+      "快捷",
+      "启动",
+      "app",
+      "命令"
+    ],
+    "permissions": [
+      "storage",
+      "shell",
+      "shell:exec"
+    ],
     "builtin": true
   },
   "devDependencies": {

@@ -14,7 +14,9 @@
     "keywords": [
       "note"
     ],
-    "permissions": [],
+    "permissions": [
+      "api"
+    ],
     "builtin": true,
     "version": "1.2.3"
   },

@@ -19,7 +19,11 @@
     ],
     "permissions": [
       "storage",
-      "selection"
+      "selection",
+      "api",
+      "clipboard:write",
+      "tray",
+      "palette"
     ],
     "builtin": true
   },

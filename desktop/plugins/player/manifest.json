@@ -13,7 +13,8 @@
     "storage",
     "files:read",
     "notification",
-    "shell"
+    "shell",
+    "config"
   ],
   "builtin": false,
   "main": "dist/index.js"

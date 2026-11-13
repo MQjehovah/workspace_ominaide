@@ -11,8 +11,15 @@
     "id": "todo",
     "displayName": "待办事项",
     "icon": "Check",
-    "keywords": ["todo", "task"],
-    "permissions": ["storage", "notification"],
+    "keywords": [
+      "todo",
+      "task"
+    ],
+    "permissions": [
+      "storage",
+      "notification",
+      "api"
+    ],
     "builtin": true
   },
   "devDependencies": {

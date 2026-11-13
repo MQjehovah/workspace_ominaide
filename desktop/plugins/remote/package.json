@@ -14,8 +14,19 @@
     "id": "remote",
     "displayName": "远程控制",
     "icon": "Monitor",
-    "keywords": ["remote", "control", "screen"],
-    "permissions": ["storage", "notification", "shell", "remote"],
+    "keywords": [
+      "remote",
+      "control",
+      "screen"
+    ],
+    "permissions": [
+      "storage",
+      "notification",
+      "shell",
+      "remote",
+      "api",
+      "config"
+    ],
     "builtin": true
   },
   "dependencies": {

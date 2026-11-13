@@ -12,7 +12,8 @@
     "日历"
   ],
   "permissions": [
-    "storage"
+    "storage",
+    "api"
   ],
   "builtin": false,
   "main": "dist/index.js"

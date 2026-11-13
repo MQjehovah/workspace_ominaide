@@ -5,8 +5,17 @@
   "description": "采集桌面应用使用与剪贴板内容，供 AI 分析行为（默认关闭，隐私可控）",
   "version": "1.0.0",
   "icon": "DataAnalysis",
-  "keywords": ["activity", "behavior", "monitor", "采集"],
-  "permissions": ["storage", "notification"],
+  "keywords": [
+    "activity",
+    "behavior",
+    "monitor",
+    "采集"
+  ],
+  "permissions": [
+    "storage",
+    "notification",
+    "clipboard:read"
+  ],
   "builtin": true,
   "main": "dist/index.js"
 }

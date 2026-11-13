@@ -3,7 +3,7 @@ import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream, rmSync } from 'fs'
 import { writeLog } from '../logger'
-import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin } from '../plugin/host'
+import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin, getPluginPermissionStates, setPluginPermission, requestInstallConsent } from '../plugin/host'
 import * as selectionBar from '../selectionBar'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
@@ -12,6 +12,7 @@ import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins }
 import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
 import { readClipboardTextSafe } from '../clipboard'
 import { getRecentLogs, getLogFilePath, getLogDir } from '../logger'
+import { PERMISSIONS } from '../permissions'
 
 let nutLoader: any = null
 let remotePowerSaveId = 0
@@ -106,6 +107,13 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('plugin:statuses', async () => getPluginStatuses())
   ipcMain.handle('plugin:restart', async (_, pluginId: string) => restartPlugin(pluginId))
+  ipcMain.handle('plugin:permissions', async () => ({
+    catalog: Object.values(PERMISSIONS),
+    states: getPluginPermissionStates(),
+  }))
+  ipcMain.handle('plugin:set-permission', async (_, pluginId: string, permission: string, enabled: boolean) =>
+    setPluginPermission(pluginId, permission as any, enabled),
+  )
   ipcMain.handle('plugin:logs', async (_, pluginId: string, limit?: number) => getRecentLogs(pluginId, limit || 300))
   ipcMain.handle('plugin:open-log-file', async () => {
     const file = getLogFilePath()
@@ -239,6 +247,21 @@ export function registerIpcHandlers() {
       const manifest = pkg.omniaide || pkg.mqbox || {}
       const pluginId = manifest.id || pkg.name
 
+      const allowed = await requestInstallConsent(
+        {
+          id: pluginId,
+          name: pkg.name || pluginId,
+          displayName: manifest.displayName || pkg.displayName || pluginId,
+          version: pkg.version || manifest.version || '0.0.0',
+          permissions: manifest.permissions || [],
+        },
+        pluginId,
+      )
+      if (!allowed) {
+        rmSync(tmpDir, { recursive: true, force: true })
+        return { success: false, error: '已取消安装（未授予权限）' }
+      }
+
       const pluginsDir = join(app.getPath('userData'), 'plugins')
       const dest = join(pluginsDir, pluginId)
       if (existsSync(dest)) {
@@ -278,18 +301,12 @@ export function registerIpcHandlers() {
         headers: { Authorization: 'Bearer ' + (cfg.token || '') }
       })
 
-      const pluginsDir = join(app.getPath('userData'), 'plugins')
-      const dest = join(pluginsDir, pluginId)
-      // An existing copy means "upgrade": stop the running process, then
-      // replace the files so the plugin market can ship new versions.
-      const upgrading = existsSync(dest)
-      if (upgrading) {
-        removePlugin(pluginId)
-        rmSync(dest, { recursive: true, force: true })
-      }
-      mkdirSync(dest, { recursive: true })
+      const { execSync } = require('child_process')
+      const { platform } = require('os')
+      const staging = join(app.getPath('temp'), `omniaide-plugin-${pluginId}-${Date.now()}`)
+      mkdirSync(staging, { recursive: true })
 
-      const zipPath = join(dest, 'plugin.zip')
+      const zipPath = join(staging, 'plugin.zip')
       await new Promise<void>((resolve, reject) => {
         const writer = createWriteStream(zipPath)
         res.data.pipe(writer)
@@ -297,15 +314,49 @@ export function registerIpcHandlers() {
         writer.on('error', reject)
       })
 
-      // Extract zip
-      const { execSync } = require('child_process')
-      const { platform } = require('os')
       if (platform() === 'win32') {
-        execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${dest}' -Force"`, { stdio: 'ignore' })
+        execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${staging}' -Force"`, { stdio: 'ignore' })
       } else {
-        execSync(`unzip -o "${zipPath}" -d "${dest}"`, { stdio: 'ignore' })
+        execSync(`unzip -o "${zipPath}" -d "${staging}"`, { stdio: 'ignore' })
       }
-      writeFileSync(join(dest, '.installed_from'), `marketplace:${pluginId}`)
+      rmSync(zipPath, { force: true })
+
+      // Permission consent happens before anything is written to the plugin dir.
+      const pkgPath = join(staging, 'package.json')
+      if (!existsSync(pkgPath)) {
+        rmSync(staging, { recursive: true, force: true })
+        return { success: false, error: '插件包缺少 package.json' }
+      }
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+      const manifest = pkg.omniaide || pkg.mqbox || {}
+      const manifestId = manifest.id || pkg.name || pluginId
+      const allowed = await requestInstallConsent(
+        {
+          id: manifestId,
+          name: pkg.name || manifestId,
+          displayName: manifest.displayName || pkg.displayName || manifestId,
+          version: pkg.version || manifest.version || '0.0.0',
+          permissions: manifest.permissions || [],
+        },
+        manifestId,
+      )
+      if (!allowed) {
+        rmSync(staging, { recursive: true, force: true })
+        return { success: false, error: '已取消安装（未授予权限）' }
+      }
+
+      const pluginsDir = join(app.getPath('userData'), 'plugins')
+      const dest = join(pluginsDir, manifestId)
+      // An existing copy means "upgrade": stop the running process, then
+      // replace the files so the plugin market can ship new versions.
+      if (existsSync(dest)) {
+        removePlugin(manifestId)
+        rmSync(dest, { recursive: true, force: true })
+      }
+      mkdirSync(dest, { recursive: true })
+      cpSync(staging, dest, { recursive: true })
+      rmSync(staging, { recursive: true, force: true })
+      writeFileSync(join(dest, '.installed_from'), `marketplace:${manifestId}`)
 
       // Load the newly installed plugin into memory
       const started = await reloadNewPlugins()
@@ -316,7 +367,7 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('plugin:uninstall', async (_, pluginId: string) => {
     try {
-      const plugin = getPlugins().find(p => p.id === pluginId)
+      const plugin = getAllPlugins().find(p => p.id === pluginId)
       if (!plugin) return { success: false, error: '插件不存在' }
       if (plugin.manifest.builtin !== false) return { success: false, error: '内置插件不能卸载' }
 

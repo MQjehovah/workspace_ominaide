@@ -14,7 +14,9 @@
     "storage",
     "notification",
     "shell",
-    "remote"
+    "remote",
+    "api",
+    "config"
   ],
   "builtin": false,
   "main": "dist/index.js"

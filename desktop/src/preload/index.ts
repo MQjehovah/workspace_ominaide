@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('mqbox', {
     restart: (pluginId: string) => ipcRenderer.invoke('plugin:restart', pluginId),
     logs: (pluginId: string, limit?: number) => ipcRenderer.invoke('plugin:logs', pluginId, limit),
     openLogFile: () => ipcRenderer.invoke('plugin:open-log-file'),
+    permissions: () => ipcRenderer.invoke('plugin:permissions'),
+    setPermission: (pluginId: string, permission: string, enabled: boolean) =>
+      ipcRenderer.invoke('plugin:set-permission', pluginId, permission, enabled),
     reload: () =>
       ipcRenderer.invoke('plugin:reload'),
     onUpdated: (callback: () => void) => {
