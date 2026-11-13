@@ -114,6 +114,13 @@ contextBridge.exposeInMainWorld('mqbox', {
     getAllScreens: () => ipcRenderer.invoke('screenshot:get-all-screens'),
     capture: (x: number, y: number, width: number, height: number) =>
       ipcRenderer.invoke('screenshot:capture', x, y, width, height),
+    captureNormalized: (
+      displayId: number,
+      nx: number,
+      ny: number,
+      nw: number,
+      nh: number,
+    ) => ipcRenderer.invoke('screenshot:capture-normalized', displayId, nx, ny, nw, nh),
     captureFullscreen: () => ipcRenderer.invoke('screenshot:capture-fullscreen'),
     start: () => ipcRenderer.send('screenshot:start'),
     cancel: () => ipcRenderer.send('screenshot:cancel'),

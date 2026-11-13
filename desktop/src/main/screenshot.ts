@@ -312,6 +312,39 @@ export function rectIntersection(a: { x: number; y: number; width: number; heigh
   return { x, y, width: right - x, height: bottom - y }
 }
 
+/**
+ * Crop the already-captured screen image using normalized coordinates from the
+ * overlay canvas. This avoids DIP/Retina/window-position rounding: what the
+ * user sees in the frozen canvas is exactly what gets cropped.
+ */
+export function captureRegionNormalized(
+  displayId: number,
+  nx: number,
+  ny: number,
+  nw: number,
+  nh: number,
+): string | null {
+  const cached = getCachedScreenshot()
+  if (!cached || cached.images.length === 0) return null
+  const displayIdx = cached.displays.findIndex(d => d.id === displayId)
+  if (displayIdx < 0 || !cached.images[displayIdx]) return null
+  const img = nativeImage.createFromDataURL(cached.images[displayIdx])
+  const size = img.getSize()
+  const left = Math.min(Math.max(nx, 0), 1)
+  const top = Math.min(Math.max(ny, 0), 1)
+  const right = Math.min(Math.max(nx + nw, 0), 1)
+  const bottom = Math.min(Math.max(ny + nh, 0), 1)
+  const x = Math.max(0, Math.min(size.width - 1, Math.round(left * size.width)))
+  const y = Math.max(0, Math.min(size.height - 1, Math.round(top * size.height)))
+  const width = Math.max(1, Math.min(size.width - x, Math.round((right - left) * size.width)))
+  const height = Math.max(1, Math.min(size.height - y, Math.round((bottom - top) * size.height)))
+  const cropped = img.crop({ x, y, width, height })
+  const dataUrl = cropped.toDataURL()
+  clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
+  addToHistory(dataUrl, 'region', width, height)
+  return dataUrl
+}
+
 export async function captureRegion(screenX: number, screenY: number, width: number, height: number): Promise<string | null> {
   if (width <= 0 || height <= 0) return null
   const allDisplays = screen.getAllDisplays()
@@ -544,9 +577,11 @@ export async function startScreenshot(): Promise<void> {
 
     const baseUrl = process.env.VITE_DEV_SERVER_URL
     if (baseUrl) {
-      win.loadURL(`${baseUrl}?view=screenshot`)
+      win.loadURL(`${baseUrl}?view=screenshot&displayId=${display.id}`)
     } else {
-      win.loadFile(join(__dirname, '../../dist/index.html'), { query: { view: 'screenshot' } })
+      win.loadFile(join(__dirname, '../../dist/index.html'), {
+        query: { view: 'screenshot', displayId: String(display.id) },
+      })
     }
 
     win.once('ready-to-show', () => {

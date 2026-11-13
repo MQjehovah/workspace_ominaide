@@ -460,6 +460,27 @@ export function registerIpcHandlers() {
     }
   })
 
+  ipcMain.handle('screenshot:capture-normalized', async (
+    _,
+    displayId: number,
+    nx: number,
+    ny: number,
+    nw: number,
+    nh: number,
+  ) => {
+    try {
+      const dataUrl = screenshot.captureRegionNormalized(displayId, nx, ny, nw, nh)
+      if (dataUrl) {
+        screenshot.cancelScreenshot()
+        showEditor(dataUrl)
+      }
+      return dataUrl
+    } catch (e) {
+      console.error('screenshot:capture-normalized error:', e)
+      return null
+    }
+  })
+
   ipcMain.handle('screenshot:capture-fullscreen', async () => {
     try {
       return await screenshot.captureFullscreen()

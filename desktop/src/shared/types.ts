@@ -198,6 +198,13 @@ declare global {
         onImage: (callback: (dataUrl: string) => void) => void
         getAllScreens: () => Promise<{ displays: any[]; images: string[] }>
         capture: (x: number, y: number, width: number, height: number) => Promise<string | null>
+        captureNormalized: (
+          displayId: number,
+          nx: number,
+          ny: number,
+          nw: number,
+          nh: number,
+        ) => Promise<string | null>
         captureFullscreen: () => Promise<string | null>
         start: () => void
         cancel: () => void

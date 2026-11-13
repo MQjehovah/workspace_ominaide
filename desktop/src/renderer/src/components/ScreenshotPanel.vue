@@ -18,24 +18,11 @@ const startY = ref(0)
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
 const currentDisplayId = ref<number>(0)
 
-// 窗口 CSS 尺寸（可能不等于 display bounds，Windows DPI bug 导致）
+// 窗口 CSS 尺寸（仅用于遮罩布局；截图裁剪使用画布归一化坐标）
 const winW = ref(0)
 const winH = ref(0)
 
 const currentDisplay = computed(() => displays.value.find(d => d.id === currentDisplayId.value))
-
-// ★ 窗口 CSS 坐标 → 屏幕 DIP 坐标的缩放比
-//   窗口可能比屏幕大或小，鼠标坐标需要按比例映射到 DIP
-const scaleX = computed(() => {
-  const d = currentDisplay.value
-  if (!d || winW.value === 0) return 1
-  return d.bounds.width / winW.value
-})
-const scaleY = computed(() => {
-  const d = currentDisplay.value
-  if (!d || winH.value === 0) return 1
-  return d.bounds.height / winH.value
-})
 
 const displayMasks = computed<{ style: Record<string, string> }[]>(() => {
   const masks: { style: Record<string, string> }[] = []
@@ -55,32 +42,25 @@ const displayMasks = computed<{ style: Record<string, string> }[]>(() => {
     addBlock(0, 0, vw, vh)
     return masks
   }
-  // 选区 DIP 坐标 → 窗口 CSS 坐标
-  const d = currentDisplay.value
-  if (!d) { addBlock(0, 0, vw, vh); return masks }
-  const selCssX = (selection.value.x - d.bounds.x) / scaleX.value
-  const selCssY = (selection.value.y - d.bounds.y) / scaleY.value
-  const selCssW = selection.value.width / scaleX.value
-  const selCssH = selection.value.height / scaleY.value
-  if (selCssY > 0) addBlock(0, 0, vw, selCssY)
-  if (selCssY + selCssH < vh) addBlock(0, selCssY + selCssH, vw, vh - selCssY - selCssH)
-  if (selCssX > 0) addBlock(0, selCssY, selCssX, selCssH)
-  if (selCssX + selCssW < vw) addBlock(selCssX + selCssW, selCssY, vw - selCssX - selCssW, selCssH)
+  const sel = selection.value
+  if (sel.y > 0) addBlock(0, 0, vw, sel.y)
+  if (sel.y + sel.height < vh) addBlock(0, sel.y + sel.height, vw, vh - sel.y - sel.height)
+  if (sel.x > 0) addBlock(0, sel.y, sel.x, sel.height)
+  if (sel.x + sel.width < vw) addBlock(sel.x + sel.width, sel.y, vw - sel.x - sel.width, sel.height)
   return masks
 })
 
 const selectionStyle = computed(() => {
   const sel = selection.value
   if (sel.width < 3 || sel.height < 3) return {} as Record<string, string>
-  const d = currentDisplay.value
-  if (!d) return {} as Record<string, string>
   return {
     position: 'fixed',
-    left: `${(sel.x - d.bounds.x) / scaleX.value}px`,
-    top: `${(sel.y - d.bounds.y) / scaleY.value}px`,
-    width: `${sel.width / scaleX.value}px`,
-    height: `${sel.height / scaleY.value}px`,
+    left: `${sel.x}px`,
+    top: `${sel.y}px`,
+    width: `${sel.width}px`,
+    height: `${sel.height}px`,
     border: '2px solid #00a8ff',
+    boxSizing: 'border-box',
     pointerEvents: 'none',
     zIndex: '50',
   } as Record<string, string>
@@ -97,11 +77,19 @@ onMounted(async () => {
       winW.value = window.innerWidth
       winH.value = window.innerHeight
 
-      // 检测当前窗口所在的显示器
+      // Prefer the explicit display id passed by the main process; fall back
+      // to the window position for older builds.
+      const queryId = Number(
+        new URLSearchParams(window.location.search).get('displayId') || 0,
+      )
       const wx = window.screenX || 0
-      currentDisplayId.value = displays.value.find(d =>
-        wx >= d.bounds.x && wx < d.bounds.x + d.bounds.width
-      )?.id || displays.value[0]?.id || 0
+      currentDisplayId.value =
+        displays.value.find(d => d.id === queryId)?.id ||
+        displays.value.find(d =>
+          wx >= d.bounds.x && wx < d.bounds.x + d.bounds.width
+        )?.id ||
+        displays.value[0]?.id ||
+        0
 
       await nextTick()
       drawBackground()
@@ -141,32 +129,21 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onKeyDown)
 })
 
-const getScreenPosition = (clientX: number, clientY: number) => {
-  const d = currentDisplay.value
-  if (!d) return { x: clientX, y: clientY }
-  return {
-    x: d.bounds.x + clientX * scaleX.value,
-    y: d.bounds.y + clientY * scaleY.value,
-  }
-}
-
 const onMouseDown = (e: MouseEvent) => {
   e.preventDefault()
   isSelecting.value = true
-  const pos = getScreenPosition(e.clientX, e.clientY)
-  startX.value = pos.x
-  startY.value = pos.y
-  selection.value = { x: pos.x, y: pos.y, width: 0, height: 0 }
+  startX.value = e.clientX
+  startY.value = e.clientY
+  selection.value = { x: e.clientX, y: e.clientY, width: 0, height: 0 }
 }
 
 const onMouseMove = (e: MouseEvent) => {
   if (!isSelecting.value) return
-  const pos = getScreenPosition(e.clientX, e.clientY)
   selection.value = {
-    x: Math.min(startX.value, pos.x),
-    y: Math.min(startY.value, pos.y),
-    width: Math.abs(pos.x - startX.value),
-    height: Math.abs(pos.y - startY.value),
+    x: Math.min(startX.value, e.clientX),
+    y: Math.min(startY.value, e.clientY),
+    width: Math.abs(e.clientX - startX.value),
+    height: Math.abs(e.clientY - startY.value),
   }
 }
 
@@ -178,13 +155,18 @@ const onMouseUp = async (_e: MouseEvent) => {
     return
   }
   try {
-    const result = await window.mqbox?.screenshot?.capture(
-      selection.value.x, selection.value.y,
-      selection.value.width, selection.value.height,
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    if (vw <= 0 || vh <= 0) return
+    const sel = selection.value
+    const result = await window.mqbox?.screenshot?.captureNormalized(
+      currentDisplayId.value,
+      sel.x / vw,
+      sel.y / vh,
+      sel.width / vw,
+      sel.height / vh,
     )
-    if (result) {
-      window.mqbox?.screenshot?.cancel()
-    }
+    if (result) window.mqbox?.screenshot?.cancel()
   } catch (e) {
     console.error('Capture failed:', e)
   }
@@ -218,7 +200,7 @@ const onKeyDown = (e: KeyboardEvent) => {
       class="selection-indicator"
       :style="selectionStyle"
     >
-      <div class="size-label">{{ Math.round(selection.width) }} × {{ Math.round(selection.height) }}</div>
+      <div class="size-label">{{ Math.round(selection.width * (window.devicePixelRatio || 1)) }} × {{ Math.round(selection.height * (window.devicePixelRatio || 1)) }}</div>
     </div>
 
     <div v-if="!isSelecting" class="hint">拖动选择截图区域，按 Esc 取消</div>
