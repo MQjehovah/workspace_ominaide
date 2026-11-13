@@ -1,9 +1,9 @@
 import axios from 'axios'
-import { app, ipcMain, BrowserWindow, dialog } from 'electron'
+import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream, rmSync } from 'fs'
 import { writeLog } from '../logger'
-import { getPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems } from '../plugin/host'
+import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin } from '../plugin/host'
 import * as selectionBar from '../selectionBar'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
@@ -11,6 +11,7 @@ import * as screenshot from '../screenshot'
 import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins } from '../pinWindow'
 import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
 import { readClipboardTextSafe } from '../clipboard'
+import { getRecentLogs, getLogFilePath, getLogDir } from '../logger'
 
 let nutLoader: any = null
 let remotePowerSaveId = 0
@@ -101,7 +102,15 @@ export function registerIpcHandlers() {
   ipcMain.handle('plugin:list-all', async () => {
     const cfg = await getConfig()
     const disabled: string[] = cfg.disabledPlugins || []
-    return getPlugins().map(p => ({ ...p, enabled: !disabled.includes(p.id) }))
+    return getAllPlugins().map(p => ({ ...p, enabled: !disabled.includes(p.id) }))
+  })
+  ipcMain.handle('plugin:statuses', async () => getPluginStatuses())
+  ipcMain.handle('plugin:restart', async (_, pluginId: string) => restartPlugin(pluginId))
+  ipcMain.handle('plugin:logs', async (_, pluginId: string, limit?: number) => getRecentLogs(pluginId, limit || 300))
+  ipcMain.handle('plugin:open-log-file', async () => {
+    const file = getLogFilePath()
+    if (existsSync(file)) shell.showItemInFolder(file)
+    else shell.openPath(getLogDir())
   })
   ipcMain.handle('plugin:get-panels', async () => {
     const cfg = await getConfig()

@@ -20,6 +20,34 @@ export interface PluginInfo {
   enabled: boolean
 }
 
+export type PluginRuntimeState =
+  | 'running'
+  | 'starting'
+  | 'restarting'
+  | 'stopped'
+  | 'crashed'
+  | 'disabled'
+
+export interface PluginRuntimeStatus {
+  id: string
+  displayName: string
+  version: string
+  enabled: boolean
+  state: PluginRuntimeState
+  pid?: number
+  startedAt?: number
+  restarts: number
+  lastExitCode?: number | null
+  lastError?: string
+  nextRetryAt?: number
+}
+
+export interface PluginLogEntry {
+  time: number
+  level: string
+  message: string
+}
+
 export interface PluginPanel {
   id: string
   pluginId: string
@@ -267,6 +295,10 @@ declare global {
         listMarketplace: () => Promise<any[]>
         installFromMarket: (pluginId: string) => Promise<any>
         getPanelData: (pluginId: string) => Promise<PanelData>
+        statuses: () => Promise<PluginRuntimeStatus[]>
+        restart: (pluginId: string) => Promise<{ success: boolean; error?: string }>
+        logs: (pluginId: string, limit?: number) => Promise<PluginLogEntry[]>
+        openLogFile: () => Promise<void>
         onUpdated: (callback: () => void) => void
       }
       search: {

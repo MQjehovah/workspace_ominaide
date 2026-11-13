@@ -24,7 +24,7 @@
         </div>
         <div v-for="p in plugins" :key="p.id" class="plugin-item">
           <div class="plugin-icon" :style="{ background: getColor(p.id) + '20' }">
-            <div class="plugin-dot" :style="{ background: p.enabled ? '#28A745' : '#ccc' }"></div>
+            <div class="plugin-dot" :style="{ background: statusColor(p.id) }"></div>
           </div>
           <div class="plugin-info">
             <span class="plugin-name">
@@ -33,9 +33,14 @@
               <span v-if="privacyNote(p.id)" class="privacy-tag" :title="privacyNote(p.id)">会读取本地数据</span>
             </span>
             <span class="plugin-desc">{{ p.manifest?.description || '' }}</span>
+            <span class="plugin-status" :style="{ color: statusColor(p.id) }" :title="statusTitle(p.id)">
+              {{ statusText(p.id) }}
+            </span>
             <span v-if="privacyNote(p.id)" class="privacy-note">{{ privacyNote(p.id) }}</span>
           </div>
           <div class="plugin-actions">
+            <button class="cfg-btn" title="查看日志" @click="openLogs(p)">📄</button>
+            <button v-if="p.enabled" class="cfg-btn" title="重启插件" @click="restartPlugin(p)">↻</button>
             <button class="cfg-btn" title="配置" @click="openConfig(p)">⚙</button>
             <button v-if="!p.manifest?.builtin" class="uninstall-btn" title="卸载" @click="uninstallPlugin(p)">🗑</button>
             <label class="switch"><input type="checkbox" :checked="p.enabled" @change="togglePlugin(p)" /><span class="slider"></span></label>
@@ -104,12 +109,37 @@
       </div>
     </div>
 
+    <div v-if="logOpen" class="log-drawer">
+      <div class="log-hd">
+        <span class="log-title">{{ logPluginName }} · 日志</span>
+        <span class="log-count">{{ filteredLogs.length }} 行</span>
+        <label class="log-filter">
+          <input v-model="logErrorsOnly" type="checkbox" /> 只看错误/警告
+        </label>
+        <button class="log-btn" @click="refreshLogs">刷新</button>
+        <button class="log-btn" @click="copyLogs">复制</button>
+        <button class="log-btn" @click="openLogFile">打开文件</button>
+        <button class="log-close" @click="closeLogs">✕</button>
+      </div>
+      <div ref="logBody" class="log-body">
+        <div v-if="!filteredLogs.length" class="log-empty">暂无日志</div>
+        <div v-for="(l, i) in filteredLogs" :key="i" class="log-line" :class="'lv-' + l.level">
+          <span class="log-time">{{ fmtLogTime(l.time) }}</span>
+          <span class="log-level">{{ l.level.toUpperCase() }}</span>
+          <span class="log-msg">{{ l.message }}</span>
+        </div>
+      </div>
+      <div class="log-foot">
+        日志文件：plugins.log · 自动刷新中 · 错误和崩溃信息会记录在这里
+      </div>
+    </div>
+
     <PluginConfig v-if="configPluginId" :plugin-id="configPluginId" @close="configPluginId = ''" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, ref, onMounted, onUnmounted } from 'vue'
 import PluginConfig from './PluginConfig.vue'
 
 const tab = ref('plugins')
@@ -127,6 +157,17 @@ const recordTarget = ref('')
 const editingBuiltin = ref('')
 const newBinding = ref<any>({ pluginId: '', command: '', accelerator: '' })
 const configPluginId = ref('')
+const statuses = ref<Record<string, any>>({})
+const now = ref(Date.now())
+const logOpen = ref(false)
+const logPluginId = ref('')
+const logPluginName = ref('')
+const logEntries = ref<any[]>([])
+const logErrorsOnly = ref(false)
+const logBody = ref<HTMLElement | null>(null)
+let logTimer: any = null
+let statusTimer: any = null
+let clockTimer: any = null
 
 const pluginColors: Record<string, string> = { screenshot: '#28A745', 'clipboard-history': '#0078D4', todo: '#FF9800', player: '#E91E63', files: '#2196F3', notes: '#FF9800', calculator: '#9C27B0', everything: '#666', activity: '#8b5cf6', translator: '#0ea5e9', sysmonitor: '#10b981', pomodoro: '#ef4444' }
 function getColor(id: string) { return pluginColors[id] || '#666' }
@@ -135,6 +176,126 @@ async function load() {
   plugins.value = await window.mqbox.plugin.listAll()
   builtinShortcuts.value = await window.mqbox.shortcut.getBuiltin()
   customShortcuts.value = await window.mqbox.shortcut.list()
+  await loadStatuses()
+}
+
+async function loadStatuses() {
+  try {
+    const list = await window.mqbox.plugin.statuses()
+    const map: Record<string, any> = {}
+    for (const item of list) map[item.id] = item
+    statuses.value = map
+  } catch {}
+}
+
+function statusOf(id: string): any {
+  return statuses.value[id] || null
+}
+
+function statusColor(id: string): string {
+  const state = statusOf(id)?.state
+  if (state === 'running') return '#28A745'
+  if (state === 'crashed') return '#DC3545'
+  if (state === 'restarting') return '#FF9800'
+  if (state === 'starting') return '#0078D4'
+  return '#c0c4cc'
+}
+
+function formatUptime(startedAt?: number): string {
+  if (!startedAt) return ''
+  const seconds = Math.max(0, Math.floor((now.value - startedAt) / 1000))
+  if (seconds < 60) return ` · ${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return ` · ${minutes}m`
+  return ` · ${Math.floor(minutes / 60)}h${minutes % 60}m`
+}
+
+function statusText(id: string): string {
+  const st = statusOf(id)
+  if (!st) return ''
+  switch (st.state) {
+    case 'running':
+      return `运行中${st.pid ? ` · pid ${st.pid}` : ''}${formatUptime(st.startedAt)}${st.restarts > 0 ? ` · 自动重启 ${st.restarts} 次` : ''}`
+    case 'starting':
+      return '启动中…'
+    case 'restarting':
+      return `异常退出，正在重启…${st.nextRetryAt ? '（' + Math.max(0, Math.ceil((st.nextRetryAt - now) / 1000)) + 's）' : ''}`
+    case 'crashed':
+      return st.restarts >= 5 ? '已崩溃 · 自动重启已停止' : '已崩溃'
+    case 'stopped':
+      return '已停止'
+    case 'disabled':
+      return '已停用'
+    default:
+      return ''
+  }
+}
+
+function statusTitle(id: string): string {
+  const st = statusOf(id)
+  if (!st) return ''
+  const parts: string[] = []
+  if (st.lastExitCode !== undefined && st.lastExitCode !== null) parts.push(`退出码 ${st.lastExitCode}`)
+  if (st.lastError) parts.push(st.lastError)
+  if (st.nextRetryAt) parts.push(`计划重试：${new Date(st.nextRetryAt).toLocaleTimeString()}`)
+  return parts.join('\n')
+}
+
+async function restartPlugin(p: any) {
+  const result = await window.mqbox.plugin.restart(p.id)
+  if (!result?.success) alert(result?.error || '重启失败')
+  await loadStatuses()
+}
+
+async function openLogs(p: any) {
+  logOpen.value = true
+  logPluginId.value = p.id
+  logPluginName.value = p.manifest?.displayName || p.id
+  await refreshLogs()
+  if (logTimer) clearInterval(logTimer)
+  logTimer = setInterval(refreshLogs, 1500)
+}
+
+function closeLogs() {
+  logOpen.value = false
+  logPluginId.value = ''
+  logEntries.value = []
+  if (logTimer) clearInterval(logTimer)
+  logTimer = null
+}
+
+async function refreshLogs() {
+  if (!logOpen.value || !logPluginId.value) return
+  const el = logBody.value
+  const atBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 48
+  try {
+    logEntries.value = await window.mqbox.plugin.logs(logPluginId.value, 400)
+  } catch { logEntries.value = [] }
+  await nextTick()
+  // Keep the user's scroll position unless they were already following the tail.
+  if (atBottom && logBody.value) logBody.value.scrollTop = logBody.value.scrollHeight
+}
+
+const filteredLogs = computed(() => {
+  if (!logErrorsOnly.value) return logEntries.value
+  return logEntries.value.filter(l => ['error', 'fatal', 'stderr', 'warn'].includes(String(l.level).toLowerCase()))
+})
+
+function fmtLogTime(time: number): string {
+  const d = new Date(time)
+  const pad = (n: number, size = 2) => String(n).padStart(size, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`
+}
+
+async function copyLogs() {
+  const text = filteredLogs.value
+    .map(l => `[${fmtLogTime(l.time)}] [${l.level}] ${l.message}`)
+    .join('\n')
+  try { await window.mqbox.clipboard.writeText(text) } catch {}
+}
+
+function openLogFile() {
+  window.mqbox.plugin.openLogFile()
 }
 
 function getCommands(pluginId: string): string[] {
@@ -145,6 +306,7 @@ function getCommands(pluginId: string): string[] {
 async function togglePlugin(p: any) {
   p.enabled = !p.enabled
   await window.mqbox.plugin.setEnabled(p.id, p.enabled)
+  await loadStatuses()
 }
 
 const PRIVACY_NOTES: Record<string, string> = {
@@ -291,13 +453,23 @@ async function onKeydown(e: KeyboardEvent) {
 
 function close() { window.close() }
 
-onMounted(() => { load(); document.addEventListener('keydown', onKeydown) })
-onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
+onMounted(() => {
+  load()
+  document.addEventListener('keydown', onKeydown)
+  clockTimer = setInterval(() => { now.value = Date.now() }, 1000)
+  statusTimer = setInterval(() => { loadStatuses() }, 3000)
+})
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeydown)
+  if (clockTimer) clearInterval(clockTimer)
+  if (statusTimer) clearInterval(statusTimer)
+  if (logTimer) clearInterval(logTimer)
+})
 </script>
 
 <style scoped>
 .overlay { height:100vh; display:flex; flex-direction:column; background:#fff; }
-.card { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.card { flex:1; display:flex; flex-direction:column; overflow:hidden; position:relative; }
 .card-hd { display:flex; align-items:center; padding:12px 16px; border-bottom:1px solid #e8e8e8; }
 .tabs { display:flex; gap:4px; flex:1; justify-content:center;  -webkit-app-region:drag; }
 .tabs button { padding:4px 16px; border-radius:6px; border:none; background:transparent; cursor:pointer; font-size:13px; color:#666; -webkit-app-region:no-drag; }
@@ -321,6 +493,29 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 .privacy-tag { display:inline-block; margin-left:6px; padding:1px 5px; border-radius:4px; background:#fff1f0; color:#c45656; font-size:10px; font-weight:500; }
 .privacy-note { font-size:10px; color:#a0a4ad; margin-top:2px; }
 .plugin-desc { font-size:11px; color:#999; }
+.plugin-status { display:block; font-size:10.5px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Log drawer */
+.log-drawer { position:absolute; inset:0; background:#1e1f26; display:flex; flex-direction:column; z-index:20; }
+.log-hd { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid #2d2f3a; color:#d8dae2; }
+.log-title { font-size:12.5px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.log-count { font-size:10.5px; color:#8b8f9e; }
+.log-filter { display:flex; align-items:center; gap:4px; font-size:11px; color:#aab0c0; cursor:pointer; }
+.log-btn, .log-close { border:1px solid #3a3d4a; background:#2a2c36; color:#c9cdd8; border-radius:5px; padding:3px 8px; font-size:11px; cursor:pointer; }
+.log-btn:hover, .log-close:hover { background:#353846; }
+.log-close { border-color:transparent; background:transparent; font-size:13px; }
+.log-body { flex:1; overflow-y:auto; padding:8px 10px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:11px; line-height:1.55; }
+.log-empty { color:#6c7080; padding:20px; text-align:center; }
+.log-line { display:flex; gap:8px; padding:1px 0; color:#c3c7d1; white-space:pre-wrap; word-break:break-word; }
+.log-time { color:#6f7485; flex-shrink:0; }
+.log-level { flex-shrink:0; width:56px; color:#8fa1d8; }
+.log-msg { flex:1; min-width:0; }
+.log-line.lv-error .log-level, .log-line.lv-error .log-msg { color:#ff6b6b; }
+.log-line.lv-fatal .log-level, .log-line.lv-fatal .log-msg { color:#ff4d4f; }
+.log-line.lv-warn .log-level { color:#ffb454; }
+.log-line.lv-stderr .log-level, .log-line.lv-stderr .log-msg { color:#c792ea; }
+.log-line.lv-system .log-level { color:#63d2a5; }
+.log-foot { padding:6px 12px; border-top:1px solid #2d2f3a; color:#6f7485; font-size:10px; }
 .plugin-actions { display:flex; align-items:center; gap:8px; }
 .cfg-btn { border:none; background:transparent; cursor:pointer; font-size:16px; color:#999; padding:2px 4px; border-radius:4px; }
 .cfg-btn:hover { background:#f0f0f0; color:#333; }

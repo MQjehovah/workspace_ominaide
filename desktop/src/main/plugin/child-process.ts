@@ -99,6 +99,10 @@ export class PluginChildProcess extends EventEmitter {
     return this.proc !== null && !this.proc.killed
   }
 
+  get pid(): number | undefined {
+    return this.proc?.pid
+  }
+
   registerBridgeHandler(method: string, handler: (args: any[]) => Promise<any>): void {
     this.bridgeHandlers.set(method, handler)
   }
@@ -201,7 +205,11 @@ export class PluginProcessManager extends EventEmitter {
     proc.start()
     this.processes.set(info.id, proc)
 
-    proc.on('exit', (code) => this.emit('plugin:exit', info.id, code))
+    proc.on('exit', (code) => {
+      // Drop the dead instance so a restart creates a fresh child process.
+      if (this.processes.get(info.id) === proc) this.processes.delete(info.id)
+      this.emit('plugin:exit', info.id, code)
+    })
     proc.on('error', (err) => this.emit('plugin:error', info.id, err))
 
     return proc

@@ -154,6 +154,21 @@ context.registerCommand('translateSelection', async ({ text, mode }) => {
 - `context.registerCommand(name, handler)` + `context.openPage(id)`
 - `context.log(level, message)`：写入插件日志
 
+## 日志与生命周期
+
+插件进程由宿主托管，崩溃后会自动重启（1s / 2s / 4s / 8s / 16s，最多 5 次）。
+连续崩溃 5 次会停止自动重启并标记为「已崩溃」，可在「插件管理 → 已安装」里手动重启。
+
+- `context.log(level, message)` 写入 `plugins.log`
+- 子进程的 `stderr` 会自动记录到日志
+- 启停、重启、崩溃、退出码都会记录为 `system` / `error` 日志
+- 插件管理页点 📄 可以直接查看日志、只看错误/警告、复制或打开日志文件
+
+日志文件位置：
+
+- 安装版：`~/Library/Application Support/omniaide-desktop/logs/plugins.log`（Windows 为 `%APPDATA%/omniaide-desktop/logs`）
+- 开发版：`desktop/logs/plugins.log`
+
 ## 构建与分发
 
 ```bash

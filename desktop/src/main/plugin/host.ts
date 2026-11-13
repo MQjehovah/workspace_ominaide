@@ -64,6 +64,258 @@ export function getSelectionAction(key: string) {
   return selectionActions.get(key) || null
 }
 
+// ---- Runtime lifecycle & observability -----------------------------------
+
+export type PluginRuntimeState =
+  | 'running'
+  | 'starting'
+  | 'restarting'
+  | 'stopped'
+  | 'crashed'
+  | 'disabled'
+
+export interface PluginRuntimeStatus {
+  id: string
+  displayName: string
+  version: string
+  enabled: boolean
+  state: PluginRuntimeState
+  pid?: number
+  startedAt?: number
+  restarts: number
+  lastExitCode?: number | null
+  lastError?: string
+  nextRetryAt?: number
+}
+
+interface RuntimeRecord {
+  state: PluginRuntimeState
+  pid?: number
+  startedAt?: number
+  restarts: number
+  lastExitCode?: number | null
+  lastError?: string
+  nextRetryAt?: number
+}
+
+const knownPlugins = new Map<string, PluginInfo>()
+const runtime = new Map<string, RuntimeRecord>()
+const disabledPlugins = new Set<string>()
+const restartTimers = new Map<string, NodeJS.Timeout>()
+const restartAttempts = new Map<string, number>()
+const stableTimers = new Map<string, NodeJS.Timeout>()
+const intentionalStops = new Set<string>()
+let pluginsShuttingDown = false
+
+const MAX_AUTO_RESTARTS = 5
+const STABLE_RESET_MS = 60_000
+
+function runtimeRecord(id: string): RuntimeRecord {
+  let rec = runtime.get(id)
+  if (!rec) {
+    rec = { state: 'stopped', restarts: 0 }
+    runtime.set(id, rec)
+  }
+  return rec
+}
+
+function patchRuntime(id: string, patch: Partial<RuntimeRecord>): void {
+  const rec = runtimeRecord(id)
+  Object.assign(rec, patch)
+  broadcastPluginUpdate()
+}
+
+let broadcastTimer: NodeJS.Timeout | null = null
+
+function broadcastPluginUpdate(): void {
+  if (broadcastTimer) return
+  broadcastTimer = setTimeout(() => {
+    broadcastTimer = null
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) win.webContents.send('plugins:updated')
+    })
+  }, 150)
+}
+
+export function getPluginStatuses(): PluginRuntimeStatus[] {
+  return [...knownPlugins.values()].map((info) => {
+    const rec = runtime.get(info.id) || { state: 'stopped', restarts: 0 }
+    const running = !!processManager.getProcess(info.id)?.isRunning()
+    const disabled = disabledPlugins.has(info.id)
+    let state: PluginRuntimeState = rec.state
+    if (disabled) state = 'disabled'
+    else if (running && (state === 'stopped' || state === 'crashed')) state = 'running'
+    else if (!running && (state === 'running' || state === 'starting')) state = 'stopped'
+    return {
+      id: info.id,
+      displayName: info.manifest.displayName || info.id,
+      version: info.manifest.version || '',
+      enabled: !disabled,
+      state,
+      pid: rec.pid,
+      startedAt: rec.startedAt,
+      restarts: rec.restarts,
+      lastExitCode: rec.lastExitCode,
+      lastError: rec.lastError,
+      nextRetryAt: rec.nextRetryAt,
+    }
+  }).sort((a, b) => a.id.localeCompare(b.id))
+}
+
+export function markPluginsShuttingDown(): void {
+  pluginsShuttingDown = true
+  for (const timer of restartTimers.values()) clearTimeout(timer)
+  for (const timer of stableTimers.values()) clearTimeout(timer)
+  restartTimers.clear()
+  stableTimers.clear()
+}
+
+/**
+ * Start a plugin process, wire lifecycle logging/status and the panel entry.
+ * Safe to call again after removePlugin().
+ */
+async function startPluginInstance(info: PluginInfo): Promise<boolean> {
+  const id = info.id
+  try {
+    const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
+    if (!existsSync(modulePath)) {
+      writeLog(id, 'error', `main entry not found: ${modulePath}`)
+      patchRuntime(id, { state: 'crashed', lastError: '入口文件不存在' })
+      return false
+    }
+
+    // A fresh start must not inherit a stale "user stopped it" flag.
+    intentionalStops.delete(id)
+    patchRuntime(id, { state: 'starting', startedAt: Date.now(), nextRetryAt: undefined })
+    writeLog(id, 'system', `starting ${info.manifest.displayName || id} v${info.manifest.version || '?'}`)
+
+    const proc = await processManager.startPlugin(info)
+    registerBridgeHandlers(proc)
+    attachLifecycle(id, proc)
+
+    const ready = await proc.waitForReady(8000)
+    if (!ready) {
+      // The process may still start; keep it and surface the warning in logs.
+      writeLog(id, 'warn', 'ready timeout after 8000ms')
+    }
+
+    plugins.set(id, info)
+    if (!panels.some(p => p.pluginId === id)) {
+      const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
+      panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
+    }
+
+    const rec = runtimeRecord(id)
+    patchRuntime(id, {
+      state: 'running',
+      pid: proc.pid,
+      startedAt: rec.startedAt || Date.now(),
+      lastError: undefined,
+      nextRetryAt: undefined,
+    })
+    writeLog(id, 'system', `running (pid=${proc.pid ?? '?'})`)
+    console.log(`[plugin] started in child process: ${id} (${info.manifest.version})`)
+    return true
+  } catch (e: any) {
+    const message = e?.message || String(e)
+    writeLog(id, 'error', `failed to start: ${message}`)
+    patchRuntime(id, { state: 'crashed', lastError: message })
+    console.error(`[plugin] failed to start ${id}:`, e)
+    return false
+  }
+}
+
+function attachLifecycle(id: string, proc: import('./child-process').PluginChildProcess): void {
+  proc.on('ready', () => {
+    const rec = runtimeRecord(id)
+    patchRuntime(id, { state: 'running', pid: proc.pid, startedAt: rec.startedAt || Date.now() })
+    // Only treat the plugin as healthy after it stays up for a while.
+    const existing = stableTimers.get(id)
+    if (existing) clearTimeout(existing)
+    stableTimers.set(id, setTimeout(() => {
+      stableTimers.delete(id)
+      restartAttempts.delete(id)
+    }, STABLE_RESET_MS))
+  })
+
+  proc.on('stderr', (msg: string) => {
+    writeLog(id, 'stderr', msg)
+    const trimmed = String(msg).split(/\r?\n/).filter(Boolean).pop() || ''
+    // Update silently: chatty plugins would otherwise spam every window.
+    if (trimmed) runtimeRecord(id).lastError = trimmed.slice(0, 300)
+  })
+
+  proc.on('exit', (code: number | null) => {
+    const stable = stableTimers.get(id)
+    if (stable) { clearTimeout(stable); stableTimers.delete(id) }
+
+    const intentional = intentionalStops.delete(id)
+    const rec = runtimeRecord(id)
+    patchRuntime(id, {
+      state: intentional ? 'stopped' : 'crashed',
+      pid: undefined,
+    })
+    if (intentional) {
+      writeLog(id, 'system', `stopped (code=${code ?? '?'})`)
+      return
+    }
+
+    writeLog(id, 'error', `exited unexpectedly (code=${code ?? '?'})`)
+    if (pluginsShuttingDown) return
+    if (disabledPlugins.has(id)) return
+
+    scheduleAutoRestart(id)
+  })
+}
+
+function scheduleAutoRestart(id: string): void {
+  if (restartTimers.has(id)) return
+  const attempts = (restartAttempts.get(id) || 0) + 1
+  restartAttempts.set(id, attempts)
+
+  if (attempts > MAX_AUTO_RESTARTS) {
+    writeLog(id, 'error', `crash loop detected (${MAX_AUTO_RESTARTS} attempts), auto-restart disabled`)
+    patchRuntime(id, {
+      state: 'crashed',
+      lastError: `连续崩溃 ${MAX_AUTO_RESTARTS} 次，已停止自动重启`,
+      nextRetryAt: undefined,
+    })
+    return
+  }
+
+  const delay = Math.min(1000 * 2 ** (attempts - 1), 30_000)
+  const rec = runtimeRecord(id)
+  rec.restarts += 1
+  patchRuntime(id, {
+    state: 'restarting',
+    nextRetryAt: Date.now() + delay,
+    lastError: rec.lastError,
+  })
+  writeLog(id, 'system', `restarting in ${Math.round(delay / 1000)}s (attempt ${attempts}/${MAX_AUTO_RESTARTS})`)
+
+  const timer = setTimeout(async () => {
+    restartTimers.delete(id)
+    if (pluginsShuttingDown || disabledPlugins.has(id)) return
+    const info = knownPlugins.get(id)
+    if (!info) return
+    await startPluginInstance(info)
+  }, delay)
+  restartTimers.set(id, timer)
+}
+
+export async function restartPlugin(id: string): Promise<{ success: boolean; error?: string }> {
+  const info = knownPlugins.get(id) || loadPlugins().get(id)
+  if (!info) return { success: false, error: '插件不存在' }
+  if (disabledPlugins.has(id)) return { success: false, error: '插件已停用，请先启用' }
+  writeLog(id, 'system', 'manual restart requested')
+  removePlugin(id)
+  restartAttempts.delete(id)
+  runtimeRecord(id).restarts = 0
+  const ok = await startPluginInstance(info)
+  broadcastPluginUpdate()
+  return ok ? { success: true } : { success: false, error: '启动失败，请查看日志' }
+}
+
 // channel namespace -> pluginId that subscribed to it
 const channelSubscriptions = new Map<string, string>()
 
@@ -87,82 +339,40 @@ export function getProcessManager(): PluginProcessManager {
 export async function initPlugins() {
   const loaded = loadPlugins()
   const cfg = await getConfig()
-  const disabled = new Set<string>(cfg.disabledPlugins || [])
+
+  disabledPlugins.clear()
+  for (const id of cfg.disabledPlugins || []) disabledPlugins.add(id)
 
   for (const [id, info] of loaded) {
-    if (disabled.has(id)) {
+    knownPlugins.set(id, info)
+    if (disabledPlugins.has(id)) {
+      runtimeRecord(id).state = 'disabled'
       console.log(`[plugin] ${id}: disabled by user, not starting`)
       continue
     }
-    try {
-      const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
-      if (!existsSync(modulePath)) {
-        console.warn(`[plugin] ${id}: main entry not found at ${modulePath}, skipping`)
-        continue
-      }
-
-      const proc = await processManager.startPlugin(info)
-      registerBridgeHandlers(proc)
-
-      const ready = await proc.waitForReady(8000)
-      if (!ready) {
-        console.warn(`[plugin] ${id}: not ready, will still add panel`)
-        proc.on('stderr', (msg: string) => console.error(`[plugin:${id}]`, msg))
-      }
-
-      plugins.set(id, info)
-      const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
-      panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
-      console.log(`[plugin] started in child process: ${info.manifest.id} (${info.manifest.version})`)
-    } catch (e) {
-      console.error(`[plugin] failed to start ${id}:`, e)
-    }
+    await startPluginInstance(info)
   }
 
   startClipboardMonitoring()
+  broadcastPluginUpdate()
 }
 
 export async function reloadNewPlugins(): Promise<string[]> {
   const loaded = loadPlugins()
   const cfg = await getConfig()
-  const disabled = new Set<string>(cfg.disabledPlugins || [])
+  for (const id of cfg.disabledPlugins || []) disabledPlugins.add(id)
+
   const started: string[] = []
-
   for (const [id, info] of loaded) {
-    if (plugins.has(id) || disabled.has(id)) continue
-
-    try {
-      const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
-      if (!existsSync(modulePath)) {
-        console.warn(`[plugin] ${id}: main entry not found at ${modulePath}, skipping`)
-        continue
-      }
-
-      const proc = await processManager.startPlugin(info)
-      registerBridgeHandlers(proc)
-
-      const ready = await proc.waitForReady(8000)
-      if (!ready) {
-        console.warn(`[plugin] ${id}: not ready, will still add panel`)
-        proc.on('stderr', (msg: string) => console.error(`[plugin:${id}]`, msg))
-      }
-
-      plugins.set(id, info)
-      const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
-      panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
-      console.log(`[plugin] hot-loaded: ${info.manifest.id} (${info.manifest.version})`)
+    knownPlugins.set(id, info)
+    if (plugins.has(id) || disabledPlugins.has(id)) continue
+    if (await startPluginInstance(info)) {
+      console.log(`[plugin] hot-loaded: ${id} (${info.manifest.version})`)
       started.push(id)
-    } catch (e) {
-      console.error(`[plugin] failed to hot-load ${id}:`, e)
     }
   }
 
-  if (started.length > 0) {
-    BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) win.webContents.send('plugins:updated')
-    })
-  }
-
+  if (started.length > 0) broadcastPluginUpdate()
   return started
 }
 
@@ -605,48 +815,50 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
 export async function startPluginById(id: string): Promise<boolean> {
   if (plugins.has(id)) return true
-  const info = loadPlugins().get(id)
+  const info = knownPlugins.get(id) || loadPlugins().get(id)
   if (!info) return false
-  try {
-    const modulePath = join(info.path, info.manifest.main || 'dist/index.js')
-    if (!existsSync(modulePath)) return false
-    const proc = await processManager.startPlugin(info)
-    registerBridgeHandlers(proc)
-    const ready = await proc.waitForReady(8000)
-    if (!ready) {
-      console.warn(`[plugin] ${id}: not ready, will still add panel`)
-      proc.on('stderr', (msg: string) => console.error(`[plugin:${id}]`, msg))
-    }
-    plugins.set(id, info)
-    const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
-    panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
-    BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) win.webContents.send('plugins:updated')
-    })
-    return true
-  } catch (e) {
-    console.error(`[plugin] failed to start ${id}:`, e)
-    return false
-  }
+  knownPlugins.set(id, info)
+  disabledPlugins.delete(id)
+  const ok = await startPluginInstance(info)
+  if (ok) broadcastPluginUpdate()
+  return ok
 }
 
 export async function setPluginEnabled(id: string, enabled: boolean): Promise<boolean> {
-  if (enabled) return startPluginById(id)
+  if (enabled) {
+    disabledPlugins.delete(id)
+    writeLog(id, 'system', 'enabled by user')
+    return startPluginById(id)
+  }
+  disabledPlugins.add(id)
+  writeLog(id, 'system', 'disabled by user')
   removePlugin(id)
-  BrowserWindow.getAllWindows().forEach(win => {
-    if (!win.isDestroyed()) win.webContents.send('plugins:updated')
-  })
+  broadcastPluginUpdate()
   return true
 }
 
 export function removePlugin(id: string): boolean {
+  const timer = restartTimers.get(id)
+  if (timer) { clearTimeout(timer); restartTimers.delete(id) }
+  const stable = stableTimers.get(id)
+  if (stable) { clearTimeout(stable); stableTimers.delete(id) }
+
+  intentionalStops.add(id)
   const proc = processManager.getProcess(id)
-  if (proc) {
-    proc.stop()
-    processManager.stopPlugin(id)
-  }
+  if (proc) processManager.stopPlugin(id)
+
   clearPluginExtensions(id)
   trayChangedHandler?.()
+
+  const rec = runtimeRecord(id)
+  if (disabledPlugins.has(id)) {
+    rec.state = 'disabled'
+  } else if (rec.state !== 'crashed') {
+    rec.state = 'stopped'
+  }
+  rec.pid = undefined
+  rec.nextRetryAt = undefined
+
   // remove from panels array
   const idx = panels.findIndex(p => p.pluginId === id)
   if (idx >= 0) panels.splice(idx, 1)
@@ -655,6 +867,11 @@ export function removePlugin(id: string): boolean {
 
 export function getPlugins(): PluginInfo[] {
   return Array.from(plugins.values())
+}
+
+/** All discovered plugins, including disabled or crashed ones. */
+export function getAllPlugins(): PluginInfo[] {
+  return Array.from(knownPlugins.values())
 }
 
 export function getPanels(): PluginPanel[] {

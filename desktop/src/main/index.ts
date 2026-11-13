@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, protocol, net, session } from 'electron'
 import { join, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { initPlugins, getProcessManager, setPluginEnabled, getTrayItems, onTrayItemsChanged, getPlugins } from './plugin/host'
+import { initPlugins, getProcessManager, setPluginEnabled, getTrayItems, onTrayItemsChanged, getPlugins, markPluginsShuttingDown } from './plugin/host'
 import { writeLog } from './logger'
 import { monitorEventLoopDelay } from 'perf_hooks'
 import { registerIpcHandlers } from './ipc'
@@ -284,6 +284,7 @@ ipcMain.handle('window:quit', () => { isQuitting = true; app.quit() })
 app.on('window-all-closed', () => {})
 app.on('before-quit', () => {
   isQuitting = true
+  markPluginsShuttingDown()
   stopSettingsSync()
   getProcessManager().stopAll()
   closeAllPluginWindows()

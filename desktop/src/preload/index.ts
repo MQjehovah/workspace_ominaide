@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('mqbox', {
       ipcRenderer.invoke('plugin:install-from-market', pluginId),
     getPanelData: (pluginId: string) =>
       ipcRenderer.invoke('plugin:get-panel-data', pluginId),
+    statuses: () => ipcRenderer.invoke('plugin:statuses'),
+    restart: (pluginId: string) => ipcRenderer.invoke('plugin:restart', pluginId),
+    logs: (pluginId: string, limit?: number) => ipcRenderer.invoke('plugin:logs', pluginId, limit),
+    openLogFile: () => ipcRenderer.invoke('plugin:open-log-file'),
     reload: () =>
       ipcRenderer.invoke('plugin:reload'),
     onUpdated: (callback: () => void) => {
