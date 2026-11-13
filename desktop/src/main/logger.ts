@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { mkdirSync, appendFileSync, closeSync, existsSync, openSync, readSync, statSync } from 'fs'
+import { mkdirSync, appendFileSync, closeSync, copyFileSync, existsSync, openSync, readSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
 const LOG_DIR = app.isPackaged
@@ -10,6 +10,19 @@ mkdirSync(LOG_DIR, { recursive: true })
 
 const LOG_FILE = join(LOG_DIR, 'plugins.log')
 const MAX_BUFFER = 500
+// Keep the log bounded: rotate at 5 MB and keep one previous file.
+const MAX_LOG_BYTES = 5 * 1024 * 1024
+let writesSinceCheck = 0
+
+function rotateIfNeeded() {
+  if (++writesSinceCheck < 100) return
+  writesSinceCheck = 0
+  try {
+    if (statSync(LOG_FILE).size < MAX_LOG_BYTES) return
+    copyFileSync(LOG_FILE, `${LOG_FILE}.1`)
+    writeFileSync(LOG_FILE, '')
+  } catch {}
+}
 
 export interface LogEntry {
   time: number
@@ -40,6 +53,7 @@ export function writeLog(pluginId: string, level: string, message: string) {
   const singleLine = text.replace(/\r?\n/g, ' ⏎ ')
   try {
     appendFileSync(LOG_FILE, `[${stamp}] [${pluginId}] [${level.toUpperCase()}] ${singleLine}\n`)
+    rotateIfNeeded()
   } catch {}
 }
 
