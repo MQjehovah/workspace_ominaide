@@ -17,38 +17,8 @@ const startX = ref(0)
 const startY = ref(0)
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
 const currentDisplayId = ref<number>(0)
-
-// 窗口 CSS 尺寸（仅用于遮罩布局；截图裁剪使用画布归一化坐标）
-const winW = ref(0)
-const winH = ref(0)
-
-const currentDisplay = computed(() => displays.value.find(d => d.id === currentDisplayId.value))
-
-const displayMasks = computed<{ style: Record<string, string> }[]>(() => {
-  const masks: { style: Record<string, string> }[] = []
-  const vw = winW.value
-  const vh = winH.value
-  const addBlock = (x: number, y: number, w: number, h: number) => {
-    if (w <= 0 || h <= 0) return
-    masks.push({
-      style: {
-        position: 'fixed',
-        left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`,
-        background: 'rgba(0, 0, 0, 0.5)', pointerEvents: 'none', zIndex: '40',
-      },
-    })
-  }
-  if (!isSelecting.value || selection.value.width < 3 || selection.value.height < 3) {
-    addBlock(0, 0, vw, vh)
-    return masks
-  }
-  const sel = selection.value
-  if (sel.y > 0) addBlock(0, 0, vw, sel.y)
-  if (sel.y + sel.height < vh) addBlock(0, sel.y + sel.height, vw, vh - sel.y - sel.height)
-  if (sel.x > 0) addBlock(0, sel.y, sel.x, sel.height)
-  if (sel.x + sel.width < vw) addBlock(sel.x + sel.width, sel.y, vw - sel.x - sel.width, sel.height)
-  return masks
-})
+// Vue templates cannot access `window`; read the DPR here instead.
+const dpr = window.devicePixelRatio || 1
 
 const selectionStyle = computed(() => {
   const sel = selection.value
@@ -61,8 +31,11 @@ const selectionStyle = computed(() => {
     height: `${sel.height}px`,
     border: '2px solid #00a8ff',
     boxSizing: 'border-box',
+    // A single huge shadow dims everything outside the hole. Unlike four
+    // manually positioned mask blocks, this can never cover the selection.
+    boxShadow: '0 0 0 100vmax rgba(0, 0, 0, 0.5)',
     pointerEvents: 'none',
-    zIndex: '50',
+    zIndex: '40',
   } as Record<string, string>
 })
 
@@ -73,9 +46,6 @@ onMounted(async () => {
     if (result) {
       displays.value = result.displays
       images.value = result.images
-
-      winW.value = window.innerWidth
-      winH.value = window.innerHeight
 
       // Prefer the explicit display id passed by the main process; fall back
       // to the window position for older builds.
@@ -190,9 +160,8 @@ const onKeyDown = (e: KeyboardEvent) => {
     <canvas ref="bgCanvas" class="bg-canvas"></canvas>
 
     <div
-      v-for="(mask, idx) in displayMasks"
-      :key="'mask-' + idx"
-      :style="mask.style"
+      v-if="!(isSelecting && selection.width > 2 && selection.height > 2)"
+      class="dim-mask"
     ></div>
 
     <div
@@ -200,7 +169,7 @@ const onKeyDown = (e: KeyboardEvent) => {
       class="selection-indicator"
       :style="selectionStyle"
     >
-      <div class="size-label">{{ Math.round(selection.width * (window.devicePixelRatio || 1)) }} × {{ Math.round(selection.height * (window.devicePixelRatio || 1)) }}</div>
+      <div class="size-label">{{ Math.round(selection.width * dpr) }} × {{ Math.round(selection.height * dpr) }}</div>
     </div>
 
     <div v-if="!isSelecting" class="hint">拖动选择截图区域，按 Esc 取消</div>
@@ -214,7 +183,8 @@ const onKeyDown = (e: KeyboardEvent) => {
   overflow: hidden;
 }
 .bg-canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 5; pointer-events: none; }
-.selection-indicator { z-index: 50; }
+.dim-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 40; pointer-events: none; }
+.selection-indicator { z-index: 40; }
 .size-label {
   position: absolute; top: -28px; left: 0;
   background: #00a8ff; color: #fff; font-size: 12px;
