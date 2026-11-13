@@ -9,6 +9,7 @@ import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltin
 import * as screenshot from '../screenshot'
 import { showEditor, pinImage, saveImage, copyImage, closeEditor, closeAllPins } from '../pinWindow'
 import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from 'electron'
+import { readClipboardTextSafe } from '../clipboard'
 
 let nutLoader: any = null
 let remotePowerSaveId = 0
@@ -493,7 +494,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('clipboard:read-text', async () => {
-    try { return require('electron').clipboard.readText() } catch { return '' }
+    try { return await readClipboardTextSafe() } catch { return '' }
   })
 
   ipcMain.handle('clipboard:write-text', async (_, text: string) => {

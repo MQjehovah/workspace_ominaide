@@ -12,7 +12,11 @@ export interface ScreenshotRecord {
   height: number
 }
 
-const MAX_HISTORY = 50
+const MAX_HISTORY = 20
+// Full-resolution base64 strings are large. Keeping 50 retina screenshots in
+// the main process could consume hundreds of MB and eventually freeze the app
+// (which also leaves the system clipboard waiting on a dead pasteboard owner).
+const MAX_HISTORY_BYTES = 32 * 1024 * 1024
 let screenshotHistory: ScreenshotRecord[] = []
 
 export function addToHistory(dataUrl: string, type: 'region' | 'fullscreen', width: number, height: number): ScreenshotRecord {
@@ -25,8 +29,14 @@ export function addToHistory(dataUrl: string, type: 'region' | 'fullscreen', wid
     height,
   }
   screenshotHistory.unshift(record)
-  if (screenshotHistory.length > MAX_HISTORY) {
-    screenshotHistory = screenshotHistory.slice(0, MAX_HISTORY)
+  let total = 0
+  for (const item of screenshotHistory) total += item.dataUrl.length
+  while (
+    screenshotHistory.length > 1 &&
+    (screenshotHistory.length > MAX_HISTORY || total > MAX_HISTORY_BYTES)
+  ) {
+    const removed = screenshotHistory.pop()
+    total -= removed?.dataUrl.length || 0
   }
   return record
 }

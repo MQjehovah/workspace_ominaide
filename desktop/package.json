@@ -1,6 +1,6 @@
 {
   "name": "omniaide-desktop",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "OmniAide Desktop - Plugin-based AI Workbench",
   "main": "dist-electron/main/index.js",
   "scripts": {
@@ -82,7 +82,8 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "timestamp": "none"
     },
     "linux": {
       "icon": "build/icon.png",

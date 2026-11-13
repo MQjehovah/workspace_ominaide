@@ -2,6 +2,8 @@ import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, protocol, 
 import { join, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { initPlugins, getProcessManager, setPluginEnabled } from './plugin/host'
+import { writeLog } from './logger'
+import { monitorEventLoopDelay } from 'perf_hooks'
 import { registerIpcHandlers } from './ipc'
 import { setupShortcut } from './shortcut'
 import { startSync, stopSync } from './sync/syncWorker'
@@ -162,6 +164,22 @@ app.whenReady().then(async () => {
   registerUpdaterIpc()
   initMcpManager()
   await initPlugins()
+  const loopDelay = monitorEventLoopDelay({ resolution: 250 })
+  loopDelay.enable()
+  setInterval(() => {
+    const maxMs = loopDelay.max / 1e6
+    loopDelay.reset()
+    if (maxMs >= 1500) {
+      const mem = process.memoryUsage()
+      writeLog(
+        'system',
+        'warn',
+        `main event loop blocked ${Math.round(maxMs)}ms ` +
+          `rss=${Math.round(mem.rss / 1048576)}MB ` +
+          `heap=${Math.round(mem.heapUsed / 1048576)}MB`,
+      )
+    }
+  }, 30_000)
   createTray()
   const cfg = await getConfig()
   const shortcutCallbacks = {

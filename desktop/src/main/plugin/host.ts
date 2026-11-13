@@ -1,5 +1,6 @@
 import { join } from 'path'
 import { app, clipboard, BrowserWindow, Notification, shell, dialog, desktopCapturer, screen } from 'electron'
+import { readClipboardTextSafe } from '../clipboard'
 import { existsSync } from 'fs'
 import { Low } from 'lowdb'
 import axios from 'axios'
@@ -120,26 +121,36 @@ export async function reloadNewPlugins(): Promise<string[]> {
 }
 
 let lastClipboardText = ''
+let clipboardTimer: NodeJS.Timeout | null = null
+let clipboardBusy = false
+
 function startClipboardMonitoring() {
-  setInterval(async () => {
+  if (clipboardTimer) return
+  clipboardTimer = setInterval(async () => {
+    // The clipboard-history plugin may be disabled at runtime; do not read the
+    // system clipboard in that case.
+    if (clipboardBusy || !plugins.has('clipboard-history')) return
+    clipboardBusy = true
     try {
-      // Never read the clipboard when the clipboard-history plugin is disabled.
-      if (!plugins.has('clipboard-history')) return
-      const text = clipboard.readText()
-      if (text && text !== lastClipboardText) {
-        lastClipboardText = text
+      // Run pbpaste in a child process with a timeout. A stuck macOS
+      // pasteboard must never block the Electron main process.
+      const text = await readClipboardTextSafe()
+      if (!text || text === lastClipboardText) return
+      lastClipboardText = text
 
-        BrowserWindow.getAllWindows().forEach(win => {
-          if (!win.isDestroyed()) win.webContents.send('panel:updated', 'clipboard-history')
-        })
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) win.webContents.send('panel:updated', 'clipboard-history')
+      })
 
-        const proc = processManager.getProcess('clipboard-history')
-        if (proc) {
-          proc.executeCommand('onClipboardChange', text).catch(() => {})
-        }
+      const proc = processManager.getProcess('clipboard-history')
+      if (proc) {
+        proc.executeCommand('onClipboardChange', text).catch(() => {})
       }
-    } catch {}
-  }, 500)
+    } catch {
+    } finally {
+      clipboardBusy = false
+    }
+  }, 1000)
 }
 
 function registerBridgeHandlers(proc: import('./child-process').PluginChildProcess): void {
@@ -404,7 +415,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     clipboard.writeText(text)
   })
   proc.registerBridgeHandler('clipboard:readText', async () => {
-    return clipboard.readText()
+    return readClipboardTextSafe()
   })
   proc.registerBridgeHandler('shell:showItemInFolder', async ([path]) => {
     shell.showItemInFolder(path)
