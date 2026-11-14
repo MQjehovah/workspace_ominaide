@@ -344,6 +344,18 @@ class _ChatScreenState extends State<ChatScreen> {
     return loaded;
   }
 
+  bool _onScrollMetrics(ScrollMetricsNotification notification) {
+    if (!_atBottom) return false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients || !_atBottom) return;
+      final target = _scroll.position.maxScrollExtent;
+      if ((_scroll.position.pixels - target).abs() > 2) {
+        _scroll.jumpTo(target);
+      }
+    });
+    return false;
+  }
+
   Future<void> _loadHistory() async {
     try {
       final rows = await ApiService().loadChatHistory(
@@ -361,6 +373,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ..addAll(loaded);
         _oldestId = loaded.first.id;
         _hasOlder = rows.length >= 50;
+        _atBottom = true;
       });
       _scrollToBottom(force: true, animate: false);
     } catch (_) {
@@ -1028,7 +1041,9 @@ class _ChatScreenState extends State<ChatScreen> {
                             )
                           : _messages.isEmpty
                               ? _buildEmpty(palette)
-                              : ListView.builder(
+                              : NotificationListener<ScrollMetricsNotification>(
+                                  onNotification: _onScrollMetrics,
+                                  child: ListView.builder(
                                   controller: _scroll,
                                   padding:
                                       const EdgeInsets.fromLTRB(14, 10, 14, 14),
@@ -1161,6 +1176,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     );
                                   },
                                 ),
+                              ),
                     ),
                     if (_showJump)
                       Positioned(

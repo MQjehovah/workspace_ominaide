@@ -55,6 +55,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   Timer? _historyTimer;
   Timer? _offlineTimer;
   bool _showOffline = false;
+  bool _stickToBottom = true;
 
   @override
   void initState() {
@@ -63,6 +64,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     _sub = _service.stream.listen(_onMessage);
     _service.connected.addListener(_onConnectionChanged);
     _monitor.runs.addListener(_onRunStateChanged);
+    _scroll.addListener(_onScrollState);
     _monitor.trackSession(
       widget.session,
       widget.machineId,
@@ -87,6 +89,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     _service.unwatchSession(widget.session.id);
     _monitor.runs.removeListener(_onRunStateChanged);
     _service.connected.removeListener(_onConnectionChanged);
+    _scroll.removeListener(_onScrollState);
     _sub?.cancel();
     _input.dispose();
     _scroll.dispose();
@@ -104,6 +107,23 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   bool get _atBottom {
     if (!_scroll.hasClients) return true;
     return _scroll.position.pixels >= _scroll.position.maxScrollExtent - 80;
+  }
+
+  void _onScrollState() {
+    if (!_scroll.hasClients) return;
+    _stickToBottom = _atBottom;
+  }
+
+  bool _onScrollMetrics(ScrollMetricsNotification notification) {
+    if (!_stickToBottom) return false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients || !_stickToBottom) return;
+      final target = _scroll.position.maxScrollExtent;
+      if ((_scroll.position.pixels - target).abs() > 2) {
+        _scroll.jumpTo(target);
+      }
+    });
+    return false;
   }
 
   void _onConnectionChanged() {
@@ -450,18 +470,27 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       }
     });
     if (isLatest && pendingForm != null) _scheduleFormSheet();
-    _scrollToBottom();
+    if (isLatest) {
+      _stickToBottom = true;
+      _scrollToBottom(force: true, animate: false);
+    }
   }
 
-  void _scrollToBottom() {
-    if (!_atBottom) return;
+  void _scrollToBottom({bool force = false, bool animate = true}) {
+    if (!force && !_stickToBottom) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
-      _scroll.animateTo(
-        _scroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-      );
+      if (!force && !_stickToBottom) return;
+      final target = _scroll.position.maxScrollExtent;
+      if (animate) {
+        _scroll.animateTo(
+          target,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _scroll.jumpTo(target);
+      }
     });
   }
 
@@ -501,7 +530,8 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       text: text,
       machineId: widget.machineId,
     );
-    _scrollToBottom();
+    _stickToBottom = true;
+    _scrollToBottom(force: true);
   }
 
   void _stop() {
@@ -703,10 +733,13 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       widgets.add(_MessageView(message: draft, streaming: _running));
       widgets.add(const SizedBox(height: 10));
     }
-    return ListView(
-      controller: _scroll,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      children: widgets,
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: _onScrollMetrics,
+      child: ListView(
+        controller: _scroll,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        children: widgets,
+      ),
     );
   }
 
