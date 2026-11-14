@@ -44,6 +44,45 @@ class RealtimeVoiceController extends ChangeNotifier {
   static const int _frameBytes = _upRate * 2 * 20 ~/ 1000; // 640
   static const MethodChannel _player = MethodChannel('omniaide/voice_audio');
 
+  static const List<Map<String, dynamic>> _tools = [
+    {
+      'type': 'function',
+      'name': 'omniaide_query',
+      'description':
+          '查询 OmniAide 里的信息：待办、日程、笔记、文件、项目、天气、网页搜索等。只读，不修改任何数据。',
+      'parameters': {
+        'type': 'object',
+        'properties': {
+          'request': {
+            'type': 'string',
+            'description': '完整的自然语言查询，例如“今天有哪些待办”',
+          },
+        },
+        'required': ['request'],
+      },
+      'execution_mode': 'async_query',
+      'read_only': true,
+    },
+    {
+      'type': 'function',
+      'name': 'omniaide_action',
+      'description':
+          '在 OmniAide 里执行有副作用的操作：创建或修改待办、日程、笔记，发送消息等。',
+      'parameters': {
+        'type': 'object',
+        'properties': {
+          'request': {
+            'type': 'string',
+            'description': '要执行的操作，包含必要参数，例如“创建明天 15:00 的待办：买牛奶”',
+          },
+        },
+        'required': ['request'],
+      },
+      'execution_mode': 'async_effect',
+      'read_only': false,
+    },
+  ];
+
   RealtimeVoiceState state = RealtimeVoiceState.idle;
   String status = '点击开始，和 MOSS 实时对话';
   String? errorText;
@@ -186,7 +225,10 @@ class RealtimeVoiceController extends ChangeNotifier {
               'name': '小安',
               'prompt': '你是 OmniAide 的语音助手，语气自然、简洁，像是在打电话。',
             },
-            'instructions': '用简体中文口语化回答，尽量简短，不要使用 Markdown。',
+            'instructions':
+                '用简体中文口语化回答，尽量简短，不要使用 Markdown。'
+                '涉及用户个人数据或需要操作时，优先调用 omniaide_query / omniaide_action，不要凭空猜测。',
+            'tools': _tools,
           },
         });
         break;
@@ -226,6 +268,23 @@ class RealtimeVoiceController extends ChangeNotifier {
       case 'response.audio.context':
         _pendingContext = data;
         _registerContext(data);
+        break;
+      case 'response.function_call_arguments.done':
+        unawaited(_handleToolCall(data));
+        break;
+      case 'conversation.item.created':
+        final item = (data['item'] as Map?)?.cast<String, dynamic>();
+        if (item != null && item['type'] == 'function_call_output') {
+          final callId = item['call_id']?.toString();
+          if (callId != null && callId.isNotEmpty) {
+            _sendJson({
+              'action': 'response.create',
+              'response': {
+                'call_ids': [callId],
+              },
+            });
+          }
+        }
         break;
       case 'response.audio.done':
         _onAudioDone(data);
@@ -357,6 +416,77 @@ class RealtimeVoiceController extends ChangeNotifier {
     try {
       _player.invokeMethod(on ? 'speakerOn' : 'speakerOff');
     } catch (_) {}
+  }
+
+  // ---------------- client tools ----------------
+
+  Future<void> _handleToolCall(Map<String, dynamic> data) async {
+    final callId = data['call_id']?.toString() ?? '';
+    final name = data['name']?.toString() ?? '';
+    if (callId.isEmpty) return;
+
+    Map<String, dynamic> args = {};
+    final raw = data['arguments'];
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) args = decoded.cast<String, dynamic>();
+      } catch (_) {
+        args = {'request': raw};
+      }
+    } else if (raw is Map) {
+      args = raw.cast<String, dynamic>();
+    }
+
+    final request = (args['request'] ?? '').toString().trim();
+    if (request.isEmpty) {
+      _sendToolOutput(callId, '缺少 request 参数');
+      return;
+    }
+
+    _status(name == 'omniaide_action' ? '正在执行操作…' : '正在查询 OmniAide…');
+    String output;
+    try {
+      output = await _callTool(name, args);
+    } catch (e) {
+      output = '工具执行失败：${_short(e)}';
+    }
+    _sendToolOutput(callId, output);
+  }
+
+  void _sendToolOutput(String callId, String output) {
+    _sendJson({
+      'action': 'conversation.item.create',
+      'item': {
+        'type': 'function_call_output',
+        'call_id': callId,
+        'output': output,
+      },
+    });
+  }
+
+  Future<String> _callTool(String name, Map<String, dynamic> args) async {
+    final api = ApiService();
+    final token = api.token;
+    if (token == null || token.isEmpty) throw Exception('请先登录');
+    final res = await http
+        .post(
+          Uri.parse('${api.baseUrl}/api/chat/voice/tool'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'name': name, 'arguments': args}),
+        )
+        .timeout(const Duration(seconds: 70));
+    if (res.statusCode != 200) {
+      throw Exception(_detail(res.body, res.statusCode));
+    }
+    final decoded = jsonDecode(res.body);
+    if (decoded is Map && decoded['output'] != null) {
+      return decoded['output'].toString();
+    }
+    return '';
   }
 
   // ---------------- audio playback ----------------

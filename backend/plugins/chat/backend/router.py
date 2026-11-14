@@ -805,6 +805,78 @@ class VoiceInterruptRequest(BaseModel):
     session_id: str = DEFAULT_SESSION
 
 
+class VoiceToolRequest(BaseModel):
+    name: str
+    arguments: dict | str | None = None
+
+
+@router.post("/voice/tool")
+async def voice_tool(req: VoiceToolRequest, user: dict = Depends(get_current_user)):
+    """Execute a MOSS-Live client tool through the OmniAide agent.
+
+    MOSS only forwards text frames; the app calls this endpoint with the
+    function name/arguments, and the regular agent (with all MCP tools) does
+    the actual work. Read-only queries and side-effecting actions share the
+    same executor, with different guardrails in the system prompt.
+    """
+    if req.name not in ("omniaide_query", "omniaide_action"):
+        raise HTTPException(status_code=400, detail="未知工具")
+
+    args = req.arguments
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {"request": args}
+    if not isinstance(args, dict):
+        args = {}
+    request_text = str(args.get("request") or "").strip()
+    if not request_text:
+        raise HTTPException(status_code=400, detail="缺少 request")
+
+    bot = await _resolve_bot(user["id"], None)
+    if req.name == "omniaide_query":
+        rule = "这是一个只读查询，绝对不能修改任何数据。"
+    else:
+        rule = "这是一个操作请求，执行后报告结果；不要编造成功。"
+    system = (
+        "你是 OmniAide 的语音工具执行器。"
+        f"{rule}"
+        "直接使用可用工具完成请求，用一两句简短中文返回结果；"
+        "信息不足时说明缺少什么，不要反问。"
+    )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": request_text},
+    ]
+    token = set_current_bot_id(bot.id)
+    session_token = set_current_session_id(f"voice-tool-{user['id']}")
+    try:
+        reply = await asyncio.wait_for(
+            run_agent(
+                user["id"],
+                messages,
+                tools_filter=bot.allowed_tools,
+                max_turns=8,
+                model=bot.model,
+                temperature=0.3,
+                bot=bot,
+                session_id=f"voice-tool-{user['id']}",
+            ),
+            timeout=50,
+        )
+    except asyncio.TimeoutError:
+        reply = "执行超时，任务可能仍在后台运行。"
+    except Exception as e:
+        reply = f"执行失败：{e}"
+    finally:
+        reset_current_session_id(session_token)
+        reset_current_bot_id(token)
+
+    output = (reply or "").strip()
+    return {"output": output[:1500] or "没有返回结果"}
+
+
 @router.get("/voice/moss")
 async def moss_voice_config(user: dict = Depends(get_current_user)):
     """Gateway config for the MOSS-Live full-duplex WebSocket.
