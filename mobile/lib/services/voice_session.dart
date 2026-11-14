@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:just_audio/just_audio.dart';
@@ -117,6 +119,7 @@ class VoiceSessionController extends ChangeNotifier {
         return;
       }
       await _resetPlayback();
+      await _configureVoiceSession();
       _sessionId ??= 'mobile-voice-${DateTime.now().millisecondsSinceEpoch}';
       final stream = await _recorder.startStream(const RecordConfig(
         encoder: AudioEncoder.pcm16bits,
@@ -129,17 +132,20 @@ class VoiceSessionController extends ChangeNotifier {
         androidConfig: AndroidRecordConfig(
           audioSource: AndroidAudioSource.voiceCommunication,
           audioManagerMode: AudioManagerMode.modeInCommunication,
+          // Forcing the speaker keeps the AEC reference aligned with the
+          // actual acoustic path instead of silently switching routes.
+          speakerphone: true,
           manageBluetooth: true,
         ),
         iosConfig: IosRecordConfig(
           categoryOptions: [
             IosAudioCategoryOption.defaultToSpeaker,
             IosAudioCategoryOption.allowBluetooth,
-            IosAudioCategoryOption.allowBluetoothA2DP,
           ],
         ),
       ));
       micActive = true;
+      await _setSpeaker(true);
       _micSub = stream.listen(
         _onAudio,
         onError: (Object e) => _fail('录音失败：$e'),
@@ -175,6 +181,7 @@ class VoiceSessionController extends ChangeNotifier {
     micActive = false;
     _sessionId = null;
     level = 0;
+    await _setSpeaker(false);
     _setPhase(VoicePhase.idle, '已结束，点击重新开始');
   }
 
@@ -535,6 +542,40 @@ class VoiceSessionController extends ChangeNotifier {
       // More sentences are still being synthesized; the next add resumes.
       _needsSeek = true;
     }
+  }
+
+  /// Configure the shared audio session as a voice call, not media playback.
+  ///
+  /// AEC needs the render reference: iOS only runs VoiceProcessingIO in
+  /// ``playAndRecord`` + ``voiceChat`` mode, and Android only inserts the
+  /// hardware echo canceller for ``voice_communication``. Without this the
+  /// mic hears the TTS untouched and the agent interrupts itself.
+  Future<void> _configureVoiceSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(AudioSessionConfiguration(
+      avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+      avAudioSessionCategoryOptions:
+          AVAudioSessionCategoryOptions.defaultToSpeaker |
+              AVAudioSessionCategoryOptions.allowBluetooth,
+      avAudioSessionMode: AVAudioSessionMode.voiceChat,
+      androidAudioAttributes: const AndroidAudioAttributes(
+        contentType: AndroidAudioContentType.speech,
+        usage: AndroidAudioUsage.voiceCommunication,
+      ),
+      androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransient,
+      androidWillPauseWhenDucked: false,
+    ));
+    await session.setActive(true);
+  }
+
+  /// .voiceChat biases output to the earpiece; keep the mode but force the
+  /// speaker so AEC stays available.
+  Future<void> _setSpeaker(bool on) async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+    try {
+      await const MethodChannel('omniaide/voice_audio')
+          .invokeMethod(on ? 'speakerOn' : 'speakerOff');
+    } catch (_) {}
   }
 
   Future<void> _resetPlayback() async {

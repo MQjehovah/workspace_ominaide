@@ -1,3 +1,4 @@
+import AVFoundation
 import Flutter
 import MediaPlayer
 import receive_sharing_intent
@@ -37,6 +38,7 @@ import Vision
     setupMediaChannel()
     setupOcrChannel()
     setupClipboardChannel()
+    setupVoiceAudioChannel()
     setupShareChannel()
     setupLiveActivityChannel(window: window)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -52,6 +54,42 @@ import Vision
       return SwiftReceiveSharingIntentPlugin.instance.application(app, open: url, options: options)
     }
     return super.application(app, open: url, options: options)
+  }
+
+  /// Voice conversations keep AVAudioSession in .voiceChat mode so the
+  /// platform AEC has a render reference. .voiceChat prefers the earpiece, so
+  /// the route is overridden explicitly while the mode stays intact.
+  private func setupVoiceAudioChannel() {
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "omniaide/voice_audio",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { call, result in
+      let session = AVAudioSession.sharedInstance()
+      do {
+        switch call.method {
+        case "speakerOn":
+          try session.setCategory(
+            .playAndRecord,
+            mode: .voiceChat,
+            options: [.defaultToSpeaker, .allowBluetooth]
+          )
+          try session.setActive(true)
+          try session.overrideOutputAudioPort(.speaker)
+          result(nil)
+        case "speakerOff":
+          try session.overrideOutputAudioPort(.none)
+          result(nil)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      } catch {
+        result(FlutterError(code: "voice_audio", message: "\(error)", details: nil))
+      }
+    }
   }
 
   private func setupClipboardChannel() {

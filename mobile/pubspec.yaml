@@ -55,6 +55,7 @@ dependencies:
   html: 0.15.6
   flutter_tts: ^4.2.5
   just_audio: ^0.10.6
+  audio_session: ^0.2.4
 
 dev_dependencies:
   flutter_test:
