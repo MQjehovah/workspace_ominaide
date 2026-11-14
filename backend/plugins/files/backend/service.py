@@ -41,6 +41,24 @@ def _join_path(parent: str | None, name: str) -> str:
     return f"{parent.rstrip('/')}/{name}" if parent != "/" else f"/{name}"
 
 
+def _like_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _descendant_select(user_id: int, folder: File):
+    """Select every record living below a folder (direct children included)."""
+    prefix = _join_path(folder.folder_path, folder.original_name)
+    conditions = or_(
+        File.folder_path.in_(_folder_variants(prefix)),
+        File.folder_path.like(f"{_like_escape(prefix)}/%", escape="\\"),
+    )
+    return prefix, select(File).where(
+        File.user_id == user_id,
+        File.id != folder.id,
+        conditions,
+    )
+
+
 async def _emit_sync_change(
     db: AsyncSession, user_id: int, event_type: str, file_record: File,
     file_id: int | None = None,
@@ -226,18 +244,22 @@ async def get_storage_stats(db: AsyncSession, user_id: int) -> dict:
 
 
 async def empty_trash(db: AsyncSession, user_id: int) -> int:
+    count_result = await db.execute(
+        select(func.count(File.id)).where(File.user_id == user_id, File.status == "trash")
+    )
+    total = int(count_result.scalar() or 0)
+
     result = await db.execute(
         select(File.id).where(File.user_id == user_id, File.status == "trash")
     )
     ids = [row[0] for row in result.all()]
-    removed = 0
     for file_id in ids:
         try:
+            # Recursive delete also removes descendants; later ids may be gone.
             await permanent_delete(db, user_id, file_id)
-            removed += 1
         except ValueError:
             continue
-    return removed
+    return total
 
 
 async def get_file(db: AsyncSession, user_id: int, file_id: int) -> File | None:
@@ -345,8 +367,22 @@ async def trash_file(db: AsyncSession, user_id: int, file_id: int) -> File:
     file_record = result.scalar_one_or_none()
     if not file_record:
         raise ValueError("File not found")
+
+    deleted_at = datetime.now()
+    # Trashing a folder must take its whole subtree with it, otherwise the
+    # children stay visible and the folder can no longer be browsed.
+    if file_record.is_folder:
+        _, query = _descendant_select(user_id, file_record)
+        rows = await db.execute(query)
+        for child in rows.scalars().all():
+            if child.status == "trash":
+                continue
+            child.status = "trash"
+            child.deleted_at = deleted_at
+            await _emit_sync_change(db, user_id, "deleted", child)
+
     file_record.status = "trash"
-    file_record.deleted_at = datetime.now()
+    file_record.deleted_at = deleted_at
     await db.flush()
     await db.refresh(file_record)
     await _emit_sync_change(db, user_id, "deleted", file_record)
@@ -360,6 +396,17 @@ async def restore_file(db: AsyncSession, user_id: int, file_id: int) -> File:
     file_record = result.scalar_one_or_none()
     if not file_record:
         raise ValueError("File not found")
+
+    if file_record.is_folder:
+        _, query = _descendant_select(user_id, file_record)
+        rows = await db.execute(query)
+        for child in rows.scalars().all():
+            if child.status != "trash":
+                continue
+            child.status = "active"
+            child.deleted_at = None
+            await _emit_sync_change(db, user_id, "created", child)
+
     file_record.status = "active"
     file_record.deleted_at = None
     await db.flush()
@@ -375,6 +422,28 @@ async def permanent_delete(db: AsyncSession, user_id: int, file_id: int):
     file_record = result.scalar_one_or_none()
     if not file_record:
         raise ValueError("File not found")
+
+    # Delete the whole subtree for folders; leaving children behind would
+    # orphan them under a path that no longer exists.
+    if file_record.is_folder:
+        _, query = _descendant_select(user_id, file_record)
+        rows = await db.execute(query)
+        children = list(rows.scalars().all())
+        for child in children:
+            try:
+                if not child.is_folder:
+                    minio_client.remove_object(child.bucket, child.object_key)
+            except Exception:
+                pass
+            await _emit_sync_change(db, user_id, "deleted", child, file_id=None)
+            await db.delete(child)
+            try:
+                from ai.retrieval import vector_store
+
+                await vector_store.delete_source(user_id, "file", child.id)
+            except Exception:
+                pass
+        await db.flush()
 
     try:
         minio_client.remove_object(file_record.bucket, file_record.object_key)

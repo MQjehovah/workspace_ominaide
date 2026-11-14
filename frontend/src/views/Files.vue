@@ -58,6 +58,11 @@
           :status="item.status || undefined"
           :stroke-width="8"
         />
+        <span class="upload-size">
+          {{ store.formatSize(item.loaded || 0) }} / {{ store.formatSize(item.total || 0) }}
+        </span>
+        <span v-if="item.phase === 'processing'" class="upload-processing">处理中…</span>
+        <el-button v-else-if="!item.status" size="small" text @click="cancelUpload(item)">取消</el-button>
       </div>
     </div>
 
@@ -343,7 +348,11 @@ interface UploadTask {
   id: number
   name: string
   percent: number
+  loaded: number
+  total: number
   status: '' | 'success' | 'exception'
+  phase: 'uploading' | 'processing'
+  xhr?: XMLHttpRequest
 }
 const uploads = ref<UploadTask[]>([])
 let uploadSeq = 0
@@ -604,7 +613,10 @@ async function handleUpload(options: any) {
     id: ++uploadSeq,
     name: file.name,
     percent: 0,
+    loaded: 0,
+    total: file.size || 0,
     status: '',
+    phase: 'uploading',
   }
   uploads.value.push(task)
   const update = (patch: Partial<UploadTask>) => {
@@ -616,36 +628,82 @@ async function handleUpload(options: any) {
       uploads.value = uploads.value.filter(item => item.id !== task.id)
     }, delay)
   }
-  try {
-    const { upload_url, file_id } = await store.getUploadUrl(file.name, currentPath.value)
-    const xhr = new XMLHttpRequest()
+  const track = (xhr: XMLHttpRequest) => {
+    task.xhr = xhr
     xhr.upload.onprogress = (e) => {
-      if (e.total) {
-        const percent = Math.round((e.loaded / e.total) * 100)
-        update({ percent })
-        onProgress({ percent })
-      }
+      if (!e.total) return
+      const percent = Math.round((e.loaded / e.total) * 100)
+      update({ percent, loaded: e.loaded, total: e.total, phase: percent >= 100 ? 'processing' : 'uploading' })
+      onProgress?.({ percent })
     }
-    await new Promise<void>((resolve, reject) => {
-      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`上传失败: ${xhr.status}`))
-      xhr.onerror = () => reject(new Error('上传失败'))
-      xhr.open('PUT', upload_url)
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
-      xhr.send(file)
-    })
-    update({ percent: 100 })
-    await store.confirmUpload(file_id)
-    update({ percent: 100, status: 'success' })
+  }
+  const uploadDirect = () => new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    track(xhr)
+    const form = new FormData()
+    form.append('file', file)
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(`上传失败: ${xhr.status} ${String(xhr.responseText || '').slice(0, 120)}`))
+    }
+    xhr.onerror = () => reject(new Error('上传失败：网络错误'))
+    xhr.onabort = () => reject(new Error('已取消上传'))
+    xhr.open('POST', apiUrl(`/files/upload/direct?folder_path=${encodeURIComponent(currentPath.value)}`))
+    xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token') || ''}`)
+    xhr.send(form)
+  })
+
+  try {
+    // Prefer the presigned PUT (faster), but fall back to the backend proxy
+    // when MinIO is not publicly reachable — which is the default here.
+    let uploadUrl = ''
+    let fileId = 0
+    try {
+      const info = await store.getUploadUrl(file.name, currentPath.value)
+      uploadUrl = info.upload_url || ''
+      fileId = info.file_id
+    } catch { /* fall back to direct upload */ }
+
+    if (uploadUrl) {
+      const xhr = new XMLHttpRequest()
+      track(xhr)
+      await new Promise<void>((resolve, reject) => {
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`上传失败: ${xhr.status}`)))
+        xhr.onerror = () => reject(new Error('上传失败'))
+        xhr.onabort = () => reject(new Error('已取消上传'))
+        xhr.open('PUT', uploadUrl)
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+        xhr.send(file)
+      })
+      update({ percent: 100 })
+      await store.confirmUpload(fileId)
+    } else {
+      await uploadDirect()
+    }
+
+    update({ percent: 100, loaded: task.total, status: 'success' })
     ElMessage.success(`已上传 ${file.name}`)
     await loadFiles()
-    clearSoon(1200)
+    clearSoon(2500)
     onSuccess?.()
   } catch (err: any) {
     update({ status: 'exception' })
-    clearSoon(5000)
-    ElMessage.error(err?.message || '上传失败')
+    if (task.xhr) task.xhr = undefined
+    const message = err?.message || '上传失败'
+    if (message.includes('已取消')) {
+      ElMessage.info(`已取消 ${file.name}`)
+      clearSoon(1200)
+    } else {
+      ElMessage.error(message)
+      clearSoon(5000)
+    }
     onError?.(err)
   }
+}
+
+function cancelUpload(task: UploadTask) {
+  try { task.xhr?.abort() } catch { /* ignore */ }
+  uploads.value = uploads.value.filter(item => item.id !== task.id)
 }
 
 function normalizeFolder(path: string | null | undefined): string {
@@ -760,7 +818,8 @@ async function handleCommand(cmd: string, file: FileItem) {
     await openMove(file)
   } else if (cmd === 'delete') {
     try {
-      await ElMessageBox.confirm(`确定把「${file.original_name}」移到回收站？`, '删除', { type: 'warning' })
+      const suffix = file.is_folder ? '及其中的所有内容' : ''
+      await ElMessageBox.confirm(`确定把「${file.original_name}」${suffix}移到回收站？`, '删除', { type: 'warning' })
       await store.deleteFile(file.id)
       ElMessage.success('已移入回收站')
       await loadFiles()
@@ -773,7 +832,8 @@ async function handleCommand(cmd: string, file: FileItem) {
     } catch (err: any) { showError(err, '还原失败') }
   } else if (cmd === 'permanent') {
     try {
-      await ElMessageBox.confirm(`彻底删除「${file.original_name}」？此操作不可恢复。`, '彻底删除', { type: 'error' })
+      const suffix = file.is_folder ? '及其中的所有内容' : ''
+      await ElMessageBox.confirm(`彻底删除「${file.original_name}」${suffix}？此操作不可恢复。`, '彻底删除', { type: 'error' })
       await store.deletePermanent(file.id)
       ElMessage.success('已彻底删除')
       await loadFiles()
@@ -930,4 +990,6 @@ onMounted(async () => {
   white-space: nowrap; font-size: 13px; color: #303133;
 }
 .upload-progress { flex: 1; }
+.upload-size { width: 110px; text-align: right; font-size: 11px; color: #909399; white-space: nowrap; }
+.upload-processing { font-size: 11px; color: #409eff; white-space: nowrap; }
 </style>

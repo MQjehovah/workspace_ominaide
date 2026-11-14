@@ -581,7 +581,8 @@ async function restoreItem(f: any) {
 }
 
 async function permanentDeleteItem(f: any) {
-  if (!confirm(`彻底删除「${f.original_name}」？此操作不可恢复。`)) return
+  const suffix = f.is_folder ? '及其中的所有内容' : ''
+  if (!confirm(`彻底删除「${f.original_name}」${suffix}？此操作不可恢复。`)) return
   try { await window.mqbox?.api.delete(`/files/${f.id}/permanent`); await loadFiles() } catch (e) { console.error(e) }
 }
 
@@ -779,7 +780,8 @@ async function confirmRename() {
 
 // Delete
 async function trashFile(f: any) {
-  if (!confirm(`确定将「${f.original_name}」移入回收站？`)) return
+  const suffix = f.is_folder ? '及其中的所有内容' : ''
+  if (!confirm(`确定将「${f.original_name}」${suffix}移入回收站？`)) return
   try { await window.mqbox?.api.delete(`/files/${f.id}`); await loadFiles(currentPath.value) } catch {}
 }
 
