@@ -167,7 +167,11 @@ class RealtimeVoiceController extends ChangeNotifier {
           if (!_closing) _fail('MOSS 连接已断开');
         },
       );
-      _sendJson({'action': 'attach_session'});
+      _sendJson({
+        'action': 'attach_session',
+        'session_id': null,
+        'memory_scope': 'user',
+      });
       _attachTimer = Timer(const Duration(seconds: 10), () {
         if (state == RealtimeVoiceState.connecting) {
           _fail('连接超时：MOSS 没有回应');
