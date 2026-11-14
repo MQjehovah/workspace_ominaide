@@ -35,7 +35,10 @@ export const useFileStore = defineStore('file', {
     viewMode: 'grid' as 'grid' | 'list',
     search: '',
     folderPath: '/',
-    status: 'active'
+    status: 'active',
+    sortBy: 'updated_at' as 'name' | 'size' | 'created_at' | 'updated_at',
+    sortOrder: 'desc' as 'asc' | 'desc',
+    stats: null as { active_count: number; active_size: number; trash_count: number; trash_size: number } | null
   }),
   actions: {
     async fetchFiles(params?: { status?: string; page?: number; search?: string; folder_path?: string | null }) {
@@ -50,6 +53,8 @@ export const useFileStore = defineStore('file', {
             status,
             search: params?.search !== undefined ? params.search : this.search || undefined,
             folder_path: folderParam === undefined ? undefined : folderParam,
+            sort_by: this.sortBy,
+            sort_order: this.sortOrder,
           }
         })
         this.files = res.data.files
@@ -102,6 +107,31 @@ export const useFileStore = defineStore('file', {
     async deletePermanent(id: number) {
       await client.delete(`/files/${id}/permanent`)
       await this.fetchFiles()
+    },
+    async batchTrash(ids: number[]) {
+      const res = await client.post('/files/batch/trash', { ids })
+      return res.data as { success: number; failed: any[] }
+    },
+    async batchRestore(ids: number[]) {
+      const res = await client.post('/files/batch/restore', { ids })
+      return res.data as { success: number; failed: any[] }
+    },
+    async batchPermanent(ids: number[]) {
+      const res = await client.post('/files/batch/permanent', { ids })
+      return res.data as { success: number; failed: any[] }
+    },
+    async batchMove(ids: number[], folderPath: string) {
+      const res = await client.post('/files/batch/move', { ids, folder_path: folderPath })
+      return res.data as { success: number; failed: any[] }
+    },
+    async emptyTrash() {
+      const res = await client.delete('/files/trash')
+      return res.data as { removed: number }
+    },
+    async fetchStats() {
+      const res = await client.get('/files/stats')
+      this.stats = res.data
+      return this.stats
     },
     async toggleFavorite(id: number) {
       const res = await client.post(`/files/${id}/favorite`)

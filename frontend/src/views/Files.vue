@@ -5,8 +5,12 @@
         <h2>文件管理</h2>
         <div class="muted" v-if="!trashMode">
           当前目录：{{ currentPath }} · {{ store.total }} 项
+          <span v-if="store.stats"> · 已用 {{ store.formatSize(store.stats.active_size) }}</span>
         </div>
-        <div class="muted" v-else>回收站 · {{ store.total }} 项</div>
+        <div class="muted" v-else>
+          回收站 · {{ store.total }} 项
+          <span v-if="store.stats"> · {{ store.formatSize(store.stats.trash_size) }}</span>
+        </div>
       </div>
       <div class="header-actions">
         <el-input
@@ -18,6 +22,13 @@
           @input="onSearchInput"
           @keyup.enter="doSearch"
         />
+        <el-select v-model="store.sortBy" style="width:120px" @change="applySort">
+          <el-option label="修改时间" value="updated_at" />
+          <el-option label="名称" value="name" />
+          <el-option label="大小" value="size" />
+          <el-option label="创建时间" value="created_at" />
+        </el-select>
+        <el-button :icon="Sort" @click="toggleSortOrder">{{ store.sortOrder === 'asc' ? '升序' : '降序' }}</el-button>
         <el-button v-if="!trashMode" :icon="FolderAdd" @click="createFolder">新建文件夹</el-button>
         <el-upload
           v-if="!trashMode"
@@ -30,6 +41,7 @@
         <el-button :type="trashMode ? 'warning' : 'default'" :icon="Delete" @click="toggleTrash">
           {{ trashMode ? '返回文件' : '回收站' }}
         </el-button>
+        <el-button v-if="trashMode" type="danger" plain :icon="DeleteFilled" @click="emptyTrash">清空回收站</el-button>
         <el-button-group>
           <el-button :type="viewMode === 'grid' ? 'primary' : 'default'" :icon="Grid" @click="viewMode = 'grid'" />
           <el-button :type="viewMode === 'list' ? 'primary' : 'default'" :icon="List" @click="viewMode = 'list'" />
@@ -47,6 +59,19 @@
           :stroke-width="8"
         />
       </div>
+    </div>
+
+    <div v-if="selectedIds.length" class="batch-bar">
+      <span class="batch-count">已选 {{ selectedIds.length }} 项</span>
+      <el-button size="small" @click="clearSelection">取消选择</el-button>
+      <template v-if="trashMode">
+        <el-button size="small" type="primary" plain :icon="RefreshLeft" @click="batchRestore">还原</el-button>
+        <el-button size="small" type="danger" plain :icon="Delete" @click="batchPermanent">彻底删除</el-button>
+      </template>
+      <template v-else>
+        <el-button size="small" :icon="Rank" @click="openBatchMove">移动</el-button>
+        <el-button size="small" type="danger" plain :icon="Delete" @click="batchDelete">移入回收站</el-button>
+      </template>
     </div>
 
     <div v-if="!trashMode && !searchText.trim()" class="crumb-bar">
@@ -68,6 +93,12 @@
       <el-row :gutter="12">
         <el-col v-for="file in store.files" :key="file.id" :span="6" :xs="12" :sm="8" :md="6" :lg="4">
           <el-card shadow="hover" class="file-card" @click="openItem(file)">
+            <div class="file-check" @click.stop>
+              <el-checkbox
+                :model-value="selectedIds.includes(file.id)"
+                @change="toggleSelect(file.id)"
+              />
+            </div>
             <div class="file-card-body">
               <el-icon :size="48" class="file-icon" :class="{ folder: file.is_folder }">
                 <component :is="getIconComponent(file)" />
@@ -95,6 +126,7 @@
                       <el-dropdown-item command="permanent" :icon="Delete" divided>彻底删除</el-dropdown-item>
                     </template>
                     <template v-else>
+                      <el-dropdown-item command="share" :icon="Share" v-if="!file.is_folder">分享链接</el-dropdown-item>
                       <el-dropdown-item command="rename" :icon="Edit">重命名</el-dropdown-item>
                       <el-dropdown-item command="move" :icon="Rank">移动</el-dropdown-item>
                       <el-dropdown-item command="kb" :icon="Reading" v-if="canImportKb(file)">加入知识库</el-dropdown-item>
@@ -111,7 +143,17 @@
       <el-empty v-if="!store.files.length" :description="trashMode ? '回收站为空' : '这个目录还是空的'" :image-size="70" />
     </template>
 
-    <el-table v-else :data="store.files" stripe style="width:100%" @row-click="openItem">
+    <el-table
+      v-else
+      ref="tableRef"
+      :data="store.files"
+      row-key="id"
+      stripe
+      style="width:100%"
+      @row-click="openItem"
+      @selection-change="onTableSelection"
+    >
+      <el-table-column type="selection" width="42" />
       <el-table-column prop="original_name" label="名称" min-width="240">
         <template #default="{ row }">
           <div class="name-cell">
@@ -153,6 +195,7 @@
                     <el-dropdown-item command="permanent" :icon="Delete" divided>彻底删除</el-dropdown-item>
                   </template>
                   <template v-else>
+                    <el-dropdown-item command="share" :icon="Share" v-if="!row.is_folder">分享链接</el-dropdown-item>
                     <el-dropdown-item command="rename" :icon="Edit">重命名</el-dropdown-item>
                     <el-dropdown-item command="move" :icon="Rank">移动</el-dropdown-item>
                     <el-dropdown-item command="kb" :icon="Reading" v-if="canImportKb(row)">加入知识库</el-dropdown-item>
@@ -233,6 +276,35 @@
         </div>
       </div>
     </el-dialog>
+
+    <el-dialog v-model="shareVisible" title="分享文件" width="520px">
+      <div v-if="shareFile" class="share-dialog">
+        <p class="muted">{{ shareFile.original_name }} · {{ store.formatSize(shareFile.size) }}</p>
+        <div class="share-expiry">
+          <el-radio-group v-model="shareExpiry" @change="generateShare">
+            <el-radio-button :label="1">1 小时</el-radio-button>
+            <el-radio-button :label="24">24 小时</el-radio-button>
+            <el-radio-button :label="168">7 天</el-radio-button>
+            <el-radio-button :label="720">30 天</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div v-if="shareLoading" class="muted" style="padding:12px 0">正在生成链接…</div>
+        <el-input v-else v-model="shareUrl" readonly placeholder="生成失败">
+          <template #append>
+            <el-button @click="copyShare" :disabled="!shareUrl">复制</el-button>
+          </template>
+        </el-input>
+        <p v-if="shareError" class="share-error">{{ shareError }}</p>
+        <p class="muted" style="margin-top:10px">
+          任何拿到链接的人都能访问该文件，链接将在 {{ shareExpiryLabel }}后失效。
+        </p>
+      </div>
+      <template #footer>
+        <el-button :disabled="!shareUrl" @click="openShareInBrowser">浏览器打开</el-button>
+        <el-button @click="generateShare">重新生成</el-button>
+        <el-button type="primary" @click="shareVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -248,8 +320,8 @@ import client from '@/api/client'
 import { formatBackendDate } from '@/utils/date'
 import ObjectComments from '@/components/ObjectComments.vue'
 import {
-  Delete, Document, Download, Edit, Folder, FolderAdd, Grid, Headset, List, Loading,
-  MoreFilled, Picture, Rank, Reading, RefreshLeft, Search, Star, StarFilled, Upload, VideoCamera, View,
+  Delete, DeleteFilled, Document, Download, Edit, Folder, FolderAdd, Grid, Headset, List, Loading,
+  MoreFilled, Picture, Rank, Reading, RefreshLeft, Search, Share, Sort, Star, StarFilled, Upload, VideoCamera, View,
 } from '@element-plus/icons-vue'
 
 const store = useFileStore()
@@ -276,6 +348,18 @@ interface UploadTask {
 const uploads = ref<UploadTask[]>([])
 let uploadSeq = 0
 let searchTimer: any = null
+
+const selectedIds = ref<number[]>([])
+const tableRef = ref<any>(null)
+const batchMoveIds = ref<number[]>([])
+
+const shareVisible = ref(false)
+const shareFile = ref<FileItem | null>(null)
+const shareExpiry = ref(24 * 7)
+const shareUrl = ref('')
+const shareLoading = ref(false)
+const shareError = ref('')
+const shareExpiryLabel = computed(() => ({ 1: '1 小时', 24: '24 小时', 168: '7 天', 720: '30 天' } as Record<number, string>)[shareExpiry.value] || '')
 
 function fmtTime(value?: string | null) {
   return value ? formatBackendDate(value) : '—'
@@ -375,6 +459,114 @@ async function loadFiles() {
     search: q || undefined,
     folder_path: folder,
   })
+  clearSelection()
+  await store.fetchStats().catch(() => {})
+}
+
+function applySort() {
+  store.page = 1
+  loadFiles()
+}
+
+function toggleSortOrder() {
+  store.sortOrder = store.sortOrder === 'asc' ? 'desc' : 'asc'
+  applySort()
+}
+
+function onTableSelection(rows: FileItem[]) {
+  selectedIds.value = rows.map(row => row.id)
+}
+
+function toggleSelect(id: number) {
+  const idx = selectedIds.value.indexOf(id)
+  if (idx >= 0) selectedIds.value.splice(idx, 1)
+  else selectedIds.value.push(id)
+}
+
+function clearSelection() {
+  selectedIds.value = []
+  tableRef.value?.clearSelection?.()
+}
+
+async function batchDelete() {
+  if (!selectedIds.value.length) return
+  try {
+    await ElMessageBox.confirm(`把选中的 ${selectedIds.value.length} 项移到回收站？`, '批量删除', { type: 'warning' })
+  } catch { return }
+  try {
+    const res = await store.batchTrash(selectedIds.value)
+    ElMessage.success(`已移入回收站 ${res.success} 项${res.failed.length ? `，${res.failed.length} 项失败` : ''}`)
+    await loadFiles()
+  } catch (err: any) { showError(err, '批量删除失败') }
+}
+
+async function batchRestore() {
+  if (!selectedIds.value.length) return
+  try {
+    const res = await store.batchRestore(selectedIds.value)
+    ElMessage.success(`已还原 ${res.success} 项${res.failed.length ? `，${res.failed.length} 项失败` : ''}`)
+    await loadFiles()
+  } catch (err: any) { showError(err, '批量还原失败') }
+}
+
+async function batchPermanent() {
+  if (!selectedIds.value.length) return
+  try {
+    await ElMessageBox.confirm(`彻底删除选中的 ${selectedIds.value.length} 项？此操作不可恢复。`, '彻底删除', { type: 'error' })
+  } catch { return }
+  try {
+    const res = await store.batchPermanent(selectedIds.value)
+    ElMessage.success(`已彻底删除 ${res.success} 项${res.failed.length ? `，${res.failed.length} 项失败` : ''}`)
+    await loadFiles()
+  } catch (err: any) { showError(err, '批量删除失败') }
+}
+
+async function emptyTrash() {
+  try {
+    await ElMessageBox.confirm('清空回收站？所有项目将被彻底删除，不可恢复。', '清空回收站', { type: 'error' })
+  } catch { return }
+  try {
+    const res = await store.emptyTrash()
+    ElMessage.success(`已清空回收站（${res.removed} 项）`)
+    await loadFiles()
+  } catch (err: any) { showError(err, '清空回收站失败') }
+}
+
+async function openShare(file: FileItem) {
+  shareFile.value = file
+  shareExpiry.value = 24 * 7
+  shareVisible.value = true
+  await generateShare()
+}
+
+async function generateShare() {
+  if (!shareFile.value) return
+  shareLoading.value = true
+  shareError.value = ''
+  shareUrl.value = ''
+  try {
+    const res = await client.post(`/files/${shareFile.value.id}/share?expires_hours=${shareExpiry.value}`)
+    shareUrl.value = res.data?.url || ''
+    if (!shareUrl.value) shareError.value = '生成失败：文件服务可能未配置'
+  } catch (e: any) {
+    shareError.value = e?.response?.data?.detail || e?.message || '生成分享链接失败'
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+async function copyShare() {
+  if (!shareUrl.value) return
+  try {
+    await navigator.clipboard.writeText(shareUrl.value)
+    ElMessage.success('链接已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动选择链接')
+  }
+}
+
+function openShareInBrowser() {
+  if (shareUrl.value) window.open(shareUrl.value, '_blank')
 }
 
 async function toggleTrash() {
@@ -384,6 +576,7 @@ async function toggleTrash() {
     searchText.value = ''
   }
   store.page = 1
+  clearSelection()
   await loadFiles()
 }
 
@@ -486,8 +679,18 @@ async function loadMoveFolders(path: string) {
 }
 
 async function openMove(file: FileItem) {
+  batchMoveIds.value = []
   moveTarget.value = file
   movePath.value = normalizeFolder(file.is_folder ? (file.folder_path || '/') : currentPath.value)
+  moveVisible.value = true
+  await loadMoveFolders(movePath.value)
+}
+
+async function openBatchMove() {
+  if (!selectedIds.value.length) return
+  batchMoveIds.value = [...selectedIds.value]
+  moveTarget.value = null
+  movePath.value = normalizeFolder(currentPath.value)
   moveVisible.value = true
   await loadMoveFolders(movePath.value)
 }
@@ -506,9 +709,24 @@ async function moveUp() {
 }
 
 async function confirmMove() {
+  const target = normalizeFolder(movePath.value)
+  const targetPath = target === '/' ? '/' : `${target}/`
+
+  if (batchMoveIds.value.length) {
+    try {
+      const res = await store.batchMove(batchMoveIds.value, targetPath)
+      ElMessage.success(`已移动 ${res.success} 项${res.failed.length ? `，${res.failed.length} 项失败` : ''}`)
+      batchMoveIds.value = []
+      moveVisible.value = false
+      await loadFiles()
+    } catch (err: any) {
+      showError(err, '移动失败')
+    }
+    return
+  }
+
   const file = moveTarget.value
   if (!file) return
-  const target = normalizeFolder(movePath.value)
   if (target === normalizeFolder(file.folder_path)) {
     moveVisible.value = false
     return
@@ -521,7 +739,7 @@ async function confirmMove() {
     }
   }
   try {
-    await store.moveFile(file.id, target === '/' ? '/' : `${target}/`)
+    await store.moveFile(file.id, targetPath)
     ElMessage.success('已移动')
     moveVisible.value = false
     await loadFiles()
@@ -569,6 +787,8 @@ async function handleCommand(cmd: string, file: FileItem) {
     }
   } else if (cmd === 'download') {
     downloadFile(file)
+  } else if (cmd === 'share') {
+    await openShare(file)
   }
 }
 
@@ -644,6 +864,7 @@ async function downloadFile(file: FileItem) {
 
 onMounted(async () => {
   await loadFiles()
+  await store.fetchStats().catch(() => {})
   const id = Number(route.query.file)
   if (Number.isFinite(id) && id > 0) {
     try {
@@ -661,6 +882,14 @@ onMounted(async () => {
 .crumb-bar { margin:8px 0 12px; }
 .loading-box { text-align:center; padding:40px; }
 .file-card { margin-bottom:12px; cursor:pointer; position:relative; }
+.file-check { position:absolute; top:6px; left:8px; z-index:2; }
+.batch-bar {
+  display:flex; align-items:center; gap:8px; margin: 0 0 12px; padding:8px 12px;
+  background:#eef4ff; border:1px solid #d6e4ff; border-radius:8px;
+}
+.batch-count { font-size:13px; color:#3b6fd4; margin-right:4px; }
+.share-dialog .share-expiry { margin: 12px 0; }
+.share-error { color:#c0392b; font-size:12px; margin-top:8px; }
 .file-card-body { text-align:center; padding:16px 4px 4px; }
 .file-icon.folder, .name-cell .folder { color:#e6a23c; }
 .file-name { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

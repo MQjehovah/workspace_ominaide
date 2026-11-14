@@ -18,6 +18,7 @@ from plugins.files.backend.schemas import (
     UploadUrlRequest, UploadUrlResponse, ConfirmUploadRequest,
     UpdateTagsRequest, FileQueryParams, FileResponse, FileListResponse,
     CreateFolderRequest, RenameFileRequest, MoveFileRequest,
+    BatchFileIds, BatchMoveRequest,
 )
 from plugins.files.backend import service as file_service
 
@@ -189,6 +190,8 @@ async def list_files(
     folder_path: str | None = None,
     is_folder: bool | None = None,
     search: str | None = None,
+    sort_by: str = Query("updated_at", pattern="^(name|size|created_at|updated_at)$"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     cursor: str | None = None,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -198,7 +201,8 @@ async def list_files(
         bucket=bucket,
         mime_type=mime_type, favorite=favorite,
         folder_path=folder_path, is_folder=is_folder,
-        search=search, cursor=decode_int_cursor(cursor),
+        search=search, sort_by=sort_by, sort_order=sort_order,
+        cursor=decode_int_cursor(cursor),
     )
     files, total = await file_service.get_files(db, user["id"], params)
     return FileListResponse(
@@ -208,6 +212,91 @@ async def list_files(
         page_size=page_size,
         next_cursor=encode_cursor(files[-1].id) if len(files) >= page_size else None,
     )
+
+
+@router.get("/stats")
+async def storage_stats(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await file_service.get_storage_stats(db, user["id"])
+
+
+@router.delete("/trash")
+async def empty_trash(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    removed = await file_service.empty_trash(db, user["id"])
+    return {"removed": removed}
+
+
+@router.post("/batch/trash")
+async def batch_trash(
+    req: BatchFileIds,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    success = 0
+    failed: list[dict] = []
+    for file_id in req.ids:
+        try:
+            await file_service.trash_file(db, user["id"], file_id)
+            success += 1
+        except ValueError as e:
+            failed.append({"id": file_id, "error": str(e)})
+    return {"success": success, "failed": failed}
+
+
+@router.post("/batch/restore")
+async def batch_restore(
+    req: BatchFileIds,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    success = 0
+    failed: list[dict] = []
+    for file_id in req.ids:
+        try:
+            await file_service.restore_file(db, user["id"], file_id)
+            success += 1
+        except ValueError as e:
+            failed.append({"id": file_id, "error": str(e)})
+    return {"success": success, "failed": failed}
+
+
+@router.post("/batch/permanent")
+async def batch_permanent_delete(
+    req: BatchFileIds,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    success = 0
+    failed: list[dict] = []
+    for file_id in req.ids:
+        try:
+            await file_service.permanent_delete(db, user["id"], file_id)
+            success += 1
+        except ValueError as e:
+            failed.append({"id": file_id, "error": str(e)})
+    return {"success": success, "failed": failed}
+
+
+@router.post("/batch/move")
+async def batch_move(
+    req: BatchMoveRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    success = 0
+    failed: list[dict] = []
+    for file_id in req.ids:
+        try:
+            await file_service.move_file(db, user["id"], file_id, req.folder_path)
+            success += 1
+        except ValueError as e:
+            failed.append({"id": file_id, "error": str(e)})
+    return {"success": success, "failed": failed}
 
 
 @router.get("/{file_id}", response_model=FileResponse)

@@ -182,18 +182,62 @@ async def get_files(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
+    sort_columns = {
+        "name": File.original_name,
+        "size": File.size,
+        "created_at": File.created_at,
+        "updated_at": File.updated_at,
+    }
+    sort_col = sort_columns.get(getattr(params, "sort_by", "updated_at"), File.updated_at)
+    sort_dir = sort_col.asc() if getattr(params, "sort_order", "desc") == "asc" else sort_col.desc()
+
     if params.cursor is not None:
         query = query.where(File.id < params.cursor).order_by(
                 File.is_folder.desc(), File.id.desc()
             ).limit(params.page_size)
     else:
         offset = (params.page - 1) * params.page_size
-        query = query.order_by(File.is_folder.desc(), File.updated_at.desc()).offset(offset).limit(params.page_size)
+        query = query.order_by(File.is_folder.desc(), sort_dir, File.id.desc()).offset(offset).limit(params.page_size)
 
     result = await db.execute(query)
     files = list(result.scalars().all())
 
     return files, total
+
+
+async def get_storage_stats(db: AsyncSession, user_id: int) -> dict:
+    async def agg(status: str) -> tuple[int, int]:
+        result = await db.execute(
+            select(func.count(File.id), func.coalesce(func.sum(File.size), 0)).where(
+                File.user_id == user_id, File.status == status
+            )
+        )
+        count, size = result.one()
+        return int(count or 0), int(size or 0)
+
+    active_count, active_size = await agg("active")
+    trash_count, trash_size = await agg("trash")
+    return {
+        "active_count": active_count,
+        "active_size": active_size,
+        "trash_count": trash_count,
+        "trash_size": trash_size,
+    }
+
+
+async def empty_trash(db: AsyncSession, user_id: int) -> int:
+    result = await db.execute(
+        select(File.id).where(File.user_id == user_id, File.status == "trash")
+    )
+    ids = [row[0] for row in result.all()]
+    removed = 0
+    for file_id in ids:
+        try:
+            await permanent_delete(db, user_id, file_id)
+            removed += 1
+        except ValueError:
+            continue
+    return removed
 
 
 async def get_file(db: AsyncSession, user_id: int, file_id: int) -> File | None:

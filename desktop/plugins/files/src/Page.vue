@@ -3,11 +3,11 @@
     <!-- Top Bar -->
     <div class="pan-topbar">
       <div class="pan-toolbar">
-        <button class="pan-btn" @click="showUpload = true">
+        <button v-if="!trashMode" class="pan-btn" @click="showUpload = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           上传
         </button>
-        <button class="pan-btn" @click="showNewFolder = true">
+        <button v-if="!trashMode" class="pan-btn" @click="showNewFolder = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
           新建文件夹
         </button>
@@ -15,16 +15,38 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           刷新
         </button>
-        <button class="pan-btn" @click="openSyncPanel">
+        <button v-if="!trashMode" class="pan-btn" @click="openSyncPanel">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s1-5 5-8c4-3 9-3 13 0 3 2 5 5 5 8"/><path d="M23 12s-1 5-5 8c-4 3-9 3-13 0-3-2-5-5-5-8"/><polyline points="17 16 23 16 23 22"/><polyline points="7 8 1 8 1 2"/></svg>
           同步
         </button>
-        <span class="pan-total">{{ files.length + folders.length }} 项</span>
+        <input
+          v-model="searchText"
+          class="pan-search"
+          placeholder="搜索文件名…"
+          @input="onSearchInput"
+        />
+        <select v-model="sortBy" class="pan-select" @change="applySort">
+          <option value="updated_at">修改时间</option>
+          <option value="name">名称</option>
+          <option value="size">大小</option>
+          <option value="created_at">创建时间</option>
+        </select>
+        <button class="pan-btn" @click="toggleSortOrder">{{ sortOrder === 'asc' ? '升序' : '降序' }}</button>
+        <button class="pan-btn" :class="{ danger: trashMode }" @click="toggleTrash">
+          {{ trashMode ? '返回文件' : '回收站' }}
+        </button>
+        <button v-if="trashMode" class="pan-btn danger" @click="emptyTrash">清空回收站</button>
+        <span class="pan-total">
+          {{ total }} 项
+          <span v-if="storageStats">
+            · {{ trashMode ? '回收站 ' + formatSize(storageStats.trash_size) : '已用 ' + formatSize(storageStats.active_size) }}
+          </span>
+        </span>
       </div>
     </div>
 
     <!-- Breadcrumb -->
-    <div class="pan-bread">
+    <div v-if="!trashMode && !searchText.trim()" class="pan-bread">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
       <span class="bc-item" @click="goRoot">全部文件</span>
       <span v-for="(c, i) in breadcrumb" :key="i" class="bc-sep">/</span>
@@ -37,8 +59,28 @@
         <div class="spin"></div>
       </div>
       <template v-else>
+        <!-- Bulk actions -->
+        <div v-if="selectedIds.length" class="batch-bar">
+          <label class="batch-all">
+            <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" /> 全选
+          </label>
+          <span class="batch-count">已选 {{ selectedIds.length }} 项</span>
+          <button class="pan-btn sm" @click="clearSelection">取消</button>
+          <template v-if="trashMode">
+            <button class="pan-btn sm" @click="batchRestore">还原</button>
+            <button class="pan-btn sm danger" @click="batchPermanent">彻底删除</button>
+          </template>
+          <template v-else>
+            <button class="pan-btn sm" @click="openBatchMove">移动</button>
+            <button class="pan-btn sm danger" @click="batchDelete">移入回收站</button>
+          </template>
+        </div>
+
         <!-- List View Header -->
         <div class="pan-list-header">
+          <span class="lh-check">
+            <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
+          </span>
           <span class="lh-name">名称</span>
           <span class="lh-size">大小</span>
           <span class="lh-date">修改时间</span>
@@ -47,33 +89,45 @@
 
         <div class="pan-list">
           <!-- Folders -->
-          <div v-for="f in folders" :key="f.id" class="pan-row" @click="enterFolder(f)" @dblclick="enterFolder(f)">
-            <div class="pr-icon" @click="enterFolder(f)">
+          <div v-for="f in folders" :key="f.id" class="pan-row" @click="!trashMode && enterFolder(f)" @dblclick="!trashMode && enterFolder(f)">
+            <div class="pr-check" @click.stop>
+              <input type="checkbox" :checked="isSelected(f.id)" @change="toggleSelect(f.id)" />
+            </div>
+            <div class="pr-icon" @click="!trashMode && enterFolder(f)">
               <svg class="fi-folder" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
             </div>
-            <div class="pr-name" @click="enterFolder(f)">{{ f.original_name }}</div>
+            <div class="pr-name" @click="!trashMode && enterFolder(f)">{{ f.original_name }}</div>
             <div class="pr-size">-</div>
             <div class="pr-date">{{ formatDate(f.updated_at) }}</div>
             <div class="pr-actions" @click.stop>
-              <button class="pa-btn" title="重命名" @click="startRename(f)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-              <template v-if="getSyncInfo(f)">
-                <button class="pa-btn" :title="getSyncInfo(f).enabled ? '暂停同步' : '恢复同步'" @click="toggleSync(getSyncInfo(f))">
-                  <svg v-if="getSyncInfo(f).enabled" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
-                </button>
-                <button class="pa-btn danger" title="删除同步" @click="deleteSync(getSyncInfo(f).id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                </button>
+              <template v-if="trashMode">
+                <button class="pa-btn" title="还原" @click="restoreItem(f)">↩</button>
+                <button class="pa-btn danger" title="彻底删除" @click="permanentDeleteItem(f)">✕</button>
               </template>
-              <button v-else class="pa-btn" title="设置同步" @click="setupSync(f)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s1-5 5-8c4-3 9-3 13 0 3 2 5 5 5 8"/><path d="M23 12s-1 5-5 8c-4 3-9 3-13 0-3-2-5-5-5-8"/><polyline points="17 16 23 16 23 22"/><polyline points="7 8 1 8 1 2"/></svg>
-              </button>
-              <button class="pa-btn danger" title="删除" @click="trashFile(f)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+              <template v-else>
+                <button class="pa-btn" title="重命名" @click="startRename(f)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                <template v-if="getSyncInfo(f)">
+                  <button class="pa-btn" :title="getSyncInfo(f).enabled ? '暂停同步' : '恢复同步'" @click="toggleSync(getSyncInfo(f))">
+                    <svg v-if="getSyncInfo(f).enabled" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                    <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
+                  </button>
+                  <button class="pa-btn danger" title="删除同步" @click="deleteSync(getSyncInfo(f).id)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                  </button>
+                </template>
+                <button v-else class="pa-btn" title="设置同步" @click="setupSync(f)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s1-5 5-8c4-3 9-3 13 0 3 2 5 5 5 8"/><path d="M23 12s-1 5-5 8c-4 3-9 3-13 0-3-2-5-5-5-8"/><polyline points="17 16 23 16 23 22"/><polyline points="7 8 1 8 1 2"/></svg>
+                </button>
+                <button class="pa-btn danger" title="删除" @click="trashFile(f)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+              </template>
             </div>
           </div>
 
           <!-- Files -->
-          <div v-for="f in files" :key="f.id" class="pan-row" :class="{ selected: previewFileData?.id === f.id }" @click="previewFile(f)" @dblclick="downloadFile(f)">
+          <div v-for="f in files" :key="f.id" class="pan-row" :class="{ selected: previewFileData?.id === f.id }" @click="!trashMode && previewFile(f)" @dblclick="!trashMode && downloadFile(f)">
+            <div class="pr-check" @click.stop>
+              <input type="checkbox" :checked="isSelected(f.id)" @change="toggleSelect(f.id)" />
+            </div>
             <div class="pr-icon">
               <svg v-if="isImage(f)" class="fi-image" viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
               <svg v-else-if="isAudio(f)" class="fi-audio" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
@@ -90,32 +144,43 @@
             <div class="pr-size">{{ formatSize(f.size) }}</div>
             <div class="pr-date">{{ formatDate(f.updated_at) }}</div>
             <div class="pr-actions" @click.stop>
-              <button class="pa-btn" :class="{ active: f.is_favorite }" :title="f.is_favorite ? '取消收藏' : '收藏'" @click="toggleFav(f)">
-                <svg width="14" height="14" viewBox="0 0 24 24" :fill="f.is_favorite ? '#FF9800' : 'none'" :stroke="f.is_favorite ? '#FF9800' : 'currentColor'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              </button>
-              <button class="pa-btn" title="分享" @click="openShare(f)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-              </button>
-              <button class="pa-btn" title="下载" @click="downloadFile(f)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              </button>
-              <button class="pa-btn" title="移动" @click="startMove(f)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
-              </button>
-              <button class="pa-btn" title="重命名" @click="startRename(f)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>
-              <button class="pa-btn danger" title="删除" @click="trashFile(f)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
+              <template v-if="trashMode">
+                <button class="pa-btn" title="还原" @click="restoreItem(f)">↩</button>
+                <button class="pa-btn danger" title="彻底删除" @click="permanentDeleteItem(f)">✕</button>
+              </template>
+              <template v-else>
+                <button class="pa-btn" :class="{ active: f.is_favorite }" :title="f.is_favorite ? '取消收藏' : '收藏'" @click="toggleFav(f)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" :fill="f.is_favorite ? '#FF9800' : 'none'" :stroke="f.is_favorite ? '#FF9800' : 'currentColor'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </button>
+                <button class="pa-btn" title="分享" @click="openShare(f)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                </button>
+                <button class="pa-btn" title="下载" @click="downloadFile(f)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </button>
+                <button class="pa-btn" title="移动" @click="startMove(f)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
+                </button>
+                <button class="pa-btn" title="重命名" @click="startRename(f)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="pa-btn danger" title="删除" @click="trashFile(f)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </template>
             </div>
           </div>
 
           <!-- Empty -->
           <div v-if="!folders.length && !files.length && !loading" class="pan-empty">
             <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <p>此文件夹为空</p>
+            <p>{{ trashMode ? '回收站为空' : '此文件夹为空' }}</p>
           </div>
+        </div>
+        <div v-if="total > pageSize" class="pan-pager">
+          <button class="pan-btn sm" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
+          <span class="pager-info">第 {{ page }} / {{ Math.ceil(total / pageSize) }} 页 · 共 {{ total }} 项</span>
+          <button class="pan-btn sm" :disabled="page * pageSize >= total" @click="goPage(page + 1)">下一页</button>
         </div>
       </template>
     </div>
@@ -229,14 +294,14 @@
     </div>
 
     <!-- Move Modal -->
-    <div v-if="moveTarget" class="modal-overlay" @click.self="moveTarget = null">
+    <div v-if="moveTarget || batchMoveIds.length" class="modal-overlay" @click.self="closeMove">
       <div class="modal-card"><div class="modal-hd"><span>移动到</span><button class="close-btn" @click="moveTarget = null">✕</button></div>
         <div class="modal-body">
           <div class="move-bread"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2196F3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="bc-item" @click="moveBrowseRoot">全部文件</span><span v-for="(c, i) in moveBreadcrumb" :key="i" class="bc-sep">/</span><span v-for="(c, i) in moveBreadcrumb" :key="'mc'+i" class="bc-item" @click="moveBrowseTo(i)">{{ c }}</span></div>
           <div class="move-list"><div v-for="f in moveFolders" :key="f.id" class="mv-item" @click="moveBrowse(f)"><svg width="16" height="16" viewBox="0 0 24 24" fill="#FF9800"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>{{ f.original_name }}</div>
             <div v-if="!moveFolders.length" class="mv-empty">无子文件夹</div>
           </div>
-          <div class="modal-ft"><button class="pan-btn" @click="moveTarget = null">取消</button><button class="pan-btn primary" @click="confirmMove">移动到此处</button></div>
+          <div class="modal-ft"><button class="pan-btn" @click="closeMove">取消</button><button class="pan-btn primary" @click="confirmMove">移动到此处</button></div>
         </div>
       </div>
     </div>
@@ -329,6 +394,44 @@ const moveTarget = ref<any>(null)
 const moveFolders = ref<any[]>([])
 const moveBreadcrumb = ref<string[]>([])
 const movePath = ref('/')
+const searchText = ref('')
+const sortBy = ref<'name' | 'size' | 'created_at' | 'updated_at'>('updated_at')
+const sortOrder = ref<'asc' | 'desc'>('desc')
+const trashMode = ref(false)
+const page = ref(1)
+const pageSize = ref(50)
+const total = ref(0)
+const storageStats = ref<any>(null)
+const selectedIds = ref<number[]>([])
+const batchMoveIds = ref<number[]>([])
+let searchTimer: any = null
+
+const allSelected = computed(() => {
+  const ids = [...folders.value, ...files.value].map((item: any) => item.id)
+  return ids.length > 0 && ids.every((id: number) => selectedIds.value.includes(id))
+})
+
+function isSelected(id: number): boolean {
+  return selectedIds.value.includes(id)
+}
+
+function toggleSelect(id: number) {
+  const idx = selectedIds.value.indexOf(id)
+  if (idx >= 0) selectedIds.value.splice(idx, 1)
+  else selectedIds.value.push(id)
+}
+
+function toggleSelectAll(e: Event) {
+  const checked = (e.target as HTMLInputElement).checked
+  selectedIds.value = checked
+    ? [...folders.value, ...files.value].map((item: any) => item.id)
+    : []
+}
+
+function clearSelection() {
+  selectedIds.value = []
+}
+
 const previewFileData = ref<any>(null)
 const previewUrl = ref('')
 const codeContent = ref('')
@@ -393,21 +496,129 @@ function formatDateTime(d: string) {
   return d.slice(0, 19).replace('T', ' ')
 }
 
-async function loadFiles(path: string) {
-  loading.value = true; currentPath.value = path
-  breadcrumb.value = path.split('/').filter(Boolean)
+async function loadFiles(path?: string) {
+  if (path !== undefined) {
+    currentPath.value = path
+    page.value = 1
+  }
+  breadcrumb.value = currentPath.value.split('/').filter(Boolean)
+  loading.value = true
+  const q = searchText.value.trim()
+  const params = new URLSearchParams({
+    page: String(page.value),
+    page_size: String(pageSize.value),
+    status: trashMode.value ? 'trash' : 'active',
+    sort_by: sortBy.value,
+    sort_order: sortOrder.value,
+  })
+  if (q) params.set('search', q)
+  else if (!trashMode.value) params.set('folder_path', currentPath.value)
   try {
-    const res = await window.mqbox?.api.get(`/files?page_size=200&folder_path=${encodeURIComponent(path)}`) || { files: [] }
-    folders.value = (res.files || []).filter((f: any) => f.is_folder)
-    files.value = (res.files || []).filter((f: any) => !f.is_folder)
-  } catch { folders.value = []; files.value = [] }
+    const res = await window.mqbox?.api.get(`/files?${params.toString()}`) || { files: [] }
+    const list = res.files || []
+    folders.value = list.filter((f: any) => f.is_folder)
+    files.value = list.filter((f: any) => !f.is_folder)
+    total.value = res.total || 0
+  } catch {
+    folders.value = [];
+    files.value = [];
+    total.value = 0
+  }
+  clearSelection()
+  try { storageStats.value = await window.mqbox?.api.get('/files/stats') } catch { storageStats.value = null }
   loading.value = false
 }
 
-async function refresh() { loadFiles(currentPath.value) }
+async function refresh() { await loadFiles() }
 function goRoot() { loadFiles('/') }
 function goTo(idx: number) { loadFiles('/' + breadcrumb.value.slice(0, idx + 1).join('/') + '/') }
 function enterFolder(f: any) { loadFiles((f.folder_path.replace(/\/+$/, '') || '') + '/' + f.original_name + '/') }
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => { page.value = 1; loadFiles() }, 300)
+}
+
+function applySort() {
+  page.value = 1
+  loadFiles()
+}
+
+function toggleSortOrder() {
+  sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  applySort()
+}
+
+function goPage(next: number) {
+  page.value = next
+  loadFiles()
+}
+
+function toggleTrash() {
+  trashMode.value = !trashMode.value
+  searchText.value = ''
+  currentPath.value = '/'
+  page.value = 1
+  loadFiles()
+}
+
+function closeMove() {
+  moveTarget.value = null
+  batchMoveIds.value = []
+}
+
+async function emptyTrash() {
+  if (!confirm('清空回收站？所有项目将被彻底删除，不可恢复。')) return
+  try {
+    const res = await window.mqbox?.api.delete('/files/trash')
+    console.log('[files] emptied trash:', res)
+    await loadFiles()
+  } catch (e) { console.error('[files] empty trash failed', e) }
+}
+
+async function restoreItem(f: any) {
+  try { await window.mqbox?.api.post(`/files/${f.id}/restore`); await loadFiles() } catch (e) { console.error(e) }
+}
+
+async function permanentDeleteItem(f: any) {
+  if (!confirm(`彻底删除「${f.original_name}」？此操作不可恢复。`)) return
+  try { await window.mqbox?.api.delete(`/files/${f.id}/permanent`); await loadFiles() } catch (e) { console.error(e) }
+}
+
+async function batchDelete() {
+  if (!selectedIds.value.length) return
+  if (!confirm(`把选中的 ${selectedIds.value.length} 项移入回收站？`)) return
+  try {
+    await window.mqbox?.api.post('/files/batch/trash', { ids: selectedIds.value })
+    await loadFiles()
+  } catch (e) { console.error('[files] batch delete failed', e) }
+}
+
+async function batchRestore() {
+  if (!selectedIds.value.length) return
+  try {
+    await window.mqbox?.api.post('/files/batch/restore', { ids: selectedIds.value })
+    await loadFiles()
+  } catch (e) { console.error('[files] batch restore failed', e) }
+}
+
+async function batchPermanent() {
+  if (!selectedIds.value.length) return
+  if (!confirm(`彻底删除选中的 ${selectedIds.value.length} 项？此操作不可恢复。`)) return
+  try {
+    await window.mqbox?.api.post('/files/batch/permanent', { ids: selectedIds.value })
+    await loadFiles()
+  } catch (e) { console.error('[files] batch permanent delete failed', e) }
+}
+
+async function openBatchMove() {
+  if (!selectedIds.value.length) return
+  batchMoveIds.value = [...selectedIds.value]
+  moveTarget.value = null
+  movePath.value = currentPath.value
+  moveBreadcrumb.value = currentPath.value.split('/').filter(Boolean)
+  await loadMoveFolders(currentPath.value)
+}
 
 // Share
 const shareTarget = ref<any>(null)
@@ -520,21 +731,34 @@ async function uploadFiles(list: File[]) {
   const serverUrl = await window.mqbox?.config.get('serverUrl') || 'https://mqgeek.com/ominaide'
   const token = await window.mqbox?.config.get('token') || ''
   for (const file of list) {
-    const item = { name: file.name, status: 'uploading', statusText: '上传中...' }
+    const item: any = { name: file.name, percent: 0, status: 'uploading', statusText: '0%' }
     uploadQueue.value.push(item)
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch(`${serverUrl}/api/files/upload/direct?folder_path=${encodeURIComponent(currentPath.value)}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.upload.onprogress = (e) => {
+          if (!e.total) return
+          item.percent = Math.round((e.loaded / e.total) * 100)
+          item.statusText = item.percent + '%'
+        }
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`)))
+        xhr.onerror = () => reject(new Error('network error'))
+        xhr.open('POST', `${serverUrl}/api/files/upload/direct?folder_path=${encodeURIComponent(currentPath.value)}`)
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.send(form)
       })
-      if (!res.ok) { item.status = 'error'; item.statusText = '上传失败'; continue }
-      item.status = 'done'; item.statusText = '完成'
-    } catch { item.status = 'error'; item.statusText = '失败' }
+      item.percent = 100
+      item.status = 'done'
+      item.statusText = '完成'
+    } catch (e) {
+      item.status = 'error'
+      item.statusText = '失败'
+      console.error('[files] upload failed', e)
+    }
   }
-  await loadFiles(currentPath.value)
+  await loadFiles()
 }
 
 // New Folder
@@ -576,7 +800,7 @@ async function downloadFile(f: any, saveAs = false) {
 }
 
 // Move
-async function startMove(f: any) { moveTarget.value = f; movePath.value = '/'; moveBreadcrumb.value = []; await loadMoveFolders('/') }
+async function startMove(f: any) { batchMoveIds.value = []; moveTarget.value = f; movePath.value = '/'; moveBreadcrumb.value = []; await loadMoveFolders('/') }
 async function loadMoveFolders(path: string) {
   try { const res = await window.mqbox?.api.get(`/files?page_size=200&folder_path=${encodeURIComponent(path)}&is_folder=true`) || { files: [] }; moveFolders.value = (res.files || []).filter((f: any) => f.is_folder) } catch { moveFolders.value = [] }
 }
@@ -584,8 +808,16 @@ function moveBrowseRoot() { movePath.value = '/'; moveBreadcrumb.value = []; loa
 function moveBrowseTo(idx: number) { const p = '/' + moveBreadcrumb.value.slice(0, idx + 1).join('/') + '/'; movePath.value = p; moveBreadcrumb.value = moveBreadcrumb.value.slice(0, idx + 1); loadMoveFolders(p) }
 function moveBrowse(f: any) { const p = (f.folder_path.replace(/\/+$/, '') || '') + '/' + f.original_name + '/'; movePath.value = p; moveBreadcrumb.value = p.split('/').filter(Boolean); loadMoveFolders(p) }
 async function confirmMove() {
-  if (!moveTarget.value) return
-  try { await window.mqbox?.api.put(`/files/${moveTarget.value.id}/move`, { new_folder_path: movePath.value }); moveTarget.value = null; await loadFiles(currentPath.value) } catch {}
+  if (!moveTarget.value && !batchMoveIds.value.length) return
+  try {
+    if (batchMoveIds.value.length) {
+      await window.mqbox?.api.post('/files/batch/move', { ids: batchMoveIds.value, folder_path: movePath.value })
+    } else {
+      await window.mqbox?.api.put(`/files/${moveTarget.value.id}/move`, { new_folder_path: movePath.value })
+    }
+    closeMove()
+    await loadFiles()
+  } catch (e) { console.error('[files] move failed', e) }
 }
 
 // Sync
@@ -635,7 +867,13 @@ onMounted(() => loadFiles('/'))
 
 /* Top Bar */
 .pan-topbar { background:#fff; border-bottom:1px solid #e8e8e8; padding:10px 24px; flex-shrink:0; }
-.pan-toolbar { display:flex; align-items:center; gap:8px; }
+.pan-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pan-search { height:34px; width:180px; border:1px solid #ddd; border-radius:8px; padding:0 10px; font-size:13px; outline:none; }
+.pan-search:focus { border-color:#2196F3; }
+.pan-select { height:34px; border:1px solid #ddd; border-radius:8px; padding:0 8px; font-size:13px; background:#fff; color:#555; outline:none; }
+.pan-btn.sm { height:28px; padding:0 10px; font-size:12px; }
+.pan-btn.danger { border-color:#f3c2c2; color:#c62828; }
+.pan-btn.danger:hover { background:#fdf2f2; border-color:#e57373; }
 .pan-btn { height:34px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer; display:inline-flex; align-items:center; gap:6px; padding:0 14px; font-size:13px; color:#555; white-space:nowrap; transition:all 0.15s; }
 .pan-btn:hover { border-color:#2196F3; color:#2196F3; background:#f0f8ff; }
 .pan-btn.primary { background:#2196F3; color:#fff; border-color:#2196F3; }
@@ -655,16 +893,19 @@ onMounted(() => loadFiles('/'))
 @keyframes spin { to { transform:rotate(360deg) } }
 
 .pan-list-header { display:flex; align-items:center; padding:10px 12px; font-size:12px; color:#999; border-bottom:1px solid #eee; background:#fafafa; border-radius:8px 8px 0 0; margin-top:12px; }
+.lh-check { width:30px; flex-shrink:0; display:flex; align-items:center; }
 .lh-name { flex:1; min-width:0; }
 .lh-size { width:80px; text-align:right; }
 .lh-date { width:150px; text-align:right; }
-.lh-actions { width:160px; text-align:right; }
+.lh-actions { width:190px; text-align:right; }
 
 .pan-list { }
 .pan-row { display:flex; align-items:center; padding:10px 12px; font-size:13px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.1s; border-radius:4px; }
 .pan-row:hover { background:#f0f8ff; }
 .pan-row.selected { background:#e3f2fd; }
 
+.pr-check { width:30px; flex-shrink:0; display:flex; align-items:center; }
+.pr-check input { cursor:pointer; }
 .pr-icon { width:36px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
 .pr-icon svg { width:20px; height:20px; }
 .fi-folder { color:#FF9800; }
@@ -682,13 +923,18 @@ onMounted(() => loadFiles('/'))
 
 .pr-size { width:80px; text-align:right; color:#999; font-size:12px; white-space:nowrap; }
 .pr-date { width:150px; text-align:right; color:#999; font-size:12px; white-space:nowrap; }
-.pr-actions { width:160px; text-align:right; display:flex; gap:2px; justify-content:flex-end; opacity:0; transition:opacity 0.15s; }
+.pr-actions { width:190px; text-align:right; display:flex; gap:2px; justify-content:flex-end; opacity:0; transition:opacity 0.15s; }
 .pan-row:hover .pr-actions { opacity:1; }
 .pa-btn { width:28px; height:28px; border-radius:6px; border:none; background:transparent; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; color:#999; transition:all 0.12s; }
 .pa-btn:hover { background:#e3f2fd; color:#2196F3; }
 .pa-btn.danger:hover { background:#fce4ec; color:#c62828; }
 .pa-btn.active { color:#FF9800; }
 
+.batch-bar { display:flex; align-items:center; gap:8px; padding:8px 12px; margin-top:12px; background:#eef4ff; border:1px solid #d6e4ff; border-radius:8px; }
+.batch-count { font-size:12.5px; color:#3b6fd4; }
+.batch-all { display:flex; align-items:center; gap:4px; font-size:12px; color:#666; cursor:pointer; }
+.pan-pager { display:flex; align-items:center; justify-content:center; gap:12px; padding:14px 0 6px; }
+.pager-info { font-size:12px; color:#999; }
 .pan-empty { grid-column:1/-1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 20px; color:#ccc; gap:12px; }
 .pan-empty p { margin:0; font-size:14px; }
 

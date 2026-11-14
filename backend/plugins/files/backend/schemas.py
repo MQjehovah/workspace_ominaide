@@ -74,4 +74,15 @@ class FileQueryParams(BaseModel):
     favorite: bool | None = None
     folder_path: str | None = None
     is_folder: bool | None = None
+    sort_by: str = "updated_at"
+    sort_order: str = "desc"
     cursor: int | None = None
+
+
+class BatchFileIds(BaseModel):
+    ids: list[int]
+
+
+class BatchMoveRequest(BaseModel):
+    ids: list[int]
+    folder_path: str = "/"
