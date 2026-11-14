@@ -80,12 +80,8 @@ import Vision
       do {
         switch call.method {
         case "speakerOn":
-          try session.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetooth]
-          )
-          try session.setActive(true)
+          // Never change category/active state here: voiceStart owns the
+          // engine, and a category change restarts it (silencing capture).
           try session.overrideOutputAudioPort(.speaker)
           result(nil)
         case "speakerOff":
@@ -95,8 +91,7 @@ import Vision
           let args = call.arguments as? [String: Any]
           let cap = (args?["captureRate"] as? NSNumber)?.doubleValue ?? 16000
           let play = (args?["playbackRate"] as? NSNumber)?.doubleValue ?? 48000
-          self.startVoiceEngine(captureRate: cap, playbackRate: play)
-          result(nil)
+          result(self.startVoiceEngine(captureRate: cap, playbackRate: play))
         case "voiceStop":
           self.shutdownVoiceEngine()
           result(nil)
@@ -271,7 +266,7 @@ import Vision
   /// the input node can only cancel echo from audio rendered by the same
   /// engine, which is why a separate player engine kept feeding the assistant
   /// its own voice back as user input.
-  private func startVoiceEngine(captureRate: Double, playbackRate: Double) {
+  private func startVoiceEngine(captureRate: Double, playbackRate: Double) -> [String: Any] {
     shutdownVoiceEngine()
 
     let session = AVAudioSession.sharedInstance()
@@ -284,7 +279,7 @@ import Vision
       try session.setActive(true)
       try session.overrideOutputAudioPort(.speaker)
     } catch {
-      return
+      return ["ok": false, "error": "audio session: \(error)"]
     }
 
     let engine = AVAudioEngine()
@@ -309,7 +304,7 @@ import Vision
             interleaved: false
           ) else {
       shutdownVoiceEngine()
-      return
+      return ["ok": false, "error": "unsupported audio formats"]
     }
 
     input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
@@ -325,11 +320,16 @@ import Vision
       try engine.start()
     } catch {
       shutdownVoiceEngine()
-      return
+      return ["ok": false, "error": "engine start: \(error)"]
     }
     voicePlayerNode = player
     voiceFormat = playFormat
     voiceChunkIndex = 0
+    return [
+      "ok": true,
+      "inputRate": inputFormat.sampleRate,
+      "channels": inputFormat.channelCount,
+    ]
   }
 
   private func handleVoiceCapture(

@@ -317,6 +317,7 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
   }
 
   Widget _waveform(AppPalette palette, bool active) {
+    final level = _voice.micLevel;
     return SizedBox(
       height: 34,
       child: Row(
@@ -324,8 +325,9 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
         children: List.generate(9, (index) {
           final distance = (index - 4).abs();
           final factor = 1 - distance * 0.14;
-          final boost = _voice.speaking ? 1.0 : 0.35;
-          final height = active ? 6 + 20 * factor * boost : 4 + distance * 0.6;
+          final height = active
+              ? 4 + (6 + 26 * level) * factor
+              : 4 + distance * 0.6;
           return AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             margin: const EdgeInsets.symmetric(horizontal: 3),

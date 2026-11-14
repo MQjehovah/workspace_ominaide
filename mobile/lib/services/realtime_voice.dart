@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -89,6 +90,7 @@ class RealtimeVoiceController extends ChangeNotifier {
   String assistantText = '';
   bool micOn = false;
   bool speaking = false;
+  double micLevel = 0;
   final List<RealtimeTurn> turns = [];
 
   final AudioRecorder _recorder = AudioRecorder();
@@ -97,6 +99,9 @@ class RealtimeVoiceController extends ChangeNotifier {
   final BytesBuilder _micBuf = BytesBuilder(copy: true);
   Timer? _attachTimer;
   Timer? _ackTimer;
+  Timer? _micWatchdog;
+  int _micChunks = 0;
+  int _lastLevelAt = 0;
 
   final Map<String, _Run> _runs = {};
   final List<_AudioItem> _audioItems = [];
@@ -351,12 +356,24 @@ class RealtimeVoiceController extends ChangeNotifier {
       }
       // Capture and playback share one native engine so the platform AEC has
       // the TTS as its render reference.
-      await _player.invokeMethod('voiceStart', {
+      final result = await _player.invokeMethod('voiceStart', {
         'captureRate': _upRate,
         'playbackRate': _downRate,
       });
+      if (result is Map && result['ok'] == false) {
+        errorText = '麦克风启动失败：${result['error'] ?? 'unknown'}';
+        _notify();
+        return;
+      }
       micOn = true;
-      _sendSpeaker(true);
+      _micChunks = 0;
+      _micWatchdog?.cancel();
+      _micWatchdog = Timer(const Duration(seconds: 3), () {
+        if (micOn && _micChunks == 0) {
+          errorText = '麦克风没有数据，请检查权限或重新进入语音页面';
+          _notify();
+        }
+      });
       _notify();
     } catch (e) {
       errorText = '麦克风启动失败：${_short(e)}';
@@ -366,6 +383,23 @@ class RealtimeVoiceController extends ChangeNotifier {
 
   void _onMicData(Uint8List chunk) {
     if (chunk.isEmpty) return;
+    _micChunks += 1;
+    var sum = 0.0;
+    var count = 0;
+    for (var i = 0; i + 1 < chunk.length; i += 2) {
+      final value = (chunk[i] | (chunk[i + 1] << 8)).toSigned(16);
+      sum += value * value;
+      count++;
+    }
+    if (count > 0) {
+      final rms = math.sqrt(sum / count);
+      micLevel = (rms / 3000).clamp(0.0, 1.0);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastLevelAt > 80) {
+        _lastLevelAt = now;
+        _notify();
+      }
+    }
     if (state != RealtimeVoiceState.ready &&
         state != RealtimeVoiceState.live) {
       return;
@@ -647,6 +681,8 @@ class RealtimeVoiceController extends ChangeNotifier {
     _attachTimer = null;
     _ackTimer?.cancel();
     _ackTimer = null;
+    _micWatchdog?.cancel();
+    _micWatchdog = null;
     unawaited(_stopPlayback());
     unawaited(() async {
       try {
@@ -682,6 +718,7 @@ class RealtimeVoiceController extends ChangeNotifier {
     _wsSub?.cancel();
     _attachTimer?.cancel();
     _ackTimer?.cancel();
+    _micWatchdog?.cancel();
     unawaited(() async {
       try {
         await _player.invokeMethod('voiceStop');
