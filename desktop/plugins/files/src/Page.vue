@@ -93,6 +93,9 @@
               <button class="pa-btn" :class="{ active: f.is_favorite }" :title="f.is_favorite ? '取消收藏' : '收藏'" @click="toggleFav(f)">
                 <svg width="14" height="14" viewBox="0 0 24 24" :fill="f.is_favorite ? '#FF9800' : 'none'" :stroke="f.is_favorite ? '#FF9800' : 'currentColor'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
               </button>
+              <button class="pa-btn" title="分享" @click="openShare(f)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              </button>
               <button class="pa-btn" title="下载" @click="downloadFile(f)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </button>
@@ -121,6 +124,10 @@
     <div v-if="previewFileData" class="preview-panel">
       <div class="pp-header">
         <span class="pp-title">{{ previewFileData.original_name }}</span>
+        <button class="pp-share-btn" title="分享文件" @click="openShare(previewFileData)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          分享
+        </button>
         <button class="pp-close" @click="closePreview">✕</button>
       </div>
       <div class="pp-body">
@@ -230,6 +237,44 @@
             <div v-if="!moveFolders.length" class="mv-empty">无子文件夹</div>
           </div>
           <div class="modal-ft"><button class="pan-btn" @click="moveTarget = null">取消</button><button class="pan-btn primary" @click="confirmMove">移动到此处</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div v-if="shareTarget" class="modal-overlay" @click.self="closeShare">
+      <div class="modal-card small">
+        <div class="modal-hd"><span>分享文件</span><button class="close-btn" @click="closeShare">✕</button></div>
+        <div class="modal-body">
+          <div class="share-file">
+            <span class="share-file-name">{{ shareTarget.original_name }}</span>
+            <span class="share-file-size">{{ formatSize(shareTarget.size) }}</span>
+          </div>
+
+          <div class="share-label">有效期</div>
+          <div class="share-expiry">
+            <button
+              v-for="opt in shareExpiryOptions"
+              :key="opt.hours"
+              class="share-chip"
+              :class="{ active: shareExpiry === opt.hours }"
+              @click="shareExpiry = opt.hours; generateShareLink()"
+            >{{ opt.label }}</button>
+          </div>
+
+          <div v-if="shareLoading" class="share-loading">正在生成链接…</div>
+          <template v-else-if="shareUrl">
+            <input ref="shareUrlInput" class="pan-input share-url" :value="shareUrl" readonly @focus="selectShareUrl" />
+            <div class="share-actions">
+              <button class="pan-btn primary" @click="copyShareLink">{{ shareCopied ? '已复制' : '复制链接' }}</button>
+              <button class="pan-btn" @click="openShareLink">浏览器打开</button>
+              <button class="pan-btn" @click="generateShareLink">重新生成</button>
+            </div>
+            <div class="share-note">
+              任何拿到链接的人都能访问该文件，链接将在 {{ shareExpiryLabel }}后失效。
+            </div>
+          </template>
+          <div v-else-if="shareError" class="share-error">{{ shareError }}</div>
         </div>
       </div>
     </div>
@@ -363,6 +408,77 @@ async function refresh() { loadFiles(currentPath.value) }
 function goRoot() { loadFiles('/') }
 function goTo(idx: number) { loadFiles('/' + breadcrumb.value.slice(0, idx + 1).join('/') + '/') }
 function enterFolder(f: any) { loadFiles((f.folder_path.replace(/\/+$/, '') || '') + '/' + f.original_name + '/') }
+
+// Share
+const shareTarget = ref<any>(null)
+const shareExpiry = ref(24 * 7)
+const shareUrl = ref('')
+const shareLoading = ref(false)
+const shareError = ref('')
+const shareCopied = ref(false)
+const shareUrlInput = ref<HTMLInputElement>()
+const shareExpiryOptions = [
+  { label: '1 小时', hours: 1 },
+  { label: '24 小时', hours: 24 },
+  { label: '7 天', hours: 24 * 7 },
+  { label: '30 天', hours: 24 * 30 },
+]
+const shareExpiryLabel = computed(() => shareExpiryOptions.find(o => o.hours === shareExpiry.value)?.label || '')
+
+function openShare(f: any) {
+  shareTarget.value = f
+  shareExpiry.value = 24 * 7
+  shareUrl.value = ''
+  shareError.value = ''
+  shareCopied.value = false
+  generateShareLink()
+}
+
+function closeShare() {
+  shareTarget.value = null
+  shareUrl.value = ''
+  shareError.value = ''
+  shareCopied.value = false
+}
+
+let shareTimer: any = null
+async function generateShareLink() {
+  if (!shareTarget.value) return
+  shareLoading.value = true
+  shareError.value = ''
+  shareCopied.value = false
+  shareUrl.value = ''
+  try {
+    const res = await window.mqbox?.api.post(
+      `/files/${shareTarget.value.id}/share?expires_hours=${shareExpiry.value}`,
+    )
+    shareUrl.value = res?.url || ''
+    if (!shareUrl.value) shareError.value = '生成失败：文件服务可能未配置'
+  } catch (e: any) {
+    shareError.value = e?.message || '生成分享链接失败，请稍后重试'
+  }
+  shareLoading.value = false
+}
+
+function selectShareUrl() {
+  shareUrlInput.value?.select()
+}
+
+async function copyShareLink() {
+  if (!shareUrl.value) return
+  try {
+    await window.mqbox?.clipboard.writeText(shareUrl.value)
+    shareCopied.value = true
+    if (shareTimer) clearTimeout(shareTimer)
+    shareTimer = setTimeout(() => { shareCopied.value = false }, 1600)
+  } catch {
+    selectShareUrl()
+  }
+}
+
+function openShareLink() {
+  if (shareUrl.value) window.mqbox?.shell.openExternal(shareUrl.value)
+}
 
 // Preview
 async function previewFile(f: any) {
@@ -650,6 +766,24 @@ onMounted(() => loadFiles('/'))
 /* Input */
 .pan-input { width:100%; height:38px; border-radius:8px; border:1px solid #d0d0d0; padding:0 12px; font-size:13px; outline:none; box-sizing:border-box; }
 .pan-input:focus { border-color:#2196F3; }
+
+/* Share */
+.pp-share-btn { display:flex; align-items:center; gap:4px; border:none; background:#eef6ff; color:#1976d2; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer; margin-right:8px; }
+.pp-share-btn:hover { background:#e0efff; }
+.share-file { display:flex; align-items:center; gap:8px; padding:10px 12px; background:#f7f9fc; border-radius:8px; margin-bottom:14px; }
+.share-file-name { flex:1; min-width:0; font-size:13px; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.share-file-size { font-size:11px; color:#999; flex-shrink:0; }
+.share-label { font-size:12px; color:#666; margin-bottom:6px; }
+.share-expiry { display:flex; gap:6px; margin-bottom:14px; }
+.share-chip { flex:1; border:1px solid #e0e0e0; background:#fff; color:#555; border-radius:6px; padding:6px 0; font-size:12px; cursor:pointer; }
+.share-chip:hover { border-color:#90caf9; color:#1976d2; }
+.share-chip.active { border-color:#2196F3; background:#e8f4fd; color:#1976d2; font-weight:600; }
+.share-loading { color:#999; font-size:12px; text-align:center; padding:16px 0; }
+.share-url { font-size:12px; color:#555; background:#fafbfd; }
+.share-actions { display:flex; gap:8px; margin-top:10px; }
+.share-actions .pan-btn { flex:1; }
+.share-note { margin-top:10px; font-size:11px; color:#999; line-height:1.6; }
+.share-error { color:#c62828; font-size:12px; padding:10px 0; }
 
 /* Sync */
 .sync-empty { }

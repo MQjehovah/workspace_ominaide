@@ -80,6 +80,16 @@ export default {
       }
     });
 
+    context.registerCommand("share", async (args: any) => {
+      try {
+        const expiresHours = Number(args?.expires_hours) || 24 * 7;
+        const res = await context.api.post(`/files/${args.id}/share?expires_hours=${expiresHours}`);
+        return {success: true, url: res?.url || "", filename: res?.filename || "", expires_hours: res?.expires_hours || expiresHours};
+      } catch {
+        return {success: false};
+      }
+    });
+
     context.registerCommand("upload", async (args: any) => {
       try {
         const {filename, mime_type, folder_path} = args;
