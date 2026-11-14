@@ -1,6 +1,6 @@
 {
   "name": "omniaide-todo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "待办事项",
   "description": "管理待办事项，支持自然语言创建",
   "main": "dist/index.js",
@@ -20,7 +20,8 @@
       "notification",
       "api"
     ],
-    "builtin": true
+    "builtin": true,
+    "version": "1.0.1"
   },
   "devDependencies": {
     "vite": "^5.2.0",

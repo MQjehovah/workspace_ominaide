@@ -1,6 +1,6 @@
 {
   "name": "omniaide-schedule",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "日程",
   "description": "日历日程管理",
   "main": "dist/index.js",
@@ -22,7 +22,8 @@
       "storage",
       "api"
     ],
-    "builtin": true
+    "builtin": true,
+    "version": "1.0.1"
   },
   "devDependencies": {
     "vite": "^5.2.0",

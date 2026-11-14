@@ -2,7 +2,7 @@
   <div class="sm-page">
     <div class="sm-head">
       <span class="sm-title">系统监控</span>
-      <span class="sm-sub" v-if="stats">{{ stats.platform }} · 运行 {{ stats.uptime }}</span>
+      <span class="sm-sub" v-if="stats">{{ stats.platformLabel || stats.platform }} · 运行 {{ stats.uptime }}</span>
     </div>
 
     <!-- CPU & Memory -->
@@ -42,8 +42,8 @@
       </div>
     </div>
 
-    <!-- Cleanup -->
-    <div class="sm-clean">
+    <!-- Cleanup (Windows only; macOS manages memory itself) -->
+    <div class="sm-clean" v-if="stats?.platform === 'win32'">
       <div class="sm-clean-title">清理</div>
       <div class="sm-clean-actions">
         <button class="sm-btn" :disabled="cleaning" @click="cleanMemory">

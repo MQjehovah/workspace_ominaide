@@ -1,6 +1,6 @@
 {
   "name": "omniaide-mail",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "邮件",
   "description": "聚合多个邮箱，接收和发送邮件",
   "main": "dist/index.js",
@@ -12,9 +12,18 @@
     "id": "mail",
     "displayName": "邮件",
     "icon": "Message",
-    "keywords": ["mail", "email"],
-    "permissions": ["storage", "notification", "shell"],
-    "builtin": true
+    "keywords": [
+      "mail",
+      "email"
+    ],
+    "permissions": [
+      "storage",
+      "notification",
+      "shell",
+      "api"
+    ],
+    "builtin": true,
+    "version": "1.0.1"
   },
   "devDependencies": {
     "vite": "^5.2.0",

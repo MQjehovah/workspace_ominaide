@@ -1,6 +1,6 @@
 {
   "name": "omniaide-translator",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "displayName": "翻译助手",
   "description": "划词/输入快速翻译，支持多语言（中英日韩法等）",
   "main": "dist/index.js",
@@ -25,7 +25,8 @@
       "tray",
       "palette"
     ],
-    "builtin": true
+    "builtin": true,
+    "version": "1.1.1"
   },
   "devDependencies": {
     "vite": "^5.2.0",

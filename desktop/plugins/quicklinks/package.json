@@ -1,6 +1,6 @@
 {
   "name": "omniaide-quicklinks",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "快捷指令",
   "description": "一键打开软件 / 网页 / 文件夹 / 运行脚本与命令，图标网格面板",
   "main": "dist/index.js",
@@ -23,7 +23,8 @@
       "shell",
       "shell:exec"
     ],
-    "builtin": true
+    "builtin": true,
+    "version": "1.0.1"
   },
   "devDependencies": {
     "vite": "^5.2.0",

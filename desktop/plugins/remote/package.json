@@ -1,6 +1,6 @@
 {
   "name": "omniaide-remote",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "远程控制",
   "description": "WebRTC 远程桌面控制",
   "main": "dist/index.js",
@@ -27,7 +27,8 @@
       "api",
       "config"
     ],
-    "builtin": true
+    "builtin": true,
+    "version": "1.0.1"
   },
   "dependencies": {
     "ws": "^8.18.0"

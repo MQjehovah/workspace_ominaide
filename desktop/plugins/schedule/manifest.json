@@ -3,7 +3,7 @@
   "name": "omniaide-schedule",
   "displayName": "日程管理",
   "description": "日历日程管理",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "icon": "Calendar",
   "keywords": [
     "schedule",

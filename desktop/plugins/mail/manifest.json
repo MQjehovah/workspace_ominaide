@@ -3,10 +3,18 @@
   "name": "omniaide-mail",
   "displayName": "邮件",
   "description": "聚合多个邮箱，接收和发送邮件",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "icon": "Message",
-  "keywords": ["mail", "email"],
-  "permissions": ["storage", "notification", "shell", "api"],
+  "keywords": [
+    "mail",
+    "email"
+  ],
+  "permissions": [
+    "storage",
+    "notification",
+    "shell",
+    "api"
+  ],
   "builtin": true,
   "main": "dist/index.js"
 }

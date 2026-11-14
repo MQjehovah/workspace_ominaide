@@ -1,6 +1,6 @@
 {
   "name": "omniaide-player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "播放器",
   "description": "播放本地音频和视频文件",
   "main": "dist/index.js",
@@ -23,7 +23,8 @@
       "shell",
       "config"
     ],
-    "builtin": true
+    "builtin": true,
+    "version": "1.0.1"
   },
   "devDependencies": {
     "vite": "^5.2.0",

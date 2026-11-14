@@ -96,6 +96,64 @@ const DISK_CLEAN_PS = [
   'Write-Output ([math]::Round($freed/1MB,1))',
 ].join('\n')
 
+function runCmd(command: string, args: string[], timeout = 5000): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(command, args, { timeout, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      resolve(err ? '' : String(stdout || ''))
+    })
+  })
+}
+
+async function getMacDisks() {
+  const out = await runCmd('df', ['-k'])
+  const lines = out.split('\n').slice(1)
+  const disks: any[] = []
+  const seen = new Set<string>()
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length < 9) continue
+    const device = parts[0]
+    const blocks = parseFloat(parts[1]) || 0
+    const used = parseFloat(parts[2]) || 0
+    const mount = parts.slice(8).join(' ')
+    if (!device.startsWith('/dev/')) continue
+    if (mount.startsWith('/System/Volumes/')) continue
+    if (mount !== '/' && !mount.startsWith('/Volumes/')) continue
+    const volumeName = mount.split('/').pop() || ''
+    if (['Recovery', 'Preboot', 'Update', 'VM', 'xarts', 'iSCPreboot'].includes(volumeName)) continue
+    if (seen.has(device)) continue
+    seen.add(device)
+    const totalGB = Math.round((blocks / 1024 / 1024) * 10) / 10
+    const usedGB = Math.round((used / 1024 / 1024) * 10) / 10
+    if (totalGB <= 0) continue
+    const drive = mount === '/' ? 'Macintosh HD' : mount.split('/').pop() || mount
+    disks.push({
+      drive,
+      total: totalGB,
+      used: usedGB,
+      free: Math.round((totalGB - usedGB) * 10) / 10,
+      percent: Math.round((usedGB / totalGB) * 100),
+    })
+  }
+  return disks
+}
+
+async function getMacGpu(): Promise<{ gpu: string | null; gpuMem: string | null }> {
+  const out = await runCmd('system_profiler', ['SPDisplaysDataType', '-json'], 6000)
+  if (!out) return { gpu: null, gpuMem: null }
+  try {
+    const data = JSON.parse(out)
+    const first = (data?.SPDisplaysDataType || [])[0]
+    if (!first) return { gpu: null, gpuMem: null }
+    const gpu = String(first.sppci_model || first._name || '').trim() || null
+    const cores = Number(first.sppci_cores)
+    const gpuMem = Number.isFinite(cores) && cores > 0 ? `${cores} 核` : null
+    return { gpu, gpuMem }
+  } catch {
+    return { gpu: null, gpuMem: null }
+  }
+}
+
 async function getStats() {
   const mem = memStats()
   const cpu = cpuPercent()
@@ -108,27 +166,34 @@ async function getStats() {
   let gpuUtil: number | null = null
   let gpuMem: string | null = null
 
-  const diskOut = await runPs(DISK_PS)
-  if (diskOut) {
-    disks = diskOut.split(/\r?\n/).filter(Boolean).map((line: string) => {
-      const [drive, total, used] = line.split('|')
-      const totalN = parseFloat(total) || 0
-      const usedN = parseFloat(used) || 0
-      return { drive, total: totalN, used: usedN, free: Math.round((totalN - usedN) * 10) / 10, percent: totalN ? Math.round((usedN / totalN) * 100) : 0 }
-    })
-  }
+  if (process.platform === 'darwin') {
+    disks = await getMacDisks()
+    const macGpu = await getMacGpu()
+    gpu = macGpu.gpu
+    gpuMem = macGpu.gpuMem
+  } else if (process.platform === 'win32') {
+    const diskOut = await runPs(DISK_PS)
+    if (diskOut) {
+      disks = diskOut.split(/\r?\n/).filter(Boolean).map((line: string) => {
+        const [drive, total, used] = line.split('|')
+        const totalN = parseFloat(total) || 0
+        const usedN = parseFloat(used) || 0
+        return { drive, total: totalN, used: usedN, free: Math.round((totalN - usedN) * 10) / 10, percent: totalN ? Math.round((usedN / totalN) * 100) : 0 }
+      })
+    }
 
-  const gpuOut = await runPs(GPU_NV_PS, 8000)
-  if (gpuOut) {
-    const parts = gpuOut.split(/\r?\n/)[0] || ''
-    const segs = parts.split('|')
-    if (segs.length >= 5 && !parts.includes('Adapter')) {
-      gpu = segs[0].trim()
-      gpuUtil = parseInt(segs[1]) || 0
-      gpuMem = `${segs[2]}/${segs[3]} MB`
-    } else if (segs.length >= 2) {
-      gpu = segs[0].trim()
-      gpuMem = segs[1] ? `${segs[1]} GB` : null
+    const gpuOut = await runPs(GPU_NV_PS, 8000)
+    if (gpuOut) {
+      const parts = gpuOut.split(/\r?\n/)[0] || ''
+      const segs = parts.split('|')
+      if (segs.length >= 5 && !parts.includes('Adapter')) {
+        gpu = segs[0].trim()
+        gpuUtil = parseInt(segs[1]) || 0
+        gpuMem = `${segs[2]}/${segs[3]} MB`
+      } else if (segs.length >= 2) {
+        gpu = segs[0].trim()
+        gpuMem = segs[1] ? `${segs[1]} GB` : null
+      }
     }
   }
 
@@ -138,6 +203,7 @@ async function getStats() {
     load: load[0] !== undefined ? load[0].toFixed(1) : '0',
     uptime: `${Math.floor(uptime / 86400)}天${Math.floor((uptime % 86400) / 3600)}时${Math.floor((uptime % 3600) / 60)}分`,
     platform: os.platform(),
+    platformLabel: process.platform === 'darwin' ? 'macOS' : process.platform === 'win32' ? 'Windows' : os.platform(),
     disks,
     gpu,
     gpuUtil,
@@ -163,12 +229,12 @@ export default {
         if (cpuHistory.length > 24) cpuHistory.shift()
         return {
           title: '系统监控',
-          subtitle: `${s.platform} · 运行 ${s.uptime}`,
+          subtitle: `${s.platformLabel || s.platform} · 运行 ${s.uptime}`,
           items: [
             { title: 'CPU', subtitle: `${s.cpu}%`, action: undefined },
             { title: '内存', subtitle: `${s.mem.usedGB}/${s.mem.totalGB} GB · ${s.mem.percent}%`, action: undefined },
             { title: '磁盘', subtitle: s.disks.length ? `已用 ${diskPct}%` : '—', action: undefined },
-            { title: 'GPU', subtitle: s.gpu ? `${s.gpuUtil ?? '—'}%` : '无', action: undefined },
+            { title: 'GPU', subtitle: s.gpu ? (s.gpuUtil != null ? `${s.gpuUtil}%` : s.gpu) : '无', action: undefined },
           ],
           progress: [
             {
@@ -194,7 +260,7 @@ export default {
               values: [...cpuHistory],
             },
           ],
-          buttons: [{ label: '详情 / 清理', command: 'open' }],
+          buttons: [{ label: process.platform === 'win32' ? '详情 / 清理' : '查看详情', command: 'open' }],
         }
       } catch {
         return { title: '系统监控', subtitle: '不可用', items: [] }
@@ -206,6 +272,9 @@ export default {
     })
 
     context.registerCommand('cleanMemory', async () => {
+      if (process.platform !== 'win32') {
+        return { success: false, unsupported: true, error: 'macOS 不需要手动清理内存' }
+      }
       const before = memStats().percent
       await runPs(MEM_CLEAN_PS)
       const after = memStats().percent
@@ -214,6 +283,9 @@ export default {
     })
 
     context.registerCommand('cleanDisk', async () => {
+      if (process.platform !== 'win32') {
+        return { success: false, unsupported: true, error: '当前系统不支持临时文件清理' }
+      }
       const out = await runPs(DISK_CLEAN_PS, 60000)
       const freed = parseFloat(out) || 0
       context.notification?.show('🧹 磁盘清理完成', freed > 0 ? `释放 ${freed} MB` : '无临时文件可清理')

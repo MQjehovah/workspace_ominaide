@@ -1,6 +1,6 @@
 {
   "name": "omniaide-activity",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "用户行为采集",
   "description": "采集桌面应用使用与剪贴板内容，供 AI 分析行为（默认关闭，隐私可控）",
   "main": "dist/index.js",
@@ -23,7 +23,8 @@
       "notification",
       "clipboard:read"
     ],
-    "builtin": true
+    "builtin": true,
+    "version": "1.0.1"
   },
   "devDependencies": {
     "vite": "^5.2.0",
