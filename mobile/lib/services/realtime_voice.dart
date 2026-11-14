@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -95,7 +94,6 @@ class RealtimeVoiceController extends ChangeNotifier {
   final AudioRecorder _recorder = AudioRecorder();
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _wsSub;
-  StreamSubscription<Uint8List>? _micSub;
   final BytesBuilder _micBuf = BytesBuilder(copy: true);
   Timer? _attachTimer;
   Timer? _ackTimer;
@@ -108,6 +106,17 @@ class RealtimeVoiceController extends ChangeNotifier {
   bool _closing = false;
   bool _archived = false;
   bool _disposed = false;
+
+  RealtimeVoiceController() {
+    _player.setMethodCallHandler(_onPlayerCall);
+  }
+
+  Future<dynamic> _onPlayerCall(MethodCall call) async {
+    if (call.method == 'micChunk' && call.arguments is Uint8List) {
+      _onMicData(call.arguments as Uint8List);
+    }
+    return null;
+  }
 
   bool get active =>
       state == RealtimeVoiceState.connecting ||
@@ -159,11 +168,9 @@ class RealtimeVoiceController extends ChangeNotifier {
     _attachTimer?.cancel();
     _attachTimer = null;
     _ackTimer?.cancel();
-    _micSub?.cancel();
-    _micSub = null;
     _micBuf.clear();
     try {
-      await _recorder.stop();
+      await _player.invokeMethod('voiceStop');
     } catch (_) {}
     micOn = false;
     await _stopPlayback();
@@ -337,33 +344,18 @@ class RealtimeVoiceController extends ChangeNotifier {
         _notify();
         return;
       }
-      await _configureAudioSession();
-      final stream = await _recorder.startStream(const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: _upRate,
-        numChannels: 1,
-        autoGain: true,
-        echoCancel: true,
-        noiseSuppress: true,
-        streamBufferSize: _frameBytes * 4,
-        androidConfig: AndroidRecordConfig(
-          audioSource: AndroidAudioSource.voiceCommunication,
-          audioManagerMode: AudioManagerMode.modeInCommunication,
-          speakerphone: true,
-          manageBluetooth: true,
-        ),
-        iosConfig: IosRecordConfig(
-          categoryOptions: [
-            IosAudioCategoryOption.defaultToSpeaker,
-            IosAudioCategoryOption.allowBluetooth,
-          ],
-        ),
-      ));
-      micOn = true;
-      _micSub = stream.listen(_onMicData, onError: (Object e) {
-        errorText = '麦克风读取失败：$e';
+      if (defaultTargetPlatform != TargetPlatform.iOS) {
+        errorText = '实时语音目前仅支持 iOS 客户端';
         _notify();
+        return;
+      }
+      // Capture and playback share one native engine so the platform AEC has
+      // the TTS as its render reference.
+      await _player.invokeMethod('voiceStart', {
+        'captureRate': _upRate,
+        'playbackRate': _downRate,
       });
+      micOn = true;
       _sendSpeaker(true);
       _notify();
     } catch (e) {
@@ -391,24 +383,6 @@ class RealtimeVoiceController extends ChangeNotifier {
     if (offset < bytes.length) {
       _micBuf.add(Uint8List.sublistView(bytes, offset));
     }
-  }
-
-  Future<void> _configureAudioSession() async {
-    final session = await AudioSession.instance;
-    await session.configure(AudioSessionConfiguration(
-      avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-      avAudioSessionCategoryOptions:
-          AVAudioSessionCategoryOptions.defaultToSpeaker |
-              AVAudioSessionCategoryOptions.allowBluetooth,
-      avAudioSessionMode: AVAudioSessionMode.voiceChat,
-      androidAudioAttributes: const AndroidAudioAttributes(
-        contentType: AndroidAudioContentType.speech,
-        usage: AndroidAudioUsage.voiceCommunication,
-      ),
-      androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransient,
-      androidWillPauseWhenDucked: false,
-    ));
-    await session.setActive(true);
   }
 
   void _sendSpeaker(bool on) {
@@ -673,12 +647,10 @@ class RealtimeVoiceController extends ChangeNotifier {
     _attachTimer = null;
     _ackTimer?.cancel();
     _ackTimer = null;
-    _stopPlayback();
-    _micSub?.cancel();
-    _micSub = null;
+    unawaited(_stopPlayback());
     unawaited(() async {
       try {
-        await _recorder.stop();
+        await _player.invokeMethod('voiceStop');
       } catch (_) {}
     }());
     micOn = false;
@@ -707,10 +679,14 @@ class RealtimeVoiceController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _micSub?.cancel();
     _wsSub?.cancel();
     _attachTimer?.cancel();
     _ackTimer?.cancel();
+    unawaited(() async {
+      try {
+        await _player.invokeMethod('voiceStop');
+      } catch (_) {}
+    }());
     _recorder.dispose();
     super.dispose();
   }

@@ -15,6 +15,7 @@ import Vision
   private var voicePlayerNode: AVAudioPlayerNode?
   private var voiceFormat: AVAudioFormat?
   private var voiceChunkIndex = 0
+  private var voiceTapInstalled = false
 
   /// Share-extension URL captured before Flutter attached its event listener.
   /// SceneDelegate fills this on a cold start; Dart replays it through the
@@ -90,10 +91,23 @@ import Vision
         case "speakerOff":
           try session.overrideOutputAudioPort(.none)
           result(nil)
-        case "playbackStart":
+        case "voiceStart":
           let args = call.arguments as? [String: Any]
-          let rate = (args?["sampleRate"] as? NSNumber)?.doubleValue ?? 48000
-          self.startVoicePlayback(sampleRate: rate)
+          let cap = (args?["captureRate"] as? NSNumber)?.doubleValue ?? 16000
+          let play = (args?["playbackRate"] as? NSNumber)?.doubleValue ?? 48000
+          self.startVoiceEngine(captureRate: cap, playbackRate: play)
+          result(nil)
+        case "voiceStop":
+          self.shutdownVoiceEngine()
+          result(nil)
+        case "playbackStart":
+          // The engine and input tap are owned by voiceStart; nothing to do
+          // unless playback starts before capture.
+          if self.voiceEngine == nil {
+            let args = call.arguments as? [String: Any]
+            let rate = (args?["sampleRate"] as? NSNumber)?.doubleValue ?? 48000
+            self.startVoiceEngine(captureRate: 16000, playbackRate: rate)
+          }
           result(nil)
         case "playbackPush":
           guard let typed = call.arguments as? FlutterStandardTypedData else {
@@ -253,28 +267,105 @@ import Vision
     }
   }
 
-  private func startVoicePlayback(sampleRate: Double) {
-    stopVoicePlayback()
+  /// One AVAudioEngine owns both capture and playback. Voice processing on
+  /// the input node can only cancel echo from audio rendered by the same
+  /// engine, which is why a separate player engine kept feeding the assistant
+  /// its own voice back as user input.
+  private func startVoiceEngine(captureRate: Double, playbackRate: Double) {
+    shutdownVoiceEngine()
+
+    let session = AVAudioSession.sharedInstance()
+    do {
+      try session.setCategory(
+        .playAndRecord,
+        mode: .voiceChat,
+        options: [.defaultToSpeaker, .allowBluetooth]
+      )
+      try session.setActive(true)
+      try session.overrideOutputAudioPort(.speaker)
+    } catch {
+      return
+    }
+
     let engine = AVAudioEngine()
+    voiceEngine = engine
+    let input = engine.inputNode
+    try? input.setVoiceProcessingEnabled(true)
+
+    let inputFormat = input.outputFormat(forBus: 0)
+    guard inputFormat.channelCount > 0,
+          inputFormat.sampleRate > 0,
+          let captureFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: captureRate,
+            channels: 1,
+            interleaved: true
+          ),
+          let converter = AVAudioConverter(from: inputFormat, to: captureFormat),
+          let playFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: playbackRate,
+            channels: 1,
+            interleaved: false
+          ) else {
+      shutdownVoiceEngine()
+      return
+    }
+
+    input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+      self?.handleVoiceCapture(buffer, converter: converter, format: captureFormat)
+    }
+    voiceTapInstalled = true
+
     let player = AVAudioPlayerNode()
-    guard let format = AVAudioFormat(
-      commonFormat: .pcmFormatFloat32,
-      sampleRate: sampleRate,
-      channels: 1,
-      interleaved: false
-    ) else { return }
     engine.attach(player)
-    engine.connect(player, to: engine.mainMixerNode, format: format)
+    engine.connect(player, to: engine.mainMixerNode, format: playFormat)
     engine.prepare()
     do {
       try engine.start()
     } catch {
+      shutdownVoiceEngine()
       return
     }
-    voiceEngine = engine
     voicePlayerNode = player
-    voiceFormat = format
+    voiceFormat = playFormat
     voiceChunkIndex = 0
+  }
+
+  private func handleVoiceCapture(
+    _ buffer: AVAudioPCMBuffer,
+    converter: AVAudioConverter,
+    format: AVAudioFormat
+  ) {
+    let ratio = format.sampleRate / buffer.format.sampleRate
+    let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
+    guard capacity > 0,
+          let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
+      return
+    }
+    var error: NSError?
+    var provided = false
+    _ = converter.convert(to: output, error: &error) { _, status in
+      if provided {
+        status.pointee = .noDataNow
+        return nil
+      }
+      provided = true
+      status.pointee = .haveData
+      return buffer
+    }
+    guard error == nil,
+          output.frameLength > 0,
+          let samples = output.int16ChannelData?[0] else {
+      return
+    }
+    let data = Data(bytes: samples, count: Int(output.frameLength) * 2)
+    DispatchQueue.main.async { [weak self] in
+      self?.voiceAudioChannel?.invokeMethod(
+        "micChunk",
+        arguments: FlutterStandardTypedData(bytes: data)
+      )
+    }
   }
 
   private func pushVoiceAudio(_ data: Data) {
@@ -305,14 +396,25 @@ import Vision
     }
   }
 
+  /// Stop only the answer audio; the capture tap and engine stay alive so the
+  /// user can barge in immediately.
   private func stopVoicePlayback() {
+    voicePlayerNode?.stop()
+    voicePlayerNode?.reset()
+  }
+
+  private func shutdownVoiceEngine() {
+    if voiceTapInstalled, let engine = voiceEngine {
+      engine.inputNode.removeTap(onBus: 0)
+      voiceTapInstalled = false
+    }
     voicePlayerNode?.stop()
     if let engine = voiceEngine, let player = voicePlayerNode {
       engine.detach(player)
     }
     voiceEngine?.stop()
-    voicePlayerNode = nil
     voiceEngine = nil
+    voicePlayerNode = nil
     voiceFormat = nil
   }
 
