@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -7,6 +8,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import 'api_service.dart';
@@ -62,6 +64,7 @@ class VoiceSessionController extends ChangeNotifier {
   int _firstVoice = -1;
   int _lastVoice = -1;
   final List<Uint8List> _audioQueue = [];
+  final List<File> _audioFiles = [];
 
   bool _capturing = false;
   bool _playing = false;
@@ -150,6 +153,7 @@ class VoiceSessionController extends ChangeNotifier {
     try {
       await _player.stop();
     } catch (_) {}
+    _cleanupAudioFiles();
     await _micSub?.cancel();
     _micSub = null;
     try {
@@ -436,11 +440,31 @@ class VoiceSessionController extends ChangeNotifier {
     _playing = true;
     final bytes = _audioQueue.removeAt(0);
     try {
-      await _player.play(BytesSource(bytes));
-    } catch (_) {
+      // audioplayers' iOS implementation does not support BytesSource
+      // ("setSourceBytes is not currently implemented on iOS"), so write each
+      // sentence to a temp file and play it from disk.
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/voice_seg_${DateTime.now().microsecondsSinceEpoch}.wav',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      _audioFiles.add(file);
+      await _player.play(DeviceFileSource(file.path));
+    } catch (e) {
       _playing = false;
+      errorText = '语音播放失败：${e.toString().replaceFirst('Exception: ', '')}';
+      _notify();
       _drainAudio();
     }
+  }
+
+  void _cleanupAudioFiles() {
+    for (final file in _audioFiles) {
+      try {
+        if (file.existsSync()) file.deleteSync();
+      } catch (_) {}
+    }
+    _audioFiles.clear();
   }
 
   void _completeTurn() {
