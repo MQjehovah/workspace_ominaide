@@ -71,10 +71,7 @@ class VoiceSessionController extends ChangeNotifier {
   int _preRollBytes = 0;
   int _firstVoice = -1;
   int _lastVoice = -1;
-  Future<void> _audioChain = Future.value();
-  bool _needsSeek = false;
-  bool _firstAudioOfTurn = true;
-  int _audioGeneration = 0;
+  final List<Uint8List> _audioQueue = [];
   int _turnId = 0;
   int _lastAudioAt = 0;
   // Echo probe: mute the answer for a moment and check whether the "speech"
@@ -431,7 +428,7 @@ class VoiceSessionController extends ChangeNotifier {
           if (turnId != _turnId) return;
           _streamDone = true;
           if (phase == VoicePhase.speaking || phase == VoicePhase.thinking) {
-            if (!_playing) _completeTurn();
+            if (!_playing && _audioQueue.isEmpty) _completeTurn();
           }
         },
         cancelOnError: true,
@@ -481,7 +478,7 @@ class VoiceSessionController extends ChangeNotifier {
         turn.done = true;
         turn.interrupted = msg['interrupted'] == true;
         _streamDone = true;
-        if (!_playing) _completeTurn();
+        if (!_playing && _audioQueue.isEmpty) _completeTurn();
         break;
     }
   }
@@ -493,55 +490,37 @@ class VoiceSessionController extends ChangeNotifier {
     if (phase != VoicePhase.speaking) {
       _setPhase(VoicePhase.speaking, '正在回答，可直接打断');
     }
-    // Serialize playlist mutations: sentence frames arrive as a burst and
-    // just_audio expects awaited playlist updates.
-    final generation = _audioGeneration;
-    _audioChain = _audioChain.then((_) async {
-      if (generation != _audioGeneration) return;
-      await _addAudio(wav);
-    });
+    _audioQueue.add(wav);
+    if (!_playing) unawaited(_playNext());
   }
 
-  Future<void> _addAudio(Uint8List wav) async {
+  /// Play one sentence at a time. A playlist that finishes before the next
+  /// sentence is ready leaves just_audio parked at the end on iOS, so the
+  /// remaining sentences were never played; a plain FIFO avoids that.
+  Future<void> _playNext() async {
+    if (_playing) return;
+    if (_audioQueue.isEmpty) {
+      if (_streamDone) _completeTurn();
+      return;
+    }
+    final wav = _audioQueue.removeAt(0);
+    _playing = true;
     try {
-      if (_firstAudioOfTurn) {
-        _firstAudioOfTurn = false;
-        // A fresh source per turn resets just_audio's cursor; appending to a
-        // completed playlist does not resume on iOS.
-        await _player.setAudioSource(_WavSource(wav));
-        _playing = true;
-        await _player.play();
-      } else {
-        await _player.addAudioSource(_WavSource(wav));
-        if (!_playing) {
-          _playing = true;
-          if (_needsSeek) {
-            _needsSeek = false;
-            final sequence = _player.sequenceState.sequence;
-            if (sequence.isNotEmpty) {
-              await _player.seek(Duration.zero, index: sequence.length - 1);
-            }
-          }
-          await _player.play();
-        }
-      }
+      await _player.setAudioSource(_WavSource(wav));
+      await _player.play();
       _lastAudioAt = DateTime.now().millisecondsSinceEpoch;
     } catch (e) {
       _playing = false;
       errorText = '语音播放失败：${e.toString().replaceFirst('Exception: ', '')}';
       _notify();
+      unawaited(_playNext());
     }
   }
 
   void _onPlayerState(PlayerState state) {
     if (state.processingState != ProcessingState.completed) return;
     _playing = false;
-    if (_streamDone) {
-      _completeTurn();
-    } else {
-      // More sentences are still being synthesized; the next add resumes.
-      _needsSeek = true;
-    }
+    unawaited(_playNext());
   }
 
   /// Configure the shared audio session as a voice call, not media playback.
@@ -579,10 +558,7 @@ class VoiceSessionController extends ChangeNotifier {
   }
 
   Future<void> _resetPlayback() async {
-    _audioChain = Future.value();
-    _audioGeneration += 1;
-    _needsSeek = false;
-    _firstAudioOfTurn = true;
+    _audioQueue.clear();
     _probing = false;
     _probeConfirmMs = 0;
     _bargeMs = 0;
@@ -604,7 +580,7 @@ class VoiceSessionController extends ChangeNotifier {
     if (phase == VoicePhase.listening) return;
     _streamDone = false;
     _playing = false;
-    _needsSeek = false;
+    _audioQueue.clear();
     _active?.done = true;
     _setPhase(VoicePhase.listening, '继续说话，或点击结束');
   }
