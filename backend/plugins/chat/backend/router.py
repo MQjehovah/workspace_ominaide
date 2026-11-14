@@ -892,6 +892,7 @@ async def moss_voice_config(user: dict = Depends(get_current_user)):
         "model": settings.moss_model,
         "token": key,
         "user": str(user["id"]),
+        "voice": settings.moss_voice,
     }
 
 

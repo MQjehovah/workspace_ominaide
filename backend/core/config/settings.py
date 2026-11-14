@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     moss_url: str = "wss://ai.xzrobot.com/api/v1/moss/realtime"
     moss_model: str = "moss-live-1.0"
     moss_api_key: str = ""
+    moss_voice: str = "8d85572c-a662-4d4b-b73f-9c5e7332bfc0"
     # Personal-assistant agent persona + conversation memory
     assistant_system_prompt: str = (
         "你是 OmniAide，一个私有化部署的个人 AI 助手，只服务于当前用户。"

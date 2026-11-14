@@ -86,6 +86,7 @@ class RealtimeVoiceController extends ChangeNotifier {
   RealtimeVoiceState state = RealtimeVoiceState.idle;
   String status = '点击开始，和 MOSS 实时对话';
   String? errorText;
+  String _mossVoice = '';
   String userText = '';
   String assistantText = '';
   bool micOn = false;
@@ -140,6 +141,7 @@ class RealtimeVoiceController extends ChangeNotifier {
 
     try {
       final cfg = await _fetchConfig();
+      _mossVoice = (cfg['voice'] ?? '').toString();
       final base = Uri.parse(cfg['url'] as String);
       final uri = base.replace(queryParameters: {
         ...base.queryParameters,
@@ -244,6 +246,15 @@ class RealtimeVoiceController extends ChangeNotifier {
             'tools': _tools,
           },
         });
+        if (_mossVoice.isNotEmpty) {
+          _sendJson({
+            'action': 'change_voice',
+            'voice_name': _mossVoice,
+          });
+        }
+        break;
+      case 'voice_changed':
+        _status('音色已切换，正在准备会话…');
         break;
       case 'session.updated':
         final error = (data['error'] ?? '').toString();
