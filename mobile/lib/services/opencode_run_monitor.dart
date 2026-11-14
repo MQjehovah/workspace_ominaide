@@ -203,9 +203,10 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
     final now = DateTime.now();
     final lastPong = _lastPongAt;
     if (lastPong != null &&
-        now.difference(lastPong) > const Duration(seconds: 40)) {
-      // No pong for two heartbeat cycles: treat the socket as dead. The next
-      // connection will reconcile the session index.
+        now.difference(lastPong) > const Duration(seconds: 90)) {
+      // The transport also sends WebSocket pings (uvicorn 20s/30s), so only
+      // force a reconnect after a long silence. Tearing down the socket on a
+      // single missed app-level pong caused the "断开→立刻恢复" flicker.
       _lastPongAt = now;
       _lastPingAt = now;
       unawaited(VibecodingService().reconnect());

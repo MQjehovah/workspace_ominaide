@@ -53,6 +53,8 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   String? _pendingFormReply;
   String? _openedFormId;
   Timer? _historyTimer;
+  Timer? _offlineTimer;
+  bool _showOffline = false;
 
   @override
   void initState() {
@@ -68,12 +70,20 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     );
     _service.watchSession(widget.session.id);
     _service.ensureConnected();
+    if (!_service.connected.value) {
+      _offlineTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (mounted && !_service.connected.value) {
+          setState(() => _showOffline = true);
+        }
+      });
+    }
     _loadHistory();
   }
 
   @override
   void dispose() {
     _historyTimer?.cancel();
+    _offlineTimer?.cancel();
     _service.unwatchSession(widget.session.id);
     _monitor.runs.removeListener(_onRunStateChanged);
     _service.connected.removeListener(_onConnectionChanged);
@@ -98,7 +108,17 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
 
   void _onConnectionChanged() {
     if (!mounted) return;
-    if (!_service.connected.value) return;
+    if (!_service.connected.value) {
+      _offlineTimer ??= Timer(const Duration(milliseconds: 1500), () {
+        if (mounted && !_service.connected.value) {
+          setState(() => _showOffline = true);
+        }
+      });
+      return;
+    }
+    _offlineTimer?.cancel();
+    _offlineTimer = null;
+    if (_showOffline) setState(() => _showOffline = false);
     if (_running &&
         _monitor.wasTracked(widget.machineId, widget.session.id) &&
         !_monitor.isRunning(widget.machineId, widget.session.id)) {
@@ -543,41 +563,36 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       ),
       body: Column(
         children: [
-          ValueListenableBuilder<bool>(
-            valueListenable: _service.connected,
-            builder: (context, online, _) {
-              if (online) return const SizedBox.shrink();
-              return Container(
-                width: double.infinity,
-                color: palette.accent.withValues(alpha: 0.08),
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.cloud_off_rounded,
-                      size: 15,
-                      color: palette.accent,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _running
-                            ? '实时连接已断开，正在重连。桌面端任务可能仍在运行，'
-                                '完成后会自动同步并通知。'
-                            : '实时连接已断开，正在重连…',
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.45,
-                          color: palette.ink,
-                        ),
+          if (_showOffline)
+            Container(
+              width: double.infinity,
+              color: palette.accent.withValues(alpha: 0.08),
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.cloud_off_rounded,
+                    size: 15,
+                    color: palette.accent,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _running
+                          ? '实时连接已断开，正在重连。桌面端任务可能仍在运行，'
+                              '完成后会自动同步并通知。'
+                          : '实时连接已断开，正在重连…',
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.45,
+                        color: palette.ink,
                       ),
                     ),
-                  ],
-                ),
-              );
-            },
-          ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(child: _buildMessages(palette)),
           if (_permission != null) _buildPermissionCard(palette),
           if (_form != null) _buildFormCard(palette),

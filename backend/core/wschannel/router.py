@@ -342,7 +342,10 @@ async def host_channel_ws(websocket: WebSocket):
                 if not isinstance(msg, dict):
                     continue
                 if msg.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
+                    await websocket.send_json({
+                        "channel": msg.get("channel") or "",
+                        "type": "pong",
+                    })
                     continue
                 await host_channel.handle_message(user_id, "", msg, websocket)
         except WebSocketDisconnect:
@@ -371,7 +374,10 @@ async def host_channel_ws(websocket: WebSocket):
             if not isinstance(msg, dict):
                 continue
             if msg.get("type") == "ping":
-                await websocket.send_json({"type": "pong"})
+                await websocket.send_json({
+                    "channel": msg.get("channel") or "",
+                    "type": "pong",
+                })
                 continue
             await host_channel.handle_message(user_id, machine_id, msg, websocket)
     except WebSocketDisconnect:
