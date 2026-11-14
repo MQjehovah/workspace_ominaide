@@ -493,7 +493,8 @@ export function registerIpcHandlers() {
     const cfg = await getConfig()
     if (!cfg.token) return
     const win = new BrowserWindow({
-      width: 500, height: 640, frame: false, resizable: true, show: false,
+      width: 880, height: 720, minWidth: 680, minHeight: 520,
+      frame: false, resizable: true, show: false,
       webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true },
     })
     const url = process.env.VITE_DEV_SERVER_URL
