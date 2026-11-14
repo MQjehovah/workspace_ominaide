@@ -236,6 +236,45 @@ const onCanvasClick = (e: MouseEvent) => {
   redrawCanvas()
 }
 
+const imageActionOpen = ref(false)
+const imageActions = ref<any[]>([])
+const imageActionBusy = ref('')
+const imageActionMessage = ref('')
+
+async function openImageActions() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  imageActionOpen.value = true
+  imageActionMessage.value = ''
+  try {
+    imageActions.value = await window.mqbox?.actions?.list({
+      type: 'image',
+      image: canvas.toDataURL('image/png'),
+      source: 'screenshot',
+    }) || []
+  } catch {
+    imageActions.value = []
+  }
+}
+
+async function runImageAction(item: any) {
+  const canvas = canvasRef.value
+  if (!canvas || imageActionBusy.value) return
+  imageActionBusy.value = item.key
+  imageActionMessage.value = ''
+  try {
+    const res = await window.mqbox?.actions?.run(item.key, {
+      type: 'image',
+      image: canvas.toDataURL('image/png'),
+      source: 'screenshot',
+    })
+    imageActionMessage.value = res?.message || res?.error || (res?.success ? '已完成' : '执行失败')
+  } catch (e: any) {
+    imageActionMessage.value = e?.message || '执行失败'
+  }
+  imageActionBusy.value = ''
+}
+
 const copyToClipboard = () => {
   const canvas = canvasRef.value
   if (!canvas) return
@@ -404,6 +443,7 @@ const tools: { id: Tool; label: string; icon: string }[] = [
       <button class="act-btn save app-no-drag" title="保存到文件" @click="saveToFile">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
       </button>
+      <button class="act-btn app-no-drag" title="通用动作" @click="openImageActions">⚡</button>
       <button class="act-btn copy app-no-drag" title="复制到剪贴板" @click="copyToClipboard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       </button>
@@ -413,6 +453,29 @@ const tools: { id: Tool; label: string; icon: string }[] = [
       <button class="btn-ghost app-no-drag" title="关闭" @click="closeEditor">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
+    </div>
+
+    <div v-if="imageActionOpen" class="image-actions app-no-drag">
+      <div class="ia-hd">
+        <span>图片动作</span>
+        <button class="ia-close" @click="imageActionOpen = false">✕</button>
+      </div>
+      <div v-if="!imageActions.length" class="ia-empty">没有插件注册图片动作</div>
+      <button
+        v-for="item in imageActions"
+        :key="item.key"
+        class="ia-row"
+        :disabled="!!imageActionBusy"
+        @click="runImageAction(item)"
+      >
+        <span class="ia-icon">{{ item.icon || '⚡' }}</span>
+        <span class="ia-texts">
+          <span class="ia-title">{{ item.title }}</span>
+          <span v-if="item.description" class="ia-desc">{{ item.description }}</span>
+        </span>
+        <span v-if="imageActionBusy === item.key" class="ia-spin"></span>
+      </button>
+      <div v-if="imageActionMessage" class="ia-msg">{{ imageActionMessage }}</div>
     </div>
 
     <!-- 画布区域 -->
@@ -702,4 +765,23 @@ const tools: { id: Tool; label: string; icon: string }[] = [
 .app-no-drag {
   -webkit-app-region: no-drag;
 }
+/* Universal image actions */
+.image-actions {
+  position: absolute; top: 56px; right: 14px; width: 300px; max-height: 60vh; overflow-y: auto;
+  background: #fff; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+  padding: 8px; z-index: 30;
+}
+.ia-hd { display:flex; align-items:center; justify-content:space-between; padding:4px 6px 8px; font-size:12px; font-weight:600; color:#333; }
+.ia-close { border:none; background:transparent; cursor:pointer; color:#999; }
+.ia-empty { padding:16px 8px; text-align:center; color:#999; font-size:12px; }
+.ia-row { display:flex; align-items:center; gap:8px; width:100%; border:none; background:transparent; border-radius:7px; padding:8px; cursor:pointer; text-align:left; }
+.ia-row:hover { background:#f3f8ff; }
+.ia-row:disabled { opacity:0.6; }
+.ia-icon { width:20px; text-align:center; flex-shrink:0; }
+.ia-texts { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.ia-title { font-size:12.5px; color:#333; }
+.ia-desc { font-size:10.5px; color:#999; }
+.ia-spin { width:12px; height:12px; border-radius:50%; border:2px solid #dfe3ee; border-top-color:#2196F3; animation:ia-spin 0.7s linear infinite; }
+@keyframes ia-spin { to { transform:rotate(360deg); } }
+.ia-msg { margin-top:6px; padding:7px 9px; background:#f5f9ff; color:#2f6fbf; border-radius:6px; font-size:11.5px; line-height:1.5; }
 </style>

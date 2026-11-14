@@ -16,7 +16,12 @@ import type {
   TrayMenuItem,
   PaletteItem,
   SelectionAction,
+  ActionContext,
+  ActionDescriptor,
+  UniversalAction,
+  DeepLinkSpec,
 } from '../../shared/types'
+import { getActiveWindow } from './systemContext'
 import {
   PERMISSIONS,
   expandPermissions,
@@ -67,6 +72,8 @@ setEventDispatcher(dispatchPluginEvent)
 const trayItemsByPlugin = new Map<string, TrayMenuItem[]>()
 const paletteItems = new Map<string, PaletteItem & { pluginId: string; key: string }>()
 const selectionActions = new Map<string, SelectionAction & { pluginId: string; key: string }>()
+const universalActions = new Map<string, ActionDescriptor>()
+const deepLinkRoutes = new Map<string, DeepLinkSpec & { pluginId: string; key: string }>()
 let trayChangedHandler: (() => void) | null = null
 
 export function onTrayItemsChanged(cb: () => void): void {
@@ -77,6 +84,8 @@ function clearPluginExtensions(pluginId: string): void {
   trayItemsByPlugin.delete(pluginId)
   for (const [key, item] of paletteItems) if (item.pluginId === pluginId) paletteItems.delete(key)
   for (const [key, item] of selectionActions) if (item.pluginId === pluginId) selectionActions.delete(key)
+  for (const [key, item] of universalActions) if (item.pluginId === pluginId) universalActions.delete(key)
+  for (const [key, item] of deepLinkRoutes) if (item.pluginId === pluginId) deepLinkRoutes.delete(key)
 }
 
 export function getTrayItems(): Array<TrayMenuItem & { pluginId: string; key: string }> {
@@ -99,6 +108,157 @@ export function getSelectionActions(): Array<SelectionAction & { pluginId: strin
 
 export function getSelectionAction(key: string) {
   return selectionActions.get(key) || null
+}
+
+// ---- Universal actions & deep links -------------------------------------
+
+function matchesActionContext(action: UniversalAction, input: ActionContext): boolean {
+  if (!action.accepts.includes(input.type)) return false
+  if (action.when?.app?.length) {
+    const app = (input.app?.name || input.app?.title || '').toLowerCase()
+    if (!app) return false
+    if (!action.when.app.some(name => app.includes(String(name).toLowerCase()))) return false
+  }
+  if (action.when?.ext?.length && input.files?.length) {
+    const allowed = new Set(action.when.ext.map(ext => String(ext).toLowerCase().replace(/^\./, '')))
+    const matches = input.files.some(file => {
+      const ext = String(file.name || '').split('.').pop()?.toLowerCase() || ''
+      return allowed.has(ext)
+    })
+    if (!matches) return false
+  }
+  return true
+}
+
+export function registerUniversalAction(pluginId: string, action: UniversalAction): void {
+  if (!action?.id || !action?.title || !action?.command) return
+  const key = `action:${pluginId}:${action.id}`
+  universalActions.set(key, {
+    ...action,
+    id: String(action.id),
+    title: String(action.title),
+    description: action.description ? String(action.description) : undefined,
+    icon: action.icon,
+    accepts: Array.isArray(action.accepts) && action.accepts.length ? action.accepts : ['text'],
+    when: action.when,
+    command: String(action.command),
+    args: action.args && typeof action.args === 'object' ? action.args : {},
+    pluginId,
+    key,
+  })
+}
+
+export function getApplicableActions(input: Partial<ActionContext> & { type?: ActionContext['type'] }): ActionDescriptor[] {
+  const context: ActionContext = {
+    type: input.type || 'text',
+    text: input.text,
+    url: input.url,
+    image: input.image,
+    files: input.files,
+    app: input.app,
+    source: input.source,
+  }
+  return [...universalActions.values()].filter(action => matchesActionContext(action, context))
+}
+
+export function getUniversalAction(key: string): ActionDescriptor | null {
+  return universalActions.get(key) || null
+}
+
+export async function executeUniversalAction(
+  key: string,
+  input: ActionContext,
+): Promise<{ success: boolean; message?: string; error?: string; result?: unknown }> {
+  const action = universalActions.get(key)
+  if (!action) return { success: false, error: '动作不存在' }
+  if (!action.accepts.includes(input.type)) {
+    return { success: false, error: `该动作不支持 ${input.type} 输入` }
+  }
+  if (!processManager.getProcess(action.pluginId)) {
+    await startPluginById(action.pluginId)
+  }
+  try {
+    const result = await executeCommand(action.pluginId, action.command, {
+      ...(action.args || {}),
+      ...input,
+    })
+    const message = result && typeof result === 'object' && typeof (result as any).message === 'string'
+      ? (result as any).message
+      : undefined
+    return { success: true, message, result }
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) }
+  }
+}
+
+export function registerPluginDeepLink(pluginId: string, spec: DeepLinkSpec): void {
+  if (!spec?.path || !spec?.command) return
+  const path = String(spec.path).replace(/^\/+/, '').replace(/\/+$/, '')
+  const key = `${pluginId}:${path}`
+  deepLinkRoutes.set(key, {
+    key,
+    pluginId,
+    path,
+    command: String(spec.command),
+    description: spec.description,
+  })
+}
+
+export async function handleDeepLink(rawUrl: string): Promise<boolean> {
+  let url: URL
+  try {
+    url = new URL(String(rawUrl))
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'omniaide:') return false
+
+  const query: Record<string, string> = {}
+  url.searchParams.forEach((value, key) => { query[key] = value })
+
+  if (url.hostname === 'action') {
+    const key = decodeURIComponent(url.pathname.replace(/^\/+/, '').split('/')[0] || '')
+    if (!key) return false
+    const files = query.files ? query.files.split(',').filter(Boolean).map(name => ({ name })) : undefined
+    const input: ActionContext = {
+      type: (query.type as ActionContext['type']) || 'text',
+      text: query.text,
+      url: query.url,
+      image: query.image,
+      files,
+      source: 'deeplink',
+    }
+    const result = await executeUniversalAction(key, input)
+    return result.success
+  }
+
+  if (url.hostname === 'plugin') {
+    const parts = url.pathname.replace(/^\/+/, '').split('/').filter(Boolean)
+    const pluginId = decodeURIComponent(parts.shift() || '')
+    const path = parts.map(decodeURIComponent).join('/')
+    if (!pluginId) return false
+    const route = deepLinkRoutes.get(`${pluginId}:${path}`)
+    if (!route) {
+      writeLog(pluginId, 'warn', `deep link route not found: ${path}`)
+      return false
+    }
+    try {
+      if (!processManager.getProcess(route.pluginId)) {
+        await startPluginById(route.pluginId)
+      }
+      await executeCommand(route.pluginId, route.command, {
+        path,
+        query,
+        url: rawUrl,
+      })
+      return true
+    } catch (e: any) {
+      writeLog(pluginId, 'warn', `deep link failed: ${e?.message || e}`)
+      return false
+    }
+  }
+
+  return false
 }
 
 // ---- Permission policy --------------------------------------------------
@@ -1267,6 +1427,18 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
       key,
     })
   })
+
+  proc.registerBridgeHandler('action:register', async ([action]) => {
+    registerUniversalAction(proc.pluginId, action || {})
+    return { ok: true }
+  })
+
+  proc.registerBridgeHandler('deeplink:register', async ([spec]) => {
+    registerPluginDeepLink(proc.pluginId, spec || {})
+    return { ok: true }
+  })
+
+  proc.registerBridgeHandler('system:active-window', async () => getActiveWindow())
 
   // PTY (pseudo-terminal) for interactive AI sessions
   const ptySessions = new Map<string, any>()

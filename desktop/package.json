@@ -1,6 +1,6 @@
 {
   "name": "omniaide-desktop",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "OmniAide Desktop - Plugin-based AI Workbench",
   "main": "dist-electron/main/index.js",
   "scripts": {
@@ -99,6 +99,14 @@
       {
         "from": "plugin-bundle",
         "to": "plugins"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "OmniAide Deep Links",
+        "schemes": [
+          "omniaide"
+        ]
       }
     ]
   }

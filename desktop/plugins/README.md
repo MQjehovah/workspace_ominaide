@@ -45,7 +45,9 @@ export default {
 | `clipboard:read` | 敏感 | 读取剪贴板内容 |
 | `selection` | 敏感 | 读取其他应用中选中的文本 |
 | `screenshot` | 敏感 | 截屏与截图历史 |
-| `events` | 敏感 | 接收剪贴板/文件/电源/网络/显示器/空闲事件 |
+| `events` | 敏感 | 接收剪贴板/文件/电源/网络/显示器/空闲/前台应用事件 |
+| `actions` | 敏感 | 注册通用动作（可接收选中文本、文件、图片） |
+| `deeplink` | 普通 | 注册 omniaide:// 外部深链 |
 | `schedule` | 普通 | 在应用运行时执行定时任务 |
 | `shortcut` | 敏感 | 注册全局快捷键 |
 | `files:write` | 敏感 | 修改/删除本地文件 |
@@ -83,6 +85,8 @@ context.on('power', ({ type }) => {})          // suspend, resume, lock-screen, 
 context.on('network', ({ online }) => {})
 context.on('display', ({ type, display }) => {})
 context.on('idle', ({ idle, seconds }) => {}, { thresholdSeconds: 300 })
+context.on('app-changed', ({ name, title }) => {})   // 前台应用/窗口切换
+const active = await context.getActiveWindow()       // 立即获取当前前台应用
 
 // 自定义事件（插件之间）
 context.on('my-event', (payload) => {})
@@ -130,6 +134,77 @@ context.on('notification-action', ({ actionId }) => {})
 ```
 
 通知按插件限频（800ms 内只发一条），避免刷屏。
+
+## 通用动作（Universal Actions）
+
+一个动作可以同时出现在划词浮条、文件管理、截图编辑器和深链中，宿主会按输入类型和条件过滤。
+
+```ts
+context.registerAction({
+  id: 'summarize',
+  title: '总结这段内容',
+  description: '支持选中文本和文件',
+  icon: '✨',
+  accepts: ['text', 'url', 'file'],
+  when: {
+    app: ['Finder', 'Code'],     // 仅在指定应用前台时出现
+    ext: ['md', 'txt', 'pdf'],   // 文件动作的扩展名
+  },
+  command: 'onAction',           // 通过 registerCommand 注册
+})
+
+context.registerCommand('onAction', async (ctx) => {
+  // ctx: { type, text?, url?, image?, files?, app?, source }
+  // files 元素: { name, path?, remoteId?, mime?, size? }
+  return { message: '已完成' }   // 浮条/文件弹窗会显示 message
+})
+```
+
+当前入口：
+
+- **划词浮条**：`accepts` 包含 `text` / `url`
+- **文件管理**：文件行或预览里的「⚡ 动作」，传入 `files`（远程文件带 `remoteId`）
+- **截图编辑器**：工具栏「⚡」，传入 `image`（PNG Data URL）
+
+返回 `{ replace }` / `{ copy }` / `{ message }` 时，划词浮条会按同样规则处理。
+
+## 前台应用与兜底搜索
+
+```ts
+context.on('app-changed', ({ name, title }) => {})
+const active = await context.getActiveWindow()
+
+context.registerSearchProvider({
+  keyword: '',
+  name: '我的兜底',
+  fallback: true,             // 普通搜索无结果时才运行
+  onSearch: async (query) => [],
+})
+```
+
+`app-changed` / `getActiveWindow` 需要 `events` 权限；macOS 需要辅助功能权限才能读取窗口标题。
+
+## 深链
+
+注册后可通过系统打开 `omniaide://plugin/<pluginId>/<path>?a=b`：
+
+```ts
+context.registerDeepLink({
+  path: 'new-note',
+  command: 'handleDeepLink',
+  description: '从浏览器新建笔记',
+})
+
+context.registerCommand('handleDeepLink', async ({ path, query, url }) => {})
+```
+
+也支持直接触发通用动作：
+
+```text
+omniaide://action/action%3Aplugin-id%3Aaction-id?type=text&text=hello
+```
+
+深链只在安装版生效（开发模式不会注册系统协议）。
 
 ## 面板（主窗口卡片）
 

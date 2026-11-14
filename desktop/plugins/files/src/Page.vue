@@ -152,6 +152,7 @@
                 <button class="pa-btn" :class="{ active: f.is_favorite }" :title="f.is_favorite ? '取消收藏' : '收藏'" @click="toggleFav(f)">
                   <svg width="14" height="14" viewBox="0 0 24 24" :fill="f.is_favorite ? '#FF9800' : 'none'" :stroke="f.is_favorite ? '#FF9800' : 'currentColor'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                 </button>
+                <button class="pa-btn" title="动作" @click="openActions(f)">⚡</button>
                 <button class="pa-btn" title="分享" @click="openShare(f)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                 </button>
@@ -189,6 +190,7 @@
     <div v-if="previewFileData" class="preview-panel">
       <div class="pp-header">
         <span class="pp-title">{{ previewFileData.original_name }}</span>
+        <button class="pp-share-btn" title="通用动作" @click="openActions(previewFileData)">⚡ 动作</button>
         <button class="pp-share-btn" title="分享文件" @click="openShare(previewFileData)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
           分享
@@ -340,6 +342,35 @@
             </div>
           </template>
           <div v-else-if="shareError" class="share-error">{{ shareError }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Universal actions -->
+    <div v-if="actionOpen" class="modal-overlay" @click.self="actionOpen = false">
+      <div class="modal-card small">
+        <div class="modal-hd">
+          <span>动作 · {{ actionFile?.original_name }}</span>
+          <button class="close-btn" @click="actionOpen = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="actionLoading" class="action-empty">加载中…</div>
+          <div v-else-if="!actionItems.length" class="action-empty">没有插件注册文件动作</div>
+          <button
+            v-for="item in actionItems"
+            :key="item.key"
+            class="action-row"
+            :disabled="!!actionBusy"
+            @click="runAction(item)"
+          >
+            <span class="action-icon">{{ item.icon || '⚡' }}</span>
+            <span class="action-texts">
+              <span class="action-title">{{ item.title }}</span>
+              <span v-if="item.description" class="action-desc">{{ item.description }}</span>
+            </span>
+            <span v-if="actionBusy === item.key" class="action-spin"></span>
+          </button>
+          <div v-if="actionResult" class="action-result">{{ actionResult }}</div>
         </div>
       </div>
     </div>
@@ -619,6 +650,54 @@ async function openBatchMove() {
   movePath.value = currentPath.value
   moveBreadcrumb.value = currentPath.value.split('/').filter(Boolean)
   await loadMoveFolders(currentPath.value)
+}
+
+// Universal actions
+const actionOpen = ref(false)
+const actionLoading = ref(false)
+const actionBusy = ref('')
+const actionResult = ref('')
+const actionFile = ref<any>(null)
+const actionItems = ref<any[]>([])
+
+function actionInput(file: any) {
+  return {
+    type: 'file',
+    files: [{
+      name: file.original_name,
+      remoteId: file.id,
+      mime: file.mime_type,
+      size: file.size,
+    }],
+    source: 'files',
+  }
+}
+
+async function openActions(file: any) {
+  actionFile.value = file
+  actionOpen.value = true
+  actionLoading.value = true
+  actionResult.value = ''
+  actionItems.value = []
+  try {
+    actionItems.value = await window.mqbox?.actions?.list(actionInput(file)) || []
+  } catch (e) {
+    console.error('[files] actions list failed', e)
+  }
+  actionLoading.value = false
+}
+
+async function runAction(item: any) {
+  if (!actionFile.value || actionBusy.value) return
+  actionBusy.value = item.key
+  actionResult.value = ''
+  try {
+    const res = await window.mqbox?.actions?.run(item.key, actionInput(actionFile.value))
+    actionResult.value = res?.message || res?.error || (res?.success ? '已完成' : '执行失败')
+  } catch (e: any) {
+    actionResult.value = e?.message || '执行失败'
+  }
+  actionBusy.value = ''
 }
 
 // Share
@@ -931,7 +1010,7 @@ onMounted(() => loadFiles('/'))
 .lh-name { flex:1; min-width:0; }
 .lh-size { width:80px; text-align:right; }
 .lh-date { width:150px; text-align:right; }
-.lh-actions { width:190px; text-align:right; }
+.lh-actions { width:220px; text-align:right; }
 
 .pan-list { }
 .pan-row { display:flex; align-items:center; padding:10px 12px; font-size:13px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.1s; border-radius:4px; }
@@ -957,7 +1036,7 @@ onMounted(() => loadFiles('/'))
 
 .pr-size { width:80px; text-align:right; color:#999; font-size:12px; white-space:nowrap; }
 .pr-date { width:150px; text-align:right; color:#999; font-size:12px; white-space:nowrap; }
-.pr-actions { width:190px; text-align:right; display:flex; gap:2px; justify-content:flex-end; opacity:0; transition:opacity 0.15s; }
+.pr-actions { width:220px; text-align:right; display:flex; gap:2px; justify-content:flex-end; opacity:0; transition:opacity 0.15s; }
 .pan-row:hover .pr-actions { opacity:1; }
 .pa-btn { width:28px; height:28px; border-radius:6px; border:none; background:transparent; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; color:#999; transition:all 0.12s; }
 .pa-btn:hover { background:#e3f2fd; color:#2196F3; }
@@ -1046,6 +1125,19 @@ onMounted(() => loadFiles('/'))
 /* Input */
 .pan-input { width:100%; height:38px; border-radius:8px; border:1px solid #d0d0d0; padding:0 12px; font-size:13px; outline:none; box-sizing:border-box; }
 .pan-input:focus { border-color:#2196F3; }
+
+/* Universal actions */
+.action-empty { text-align:center; color:#999; font-size:12px; padding:24px 0; }
+.action-row { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; border:1px solid #eee; background:#fff; border-radius:8px; margin-bottom:8px; cursor:pointer; text-align:left; }
+.action-row:hover { background:#f7fbff; border-color:#cfe3fb; }
+.action-row:disabled { opacity:0.6; cursor:default; }
+.action-icon { width:24px; text-align:center; font-size:15px; flex-shrink:0; }
+.action-texts { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.action-title { font-size:13px; color:#333; font-weight:500; }
+.action-desc { font-size:11px; color:#999; }
+.action-spin { width:13px; height:13px; border-radius:50%; border:2px solid #dfe3ee; border-top-color:#2196F3; animation:action-spin 0.7s linear infinite; }
+@keyframes action-spin { to { transform:rotate(360deg); } }
+.action-result { margin-top:6px; padding:8px 10px; border-radius:6px; background:#f5f9ff; color:#2f6fbf; font-size:12px; line-height:1.5; }
 
 /* Share */
 .pp-share-btn { display:flex; align-items:center; gap:4px; border:none; background:#eef6ff; color:#1976d2; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer; margin-right:8px; }

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, protocol, net, session } from 'electron'
 import { join, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { initPlugins, getProcessManager, setPluginEnabled, getTrayItems, onTrayItemsChanged, getPlugins, markPluginsShuttingDown } from './plugin/host'
+import { initPlugins, getProcessManager, setPluginEnabled, getTrayItems, onTrayItemsChanged, getPlugins, markPluginsShuttingDown, handleDeepLink } from './plugin/host'
 import { writeLog } from './logger'
 import { monitorEventLoopDelay } from 'perf_hooks'
 import { registerIpcHandlers } from './ipc'
@@ -27,6 +27,32 @@ let searchWindow: BrowserWindow | null = null
 let quickCaptureWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+
+// ---- Deep links (omniaide://) -------------------------------------------
+const pendingDeepLinks: string[] = []
+let pluginsReady = false
+
+function enqueueDeepLink(url: string): void {
+  if (!url || !url.startsWith('omniaide://')) return
+  if (pluginsReady) {
+    handleDeepLink(url).catch((e) => console.error('[deep-link]', e))
+  } else {
+    pendingDeepLinks.push(url)
+  }
+}
+
+// Keep dev and packaged instances independent: both share the same userData.
+const gotSingleInstanceLock = app.isPackaged ? app.requestSingleInstanceLock() : true
+if (!gotSingleInstanceLock) app.quit()
+app.on('second-instance', (_event, argv) => {
+  const url = argv.find(arg => typeof arg === 'string' && arg.startsWith('omniaide://'))
+  if (url) enqueueDeepLink(url)
+  showMainPanel()
+})
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  enqueueDeepLink(url)
+})
 
 const preloadPath = join(__dirname, '../preload/index.js')
 
@@ -221,11 +247,20 @@ app.whenReady().then(async () => {
     }
     return new Response('Plugin frontend not found', { status: 404 })
   })
+  if (app.isPackaged) {
+    try { app.setAsDefaultProtocolClient('omniaide') } catch {}
+  }
   registerIpcHandlers()
   registerMcpIpc()
   registerUpdaterIpc()
   initMcpManager()
   await initPlugins()
+  pluginsReady = true
+  const initialLink = process.argv.find(arg => typeof arg === 'string' && arg.startsWith('omniaide://'))
+  if (initialLink) pendingDeepLinks.push(initialLink)
+  for (const link of pendingDeepLinks.splice(0)) {
+    handleDeepLink(link).catch((e) => console.error('[deep-link]', e))
+  }
   const loopDelay = monitorEventLoopDelay({ resolution: 250 })
   loopDelay.enable()
   setInterval(() => {

@@ -82,6 +82,10 @@ contextBridge.exposeInMainWorld('mqbox', {
       ipcRenderer.on('palette:updated', () => callback())
     },
   },
+  actions: {
+    list: (input: any) => ipcRenderer.invoke('actions:list', input),
+    run: (key: string, input: any) => ipcRenderer.invoke('actions:run', key, input),
+  },
   selection: {
     onInit: (callback: (data: any) => void) => {
       ipcRenderer.on('selection:init', (_, data) => callback(data))

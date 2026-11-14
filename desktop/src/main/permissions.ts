@@ -27,6 +27,8 @@ export type PermissionId =
   | 'selection'
   | 'events'
   | 'schedule'
+  | 'actions'
+  | 'deeplink'
   | 'shortcut'
   | 'menu'
   | 'tray'
@@ -141,6 +143,18 @@ export const PERMISSIONS: Record<PermissionId, PermissionInfo> = {
     id: 'schedule',
     label: '定时任务',
     description: '在应用运行时按间隔或 cron 定时执行任务',
+    risk: 'normal',
+  },
+  actions: {
+    id: 'actions',
+    label: '通用动作',
+    description: '向选中文本、文件、图片等入口注册动作（动作可读取对应内容）',
+    risk: 'sensitive',
+  },
+  deeplink: {
+    id: 'deeplink',
+    label: '外部深链',
+    description: '通过 omniaide:// 链接触发插件命令',
     risk: 'normal',
   },
   shortcut: {
@@ -258,6 +272,9 @@ const BRIDGE_PERMISSIONS: Record<string, PermissionId[]> = {
   'tray:set': ['tray'],
   'palette:register': ['palette'],
   'selection:register': ['selection'],
+  'action:register': ['actions'],
+  'deeplink:register': ['deeplink'],
+  'system:active-window': ['events'],
   'event:subscribe': ['events'],
   'event:unsubscribe': ['events'],
   'event:emit': ['events'],

@@ -221,6 +221,56 @@ export interface PluginScheduleSpec {
   at?: string | number
 }
 
+export type ActionInputType = 'text' | 'url' | 'file' | 'image'
+
+export interface UniversalActionWhen {
+  /** Active application names (case-insensitive substring match). */
+  app?: string[]
+  /** File extensions this action applies to. */
+  ext?: string[]
+}
+
+export interface UniversalAction {
+  id: string
+  title: string
+  description?: string
+  icon?: string
+  accepts: ActionInputType[]
+  when?: UniversalActionWhen
+  command: string
+  args?: Record<string, unknown>
+}
+
+export interface ActionFileRef {
+  name: string
+  path?: string
+  remoteId?: number
+  mime?: string
+  size?: number
+}
+
+export interface ActionContext {
+  type: ActionInputType
+  text?: string
+  url?: string
+  image?: string
+  files?: ActionFileRef[]
+  app?: { name: string; title: string }
+  source?: 'selection' | 'files' | 'screenshot' | 'clipboard' | 'deeplink'
+}
+
+export interface ActionDescriptor extends UniversalAction {
+  pluginId: string
+  key: string
+}
+
+export interface DeepLinkSpec {
+  /** Path after omniaide://plugin/<pluginId>/<path>. */
+  path: string
+  command: string
+  description?: string
+}
+
 export interface SelectionRunResult {
   /** Replace the selected text in the source app (requires Accessibility). */
   replace?: string
@@ -234,6 +284,8 @@ export interface SearchProvider {
   keyword: string
   name: string
   priority?: number
+  /** Run only when the regular search produced no results. */
+  fallback?: boolean
   onSearch: (query: string) => Promise<SearchResult[]> | SearchResult[]
 }
 
@@ -331,6 +383,12 @@ export interface PluginContext {
   on: (event: string, handler: (payload: any) => void | Promise<void>, options?: PluginEventOptions) => () => void
   /** Send a custom event to other plugins that subscribed to it. */
   emit: (event: string, payload?: unknown) => void
+  /** Contribute an action usable from selection, files, images or deep links. */
+  registerAction: (action: UniversalAction) => void
+  /** Register an omniaide://plugin/<pluginId>/<path> deep link. */
+  registerDeepLink: (spec: DeepLinkSpec) => void
+  /** Current foreground application (requires the events permission). */
+  getActiveWindow: () => Promise<{ name: string; title: string } | null>
   /** Run a handler on an interval, cron schedule or one-shot time. Returns an unsubscribe function. */
   schedule: (spec: PluginScheduleSpec, handler: (payload: { id: string }) => void | Promise<void>) => () => void
   unschedule: (id: string) => void
@@ -374,6 +432,10 @@ declare global {
       }
       palette: {
         list: () => Promise<Array<PaletteItem & { pluginId: string; key: string }>>
+      }
+      actions: {
+        list: (input: ActionContext) => Promise<ActionDescriptor[]>
+        run: (key: string, input: ActionContext) => Promise<{ success: boolean; message?: string; error?: string; result?: unknown }>
       }
       selection: {
         onInit: (callback: (data: { text: string; actions: Array<SelectionAction & { pluginId: string; key: string }> }) => void) => void

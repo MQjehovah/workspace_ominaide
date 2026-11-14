@@ -70,8 +70,17 @@ function handleInput() {
         title: r.title, subtitle: r.subtitle || '',
         action: r.action, actionArgs: r.actionArgs, pluginId: r.pluginId,
       }))
+      // When nothing matched, give plugins a chance to provide fallback results.
+      let fallbackResults: any[] = []
+      if (mapped.length === 0 && q) {
+        const fb = await window.mqbox?.search?.plugin('__fallback__', q) || []
+        fallbackResults = fb.map((r: any) => ({
+          title: r.title, subtitle: r.subtitle || '',
+          action: r.action, actionArgs: r.actionArgs, pluginId: r.pluginId,
+        }))
+      }
       // Commands first, then search results.
-      results.value = [...paletteResults(q), ...mapped]
+      results.value = [...paletteResults(q), ...mapped, ...fallbackResults]
       selectedIndex.value = 0
     } catch { results.value = paletteResults(q) }
     isLoading.value = false

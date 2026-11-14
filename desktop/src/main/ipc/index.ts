@@ -3,7 +3,7 @@ import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream, rmSync } from 'fs'
 import { writeLog } from '../logger'
-import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin, getPluginPermissionStates, setPluginPermission, requestInstallConsent } from '../plugin/host'
+import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin, getPluginPermissionStates, setPluginPermission, requestInstallConsent, getApplicableActions, executeUniversalAction } from '../plugin/host'
 import * as selectionBar from '../selectionBar'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
@@ -395,9 +395,10 @@ export function registerIpcHandlers() {
   ipcMain.handle('search:plugin', async (_, keyword: string, query: string) => {
     const allPlugins = getPlugins()
     const results: any[] = []
+    const fallback = keyword === '__fallback__'
     for (const plugin of allPlugins) {
       try {
-        const res = await executeCommand(plugin.id, '__search__', { keyword, query })
+        const res = await executeCommand(plugin.id, '__search__', fallback ? { fallback: true, query } : { keyword, query })
         if (Array.isArray(res)) results.push(...res)
       } catch {}
       if (results.length >= 20) break
@@ -416,6 +417,10 @@ export function registerIpcHandlers() {
     }
     return providers
   })
+
+  // Universal actions (selection / files / images / deep links)
+  ipcMain.handle('actions:list', async (_, input: any) => getApplicableActions(input || { type: 'text' }))
+  ipcMain.handle('actions:run', async (_, key: string, input: any) => executeUniversalAction(key, input || { type: 'text' }))
 
   // Selection bar (system-wide selected-text actions)
   ipcMain.handle('selection:show', async (_, text?: string) => selectionBar.openSelectionBar(text))

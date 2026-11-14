@@ -82,14 +82,17 @@ export function createChildContext(info: PluginInfo): PluginContext {
             keyword: p.keyword,
             name: p.name,
             priority: p.priority,
+            fallback: !!p.fallback,
           }))
           sendToParent({ id: req.id, type: 'result', data: meta })
           return true
         }
-        // Execute search
+        // Execute search (fallback providers only run when explicitly asked)
         const kw = args.keyword || ''
         const q = args.query || ''
-        const matching = providers.filter((p: any) => !kw || p.keyword === kw)
+        const matching = args.fallback
+          ? providers.filter((p: any) => p.fallback)
+          : providers.filter((p: any) => !p.fallback && (!kw || p.keyword === kw))
         Promise.all(matching.map((p: any) => Promise.resolve(p.onSearch(q))))
           .then(results => sendToParent({ id: req.id, type: 'result', data: results.flat().slice(0, 20) }))
           .catch(err => sendToParent({ id: req.id, type: 'error', error: err.message }))
@@ -126,7 +129,7 @@ export function createChildContext(info: PluginInfo): PluginContext {
       return true
     }
     if (req.type === 'search') {
-      const matching = providers.filter(p => !req.keyword || p.keyword === req.keyword)
+      const matching = providers.filter(p => !p.fallback && (!req.keyword || p.keyword === req.keyword))
       Promise.all(matching.map(p => Promise.resolve(p.onSearch(req.query))))
         .then(results => sendToParent({ id: req.id, type: 'result', data: results.flat().slice(0, 20) }))
         .catch(err => sendToParent({ id: req.id, type: 'error', error: err.message }))
@@ -197,6 +200,9 @@ export function createChildContext(info: PluginInfo): PluginContext {
     setTrayItems: (items: any[]) => { rpc('tray:set', items).catch(() => {}) },
     registerPaletteItem: (item: any) => { rpc('palette:register', item).catch(() => {}) },
     registerSelectionAction: (action: any) => { rpc('selection:register', action).catch(() => {}) },
+    registerAction: (action: any) => { rpc('action:register', action).catch(() => {}) },
+    registerDeepLink: (spec: any) => { rpc('deeplink:register', spec).catch(() => {}) },
+    getActiveWindow: () => rpc('system:active-window') as Promise<{ name: string; title: string } | null>,
     on: (event: string, handler: (payload: any) => void | Promise<void>, options?: any) => {
       const name = String(event || '')
       const id = `${name}:${++eventSeq}`

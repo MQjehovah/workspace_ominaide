@@ -3,7 +3,7 @@
   "name": "omniaide-files",
   "displayName": "文件管理",
   "description": "文件管理与网盘",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "icon": "Folder",
   "keywords": [
     "file"

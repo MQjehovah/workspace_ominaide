@@ -3,6 +3,7 @@ import { watch, existsSync, statSync, type FSWatcher } from 'fs'
 import { homedir } from 'os'
 import { resolve } from 'path'
 import { writeLog } from '../logger'
+import { getActiveWindow } from './systemContext'
 
 export interface PluginEventOptions {
   /** Directory (or file) to watch for the `file` event. */
@@ -29,7 +30,9 @@ const idleStates = new Map<string, boolean>()
 let dispatch: Dispatcher | null = null
 let started = false
 let pollTimer: NodeJS.Timeout | null = null
+let appTimer: NodeJS.Timeout | null = null
 let lastNetworkOnline: boolean | null = null
+let lastAppKey = ''
 
 export function setEventDispatcher(fn: Dispatcher): void {
   dispatch = fn
@@ -152,6 +155,7 @@ export function subscribe(
   else subscriptions.push({ pluginId, id: id || `${name}-${Date.now()}`, event: name, options: { ...options } })
 
   if (name === 'file') refreshWatchers()
+  if (name === 'app-changed') ensureAppPolling()
   if (name === 'idle') idleStates.set(`${pluginId}:${id}`, false)
   if (name === 'network') {
     const online = net.isOnline()
@@ -170,6 +174,7 @@ export function unsubscribe(pluginId: string, event: string, id?: string): void 
     subscriptions.splice(i, 1)
   }
   refreshWatchers()
+  stopAppPollingIfUnused()
 }
 
 export function clearPluginSubscriptions(pluginId: string): void {
@@ -180,6 +185,33 @@ export function clearPluginSubscriptions(pluginId: string): void {
     subscriptions.splice(i, 1)
   }
   refreshWatchers()
+  stopAppPollingIfUnused()
+}
+
+async function pollActiveApp(): Promise<void> {
+  if (!subscriptions.some(sub => sub.event === 'app-changed')) {
+    stopAppPollingIfUnused()
+    return
+  }
+  const active = await getActiveWindow()
+  if (!active) return
+  const key = `${active.name}\u0000${active.title}`
+  if (key === lastAppKey) return
+  lastAppKey = key
+  emitEvent('app-changed', active)
+}
+
+function ensureAppPolling(): void {
+  if (appTimer) return
+  void pollActiveApp()
+  appTimer = setInterval(() => { void pollActiveApp() }, 2000)
+}
+
+function stopAppPollingIfUnused(): void {
+  if (subscriptions.some(sub => sub.event === 'app-changed')) return
+  if (appTimer) clearInterval(appTimer)
+  appTimer = null
+  lastAppKey = ''
 }
 
 function pollIdleAndNetwork(): void {

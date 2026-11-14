@@ -2,12 +2,13 @@ import { BrowserWindow, clipboard, screen, shell, systemPreferences, Notificatio
 import { execFile } from 'child_process'
 import { join } from 'path'
 import { readClipboardTextSafe } from './clipboard'
-import { executeCommand, getSelectionAction, getSelectionActions } from './plugin/host'
+import { executeCommand, getSelectionAction, getSelectionActions, getUniversalAction, getApplicableActions } from './plugin/host'
 import type { SelectionRunResult } from '../shared/types'
 
 let barWindow: BrowserWindow | null = null
 let currentText = ''
 let previousApp = ''
+let currentInput: { type: 'text' | 'url'; url?: string } = { type: 'text' }
 
 const BUILTIN_ACTIONS = [
   {
@@ -223,7 +224,23 @@ export async function openSelectionBar(text?: string, options?: { silent?: boole
 
   currentText = selected
   if (process.platform === 'darwin') previousApp = await getFrontmostApp()
-  const actions = [...BUILTIN_ACTIONS, ...getSelectionActions()]
+  const isUrl = /^https?:\/\//i.test(selected)
+  currentInput = { type: isUrl ? 'url' : 'text', url: isUrl ? selected : undefined }
+  const universal = getApplicableActions({
+    type: currentInput.type,
+    text: selected,
+    url: currentInput.url,
+    app: { name: previousApp, title: '' },
+    source: 'selection',
+  }).map(action => ({
+    id: action.id,
+    title: action.title,
+    description: action.description,
+    icon: action.icon,
+    pluginId: action.pluginId,
+    key: action.key,
+  }))
+  const actions = [...BUILTIN_ACTIONS, ...getSelectionActions(), ...universal]
   const win = ensureBarWindow()
   placeWindow(win, BAR_MIN_HEIGHT)
 
@@ -286,6 +303,24 @@ export async function runSelectionAction(key: string): Promise<SelectionRunResul
     }
   }
 
+  const universal = getUniversalAction(key)
+  if (universal) {
+    if (!currentText) return { error: '没有选中文本' }
+    try {
+      const result = (await executeCommand(universal.pluginId, universal.command, {
+        ...(universal.args || {}),
+        type: currentInput.type,
+        text: currentText,
+        url: currentInput.url,
+        app: { name: previousApp, title: '' },
+        source: 'selection',
+      })) as SelectionRunResult | undefined
+      return await applyActionResult(result)
+    } catch (e: any) {
+      return { error: e?.message || String(e) }
+    }
+  }
+
   const action = getSelectionAction(key)
   if (!action) return { error: '未找到该划词动作' }
   if (!currentText) return { error: '没有选中文本' }
@@ -295,42 +330,45 @@ export async function runSelectionAction(key: string): Promise<SelectionRunResul
       ...(action.args || {}),
       text: currentText,
     })) as SelectionRunResult | undefined
-
-    if (result && typeof result === 'object') {
-      if (typeof result.replace === 'string') {
-        let before = ''
-        try { before = await readClipboardTextSafe() } catch {}
-        clipboard.writeText(result.replace)
-        closeSelectionBar()
-        // The bar stole focus; put the user back into the app they came from
-        // before sending the paste keystroke.
-        await activateApp(previousApp)
-        await sleep(180)
-        try {
-          await pasteIntoForeground()
-        } catch {
-          return { message: '已复制，可粘贴替换（需要辅助功能权限）' }
-        }
-        await sleep(400)
-        try {
-          if (before) clipboard.writeText(before)
-          else clipboard.clear()
-        } catch {}
-        return {}
-      }
-      if (typeof result.copy === 'string') {
-        clipboard.writeText(result.copy)
-        closeSelectionBar()
-        return {}
-      }
-      if (typeof result.message === 'string') {
-        return { message: result.message }
-      }
-    }
-
-    closeSelectionBar()
-    return {}
+    return await applyActionResult(result)
   } catch (e: any) {
     return { error: e?.message || String(e) }
   }
+}
+
+async function applyActionResult(result: SelectionRunResult | undefined): Promise<SelectionRunResult | { error: string }> {
+  if (result && typeof result === 'object') {
+    if (typeof result.replace === 'string') {
+      let before = ''
+      try { before = await readClipboardTextSafe() } catch {}
+      clipboard.writeText(result.replace)
+      closeSelectionBar()
+      // The bar stole focus; put the user back into the app they came from
+      // before sending the paste keystroke.
+      await activateApp(previousApp)
+      await sleep(180)
+      try {
+        await pasteIntoForeground()
+      } catch {
+        return { message: '已复制，可粘贴替换（需要辅助功能权限）' }
+      }
+      await sleep(400)
+      try {
+        if (before) clipboard.writeText(before)
+        else clipboard.clear()
+      } catch {}
+      return {}
+    }
+    if (typeof result.copy === 'string') {
+      clipboard.writeText(result.copy)
+      closeSelectionBar()
+      return {}
+    }
+    if (typeof result.message === 'string') {
+      return { message: result.message }
+    }
+  }
+
+  closeSelectionBar()
+  return {}
 }
