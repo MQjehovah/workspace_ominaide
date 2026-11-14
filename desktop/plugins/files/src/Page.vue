@@ -734,25 +734,57 @@ async function uploadFiles(list: File[]) {
   for (const file of list) {
     const item: any = { name: file.name, percent: 0, status: 'uploading', statusText: '0%' }
     uploadQueue.value.push(item)
+    const mime = file.type || 'application/octet-stream'
+    const track = (xhr: XMLHttpRequest) => {
+      xhr.upload.onprogress = (e) => {
+        if (!e.total) return
+        item.percent = Math.round((e.loaded / e.total) * 100)
+        item.statusText = item.percent + '%'
+      }
+    }
     try {
-      const form = new FormData()
-      form.append('file', file)
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.upload.onprogress = (e) => {
-          if (!e.total) return
-          item.percent = Math.round((e.loaded / e.total) * 100)
-          item.statusText = item.percent + '%'
-        }
-        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`)))
-        xhr.onerror = () => reject(new Error('network error'))
-        xhr.open('POST', `${serverUrl}/api/files/upload/direct?folder_path=${encodeURIComponent(currentPath.value)}`)
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-        xhr.send(form)
-      })
+      // Presigned direct-to-MinIO upload. Falls back to the backend proxy when
+      // the storage endpoint is not publicly reachable.
+      let info: any = null
+      try {
+        info = await window.mqbox?.api.post('/files/upload-url', {
+          filename: file.name,
+          mime_type: mime,
+          folder_path: currentPath.value,
+        })
+      } catch { info = null }
+
+      if (info?.upload_url) {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          track(xhr)
+          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`)))
+          xhr.onerror = () => reject(new Error('network error'))
+          xhr.open('PUT', info.upload_url)
+          xhr.setRequestHeader('Content-Type', mime)
+          xhr.send(file)
+        })
+        item.statusText = '处理中…'
+        await window.mqbox?.api.post('/files/confirm', { file_id: info.file_id })
+      } else {
+        const form = new FormData()
+        form.append('file', file)
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          track(xhr)
+          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`)))
+          xhr.onerror = () => reject(new Error('network error'))
+          xhr.open('POST', `${serverUrl}/api/files/upload/direct?folder_path=${encodeURIComponent(currentPath.value)}`)
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+          xhr.send(form)
+        })
+      }
       item.percent = 100
       item.status = 'done'
       item.statusText = '完成'
+      setTimeout(() => {
+        uploadQueue.value = uploadQueue.value.filter((row: any) => row !== item)
+      }, 1500)
     } catch (e) {
       item.status = 'error'
       item.statusText = '失败'
