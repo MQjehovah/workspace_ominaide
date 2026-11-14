@@ -102,6 +102,7 @@ class RealtimeVoiceController extends ChangeNotifier {
   Timer? _micWatchdog;
   int _micChunks = 0;
   int _lastLevelAt = 0;
+  bool _triedNoAec = false;
 
   final Map<String, _Run> _runs = {};
   final List<_AudioItem> _audioItems = [];
@@ -355,30 +356,68 @@ class RealtimeVoiceController extends ChangeNotifier {
         return;
       }
       // Capture and playback share one native engine so the platform AEC has
-      // the TTS as its render reference.
-      final result = await _player.invokeMethod('voiceStart', {
-        'captureRate': _upRate,
-        'playbackRate': _downRate,
-      });
-      if (result is Map && result['ok'] == false) {
-        errorText = '麦克风启动失败：${result['error'] ?? 'unknown'}';
+      // the TTS as its render reference. If voice processing prevents the
+      // engine from starting on this route, retry without it.
+      _triedNoAec = false;
+      var started = await _startNativeCapture(aec: true);
+      if (!started) {
+        _triedNoAec = true;
+        started = await _startNativeCapture(aec: false);
+      }
+      if (!started) {
+        errorText = '麦克风启动失败：原生 engine 未能运行';
         _notify();
         return;
       }
       micOn = true;
-      _micChunks = 0;
-      _micWatchdog?.cancel();
-      _micWatchdog = Timer(const Duration(seconds: 3), () {
-        if (micOn && _micChunks == 0) {
-          errorText = '麦克风没有数据，请检查权限或重新进入语音页面';
-          _notify();
-        }
-      });
+      _armMicWatchdog();
       _notify();
     } catch (e) {
       errorText = '麦克风启动失败：${_short(e)}';
       _notify();
     }
+  }
+
+  Future<bool> _startNativeCapture({required bool aec}) async {
+    _micChunks = 0;
+    try {
+      final result = await _player.invokeMethod('voiceStart', {
+        'captureRate': _upRate,
+        'playbackRate': _downRate,
+        'aec': aec,
+      });
+      if (result is Map) {
+        return result['ok'] == true && result['running'] == true;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _armMicWatchdog() {
+    _micWatchdog?.cancel();
+    _micWatchdog = Timer(const Duration(seconds: 3), () async {
+      if (!micOn || _micChunks > 0) return;
+      Map<dynamic, dynamic> stats = const {};
+      try {
+        final value = await _player.invokeMethod('voiceStats');
+        if (value is Map) stats = value;
+      } catch (_) {}
+      final running = stats['running'] == true;
+      final tap = stats['tapCount'];
+      if (!_triedNoAec && (!running || tap == 0)) {
+        _triedNoAec = true;
+        final ok = await _startNativeCapture(aec: false);
+        if (ok) {
+          _armMicWatchdog();
+          return;
+        }
+      }
+      errorText =
+          '麦克风没有数据（tap=$tap chunks=${stats['chunks']} running=$running）';
+      _notify();
+    });
   }
 
   void _onMicData(Uint8List chunk) {

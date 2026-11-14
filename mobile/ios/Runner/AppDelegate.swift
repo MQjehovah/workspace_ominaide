@@ -16,6 +16,9 @@ import Vision
   private var voiceFormat: AVAudioFormat?
   private var voiceChunkIndex = 0
   private var voiceTapInstalled = false
+  private var voiceTapCount = 0
+  private var voiceMicChunks = 0
+  private var voiceConfigObserver: NSObjectProtocol?
 
   /// Share-extension URL captured before Flutter attached its event listener.
   /// SceneDelegate fills this on a cold start; Dart replays it through the
@@ -91,17 +94,28 @@ import Vision
           let args = call.arguments as? [String: Any]
           let cap = (args?["captureRate"] as? NSNumber)?.doubleValue ?? 16000
           let play = (args?["playbackRate"] as? NSNumber)?.doubleValue ?? 48000
-          result(self.startVoiceEngine(captureRate: cap, playbackRate: play))
+          let aec = (args?["aec"] as? Bool) ?? true
+          result(self.startVoiceEngine(captureRate: cap, playbackRate: play, useVoiceProcessing: aec))
         case "voiceStop":
           self.shutdownVoiceEngine()
           result(nil)
+        case "voiceStats":
+          if let engine = self.voiceEngine, !engine.isRunning {
+            try? AVAudioSession.sharedInstance().setActive(true)
+            try? engine.start()
+          }
+          result([
+            "tapCount": self.voiceTapCount,
+            "chunks": self.voiceMicChunks,
+            "running": self.voiceEngine?.isRunning ?? false,
+          ])
         case "playbackStart":
           // The engine and input tap are owned by voiceStart; nothing to do
           // unless playback starts before capture.
           if self.voiceEngine == nil {
             let args = call.arguments as? [String: Any]
             let rate = (args?["sampleRate"] as? NSNumber)?.doubleValue ?? 48000
-            self.startVoiceEngine(captureRate: 16000, playbackRate: rate)
+            self.startVoiceEngine(captureRate: 16000, playbackRate: rate, useVoiceProcessing: false)
           }
           result(nil)
         case "playbackPush":
@@ -266,7 +280,7 @@ import Vision
   /// the input node can only cancel echo from audio rendered by the same
   /// engine, which is why a separate player engine kept feeding the assistant
   /// its own voice back as user input.
-  private func startVoiceEngine(captureRate: Double, playbackRate: Double) -> [String: Any] {
+  private func startVoiceEngine(captureRate: Double, playbackRate: Double, useVoiceProcessing: Bool) -> [String: Any] {
     shutdownVoiceEngine()
 
     let session = AVAudioSession.sharedInstance()
@@ -285,18 +299,18 @@ import Vision
     let engine = AVAudioEngine()
     voiceEngine = engine
     let input = engine.inputNode
-    try? input.setVoiceProcessingEnabled(true)
+    if useVoiceProcessing {
+      do {
+        try input.setVoiceProcessingEnabled(true)
+      } catch {
+        shutdownVoiceEngine()
+        return ["ok": false, "error": "voice processing: \(error)"]
+      }
+    }
 
     let inputFormat = input.outputFormat(forBus: 0)
     guard inputFormat.channelCount > 0,
           inputFormat.sampleRate > 0,
-          let captureFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: captureRate,
-            channels: 1,
-            interleaved: true
-          ),
-          let converter = AVAudioConverter(from: inputFormat, to: captureFormat),
           let playFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: playbackRate,
@@ -307,8 +321,10 @@ import Vision
       return ["ok": false, "error": "unsupported audio formats"]
     }
 
+    voiceTapCount = 0
+    voiceMicChunks = 0
     input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-      self?.handleVoiceCapture(buffer, converter: converter, format: captureFormat)
+      self?.handleVoiceCapture(buffer)
     }
     voiceTapInstalled = true
 
@@ -325,41 +341,77 @@ import Vision
     voicePlayerNode = player
     voiceFormat = playFormat
     voiceChunkIndex = 0
+    voiceConfigObserver = NotificationCenter.default.addObserver(
+      forName: .AVAudioEngineConfigurationChange,
+      object: engine,
+      queue: .main
+    ) { [weak self] _ in
+      guard let self = self,
+            let current = self.voiceEngine,
+            current === engine,
+            !current.isRunning else { return }
+      try? AVAudioSession.sharedInstance().setActive(true)
+      try? current.start()
+    }
     return [
       "ok": true,
+      "running": engine.isRunning,
       "inputRate": inputFormat.sampleRate,
       "channels": inputFormat.channelCount,
     ]
   }
 
-  private func handleVoiceCapture(
-    _ buffer: AVAudioPCMBuffer,
-    converter: AVAudioConverter,
-    format: AVAudioFormat
-  ) {
-    let ratio = format.sampleRate / buffer.format.sampleRate
-    let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
-    guard capacity > 0,
-          let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
-      return
-    }
-    var error: NSError?
-    var provided = false
-    _ = converter.convert(to: output, error: &error) { _, status in
-      if provided {
-        status.pointee = .noDataNow
-        return nil
+  /// Manual downmix + linear resample to 16 kHz mono Int16. AVAudioConverter
+  /// was silently producing no frames on some routes; this path is predictable
+  /// and cheap at voice rates.
+  private func handleVoiceCapture(_ buffer: AVAudioPCMBuffer) {
+    voiceTapCount += 1
+    let frames = Int(buffer.frameLength)
+    guard frames > 0 else { return }
+    let inRate = buffer.format.sampleRate
+    let channels = Int(buffer.format.channelCount)
+    guard inRate > 0, channels > 0 else { return }
+    let outCount = max(1, Int(Double(frames) * 16000.0 / inRate))
+    var out = [Int16](repeating: 0, count: outCount)
+
+    if let floatData = buffer.floatChannelData {
+      for i in 0..<outCount {
+        let pos = Double(i) * inRate / 16000.0
+        let idx = min(frames - 1, Int(pos))
+        let frac = Float(pos - Double(idx))
+        var sample: Float = 0
+        for ch in 0..<channels { sample += floatData[ch][idx] }
+        sample /= Float(channels)
+        if idx + 1 < frames {
+          var next: Float = 0
+          for ch in 0..<channels { next += floatData[ch][idx + 1] }
+          next /= Float(channels)
+          sample += (next - sample) * frac
+        }
+        out[i] = Int16(max(-1, min(1, sample)) * 32767)
       }
-      provided = true
-      status.pointee = .haveData
-      return buffer
-    }
-    guard error == nil,
-          output.frameLength > 0,
-          let samples = output.int16ChannelData?[0] else {
+    } else if let intData = buffer.int16ChannelData {
+      for i in 0..<outCount {
+        let pos = Double(i) * inRate / 16000.0
+        let idx = min(frames - 1, Int(pos))
+        let frac = Float(pos - Double(idx))
+        var sample: Float = 0
+        for ch in 0..<channels { sample += Float(intData[ch][idx]) }
+        sample /= Float(channels)
+        if idx + 1 < frames {
+          var next: Float = 0
+          for ch in 0..<channels { next += Float(intData[ch][idx + 1]) }
+          next /= Float(channels)
+          sample += (next - sample) * frac
+        }
+        out[i] = Int16(max(-1, min(1, sample / 32768.0)) * 32767)
+      }
+    } else {
       return
     }
-    let data = Data(bytes: samples, count: Int(output.frameLength) * 2)
+
+    let data = out.withUnsafeBufferPointer { Data(buffer: $0) }
+    voiceMicChunks += 1
     DispatchQueue.main.async { [weak self] in
       self?.voiceAudioChannel?.invokeMethod(
         "micChunk",
@@ -404,6 +456,10 @@ import Vision
   }
 
   private func shutdownVoiceEngine() {
+    if let observer = voiceConfigObserver {
+      NotificationCenter.default.removeObserver(observer)
+      voiceConfigObserver = nil
+    }
     if voiceTapInstalled, let engine = voiceEngine {
       engine.inputNode.removeTap(onBus: 0)
       voiceTapInstalled = false
