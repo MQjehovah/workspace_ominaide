@@ -87,6 +87,9 @@ class RealtimeVoiceController extends ChangeNotifier {
   String status = '点击开始，和 MOSS 实时对话';
   String? errorText;
   String _mossVoice = '';
+  String _personaName = '';
+  String _personaPrompt = '';
+  String _instructions = '';
   String userText = '';
   String assistantText = '';
   bool micOn = false;
@@ -142,6 +145,10 @@ class RealtimeVoiceController extends ChangeNotifier {
     try {
       final cfg = await _fetchConfig();
       _mossVoice = (cfg['voice'] ?? '').toString();
+      final persona = (cfg['persona'] as Map?)?.cast<String, dynamic>();
+      _personaName = (persona?['name'] ?? '').toString();
+      _personaPrompt = (persona?['prompt'] ?? '').toString();
+      _instructions = (cfg['instructions'] ?? '').toString();
       final base = Uri.parse(cfg['url'] as String);
       final uri = base.replace(queryParameters: {
         ...base.queryParameters,
@@ -237,12 +244,14 @@ class RealtimeVoiceController extends ChangeNotifier {
           'action': 'session.update',
           'session': {
             'persona': {
-              'name': '小安',
-              'prompt': '你是 OmniAide 的语音助手，语气自然、简洁，像是在打电话。',
+              'name': _personaName.isEmpty ? 'OmniAide' : _personaName,
+              'prompt': _personaPrompt.isEmpty
+                  ? '你是 OmniAide 的语音助手，语气自然、简洁，像是在打电话。'
+                  : _personaPrompt,
             },
-            'instructions':
-                '用简体中文口语化回答，尽量简短，不要使用 Markdown。'
-                '涉及用户个人数据或需要操作时，优先调用 omniaide_query / omniaide_action，不要凭空猜测。',
+            'instructions': _instructions.isEmpty
+                ? '用简体中文口语化回答，尽量简短，不要使用 Markdown。'
+                : _instructions,
             'tools': _tools,
           },
         });
@@ -699,15 +708,39 @@ class RealtimeVoiceController extends ChangeNotifier {
   void _archiveTurn({bool interrupted = false}) {
     if (_archived) return;
     if (userText.isEmpty && assistantText.isEmpty) return;
+    final user = userText;
+    final assistant = assistantText;
     turns.add(RealtimeTurn(
-      user: userText,
-      assistant: assistantText,
+      user: user,
+      assistant: assistant,
       interrupted: interrupted,
     ));
     _archived = true;
     userText = '';
     assistantText = '';
+    unawaited(_logTurn(user, assistant));
     _notify();
+  }
+
+  Future<void> _logTurn(String user, String assistant) async {
+    try {
+      final api = ApiService();
+      final token = api.token;
+      if (token == null || token.isEmpty) return;
+      await http
+          .post(
+            Uri.parse('${api.baseUrl}/api/chat/voice/log'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'user_text': user,
+              'assistant_text': assistant,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {}
   }
 
   void _status(String text) {

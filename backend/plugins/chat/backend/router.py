@@ -887,13 +887,95 @@ async def moss_voice_config(user: dict = Depends(get_current_user)):
     key = settings.moss_api_key or settings.asr_api_key or settings.llm_api_key
     if not key:
         raise HTTPException(status_code=400, detail="MOSS gateway key not configured")
+
+    # MOSS-Live only keeps memory for the lifetime of one WebSocket session
+    # (the gateway's ?user does not persist it in practice), so inject the
+    # OmniAide long-term memory and the last voice turns into the instructions.
+    bot = await _resolve_bot(user["id"], None)
+    memory = ""
+    try:
+        memory = await asyncio.wait_for(
+            build_bot_context(user["id"], bot, query=""), timeout=3
+        ) or ""
+    except Exception:
+        memory = ""
+
+    history = ""
+    try:
+        from plugins.chat.backend.models import ChatMessage
+
+        async with async_session() as db:
+            rows = (
+                await db.execute(
+                    select(ChatMessage)
+                    .where(
+                        ChatMessage.user_id == user["id"],
+                        ChatMessage.session_id == "voice-mobile",
+                    )
+                    .order_by(ChatMessage.id.desc())
+                    .limit(8)
+                )
+            ).scalars().all()
+        for row in reversed(rows):
+            role = "用户" if row.role == "user" else "助手"
+            text = (row.content or "").strip().replace("\n", " ")
+            if text:
+                history += f"{role}: {text[:300]}\n"
+    except Exception:
+        history = ""
+
+    instructions = (
+        "用简体中文口语化回答，尽量简短，不要使用 Markdown。"
+        "涉及用户个人数据或需要操作时，优先调用 omniaide_query / omniaide_action，不要凭空猜测。"
+    )
+    if memory:
+        instructions += (
+            "\n\n以下是用户的跨会话记忆，回答时自然使用，不要机械复述：\n"
+            + memory[:3000]
+        )
+    if history:
+        instructions += "\n\n最近几轮语音对话（可作为上下文）：\n" + history[:2000]
+
     return {
         "url": settings.moss_url,
         "model": settings.moss_model,
         "token": key,
         "user": str(user["id"]),
         "voice": settings.moss_voice,
+        "persona": {
+            "name": (bot.name or "OmniAide")[:64],
+            "prompt": (
+                bot.system_prompt
+                or "你是 OmniAide 的语音助手，语气自然、简洁，像是在打电话。"
+            )[:4000],
+        },
+        "instructions": instructions[:7000],
     }
+
+
+class VoiceTurnLog(BaseModel):
+    user_text: str = ""
+    assistant_text: str = ""
+
+
+@router.post("/voice/log")
+async def voice_log(req: VoiceTurnLog, user: dict = Depends(get_current_user)):
+    """Persist a completed voice turn so the next call can recall it."""
+    bot = await _resolve_bot(user["id"], None)
+    session_id = "voice-mobile"
+    if req.user_text.strip():
+        await save_message(
+            user["id"], "user", req.user_text.strip()[:2000], session_id, bot=bot
+        )
+    if req.assistant_text.strip():
+        await save_message(
+            user["id"],
+            "assistant",
+            req.assistant_text.strip()[:4000],
+            session_id,
+            bot=bot,
+        )
+    return {"ok": True}
 
 
 @router.post("/voice/interrupt")
