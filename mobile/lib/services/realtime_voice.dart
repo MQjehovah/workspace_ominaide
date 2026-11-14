@@ -44,49 +44,11 @@ class RealtimeVoiceController extends ChangeNotifier {
   static const int _frameBytes = _upRate * 2 * 20 ~/ 1000; // 640
   static const MethodChannel _player = MethodChannel('omniaide/voice_audio');
 
-  static const List<Map<String, dynamic>> _tools = [
-    {
-      'type': 'function',
-      'name': 'omniaide_query',
-      'description':
-          '查询 OmniAide 里的信息：待办、日程、笔记、文件、项目、天气、网页搜索等。只读，不修改任何数据。',
-      'parameters': {
-        'type': 'object',
-        'properties': {
-          'request': {
-            'type': 'string',
-            'description': '完整的自然语言查询，例如“今天有哪些待办”',
-          },
-        },
-        'required': ['request'],
-      },
-      'execution_mode': 'async_query',
-      'read_only': true,
-    },
-    {
-      'type': 'function',
-      'name': 'omniaide_action',
-      'description':
-          '在 OmniAide 里执行有副作用的操作：创建或修改待办、日程、笔记，发送消息等。',
-      'parameters': {
-        'type': 'object',
-        'properties': {
-          'request': {
-            'type': 'string',
-            'description': '要执行的操作，包含必要参数，例如“创建明天 15:00 的待办：买牛奶”',
-          },
-        },
-        'required': ['request'],
-      },
-      'execution_mode': 'async_effect',
-      'read_only': false,
-    },
-  ];
-
   RealtimeVoiceState state = RealtimeVoiceState.idle;
   String status = '点击开始，和 MOSS 实时对话';
   String? errorText;
   String _mossVoice = '';
+  List<Map<String, dynamic>> _voiceTools = [];
   String _personaName = '';
   String _personaPrompt = '';
   String _instructions = '';
@@ -149,6 +111,13 @@ class RealtimeVoiceController extends ChangeNotifier {
       _personaName = (persona?['name'] ?? '').toString();
       _personaPrompt = (persona?['prompt'] ?? '').toString();
       _instructions = (cfg['instructions'] ?? '').toString();
+      final rawTools = cfg['tools'];
+      if (rawTools is List) {
+        _voiceTools = rawTools
+            .whereType<Map>()
+            .map((item) => item.cast<String, dynamic>())
+            .toList();
+      }
       final base = Uri.parse(cfg['url'] as String);
       final uri = base.replace(queryParameters: {
         ...base.queryParameters,
@@ -244,21 +213,21 @@ class RealtimeVoiceController extends ChangeNotifier {
         _attachTimer?.cancel();
         _attachTimer = null;
         _setState(RealtimeVoiceState.ready, '正在准备会话…');
-        _sendJson({
-          'action': 'session.update',
-          'session': {
-            'persona': {
-              'name': _personaName.isEmpty ? 'OmniAide' : _personaName,
-              'prompt': _personaPrompt.isEmpty
-                  ? '你是 OmniAide 的语音助手，语气自然、简洁，像是在打电话。'
-                  : _personaPrompt,
-            },
-            'instructions': _instructions.isEmpty
-                ? '用简体中文口语化回答，尽量简短，不要使用 Markdown。'
-                : _instructions,
-            'tools': _tools,
+        final session = <String, dynamic>{
+          'persona': {
+            'name': _personaName.isEmpty ? 'OmniAide' : _personaName,
+            'prompt': _personaPrompt.isEmpty
+                ? '你是 OmniAide 的语音助手，语气自然、简洁，像是在打电话。'
+                : _personaPrompt,
           },
-        });
+          'instructions': _instructions.isEmpty
+              ? '用简体中文口语化回答，尽量简短，不要使用 Markdown。'
+              : _instructions,
+        };
+        if (_voiceTools.isNotEmpty) {
+          session['tools'] = _voiceTools;
+        }
+        _sendJson({'action': 'session.update', 'session': session});
         if (_mossVoice.isNotEmpty) {
           _sendJson({
             'action': 'change_voice',
@@ -515,7 +484,7 @@ class RealtimeVoiceController extends ChangeNotifier {
       return;
     }
 
-    _status(name == 'omniaide_action' ? '正在执行操作…' : '正在查询 OmniAide…');
+    _status('正在执行 OmniAide 工具…');
     String output;
     try {
       output = await _callTool(name, args);
