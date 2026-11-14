@@ -74,7 +74,6 @@ class VoiceSessionController extends ChangeNotifier {
   bool _firstAudioOfTurn = true;
   int _audioGeneration = 0;
   int _turnId = 0;
-  int _vadCooldownUntil = 0;
   int _lastAudioAt = 0;
 
   bool _capturing = false;
@@ -171,13 +170,6 @@ class VoiceSessionController extends ChangeNotifier {
     _setPhase(VoicePhase.idle, '已结束，点击重新开始');
   }
 
-  /// Manually interrupt the assistant (button fallback for speakerphone mode).
-  void interruptNow() {
-    if (phase == VoicePhase.speaking || phase == VoicePhase.thinking) {
-      _bargeIn(manual: true);
-    }
-  }
-
   void setAutoInterrupt(bool value) {
     autoInterrupt = value;
     _notify();
@@ -223,6 +215,14 @@ class VoiceSessionController extends ChangeNotifier {
       if (_silenceMs >= 700 || _utteranceMs >= 30000) {
         _finishUtterance();
       }
+    } else if (phase == VoicePhase.thinking) {
+      if (autoInterrupt) {
+        // The user can change their mind while the answer is being prepared:
+        // speaking now drops the pending turn and starts a new one.
+        final barge = math.max(1000.0, _noiseFloor * 5);
+        _bargeMs = rms > barge ? _bargeMs + _frameMs : 0;
+        if (_bargeMs >= 200) _bargeIn();
+      }
     } else if (phase == VoicePhase.speaking) {
       if (autoInterrupt) {
         // Speaker leakage is strongest right after a sentence starts, so
@@ -239,16 +239,10 @@ class VoiceSessionController extends ChangeNotifier {
         if (_bargeMs >= 280) _bargeIn();
       }
     } else if (phase == VoicePhase.listening) {
-      final cooling =
-          DateTime.now().millisecondsSinceEpoch < _vadCooldownUntil;
-      if (cooling) {
-        _speechMs = 0;
-      } else {
-        _speechMs = speech
-            ? _speechMs + _frameMs
-            : math.max(0, _speechMs - _frameMs * 2);
-        if (_speechMs >= 60) _beginUtterance();
-      }
+      _speechMs = speech
+          ? _speechMs + _frameMs
+          : math.max(0, _speechMs - _frameMs * 2);
+      if (_speechMs >= 60) _beginUtterance();
     }
 
     _notifyLevel();
@@ -517,9 +511,9 @@ class VoiceSessionController extends ChangeNotifier {
     _setPhase(VoicePhase.listening, '继续说话，或点击结束');
   }
 
-  void _bargeIn({bool manual = false}) {
+  void _bargeIn() {
     // Invalidate the running turn first: any buffered deltas/audio that arrive
-    // after the tap must not push the UI back into thinking/speaking.
+    // after the interruption must not push the UI back into thinking/speaking.
     _turnId += 1;
     _bargeMs = 0;
     _streamDone = false;
@@ -529,22 +523,14 @@ class VoiceSessionController extends ChangeNotifier {
       turn.interrupted = true;
     }
     // Switch to recording before closing the HTTP stream so the resulting
-    // onError/onDone callbacks do not tear the session down. A manual tap
-    // just stops the answer and waits for the next utterance.
-    if (manual) {
-      _capturing = false;
-      _preRoll.clear();
-      _preRollBytes = 0;
-      _vadCooldownUntil = DateTime.now().millisecondsSinceEpoch + 500;
-      _setPhase(VoicePhase.listening, '已打断，请继续说');
-    } else if (micActive) {
+    // onError/onDone callbacks do not tear the session down.
+    if (micActive) {
       _beginUtterance(fromBarge: true);
     } else {
       _setPhase(VoicePhase.idle, '已打断');
     }
     _abortStream();
     _abortServerTurn();
-    if (manual) status = '已打断，请继续说';
     _notify();
   }
 

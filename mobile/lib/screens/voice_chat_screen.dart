@@ -125,8 +125,8 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '戴耳机效果最好：外放时 AI 的声音可能被麦克风收进去，'
-                  '可以调高打断门槛或点「打断」。',
+                  '戴耳机效果最好：外放时 AI 的声音可能被麦克风收进去。'
+                  '想打断直接开口说话即可，也可以在下方关闭语音打断。',
                   style: TextStyle(
                     fontSize: 11.5,
                     height: 1.6,
@@ -232,7 +232,8 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              _voice.errorText ?? _voice.status,
+              _voice.errorText ??
+                  '${_voice.status}${_voice.phase == VoicePhase.thinking || _voice.phase == VoicePhase.speaking ? ' · 直接说话可打断' : ''}',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 11.5,
@@ -265,8 +266,6 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
   Widget _controls(AppPalette palette) {
     final phase = _voice.phase;
     final idle = phase == VoicePhase.idle || phase == VoicePhase.error;
-    final canInterrupt =
-        phase == VoicePhase.speaking || phase == VoicePhase.thinking;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 10, 24, 22),
@@ -291,7 +290,7 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    _voice.autoInterrupt ? '自动打断已开启' : '自动打断已关闭',
+                    _voice.autoInterrupt ? '语音打断已开启' : '语音打断已关闭',
                     style: TextStyle(
                       fontSize: 11,
                       color: _voice.autoInterrupt
@@ -307,8 +306,6 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
             onTap: () {
               if (idle) {
                 _voice.start();
-              } else if (canInterrupt) {
-                _voice.interruptNow();
               } else {
                 _voice.stop();
               }
@@ -317,23 +314,18 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
               width: 76,
               height: 76,
               decoration: BoxDecoration(
-                color: canInterrupt ? palette.accent : palette.primary,
+                color: palette.primary,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: (canInterrupt ? palette.accent : palette.primary)
-                        .withValues(alpha: 0.3),
+                    color: palette.primary.withValues(alpha: 0.3),
                     blurRadius: 24,
                     offset: const Offset(0, 10),
                   ),
                 ],
               ),
               child: Icon(
-                idle
-                    ? Icons.mic_rounded
-                    : canInterrupt
-                        ? Icons.front_hand_rounded
-                        : Icons.stop_rounded,
+                idle ? Icons.mic_rounded : Icons.stop_rounded,
                 size: 32,
                 color: Colors.white,
               ),
@@ -341,11 +333,7 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
           ),
           const SizedBox(height: 10),
           Text(
-            idle
-                ? '点击开始语音对话'
-                : canInterrupt
-                    ? '点击立即打断'
-                    : '点击结束对话',
+            idle ? '点击开始语音对话' : '点击结束对话',
             style: TextStyle(fontSize: 11, color: palette.muted),
           ),
         ],
