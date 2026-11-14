@@ -50,8 +50,10 @@
 	<string>用于解锁 OmniAide，保护你的私人数据</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>连接你的 OmniAide 私有服务器</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>用于连接蓝牙耳机进行免提语音对话</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>用于语音输入消息</string>
+	<string>用于语音输入与语音对话</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>用于从相册选择图片进行文字识别</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

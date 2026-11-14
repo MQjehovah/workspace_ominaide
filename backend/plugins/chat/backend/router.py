@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Response
+from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +34,7 @@ from plugins.chat.backend.schemas import (
     AsrResponse, TtsRequest, SessionItem, SessionRename,
 )
 from plugins.chat.backend.voice_stream import (
-    iter_agent_events, trim_silence, tts_gateway_stream, tts_pcm,
+    SentenceChunker, iter_agent_events, trim_silence, tts_gateway_stream, tts_pcm,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -155,6 +156,7 @@ async def build_messages(
     extra_system: str | None = None,
     history_limit: int | None = None,
     timing: dict | None = None,
+    fast: bool = False,
 ) -> list[dict]:
     from ai.context_builder import ContextBuilder
 
@@ -217,7 +219,18 @@ async def build_messages(
     if extra_system:
         builder.section("extra", extra_system, priority=60, max_chars=4000)
     t_ctx = time.monotonic()
-    ctx = await build_bot_context(user_id, bot, req.message, timing=timing)
+    if fast:
+        # Voice turns must feel immediate. Memory retrieval needs an embedding
+        # round-trip that can take a second; skip it rather than stall the
+        # answer, the agent can still call memory tools.
+        try:
+            ctx = await asyncio.wait_for(
+                build_bot_context(user_id, bot, req.message, timing=timing), timeout=0.6
+            )
+        except asyncio.TimeoutError:
+            ctx = None
+    else:
+        ctx = await build_bot_context(user_id, bot, req.message, timing=timing)
     if timing is not None:
         timing["bot_context"] = time.monotonic() - t_ctx
     if ctx:
@@ -718,7 +731,7 @@ async def voice(
     req = ChatRequest(message=transcript, session_id=session_id or DEFAULT_SESSION, bot_id=bot.id)
     try:
         voice_system = VOICE_STYLE + await _voice_context()
-        messages = await build_messages(req, user["id"], bot=bot, extra_system=voice_system, history_limit=6)
+        messages = await build_messages(req, user["id"], bot=bot, extra_system=voice_system, history_limit=6, fast=True)
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(session_id or DEFAULT_SESSION)
         try:
@@ -785,86 +798,106 @@ async def _synthesize_voice_reply(text: str, tts_client, voice: str | None):
     return b"", 24000
 
 
+_voice_tasks: dict[str, asyncio.Task] = {}
+
+
+class VoiceInterruptRequest(BaseModel):
+    session_id: str = DEFAULT_SESSION
+
+
+@router.post("/voice/interrupt")
+async def voice_interrupt(req: VoiceInterruptRequest, user: dict = Depends(get_current_user)):
+    """Stop the active voice turn for a session (barge-in)."""
+    key = f"{user['id']}:{req.session_id or DEFAULT_SESSION}"
+    task = _voice_tasks.get(key)
+    if task and not task.done():
+        task.cancel()
+    return {"ok": True}
+
+
 @router.post("/voice/stream")
 async def voice_stream(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    transcript: str | None = Form(None),
     session_id: str = Form(DEFAULT_SESSION),
     voice: str | None = Form(None),
     bot_id: int | None = Form(None),
     user: dict = Depends(get_current_user),
 ):
-    """Low-latency voice: ASR once, then stream agent text + sentence-level TTS.
+    """Low-latency voice turn: ASR (optional), streamed text, sentence-level TTS.
+
+    Pass ``transcript`` to skip ASR when the client already has a final
+    on-device recognition result.
 
     NDJSON frames:
       {"t":"transcript","text":...}
       {"t":"status","text":...}
       {"t":"delta","text":...}
-      {"t":"audio","rate":24000,"pcm":"<base64 mono s16le>"}
-      {"t":"done","reply":...}
+      {"t":"audio","seq":0,"text":"...","rate":24000,"pcm":"<base64 s16le>"}
+      {"t":"done","reply":...,"interrupted":false}
     """
     t_start = time.monotonic()
-    asr_key = settings.asr_api_key or settings.llm_api_key
     tts_key = settings.tts_api_key or settings.llm_api_key
-    if not asr_key:
-        raise HTTPException(status_code=400, detail="ASR API key not configured")
-    if not tts_key:
-        raise HTTPException(status_code=400, detail="TTS API key not configured")
     if not settings.llm_api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
-
-    t_enter = time.monotonic()
-    data = await file.read()
-    t_read = time.monotonic()
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty audio file")
-
-    try:
-        asr_client = get_openai_client(settings.asr_base_url, asr_key)
-        tr = await asr_client.audio.transcriptions.create(
-            model=settings.asr_model,
-            file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
-        )
-        transcript = (getattr(tr, "text", "") or "").strip()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"ASR failed: {e}")
-    t_asr = time.monotonic()
-    if not transcript:
-        raise HTTPException(status_code=422, detail="No speech recognized")
+    if not tts_key:
+        raise HTTPException(status_code=400, detail="TTS API key not configured")
 
     sid = session_id or DEFAULT_SESSION
-    bot = await _resolve_bot(user["id"], bot_id)
-    t_bot = time.monotonic()
-    req = ChatRequest(message=transcript, session_id=sid, bot_id=bot.id)
-    voice_system = VOICE_STYLE + await _voice_context()
-    t_ctx = time.monotonic()
-    t_msgs = time.monotonic()
-    msg_timing: dict = {}
-    messages = await build_messages(
-        req, user["id"], bot=bot, extra_system=voice_system, history_limit=6, timing=msg_timing
-    )
-    t_msgs_done = time.monotonic()
-    await save_message(user["id"], "user", transcript, sid, bot=bot)
-    t_save = time.monotonic()
-    log.info(
-        "[voice_asr] bytes=%d read=%.2fs asr=%.2fs bot=%.2fs ctx=%.2fs "
-        "messages=%.2fs save=%.2fs total_pre_agent=%.2fs %s",
-        len(data),
-        t_read - t_enter,
-        t_asr - t_read,
-        t_bot - t_asr,
-        t_ctx - t_bot,
-        t_msgs_done - t_msgs,
-        t_save - t_msgs_done,
-        t_save - t_enter,
-        " ".join(f"{k}={v:.2f}" for k, v in msg_timing.items()),
-    )
+    text = (transcript or "").strip()
+    if not text:
+        asr_key = settings.asr_api_key or settings.llm_api_key
+        if not asr_key:
+            raise HTTPException(status_code=400, detail="ASR API key not configured")
+        if file is None:
+            raise HTTPException(status_code=400, detail="缺少音频或文本")
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="Empty audio file")
+        try:
+            asr_client = get_openai_client(settings.asr_base_url, asr_key)
+            tr = await asr_client.audio.transcriptions.create(
+                model=settings.asr_model,
+                file=(file.filename or "audio.wav", data, file.content_type or "audio/wav"),
+            )
+            text = (getattr(tr, "text", "") or "").strip()
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"ASR failed: {e}")
+    if not text:
+        raise HTTPException(status_code=422, detail="No speech recognized")
+    t_asr = time.monotonic()
 
     out_q: asyncio.Queue = asyncio.Queue(maxsize=64)
+    tts_q: asyncio.Queue = asyncio.Queue(maxsize=24)
+    state = {"reply": "", "interrupted": False, "saved": False, "audio": 0}
 
-    async def supervisor():
-        t_first_token = None
-        reply_parts: list[str] = []
+    async def tts_worker():
+        seq = 0
         tts_client = get_openai_client(settings.tts_base_url, tts_key)
+        while True:
+            sentence = await tts_q.get()
+            if sentence is None:
+                return
+            pcm, rate = await _synthesize_voice_reply(sentence, tts_client, voice)
+            if not pcm:
+                continue
+            pcm = trim_silence(pcm, rate)
+            if not pcm:
+                continue
+            await out_q.put({
+                "t": "audio",
+                "seq": seq,
+                "text": sentence,
+                "rate": rate,
+                "pcm": base64.b64encode(pcm).decode(),
+            })
+            state["audio"] += 1
+            seq += 1
+
+    async def pipeline(bot, messages):
+        tts_task = asyncio.create_task(tts_worker())
+        chunker = SentenceChunker()
+        first_token = None
         token = set_current_bot_id(bot.id)
         session_token = set_current_session_id(sid)
         try:
@@ -877,114 +910,115 @@ async def voice_stream(
                     model=bot.model,
                     temperature=bot.temperature if bot.temperature is not None else 0.7,
                     bot=bot,
-                    session_id=session_id,
+                    session_id=sid,
                 )
             ):
                 typ = ev.get("type")
                 if typ == "token":
-                    text = ev.get("content") or ""
-                    if not text:
+                    piece = ev.get("content") or ""
+                    if not piece:
                         continue
-                    if t_first_token is None:
-                        t_first_token = time.monotonic()
-                    reply_parts.append(text)
-                    await out_q.put({"t": "delta", "text": text})
+                    if first_token is None:
+                        first_token = time.monotonic()
+                    state["reply"] += piece
+                    await out_q.put({"t": "delta", "text": piece})
+                    for sentence in chunker.push(piece):
+                        await tts_q.put(sentence)
                 elif typ in ("tool_call", "tool_result"):
-                    await out_q.put({"t": "status", "text": "正在执行工具..."})
+                    await out_q.put({"t": "status", "text": "正在执行工具…"})
+
+            for sentence in chunker.flush():
+                await tts_q.put(sentence)
+            await tts_q.put(None)
+            await tts_task
+
+            reply = state["reply"].strip() or "已执行。"
+            state["saved"] = True
+            await save_message(user["id"], "assistant", reply, sid, bot=bot)
+            log.info(
+                "[voice_turn] done sid=%s first_token=%.2fs sentences=%d total=%.2fs",
+                sid,
+                (first_token - t_start) if first_token else -1,
+                state["audio"],
+                time.monotonic() - t_start,
+            )
+            await out_q.put({"t": "done", "reply": reply, "interrupted": False})
+        except asyncio.CancelledError:
+            state["interrupted"] = True
+            tts_task.cancel()
+            try:
+                out_q.put_nowait({
+                    "t": "done",
+                    "reply": state["reply"].strip(),
+                    "interrupted": True,
+                })
+            except asyncio.QueueFull:
+                pass
+            raise
         except Exception as e:
+            tts_task.cancel()
+            log.warning("[voice_turn] failed sid=%s: %s", sid, e)
             await out_q.put({"t": "status", "text": f"处理失败：{e}"[:120]})
+            await out_q.put({
+                "t": "done",
+                "reply": state["reply"].strip(),
+                "interrupted": False,
+                "error": True,
+            })
         finally:
             reset_current_session_id(session_token)
             reset_current_bot_id(token)
 
-        reply = "".join(reply_parts).strip() or "已执行。"
-        t_tts = time.monotonic()
-        t_audio = None
-        emitted = 0
-        rate = 24000
-
-        # Preferred path: the gateway's frame stream lets the device start
-        # playing as soon as the first audio chunk arrives.
-        if settings.tts_stream_url:
-            pending = bytearray()
-            try:
-                async for pcm, stream_rate in tts_gateway_stream(reply, voice):
-                    if not pcm:
-                        continue
-                    rate = stream_rate
-                    pending.extend(pcm)
-                    while len(pending) >= 6000:
-                        part = bytes(pending[:6000])
-                        del pending[:6000]
-                        await out_q.put({
-                            "t": "audio",
-                            "rate": rate,
-                            "pcm": base64.b64encode(part).decode(),
-                        })
-                        emitted += len(part)
-                        if t_audio is None:
-                            t_audio = time.monotonic()
-                if pending:
-                    await out_q.put({
-                        "t": "audio",
-                        "rate": rate,
-                        "pcm": base64.b64encode(bytes(pending)).decode(),
-                    })
-                    emitted += len(pending)
-                    if t_audio is None:
-                        t_audio = time.monotonic()
-            except Exception as e:
-                log.warning("[voice_stream] stream tts failed: %s", e)
-
-        # Fallback: complete WAV from the non-streaming endpoint.
-        if emitted == 0:
-            pcm, rate = await _synthesize_voice_reply(reply, tts_client, voice)
-            if pcm:
-                pcm = trim_silence(pcm, rate)
-            if pcm:
-                for i in range(0, len(pcm), 6000):
-                    part = pcm[i:i + 6000]
-                    await out_q.put({
-                        "t": "audio",
-                        "rate": rate,
-                        "pcm": base64.b64encode(part).decode(),
-                    })
-                    emitted += len(part)
-                    if t_audio is None:
-                        t_audio = time.monotonic()
-
-        if t_audio is None:
-            t_audio = time.monotonic()
-        if emitted == 0:
-            await out_q.put({"t": "status", "text": "语音合成失败"})
-
-        elapsed = time.monotonic() - t_start
-        log.info(
-            "[voice_stream] first_token=%.2fs tts=%.2fs "
-            "first_audio=%.2fs total=%.2fs",
-            t_first_token - t_start if t_first_token else -1,
-            t_audio - t_tts,
-            t_audio - t_start,
-            elapsed,
-        )
-        await save_message(user["id"], "assistant", reply, sid, bot=bot)
-        await out_q.put({"t": "done", "reply": reply})
-
     async def gen():
-        yield json.dumps({"t": "transcript", "text": transcript}, ensure_ascii=False) + "\n"
-        task = asyncio.create_task(supervisor())
+        key = f"{user['id']}:{sid}"
+        prev = _voice_tasks.get(key)
+        if prev and not prev.done():
+            prev.cancel()
+        task: asyncio.Task | None = None
+        turn_bot = None
+        # Emit the transcript before bot/memory setup: build_messages can take
+        # over a second and must not delay the first visible result.
+        yield json.dumps({"t": "transcript", "text": text}, ensure_ascii=False) + "\n"
         try:
+            turn_bot = await _resolve_bot(user["id"], bot_id)
+            req = ChatRequest(message=text, session_id=sid, bot_id=turn_bot.id)
+            voice_system = VOICE_STYLE + await _voice_context()
+            messages = await build_messages(
+                req, user["id"], bot=turn_bot, extra_system=voice_system,
+                history_limit=6, fast=True,
+            )
+            await save_message(user["id"], "user", text, sid, bot=turn_bot)
+            log.info(
+                "[voice_turn] sid=%s asr=%.2fs pre_agent=%.2fs text=%r",
+                sid,
+                t_asr - t_start,
+                time.monotonic() - t_start,
+                text[:40],
+            )
+            task = asyncio.create_task(pipeline(turn_bot, messages))
+            _voice_tasks[key] = task
             while True:
                 item = await out_q.get()
                 yield json.dumps(item, ensure_ascii=False) + "\n"
                 if item.get("t") == "done":
                     break
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.warning("[voice_turn] setup failed sid=%s: %s", sid, e)
+            yield json.dumps({"t": "done", "reply": "", "error": True}, ensure_ascii=False) + "\n"
         finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            if task is not None:
+                if not task.done():
+                    task.cancel()
+                if _voice_tasks.get(key) is task:
+                    _voice_tasks.pop(key, None)
+            partial = state["reply"].strip()
+            if not state["saved"] and partial:
+                state["saved"] = True
+                asyncio.create_task(
+                    save_message(user["id"], "assistant", partial, sid, bot=turn_bot)
+                )
 
     return StreamingResponse(
         gen(),

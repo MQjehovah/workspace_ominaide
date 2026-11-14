@@ -1,11 +1,6 @@
-import 'dart:io';
-
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
 
-import '../services/voice_service.dart';
+import '../services/voice_session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 
@@ -17,104 +12,39 @@ class VoiceChatScreen extends StatefulWidget {
 }
 
 class _VoiceChatScreenState extends State<VoiceChatScreen> {
-  final _recorder = AudioRecorder();
-  final _player = AudioPlayer();
-  final _turns = <_VoiceTurn>[];
+  late final VoiceSessionController _voice;
+  final ScrollController _scroll = ScrollController();
+  String _lastSignature = '';
 
-  bool _recording = false;
-  bool _processing = false;
-  String _status = '点击下方按钮开始说话';
+  @override
+  void initState() {
+    super.initState();
+    _voice = VoiceSessionController()..addListener(_onChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _voice.start());
+  }
+
+  void _onChanged() {
+    final last = _voice.turns.isEmpty ? null : _voice.turns.last;
+    final signature =
+        '${_voice.turns.length}:${last?.transcript.length ?? 0}:${last?.reply.length ?? 0}:${_voice.phase.name}';
+    if (signature == _lastSignature) return;
+    _lastSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    });
+  }
 
   @override
   void dispose() {
-    _recorder.dispose();
-    _player.dispose();
+    _voice.removeListener(_onChanged);
+    _voice.dispose();
+    _scroll.dispose();
     super.dispose();
-  }
-
-  Future<void> _toggleRecording() async {
-    if (_processing) return;
-    if (_recording) {
-      await _stopAndSend();
-      return;
-    }
-    try {
-      if (!await _recorder.hasPermission()) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('需要麦克风权限才能语音对话')),
-        );
-        return;
-      }
-      final dir = await getTemporaryDirectory();
-      final path =
-          '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      await _recorder.start(
-        const RecordConfig(encoder: AudioEncoder.aacLc),
-        path: path,
-      );
-      if (!mounted) return;
-      setState(() {
-        _recording = true;
-        _status = '正在录音，再次点击结束';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('录音失败: $e')),
-      );
-    }
-  }
-
-  Future<void> _stopAndSend() async {
-    String? path;
-    try {
-      path = await _recorder.stop();
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() {
-      _recording = false;
-      _processing = true;
-      _status = '正在识别并生成回复…';
-    });
-    if (path == null) {
-      setState(() {
-        _processing = false;
-        _status = '没有录到声音，再试一次';
-      });
-      return;
-    }
-    try {
-      final result = await VoiceService().sendVoice(File(path));
-      if (!mounted) return;
-      final dir = await getTemporaryDirectory();
-      final ext = result.mimeType.contains('mpeg') || result.mimeType.contains('mp3')
-          ? 'mp3'
-          : 'wav';
-      final audioFile = File(
-        '${dir.path}/voice_reply_${DateTime.now().millisecondsSinceEpoch}.$ext',
-      );
-      await audioFile.writeAsBytes(result.audio);
-      await _player.play(DeviceFileSource(audioFile.path));
-      if (!mounted) return;
-      setState(() {
-        _turns.add(_VoiceTurn(
-          transcript: result.transcript,
-          reply: result.reply,
-        ));
-        _processing = false;
-        _status = '点击下方按钮继续说话';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _processing = false;
-        _status = '语音对话失败';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
-    }
   }
 
   @override
@@ -123,171 +53,334 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            PageHeader(
-              kicker: 'Voice',
-              title: '语音对话',
-              subtitle: '说话，AI 用语音回答',
-              actions: [
-                RoundIconButton(
-                  icon: Icons.arrow_back_rounded,
-                  onTap: () => Navigator.maybePop(context),
-                ),
-              ],
-            ),
-            Expanded(
-              child: _turns.isEmpty
-                  ? ListView(
-                      padding: const EdgeInsets.fromLTRB(24, 60, 24, 24),
-                      children: [
-                        Icon(
-                          Icons.graphic_eq_rounded,
-                          size: 56,
-                          color: palette.primary,
-                        ),
-                        const SizedBox(height: 18),
-                        Text(
-                          '像打电话一样和 OmniAide 对话',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: palette.ink,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '点击下方麦克风开始录音，再点一次结束并发送。'
-                          '需要后端配置 ASR 与 TTS。',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.6,
-                            color: palette.muted,
-                          ),
-                        ),
-                      ],
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                      itemCount: _turns.length,
-                      itemBuilder: (context, index) {
-                        final turn = _turns[index];
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (turn.transcript.isNotEmpty)
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  padding: const EdgeInsets.all(12),
-                                  constraints: BoxConstraints(
-                                    maxWidth:
-                                        MediaQuery.of(context).size.width * 0.78,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: palette.primary,
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Text(
-                                    turn.transcript,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      height: 1.5,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            if (turn.reply.isNotEmpty)
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  padding: const EdgeInsets.all(12),
-                                  constraints: BoxConstraints(
-                                    maxWidth:
-                                        MediaQuery.of(context).size.width * 0.82,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: palette.card,
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(color: palette.line),
-                                  ),
-                                  child: Text(
-                                    turn.reply,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      height: 1.6,
-                                      color: palette.ink,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        );
-                      },
+        child: AnimatedBuilder(
+          animation: _voice,
+          builder: (context, _) {
+            return Column(
+              children: [
+                PageHeader(
+                  kicker: 'Voice',
+                  title: '语音对话',
+                  subtitle: '连续对话 · 随时打断',
+                  actions: [
+                    RoundIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      onTap: () => Navigator.maybePop(context),
                     ),
+                  ],
+                ),
+                Expanded(
+                  child: _voice.turns.isEmpty
+                      ? _intro(palette)
+                      : ListView.builder(
+                          controller: _scroll,
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          itemCount: _voice.turns.length,
+                          itemBuilder: (context, index) =>
+                              _turn(palette, _voice.turns[index], index),
+                        ),
+                ),
+                _statusRow(palette),
+                _controls(palette),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _intro(AppPalette palette) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
+      children: [
+        Icon(Icons.graphic_eq_rounded, size: 56, color: palette.primary),
+        const SizedBox(height: 18),
+        Text(
+          '像打电话一样对话',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            color: palette.ink,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          '说完停顿一下，AI 会自动接话；'
+          '回答时直接开口就能打断，不用按按钮。',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12.5, height: 1.7, color: palette.muted),
+        ),
+        const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: palette.primarySoft,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.headphones_rounded, size: 16, color: palette.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '戴耳机效果最好：外放时 AI 的声音可能被麦克风收进去，'
+                  '可以调高打断门槛或点「打断」。',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.6,
+                    color: palette.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _turn(AppPalette palette, VoiceTurn turn, int index) {
+    final active = index == _voice.turns.length - 1;
+    final showReply = turn.reply.isNotEmpty ||
+        (active &&
+            (_voice.phase == VoicePhase.thinking ||
+                _voice.phase == VoicePhase.speaking));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (turn.transcript.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.78,
+              ),
+              decoration: BoxDecoration(
+                color: palette.primary,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                turn.transcript,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: Colors.white,
+                ),
+              ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          ),
+        if (showReply)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.82,
+              ),
+              decoration: BoxDecoration(
+                color: palette.card,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: palette.line),
+              ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _status,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11.5, color: palette.muted),
+                    turn.reply.isEmpty ? '…' : turn.reply,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.6,
+                      color: palette.ink,
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: _toggleRecording,
-                    child: Container(
-                      width: 76,
-                      height: 76,
-                      decoration: BoxDecoration(
-                        color: _recording ? palette.accent : palette.primary,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: (_recording ? palette.accent : palette.primary)
-                                .withValues(alpha: 0.3),
-                            blurRadius: 24,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
+                  if (turn.interrupted)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '已打断',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: palette.muted,
+                        ),
                       ),
-                      child: _processing
-                          ? const Padding(
-                              padding: EdgeInsets.all(24),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 3,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Icon(
-                              _recording
-                                  ? Icons.stop_rounded
-                                  : Icons.mic_rounded,
-                              size: 34,
-                              color: Colors.white,
-                            ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _statusRow(AppPalette palette) {
+    final color = _statusColor(palette);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              _voice.errorText ?? _voice.status,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: _voice.errorText != null ? palette.accent : palette.muted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _statusColor(AppPalette palette) {
+    switch (_voice.phase) {
+      case VoicePhase.recording:
+        return palette.primary;
+      case VoicePhase.thinking:
+        return palette.primaryLight;
+      case VoicePhase.speaking:
+        return palette.accent;
+      case VoicePhase.listening:
+        return palette.success;
+      case VoicePhase.error:
+        return palette.accent;
+      case VoicePhase.idle:
+        return palette.muted;
+    }
+  }
+
+  Widget _controls(AppPalette palette) {
+    final phase = _voice.phase;
+    final idle = phase == VoicePhase.idle || phase == VoicePhase.error;
+    final canInterrupt =
+        phase == VoicePhase.speaking || phase == VoicePhase.thinking;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 10, 24, 22),
+      child: Column(
+        children: [
+          _waveform(palette, phase),
+          const SizedBox(height: 12),
+          if (!idle)
+            GestureDetector(
+              onTap: () => _voice.setAutoInterrupt(!_voice.autoInterrupt),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _voice.autoInterrupt
+                        ? Icons.bolt_rounded
+                        : Icons.bolt_outlined,
+                    size: 15,
+                    color: _voice.autoInterrupt
+                        ? palette.primary
+                        : palette.muted,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    _voice.autoInterrupt ? '自动打断已开启' : '自动打断已关闭',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _voice.autoInterrupt
+                          ? palette.primary
+                          : palette.muted,
                     ),
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () {
+              if (idle) {
+                _voice.start();
+              } else if (canInterrupt) {
+                _voice.interruptNow();
+              } else {
+                _voice.stop();
+              }
+            },
+            child: Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: canInterrupt ? palette.accent : palette.primary,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: (canInterrupt ? palette.accent : palette.primary)
+                        .withValues(alpha: 0.3),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Icon(
+                idle
+                    ? Icons.mic_rounded
+                    : canInterrupt
+                        ? Icons.front_hand_rounded
+                        : Icons.stop_rounded,
+                size: 32,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            idle
+                ? '点击开始语音对话'
+                : canInterrupt
+                    ? '点击立即打断'
+                    : '点击结束对话',
+            style: TextStyle(fontSize: 11, color: palette.muted),
+          ),
+        ],
       ),
     );
   }
-}
 
-class _VoiceTurn {
-  final String transcript;
-  final String reply;
-
-  const _VoiceTurn({required this.transcript, required this.reply});
+  Widget _waveform(AppPalette palette, VoicePhase phase) {
+    final active = phase != VoicePhase.idle && phase != VoicePhase.error;
+    final base = _voice.level;
+    final speaking = phase == VoicePhase.speaking;
+    return SizedBox(
+      height: 34,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: List.generate(9, (index) {
+          final distance = (index - 4).abs();
+          final factor = 1 - distance * 0.14;
+          final height =
+              active ? 5 + base * 30 * factor : 4 + distance * 0.6;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 90),
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            width: 4,
+            height: height.clamp(4.0, 34.0),
+            decoration: BoxDecoration(
+              color: (speaking ? palette.accent : palette.primary)
+                  .withValues(alpha: active ? 0.85 : 0.25),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          );
+        }),
+      ),
+    );
+  }
 }

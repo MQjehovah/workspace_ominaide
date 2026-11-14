@@ -200,3 +200,62 @@ async def iter_agent_events(stream) -> AsyncIterator[dict]:
             continue
         if isinstance(ev, dict):
             yield ev
+
+
+SENTENCE_END = "。！？!?.;；\n…"
+SOFT_BREAK = "，,、：:"
+
+
+class SentenceChunker:
+    """Turn a token stream into short speakable chunks.
+
+    The first chunk should arrive as early as possible, so long clauses are
+    split at a comma once they exceed ``soft_limit`` characters. This lets TTS
+    start while the model is still generating the rest of the answer.
+    """
+
+    def __init__(self, soft_limit: int = 26, hard_limit: int = 64, first_limit: int = 16):
+        self.buf = ""
+        self.soft_limit = soft_limit
+        self.hard_limit = hard_limit
+        # The first chunk is synthesized while the model is still talking, so
+        # keep it short: lower first-audio latency without chopping every
+        # sentence into unnatural pieces.
+        self.first_limit = first_limit
+        self.started = False
+
+    def push(self, text: str) -> list[str]:
+        self.buf += text
+        out: list[str] = []
+        while True:
+            buf = self.buf
+            cut = -1
+            for i, ch in enumerate(buf):
+                if ch in SENTENCE_END:
+                    cut = i + 1
+                    break
+            if cut > 0:
+                out.append(buf[:cut])
+                self.buf = buf[cut:]
+                continue
+            limit = self.soft_limit if (self.started or out) else self.first_limit
+            if len(buf) >= limit:
+                last = max((buf.rfind(ch) for ch in SOFT_BREAK), default=-1)
+                if last >= 6:
+                    out.append(buf[:last + 1])
+                    self.buf = buf[last + 1:]
+                    continue
+            hard = self.hard_limit if (self.started or out) else max(24, self.first_limit + 8)
+            if len(buf) >= hard:
+                out.append(buf)
+                self.buf = ""
+                continue
+            break
+        if out:
+            self.started = True
+        return [chunk.strip() for chunk in out if chunk.strip()]
+
+    def flush(self) -> list[str]:
+        chunk = self.buf.strip()
+        self.buf = ""
+        return [chunk] if chunk else []
