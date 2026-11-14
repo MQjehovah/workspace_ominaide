@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     # and keeps the non-streaming /v1/audio/speech path.
     # Example: https://ai.xzrobot.com/gateway/api/v1/audio/speech/stream
     tts_stream_url: str = ""
+
+    # MOSS-Live full-duplex realtime voice. The gateway injects auth upstream;
+    # clients connect through it and can pass ?user=<id> for cross-session memory.
+    moss_url: str = "wss://ai.xzrobot.com/api/v1/moss/realtime"
+    moss_model: str = "moss-live-1.0"
+    moss_api_key: str = ""
     # Personal-assistant agent persona + conversation memory
     assistant_system_prompt: str = (
         "你是 OmniAide，一个私有化部署的个人 AI 助手，只服务于当前用户。"

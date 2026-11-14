@@ -805,6 +805,24 @@ class VoiceInterruptRequest(BaseModel):
     session_id: str = DEFAULT_SESSION
 
 
+@router.get("/voice/moss")
+async def moss_voice_config(user: dict = Depends(get_current_user)):
+    """Gateway config for the MOSS-Live full-duplex WebSocket.
+
+    The key is only handed to an authenticated app over HTTPS; the gateway
+    itself performs upstream auth and transparent bidirectional proxying.
+    """
+    key = settings.moss_api_key or settings.asr_api_key or settings.llm_api_key
+    if not key:
+        raise HTTPException(status_code=400, detail="MOSS gateway key not configured")
+    return {
+        "url": settings.moss_url,
+        "model": settings.moss_model,
+        "token": key,
+        "user": str(user["id"]),
+    }
+
+
 @router.post("/voice/interrupt")
 async def voice_interrupt(req: VoiceInterruptRequest, user: dict = Depends(get_current_user)):
     """Stop the active voice turn for a session (barge-in)."""

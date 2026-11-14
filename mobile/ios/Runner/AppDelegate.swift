@@ -10,6 +10,11 @@ import Vision
 @objc class AppDelegate: FlutterAppDelegate {
   private var mediaChannel: FlutterMethodChannel?
   private var mediaCommandsConfigured = false
+  private var voiceAudioChannel: FlutterMethodChannel?
+  private var voiceEngine: AVAudioEngine?
+  private var voicePlayerNode: AVAudioPlayerNode?
+  private var voiceFormat: AVAudioFormat?
+  private var voiceChunkIndex = 0
 
   /// Share-extension URL captured before Flutter attached its event listener.
   /// SceneDelegate fills this on a cold start; Dart replays it through the
@@ -67,7 +72,9 @@ import Vision
       name: "omniaide/voice_audio",
       binaryMessenger: controller.binaryMessenger
     )
-    channel.setMethodCallHandler { call, result in
+    voiceAudioChannel = channel
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { result(nil); return }
       let session = AVAudioSession.sharedInstance()
       do {
         switch call.method {
@@ -82,6 +89,21 @@ import Vision
           result(nil)
         case "speakerOff":
           try session.overrideOutputAudioPort(.none)
+          result(nil)
+        case "playbackStart":
+          let args = call.arguments as? [String: Any]
+          let rate = (args?["sampleRate"] as? NSNumber)?.doubleValue ?? 48000
+          self.startVoicePlayback(sampleRate: rate)
+          result(nil)
+        case "playbackPush":
+          guard let typed = call.arguments as? FlutterStandardTypedData else {
+            result(FlutterError(code: "voice_audio", message: "PCM bytes required", details: nil))
+            return
+          }
+          self.pushVoiceAudio(typed.data)
+          result(nil)
+        case "playbackStop":
+          self.stopVoicePlayback()
           result(nil)
         default:
           result(FlutterMethodNotImplemented)
@@ -229,6 +251,69 @@ import Vision
         }
       }
     }
+  }
+
+  private func startVoicePlayback(sampleRate: Double) {
+    stopVoicePlayback()
+    let engine = AVAudioEngine()
+    let player = AVAudioPlayerNode()
+    guard let format = AVAudioFormat(
+      commonFormat: .pcmFormatFloat32,
+      sampleRate: sampleRate,
+      channels: 1,
+      interleaved: false
+    ) else { return }
+    engine.attach(player)
+    engine.connect(player, to: engine.mainMixerNode, format: format)
+    engine.prepare()
+    do {
+      try engine.start()
+    } catch {
+      return
+    }
+    voiceEngine = engine
+    voicePlayerNode = player
+    voiceFormat = format
+    voiceChunkIndex = 0
+  }
+
+  private func pushVoiceAudio(_ data: Data) {
+    guard let engine = voiceEngine,
+          let player = voicePlayerNode,
+          let format = voiceFormat else { return }
+    let frames = data.count / 2
+    guard frames > 0,
+          let buffer = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(frames)
+          ) else { return }
+    buffer.frameLength = AVAudioFrameCount(frames)
+    data.withUnsafeBytes { raw in
+      let src = raw.bindMemory(to: Int16.self)
+      if let dst = buffer.floatChannelData?[0] {
+        for i in 0..<frames {
+          dst[i] = Float(src[i]) / 32768.0
+        }
+      }
+    }
+    if !engine.isRunning {
+      try? engine.start()
+    }
+    player.scheduleBuffer(buffer)
+    if !player.isPlaying {
+      player.play()
+    }
+  }
+
+  private func stopVoicePlayback() {
+    voicePlayerNode?.stop()
+    if let engine = voiceEngine, let player = voicePlayerNode {
+      engine.detach(player)
+    }
+    voiceEngine?.stop()
+    voicePlayerNode = nil
+    voiceEngine = nil
+    voiceFormat = nil
   }
 
   private func setupMediaChannel() {
