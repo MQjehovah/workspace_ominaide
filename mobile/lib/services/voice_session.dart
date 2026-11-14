@@ -73,6 +73,8 @@ class VoiceSessionController extends ChangeNotifier {
   bool _needsSeek = false;
   bool _firstAudioOfTurn = true;
   int _audioGeneration = 0;
+  int _turnId = 0;
+  int _vadCooldownUntil = 0;
   int _lastAudioAt = 0;
 
   bool _capturing = false;
@@ -155,6 +157,7 @@ class VoiceSessionController extends ChangeNotifier {
     _preRollBytes = 0;
     _firstVoice = -1;
     _lastVoice = -1;
+    _turnId += 1;
     _abortStream();
     await _resetPlayback();
     await _micSub?.cancel();
@@ -236,10 +239,16 @@ class VoiceSessionController extends ChangeNotifier {
         if (_bargeMs >= 280) _bargeIn();
       }
     } else if (phase == VoicePhase.listening) {
-      _speechMs = speech
-          ? _speechMs + _frameMs
-          : math.max(0, _speechMs - _frameMs * 2);
-      if (_speechMs >= 60) _beginUtterance();
+      final cooling =
+          DateTime.now().millisecondsSinceEpoch < _vadCooldownUntil;
+      if (cooling) {
+        _speechMs = 0;
+      } else {
+        _speechMs = speech
+            ? _speechMs + _frameMs
+            : math.max(0, _speechMs - _frameMs * 2);
+        if (_speechMs >= 60) _beginUtterance();
+      }
     }
 
     _notifyLevel();
@@ -313,6 +322,7 @@ class VoiceSessionController extends ChangeNotifier {
   // ---------------- backend stream ----------------
 
   Future<void> _sendTurn(Uint8List pcm, VoiceTurn turn) async {
+    final int turnId = ++_turnId;
     _abortStream();
     // Start every turn from an empty player. Reusing the previous turn's
     // playlist left just_audio parked at the end, so only the first answer
@@ -344,6 +354,11 @@ class VoiceSessionController extends ChangeNotifier {
         contentType: MediaType('audio', 'wav'),
       ));
       final response = await client.send(request);
+      if (turnId != _turnId) {
+        // The user interrupted before the response headers arrived.
+        client.close();
+        return;
+      }
       if (response.statusCode != 200) {
         final body = await response.stream.bytesToString();
         throw Exception(_errorText(body, response.statusCode));
@@ -352,13 +367,18 @@ class VoiceSessionController extends ChangeNotifier {
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen(
-        (line) => _handleLine(line, turn),
+        (line) {
+          if (turnId != _turnId) return;
+          _handleLine(line, turn);
+        },
         onError: (Object e) {
+          if (turnId != _turnId) return;
           if (phase != VoicePhase.recording) {
             _fail('语音连接中断：$e');
           }
         },
         onDone: () {
+          if (turnId != _turnId) return;
           _streamDone = true;
           if (phase == VoicePhase.speaking || phase == VoicePhase.thinking) {
             if (!_playing) _completeTurn();
@@ -498,6 +518,9 @@ class VoiceSessionController extends ChangeNotifier {
   }
 
   void _bargeIn({bool manual = false}) {
+    // Invalidate the running turn first: any buffered deltas/audio that arrive
+    // after the tap must not push the UI back into thinking/speaking.
+    _turnId += 1;
     _bargeMs = 0;
     _streamDone = false;
     unawaited(_resetPlayback());
@@ -512,6 +535,7 @@ class VoiceSessionController extends ChangeNotifier {
       _capturing = false;
       _preRoll.clear();
       _preRollBytes = 0;
+      _vadCooldownUntil = DateTime.now().millisecondsSinceEpoch + 500;
       _setPhase(VoicePhase.listening, '已打断，请继续说');
     } else if (micActive) {
       _beginUtterance(fromBarge: true);
