@@ -478,12 +478,6 @@ class RealtimeVoiceController extends ChangeNotifier {
       args = raw.cast<String, dynamic>();
     }
 
-    final request = (args['request'] ?? '').toString().trim();
-    if (request.isEmpty) {
-      _sendToolOutput(callId, '缺少 request 参数');
-      return;
-    }
-
     _status('正在执行 OmniAide 工具…');
     String output;
     try {

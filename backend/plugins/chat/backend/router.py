@@ -820,6 +820,18 @@ VOICE_TOOL_DENY = {"delegate_agent", "run_shell", "shell", "spawn_agent"}
 # an alias and map it back when executing.
 VOICE_TOOL_ALIASES = {"omniaide_web_search": "web_search"}
 
+# Common voice tools exposed directly so the model does not need a
+# tool_search round trip for everyday queries.
+VOICE_EXTRA_TOOLS = {
+    "list_todo_items", "create_todo_item", "todo_update", "todo_complete",
+    "list_schedule_events", "create_schedule_event",
+    "update_schedule_event", "cancel_schedule_event",
+    "search_notes", "search_notes_semantic", "ask_notes", "create_note",
+    "search_files", "list_files", "read_file_content",
+    "get_weather", "get_latest_news", "web_search", "web_fetch",
+    "get_user_info", "get_system_context", "unified_search",
+}
+
 
 def _voice_exposed_name(name: str) -> str:
     for alias, real in VOICE_TOOL_ALIASES.items():
@@ -871,12 +883,25 @@ async def _voice_tool_definitions(user_id: int, bot) -> list[dict]:
     instead of advertising all ~120 registered tools.
     """
     all_tools = tool_registry.get_tools(user_id=user_id)
+    allowed = getattr(bot, "allowed_tools", None)
     exposed = select_exposed_tools(
         all_tools,
         bot=bot,
-        allowed=getattr(bot, "allowed_tools", None),
+        allowed=allowed,
         user_id=user_id,
     )
+    exposed_names = {tool.name for tool in exposed}
+    by_name = {tool.name: tool for tool in all_tools}
+    for name in VOICE_EXTRA_TOOLS:
+        tool = by_name.get(name)
+        if tool is None or tool.name in exposed_names:
+            continue
+        if tool.source == "local":
+            continue
+        if allowed is not None and name not in set(allowed):
+            continue
+        exposed.append(tool)
+        exposed_names.add(name)
     definitions: list[dict] = []
     seen: set[str] = set()
     for tool in exposed:
@@ -900,17 +925,13 @@ async def voice_tools(user: dict = Depends(get_current_user)):
 async def voice_tool(req: VoiceToolRequest, user: dict = Depends(get_current_user)):
     """Execute one agent tool directly — no second LLM round trip."""
     bot = await _resolve_bot(user["id"], None)
-    exposed = select_exposed_tools(
-        tool_registry.get_tools(user_id=user["id"]),
-        bot=bot,
-        allowed=getattr(bot, "allowed_tools", None),
-        user_id=user["id"],
-    )
-    allowed: dict[str, str] = {}
-    for tool in exposed:
-        definition = _moss_tool_definition(tool)
-        if definition is not None:
-            allowed[definition["name"]] = tool.name
+    definitions = await _voice_tool_definitions(user["id"], bot)
+    allowed: dict[str, str] = {
+        definition["name"]: VOICE_TOOL_ALIASES.get(
+            definition["name"], definition["name"]
+        )
+        for definition in definitions
+    }
     real_name = allowed.get(req.name)
     if real_name is None:
         raise HTTPException(status_code=400, detail="未知或不可用的工具")
@@ -945,9 +966,22 @@ async def voice_tool(req: VoiceToolRequest, user: dict = Depends(get_current_use
     text = "\n".join(
         content.text for content in (response.content or []) if content.text
     ).strip()
+    if real_name == "tool_search" and text:
+        try:
+            found = json.loads(text)
+            lines = ["可用工具："]
+            for item in (found.get("tools") or [])[:10]:
+                lines.append(
+                    f"- tool_id={item.get('tool_id')} | {item.get('name')} | "
+                    f"{(item.get('description') or '')[:100]}"
+                )
+            if len(lines) > 1:
+                text = "\n".join(lines)
+        except Exception:
+            pass
     if response.isError:
         text = "工具执行失败：" + (text or "未知错误")
-    return {"output": (text or "没有返回结果")[:1500]}
+    return {"output": (text or "没有返回结果")[:4000]}
 
 
 @router.get("/voice/moss")
@@ -999,7 +1033,9 @@ async def moss_voice_config(user: dict = Depends(get_current_user)):
 
     instructions = (
         "用简体中文口语化回答，尽量简短，不要使用 Markdown。"
-        "涉及用户个人数据或需要操作时，优先调用 omniaide_query / omniaide_action，不要凭空猜测。"
+        "可用工具很多：直接列出的工具可以直接调用；未列出的能力必须先调用 "
+        "tool_search 检索，再用 tool_call 调用（tool_id 使用搜索结果里的值）。"
+        "涉及用户个人数据或需要操作时，必须先调用工具查询，不要凭空回答。"
     )
     if memory:
         instructions += (
