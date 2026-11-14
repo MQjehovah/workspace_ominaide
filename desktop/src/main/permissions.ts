@@ -25,6 +25,8 @@ export type PermissionId =
   | 'screenshot'
   | 'remote'
   | 'selection'
+  | 'events'
+  | 'schedule'
   | 'shortcut'
   | 'menu'
   | 'tray'
@@ -128,6 +130,18 @@ export const PERMISSIONS: Record<PermissionId, PermissionInfo> = {
     label: '读取选中文本',
     description: '读取你在其他应用中选中的文字',
     risk: 'sensitive',
+  },
+  events: {
+    id: 'events',
+    label: '接收系统事件',
+    description: '订阅剪贴板、文件变化、电源、网络、显示器与空闲状态',
+    risk: 'sensitive',
+  },
+  schedule: {
+    id: 'schedule',
+    label: '定时任务',
+    description: '在应用运行时按间隔或 cron 定时执行任务',
+    risk: 'normal',
   },
   shortcut: {
     id: 'shortcut',
@@ -244,6 +258,12 @@ const BRIDGE_PERMISSIONS: Record<string, PermissionId[]> = {
   'tray:set': ['tray'],
   'palette:register': ['palette'],
   'selection:register': ['selection'],
+  'event:subscribe': ['events'],
+  'event:unsubscribe': ['events'],
+  'event:emit': ['events'],
+  'schedule:register': ['schedule'],
+  'schedule:unregister': ['schedule'],
+  'schedule:list': ['schedule'],
   'BrowserWindow:create': ['windows'],
   'BrowserWindow:loadURL': ['windows'],
   'BrowserWindow:show': ['windows'],

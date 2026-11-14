@@ -26,6 +26,23 @@ import {
   type PermissionId,
 } from '../permissions'
 import type { PluginManifest } from '../../shared/types'
+import {
+  startEventSources,
+  setEventDispatcher,
+  emitEvent as emitPluginEvent,
+  hasSubscribers as hasEventSubscribers,
+  subscribe as subscribePluginEvent,
+  unsubscribe as unsubscribePluginEvent,
+  emitFromPlugin,
+  clearPluginSubscriptions,
+} from './events'
+import {
+  startScheduler,
+  registerSchedule,
+  unregisterSchedule,
+  clearPluginSchedules,
+  listSchedules,
+} from './scheduler'
 import { loadPlugins } from './loader'
 import { PluginProcessManager } from './child-process'
 import { channelSend, channelStatus, setInboundDispatcher } from '../backendChannel'
@@ -34,6 +51,17 @@ import { handleLocalToolMessage } from '../localTools'
 const processManager = new PluginProcessManager()
 const plugins = new Map<string, PluginInfo>()
 const panels: PluginPanel[] = []
+
+function dispatchPluginEvent(pluginId: string, event: string, payload: unknown): void {
+  const proc = processManager.getProcess(pluginId)
+  if (!proc) return
+  if (event === 'schedule') {
+    proc.sendEvent('schedule', payload, 'schedule', (payload as any)?.id)
+  } else {
+    proc.sendEvent(event, payload, 'event')
+  }
+}
+setEventDispatcher(dispatchPluginEvent)
 
 // ---- Plugin-contributed extension points --------------------------------
 const trayItemsByPlugin = new Map<string, TrayMenuItem[]>()
@@ -270,6 +298,14 @@ export async function checkBridgePermission(
     }
 
     if (!grant.declared.includes(perm)) {
+      // Bundled plugins and dev plugins are trusted: declaration drift should
+      // not interrupt them with a prompt.
+      if (isTrustedPlugin(info)) {
+        grant.permissions.push(perm)
+        writeLog(pluginId, 'system', `trusted plugin auto-granted: ${perm}`)
+        persistGrants().catch(() => {})
+        continue
+      }
       if (isHighRisk(perm)) {
         const approved = await promptUndeclaredPermission(pluginId, info, perm)
         if (approved) continue
@@ -524,6 +560,14 @@ export function markPluginsShuttingDown(): void {
  * Start a plugin process, wire lifecycle logging/status and the panel entry.
  * Safe to call again after removePlugin().
  */
+async function ensureGrantFor(info: PluginInfo): Promise<void> {
+  if (grants.has(info.id)) return
+  const declared = expandPermissions(info.manifest.permissions)
+  const approved = declared.filter(perm => !isHighRisk(perm) || isTrustedPlugin(info))
+  grants.set(info.id, makeGrant(info, approved, baselineIds.has(info.id)))
+  await persistGrants()
+}
+
 async function startPluginInstance(info: PluginInfo): Promise<boolean> {
   const id = info.id
   try {
@@ -533,6 +577,9 @@ async function startPluginInstance(info: PluginInfo): Promise<boolean> {
       patchRuntime(id, { state: 'crashed', lastError: '入口文件不存在' })
       return false
     }
+
+    // Plugins started at runtime (hot install / manual copy) need a grant too.
+    await ensureGrantFor(info)
 
     // Sensitive permissions must be approved before the plugin can use them.
     if (!isTrustedPlugin(info)) {
@@ -604,6 +651,8 @@ function attachLifecycle(id: string, proc: import('./child-process').PluginChild
   })
 
   proc.on('exit', (code: number | null) => {
+    clearPluginSubscriptions(id)
+    clearPluginSchedules(id)
     const stable = stableTimers.get(id)
     if (stable) { clearTimeout(stable); stableTimers.delete(id) }
 
@@ -714,6 +763,8 @@ export async function initPlugins() {
   }
 
   startClipboardMonitoring()
+  startEventSources()
+  startScheduler(dispatchPluginEvent)
   broadcastPluginUpdate()
 }
 
@@ -743,9 +794,8 @@ let clipboardBusy = false
 function startClipboardMonitoring() {
   if (clipboardTimer) return
   clipboardTimer = setInterval(async () => {
-    // The clipboard-history plugin may be disabled at runtime; do not read the
-    // system clipboard in that case.
-    if (clipboardBusy || !plugins.has('clipboard-history')) return
+    // Only read the clipboard when a plugin actually needs it.
+    if (clipboardBusy || (!plugins.has('clipboard-history') && !hasEventSubscribers('clipboard'))) return
     clipboardBusy = true
     try {
       // Run pbpaste in a child process with a timeout. A stuck macOS
@@ -753,6 +803,7 @@ function startClipboardMonitoring() {
       const text = await readClipboardTextSafe()
       if (!text || text === lastClipboardText) return
       lastClipboardText = text
+      emitPluginEvent('clipboard', { text })
 
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) win.webContents.send('panel:updated', 'clipboard-history')
@@ -767,6 +818,73 @@ function startClipboardMonitoring() {
       clipboardBusy = false
     }
   }, 1000)
+}
+
+const notificationLastAt = new Map<string, number>()
+
+function showPluginNotification(pluginId: string, input: any): void {
+  const data = input && typeof input === 'object' ? input : { title: String(input || '') }
+  const title = String(data.title || '').trim()
+  if (!title) return
+
+  // Per-plugin rate limit: a chatty plugin must not flood the notification center.
+  const now = Date.now()
+  const last = notificationLastAt.get(pluginId) || 0
+  if (now - last < 800) {
+    writeLog(pluginId, 'debug', 'notification rate-limited')
+    return
+  }
+  notificationLastAt.set(pluginId, now)
+
+  const actions = Array.isArray(data.actions)
+    ? data.actions.filter((a: any) => a && a.id).slice(0, 3)
+    : []
+
+  try {
+    const notification = new Notification({
+      title,
+      body: data.body ? String(data.body) : undefined,
+      silent: !!data.silent,
+      ...(process.platform === 'darwin' && actions.length
+        ? { actions: actions.map((a: any) => ({ type: 'button', text: String(a.title || a.id) })) }
+        : {}),
+    })
+
+    notification.on('click', () => {
+      if (data.command) {
+        executeCommand(pluginId, String(data.command), data.args).catch((e) => {
+          writeLog(pluginId, 'warn', `notification command failed: ${e?.message || e}`)
+        })
+      } else {
+        processManager.getProcess(pluginId)?.sendEvent('notification-click', {
+          title,
+          body: data.body || '',
+        })
+      }
+      if (data.deepLink && /^https?:\/\//i.test(String(data.deepLink))) {
+        shell.openExternal(String(data.deepLink)).catch(() => {})
+      }
+    })
+
+    notification.on('action', (_event: any, index: number) => {
+      const action = actions[index]
+      if (!action) return
+      if (action.command) {
+        executeCommand(pluginId, String(action.command), action.args).catch((e) => {
+          writeLog(pluginId, 'warn', `notification action failed: ${e?.message || e}`)
+        })
+      } else {
+        processManager.getProcess(pluginId)?.sendEvent('notification-action', {
+          actionId: action.id,
+          title,
+        })
+      }
+    })
+
+    notification.show()
+  } catch (e: any) {
+    writeLog(pluginId, 'warn', `notification failed: ${e?.message || e}`)
+  }
 }
 
 function registerBridgeHandlers(proc: import('./child-process').PluginChildProcess): void {
@@ -918,8 +1036,30 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
     return (cfg as any)?.[key]
   })
 
-  proc.registerBridgeHandler('notification:show', async ([title, body]) => {
-    new Notification({ title, body }).show()
+  proc.registerBridgeHandler('event:subscribe', async ([event, id, options]) => {
+    return subscribePluginEvent(proc.pluginId, String(event || ''), String(id || ''), options || {})
+  })
+  proc.registerBridgeHandler('event:unsubscribe', async ([event, id]) => {
+    unsubscribePluginEvent(proc.pluginId, String(event || ''), id ? String(id) : undefined)
+    return true
+  })
+  proc.registerBridgeHandler('event:emit', async ([event, payload]) => {
+    const delivered = emitFromPlugin(proc.pluginId, String(event || ''), payload)
+    return { ok: true, delivered }
+  })
+  proc.registerBridgeHandler('schedule:register', async ([spec]) => {
+    return registerSchedule(proc.pluginId, spec || {})
+  })
+  proc.registerBridgeHandler('schedule:unregister', async ([id]) => {
+    return { removed: unregisterSchedule(proc.pluginId, id ? String(id) : undefined) }
+  })
+  proc.registerBridgeHandler('schedule:list', async () => listSchedules(proc.pluginId))
+
+  proc.registerBridgeHandler('notification:show', async ([input, legacyBody]) => {
+    showPluginNotification(
+      proc.pluginId,
+      typeof input === 'string' ? { title: input, body: legacyBody } : input,
+    )
   })
 
   proc.registerBridgeHandler('screenshot:start', async () => { screenshot.startScreenshot() })
@@ -1212,6 +1352,8 @@ export function removePlugin(id: string): boolean {
   if (proc) processManager.stopPlugin(id)
 
   clearPluginExtensions(id)
+  clearPluginSubscriptions(id)
+  clearPluginSchedules(id)
   trayChangedHandler?.()
 
   const rec = runtimeRecord(id)

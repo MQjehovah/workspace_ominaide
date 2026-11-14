@@ -45,6 +45,8 @@ export default {
 | `clipboard:read` | 敏感 | 读取剪贴板内容 |
 | `selection` | 敏感 | 读取其他应用中选中的文本 |
 | `screenshot` | 敏感 | 截屏与截图历史 |
+| `events` | 敏感 | 接收剪贴板/文件/电源/网络/显示器/空闲事件 |
+| `schedule` | 普通 | 在应用运行时执行定时任务 |
 | `shortcut` | 敏感 | 注册全局快捷键 |
 | `files:write` | 敏感 | 修改/删除本地文件 |
 | `shell:exec` | 高危 | 执行任意命令 |
@@ -60,6 +62,74 @@ export default {
 - 权限系统上线前已安装的插件会被标记为「历史插件」，未声明的能力首次使用时自动授权并记录审计日志，可在权限面板复核。
 - 开发模式（未打包）和随应用内置的插件视为可信，声明即授权。
 - 旧权限名 `clipboard` / `shell` / `files` 会自动展开为新权限，无需改代码，但新插件建议直接用细粒度名称。
+
+## 事件与定时任务
+
+### 系统事件
+
+```ts
+// 剪贴板变化
+const offClipboard = context.on('clipboard', ({ text }) => {
+  console.log('copied:', text)
+})
+
+// 文件变化（目录或文件）
+context.on('file', ({ path, type }) => {
+  // type: 'add' | 'change' | 'unlink'
+}, { path: '~/Downloads' })
+
+// 电源 / 网络 / 显示器 / 空闲
+context.on('power', ({ type }) => {})          // suspend, resume, lock-screen, ...
+context.on('network', ({ online }) => {})
+context.on('display', ({ type, display }) => {})
+context.on('idle', ({ idle, seconds }) => {}, { thresholdSeconds: 300 })
+
+// 自定义事件（插件之间）
+context.on('my-event', (payload) => {})
+context.emit('my-event', { hello: 'world' })
+
+offClipboard() // 退订
+```
+
+需要 `events` 权限（敏感）。文件监听只在应用运行期间有效；macOS/Windows 支持递归，Linux 为单层目录。
+
+### 定时任务
+
+```ts
+context.schedule({ id: 'morning', cron: '0 9 * * *' }, async () => {
+  // 每天 9:00
+})
+
+context.schedule({ id: 'ping', every: '30s' }, () => {})
+context.schedule({ id: 'once', at: '2026-11-14T09:00:00+08:00' }, () => {})
+
+context.unschedule('ping')
+```
+
+- 需要 `schedule` 权限
+- 支持五段 cron（分 时 日 月 周，不支持秒）、`every`（`30s`/`5m`/`1h`/`1d`）和一次性 `at`
+- 每个插件最多 50 个任务；应用退出后不会后台执行，重启插件时会重新注册
+- 回调参数为 `{ id }`
+
+### 通知 2.0
+
+```ts
+context.notification.show({
+  title: '构建完成',
+  body: '用时 42s',
+  silent: false,
+  command: 'openBuild',                     // 点击通知执行插件命令
+  actions: [                                // macOS 通知按钮
+    { id: 'done', title: '标记完成', command: 'markDone' },
+  ],
+  deepLink: 'https://mqgeek.com/ominaide/', // 点击时用浏览器打开
+})
+
+context.on('notification-click', () => {})   // 未提供 command 时触发
+context.on('notification-action', ({ actionId }) => {})
+```
+
+通知按插件限频（800ms 内只发一条），避免刷屏。
 
 ## 面板（主窗口卡片）
 

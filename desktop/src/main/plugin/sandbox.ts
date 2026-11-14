@@ -23,7 +23,13 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
 
   // Notification API
   const notification = perms.includes('notification')
-    ? { show: (title: string, body?: string) => new Notification({ title, body }).show() }
+    ? {
+        show: (input: any, body?: string) => {
+          const data = typeof input === 'string' ? { title: input, body } : (input || {})
+          if (!data.title) return
+          new Notification({ title: String(data.title), body: data.body ? String(data.body) : undefined }).show()
+        },
+      }
     : null
 
   // Shell API
@@ -172,6 +178,10 @@ export function createSandbox(pluginInfo: PluginInfo, commands: Map<string, Func
     setTrayItems: () => {},
     registerPaletteItem: () => {},
     registerSelectionAction: () => {},
+    on: () => () => {},
+    emit: () => {},
+    schedule: () => () => {},
+    unschedule: () => {},
     signal: (_method: string, ..._args: any[]) => Promise.resolve(),
     log: (level: string, message: string) => {
       console.error(`[plugin:${pluginInfo.id}] [${level.toUpperCase()}] ${message}`)

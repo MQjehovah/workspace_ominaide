@@ -182,6 +182,45 @@ export interface SelectionAction {
   args?: Record<string, unknown>
 }
 
+export interface PluginNotificationAction {
+  id: string
+  title: string
+  /** Plugin command invoked when the action button is clicked. */
+  command?: string
+  args?: unknown
+}
+
+export interface PluginNotificationInput {
+  title: string
+  body?: string
+  silent?: boolean
+  /** macOS notification buttons (ignored on platforms without support). */
+  actions?: PluginNotificationAction[]
+  /** Plugin command invoked when the notification itself is clicked. */
+  command?: string
+  args?: unknown
+  /** URL opened in the default browser when the notification is clicked. */
+  deepLink?: string
+}
+
+export interface PluginEventOptions {
+  /** Directory or file to watch for the `file` event. */
+  path?: string
+  recursive?: boolean
+  /** Seconds of idle time before `idle` fires (default 300). */
+  thresholdSeconds?: number
+}
+
+export interface PluginScheduleSpec {
+  id: string
+  /** Interval in milliseconds or a string such as "30s" / "5m" / "2h". */
+  every?: number | string
+  /** Five-field cron: minute hour day month weekday. */
+  cron?: string
+  /** One-shot ISO time or epoch milliseconds. */
+  at?: string | number
+}
+
 export interface SelectionRunResult {
   /** Replace the selected text in the source app (requires Accessibility). */
   replace?: string
@@ -273,7 +312,7 @@ export interface PluginContext {
     set: (key: string, value: any) => Promise<void>
   }
   notification: {
-    show: (title: string, body?: string) => void
+    show: (input: string | PluginNotificationInput, body?: string) => void
   }
   screenshot: ScreenshotCapability | null
   remote: RemoteCapability | null
@@ -288,6 +327,13 @@ export interface PluginContext {
   registerPaletteItem: (item: PaletteItem) => void
   /** Contribute an action to the system-wide text selection bar. */
   registerSelectionAction: (action: SelectionAction) => void
+  /** Subscribe to a system event (clipboard, file, power, network, display, idle) or a custom event. */
+  on: (event: string, handler: (payload: any) => void | Promise<void>, options?: PluginEventOptions) => () => void
+  /** Send a custom event to other plugins that subscribed to it. */
+  emit: (event: string, payload?: unknown) => void
+  /** Run a handler on an interval, cron schedule or one-shot time. Returns an unsubscribe function. */
+  schedule: (spec: PluginScheduleSpec, handler: (payload: { id: string }) => void | Promise<void>) => () => void
+  unschedule: (id: string) => void
   signal: (method: string, ...args: any[]) => Promise<unknown>
   log: (level: string, message: string) => void
 }

@@ -116,6 +116,11 @@ export class PluginChildProcess extends EventEmitter {
   get searchProviders() { return this._searchProviders }
   get commandHandlers() { return this._commandHandlers }
 
+  /** Push an event (or schedule tick) to the plugin without expecting a reply. */
+  sendEvent(event: string, payload: unknown, kind: 'event' | 'schedule' = 'event', id?: string): void {
+    this.writeToChild({ type: 'event', data: { event, payload, kind, id } })
+  }
+
   async executeCommand(command: string, args?: unknown): Promise<unknown> {
     if (!this.isRunning()) throw new Error(`Plugin ${this.pluginId} is not running`)
     const req = { id: this.nextId(), type: 'execute' as const, command, args }

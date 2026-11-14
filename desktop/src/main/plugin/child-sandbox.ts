@@ -8,6 +8,9 @@ import { encodeMessage, decodeMessage } from './rpc'
 export function createChildContext(info: PluginInfo): PluginContext {
   const commands = new Map<string, Function>()
   const providers: SearchProvider[] = []
+  const eventHandlers = new Map<string, Map<string, Function>>()
+  const scheduleHandlers = new Map<string, Function>()
+  let eventSeq = 0
   let pendingResolve: ((value: unknown) => void) | null = null
 
   process.stdin?.setMaxListeners(100)
@@ -102,6 +105,26 @@ export function createChildContext(info: PluginInfo): PluginContext {
       sendToParent({ id: req.id, type: 'error', error: `Unknown command: ${req.command}` })
       return true
     }
+    if (req.type === 'event') {
+      const data = req.data || {}
+      const event = String(data.event || '')
+      if (data.kind === 'schedule') {
+        const handler = scheduleHandlers.get(String(data.id || ''))
+        if (handler) {
+          Promise.resolve(handler(data.payload))
+            .catch((err: any) => { rpc('log:write', 'error', `schedule ${data.id} failed: ${err?.message || err}`).catch(() => {}) })
+        }
+        return true
+      }
+      const handlers = eventHandlers.get(event)
+      if (handlers) {
+        for (const handler of handlers.values()) {
+          Promise.resolve(handler(data.payload))
+            .catch((err: any) => { rpc('log:write', 'error', `event ${event} failed: ${err?.message || err}`).catch(() => {}) })
+        }
+      }
+      return true
+    }
     if (req.type === 'search') {
       const matching = providers.filter(p => !req.keyword || p.keyword === req.keyword)
       Promise.all(matching.map(p => Promise.resolve(p.onSearch(req.query))))
@@ -148,7 +171,10 @@ export function createChildContext(info: PluginInfo): PluginContext {
       set: async () => {},
     },
     notification: has('notification') ? {
-      show: (title: string, body?: string) => { rpc('notification:show', title, body) },
+      show: (input: any, body?: string) => {
+        const payload = typeof input === 'string' ? { title: input, body } : input
+        rpc('notification:show', payload).catch(() => {})
+      },
     } : {
       show: () => {},
     },
@@ -171,6 +197,39 @@ export function createChildContext(info: PluginInfo): PluginContext {
     setTrayItems: (items: any[]) => { rpc('tray:set', items).catch(() => {}) },
     registerPaletteItem: (item: any) => { rpc('palette:register', item).catch(() => {}) },
     registerSelectionAction: (action: any) => { rpc('selection:register', action).catch(() => {}) },
+    on: (event: string, handler: (payload: any) => void | Promise<void>, options?: any) => {
+      const name = String(event || '')
+      const id = `${name}:${++eventSeq}`
+      if (!eventHandlers.has(name)) eventHandlers.set(name, new Map())
+      eventHandlers.get(name)!.set(id, handler)
+      rpc('event:subscribe', name, id, options || {}).catch((err: any) => {
+        rpc('log:write', 'warn', `event subscribe failed (${name}): ${err?.message || err}`).catch(() => {})
+      })
+      return () => {
+        eventHandlers.get(name)?.delete(id)
+        if (eventHandlers.get(name)?.size === 0) eventHandlers.delete(name)
+        rpc('event:unsubscribe', name, id).catch(() => {})
+      }
+    },
+    emit: (event: string, payload?: unknown) => {
+      rpc('event:emit', String(event || ''), payload).catch(() => {})
+    },
+    schedule: (spec: any, handler: (payload: any) => void | Promise<void>) => {
+      if (!spec?.id) throw new Error('schedule spec requires an id')
+      const id = String(spec.id)
+      scheduleHandlers.set(id, handler)
+      rpc('schedule:register', { ...spec, id }).catch((err: any) => {
+        rpc('log:write', 'warn', `schedule register failed (${id}): ${err?.message || err}`).catch(() => {})
+      })
+      return () => {
+        scheduleHandlers.delete(id)
+        rpc('schedule:unregister', id).catch(() => {})
+      }
+    },
+    unschedule: (id: string) => {
+      scheduleHandlers.delete(String(id))
+      rpc('schedule:unregister', String(id)).catch(() => {})
+    },
     signal: (method: string, ...args: any[]) => rpc(method, ...args),
     registerSearchProvider: (provider: SearchProvider) => {
       providers.push({ ...provider, pluginId: info.id })
