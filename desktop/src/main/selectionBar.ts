@@ -2,7 +2,8 @@ import { BrowserWindow, clipboard, screen, shell, systemPreferences, Notificatio
 import { execFile } from 'child_process'
 import { join } from 'path'
 import { readClipboardTextSafe } from './clipboard'
-import { executeCommand, getSelectionAction, getSelectionActions, getUniversalAction, getApplicableActions } from './plugin/host'
+import { executeCommand, getSelectionAction, getSelectionActions, getUniversalAction, getApplicableActions, ensureLazyPluginsStarted } from './plugin/host'
+import { collectCommandArguments } from './commandForm'
 import type { SelectionRunResult } from '../shared/types'
 
 let barWindow: BrowserWindow | null = null
@@ -226,6 +227,7 @@ export async function openSelectionBar(text?: string, options?: { silent?: boole
   if (process.platform === 'darwin') previousApp = await getFrontmostApp()
   const isUrl = /^https?:\/\//i.test(selected)
   currentInput = { type: isUrl ? 'url' : 'text', url: isUrl ? selected : undefined }
+  await ensureLazyPluginsStarted('all')
   const universal = getApplicableActions({
     type: currentInput.type,
     text: selected,
@@ -306,9 +308,16 @@ export async function runSelectionAction(key: string): Promise<SelectionRunResul
   const universal = getUniversalAction(key)
   if (universal) {
     if (!currentText) return { error: '没有选中文本' }
+    let formValues: Record<string, unknown> = {}
+    if (Array.isArray(universal.arguments) && universal.arguments.length > 0) {
+      const collected = await collectCommandArguments(universal.title, universal.arguments)
+      if (!collected) return { message: '已取消' }
+      formValues = collected
+    }
     try {
       const result = (await executeCommand(universal.pluginId, universal.command, {
         ...(universal.args || {}),
+        ...formValues,
         type: currentInput.type,
         text: currentText,
         url: currentInput.url,

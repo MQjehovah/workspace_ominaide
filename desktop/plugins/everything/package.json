@@ -1,6 +1,6 @@
 {
   "name": "omniaide-everything",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "displayName": "文件搜索",
   "description": "搜索服务端文件",
   "main": "dist/index.js",
@@ -20,7 +20,9 @@
       "shell"
     ],
     "builtin": true,
-    "version": "1.1.0"
+    "version": "1.1.1",
+    "activation": "lazy",
+    "search": true
   },
   "devDependencies": {
     "vite": "^5.2.0",

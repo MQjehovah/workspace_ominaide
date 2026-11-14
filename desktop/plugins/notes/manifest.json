@@ -3,7 +3,7 @@
   "name": "omniaide-notes",
   "displayName": "笔记",
   "description": "富文本笔记 + 快速记录 + AI 扩写，支持目录树、图片、表格",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "icon": "Document",
   "keywords": [
     "note",
@@ -18,5 +18,7 @@
     "api"
   ],
   "builtin": false,
-  "main": "dist/index.js"
+  "main": "dist/index.js",
+  "activation": "lazy",
+  "search": true
 }

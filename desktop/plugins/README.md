@@ -151,6 +151,11 @@ context.registerAction({
     ext: ['md', 'txt', 'pdf'],   // 文件动作的扩展名
   },
   command: 'onAction',           // 通过 registerCommand 注册
+  arguments: [                   // 可选：执行前弹表单
+    { name: 'tone', label: '语气', type: 'select', options: [
+      { label: '简洁', value: 'short' }, { label: '详细', value: 'long' },
+    ], default: 'short' },
+  ],
 })
 
 context.registerCommand('onAction', async (ctx) => {
@@ -167,6 +172,21 @@ context.registerCommand('onAction', async (ctx) => {
 - **截图编辑器**：工具栏「⚡」，传入 `image`（PNG Data URL）
 
 返回 `{ replace }` / `{ copy }` / `{ message }` 时，划词浮条会按同样规则处理。
+
+## 懒启动
+
+插件默认随应用启动。需要减少开机进程时，在 manifest 中声明：
+
+```json
+{
+  "activation": "lazy",
+  "search": true
+}
+```
+
+- `activation: "lazy"`：启动时不运行，面板显示「按需启动」，点击启动、打开页面或执行命令时再启动
+- `search: true`：打开全局搜索时提前启动，确保搜索结果不缺失
+- 托盘/划词/通用动作只有插件启动后才可用；需要常驻的采集类插件不要设为 lazy
 
 ## 前台应用与兜底搜索
 
@@ -279,13 +299,18 @@ context.setTrayItems([
 
 ```ts
 context.registerPaletteItem({
-  id: 'open',
-  title: '翻译助手',
-  subtitle: '打开翻译面板',
-  icon: '🌐',
-  keywords: ['translate', '翻译'],
-  command: 'open',
-  args: { from: 'palette' },
+  id: 'search',
+  title: '搜索笔记',
+  subtitle: '先输入关键词',
+  icon: '🔍',
+  keywords: ['note', '笔记'],
+  command: 'searchNotes',
+  arguments: [
+    { name: 'query', label: '关键词', type: 'text', required: true },
+    { name: 'scope', label: '范围', type: 'select', options: [
+      { label: '全部', value: 'all' }, { label: '最近', value: 'recent' },
+    ], default: 'all' },
+  ],
 })
 ```
 

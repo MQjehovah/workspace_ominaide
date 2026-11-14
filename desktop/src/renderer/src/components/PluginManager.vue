@@ -338,6 +338,7 @@ function statusColor(id: string): string {
   if (state === 'crashed') return '#DC3545'
   if (state === 'restarting') return '#FF9800'
   if (state === 'starting') return '#0078D4'
+  if (state === 'lazy') return '#8a94a8'
   return '#c0c4cc'
 }
 
@@ -366,6 +367,8 @@ function statusText(id: string): string {
       return '已停止'
     case 'disabled':
       return '已停用'
+    case 'lazy':
+      return '按需启动'
     default:
       return ''
   }

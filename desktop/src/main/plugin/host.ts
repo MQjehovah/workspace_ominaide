@@ -22,6 +22,7 @@ import type {
   DeepLinkSpec,
 } from '../../shared/types'
 import { getActiveWindow } from './systemContext'
+import { collectCommandArguments } from '../commandForm'
 import {
   PERMISSIONS,
   expandPermissions,
@@ -168,11 +169,17 @@ export function getUniversalAction(key: string): ActionDescriptor | null {
 export async function executeUniversalAction(
   key: string,
   input: ActionContext,
-): Promise<{ success: boolean; message?: string; error?: string; result?: unknown }> {
+): Promise<{ success: boolean; message?: string; error?: string; result?: unknown; cancelled?: boolean }> {
   const action = universalActions.get(key)
   if (!action) return { success: false, error: '动作不存在' }
   if (!action.accepts.includes(input.type)) {
     return { success: false, error: `该动作不支持 ${input.type} 输入` }
+  }
+  let formValues: Record<string, unknown> = {}
+  if (Array.isArray(action.arguments) && action.arguments.length > 0) {
+    const collected = await collectCommandArguments(action.title, action.arguments)
+    if (!collected) return { success: false, cancelled: true, error: '已取消' }
+    formValues = collected
   }
   if (!processManager.getProcess(action.pluginId)) {
     await startPluginById(action.pluginId)
@@ -181,6 +188,7 @@ export async function executeUniversalAction(
     const result = await executeCommand(action.pluginId, action.command, {
       ...(action.args || {}),
       ...input,
+      ...formValues,
     })
     const message = result && typeof result === 'object' && typeof (result as any).message === 'string'
       ? (result as any).message
@@ -619,6 +627,7 @@ export type PluginRuntimeState =
   | 'stopped'
   | 'crashed'
   | 'disabled'
+  | 'lazy'
 
 export interface PluginRuntimeStatus {
   id: string
@@ -645,6 +654,7 @@ interface RuntimeRecord {
 }
 
 const knownPlugins = new Map<string, PluginInfo>()
+const lazyPlugins = new Set<string>()
 const runtime = new Map<string, RuntimeRecord>()
 const disabledPlugins = new Set<string>()
 const restartTimers = new Map<string, NodeJS.Timeout>()
@@ -690,8 +700,9 @@ export function getPluginStatuses(): PluginRuntimeStatus[] {
     const disabled = disabledPlugins.has(info.id)
     let state: PluginRuntimeState = rec.state
     if (disabled) state = 'disabled'
-    else if (running && (state === 'stopped' || state === 'crashed')) state = 'running'
+    else if (running && (state === 'stopped' || state === 'crashed' || state === 'lazy')) state = 'running'
     else if (!running && (state === 'running' || state === 'starting')) state = 'stopped'
+    else if (!running && lazyPlugins.has(info.id) && !disabled) state = 'lazy'
     return {
       id: info.id,
       displayName: info.manifest.displayName || info.id,
@@ -917,6 +928,16 @@ export async function initPlugins() {
     if (disabledPlugins.has(id)) {
       runtimeRecord(id).state = 'disabled'
       console.log(`[plugin] ${id}: disabled by user, not starting`)
+      continue
+    }
+    if (info.manifest.activation === 'lazy') {
+      lazyPlugins.add(id)
+      runtimeRecord(id).state = 'lazy'
+      const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
+      if (!panels.some(p => p.pluginId === id)) {
+        panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
+      }
+      writeLog(id, 'system', 'lazy startup: waiting for first use')
       continue
     }
     await startPluginInstance(info)
@@ -1405,6 +1426,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
       icon: item.icon,
       command: String(item.command),
       args: item.args,
+      arguments: Array.isArray(item.arguments) ? item.arguments : undefined,
       pluginId: proc.pluginId,
       key,
     })
@@ -1569,8 +1591,50 @@ export function getSearchProviders(): Array<SearchProvider & { pluginId: string 
   return providers
 }
 
+export function isLazyPlugin(pluginId: string): boolean {
+  return lazyPlugins.has(pluginId)
+}
+
+export function isPluginRunning(pluginId: string): boolean {
+  return !!processManager.getProcess(pluginId)?.isRunning()
+}
+
+export async function ensurePluginStarted(pluginId: string): Promise<boolean> {
+  if (plugins.has(pluginId)) return true
+  if (disabledPlugins.has(pluginId)) return false
+  const info = knownPlugins.get(pluginId)
+  if (!info) return false
+  return startPluginById(pluginId)
+}
+
+/** Start lazy plugins. `search` only starts plugins that contribute search results. */
+export async function ensureLazyPluginsStarted(mode: 'search' | 'all' = 'all'): Promise<void> {
+  for (const id of [...lazyPlugins]) {
+    if (plugins.has(id) || disabledPlugins.has(id)) continue
+    const info = knownPlugins.get(id)
+    if (!info) continue
+    if (mode === 'search' && !info.manifest.search) continue
+    try {
+      await ensurePluginStarted(id)
+    } catch (e) {
+      writeLog(id, 'warn', `lazy start failed: ${(e as Error)?.message || e}`)
+    }
+  }
+}
+
 export async function executeCommand(pluginId: string, command: string, args?: unknown): Promise<unknown> {
-  const proc = processManager.getProcess(pluginId)
+  let proc = processManager.getProcess(pluginId)
+
+  if (!proc && !disabledPlugins.has(pluginId) && knownPlugins.has(pluginId)) {
+    await ensurePluginStarted(pluginId)
+    proc = processManager.getProcess(pluginId)
+  }
+
+  if (command === '__activate__') {
+    if (!proc) throw new Error(`Plugin ${pluginId} not running`)
+    return { ok: true }
+  }
+
   if (!proc) throw new Error(`Plugin ${pluginId} not running`)
   const result = await proc.executeCommand(command, args)
 

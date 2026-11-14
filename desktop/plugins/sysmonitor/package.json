@@ -1,6 +1,6 @@
 {
   "name": "omniaide-sysmonitor",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "displayName": "系统监控",
   "description": "CPU/内存/磁盘/GPU 实时监控，支持内存与磁盘清理",
   "main": "dist/index.js",
@@ -27,7 +27,8 @@
       "notification"
     ],
     "builtin": true,
-    "version": "1.2.0"
+    "version": "1.2.1",
+    "activation": "lazy"
   },
   "devDependencies": {
     "vite": "^5.2.0",

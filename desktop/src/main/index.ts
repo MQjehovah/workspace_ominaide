@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, protocol, net, session } from 'electron'
 import { join, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { initPlugins, getProcessManager, setPluginEnabled, getTrayItems, onTrayItemsChanged, getPlugins, markPluginsShuttingDown, handleDeepLink } from './plugin/host'
+import { initPlugins, getProcessManager, setPluginEnabled, getTrayItems, onTrayItemsChanged, getPlugins, markPluginsShuttingDown, handleDeepLink, ensurePluginStarted } from './plugin/host'
 import { writeLog } from './logger'
 import { monitorEventLoopDelay } from 'perf_hooks'
 import { registerIpcHandlers } from './ipc'
@@ -332,6 +332,7 @@ ipcMain.handle('window:open-main', () => showMainPanel())
 ipcMain.handle('window:open-page', async (_, pluginId: string, query: string = '') => {
   const cfg = await getConfig()
   if (!cfg.token) return
+  await ensurePluginStarted(pluginId)
   const win = new BrowserWindow({
     width: 900, height: 700,
     webPreferences: { preload: preloadPath, contextIsolation: true },
@@ -346,6 +347,7 @@ ipcMain.handle('window:open-page', async (_, pluginId: string, query: string = '
 ipcMain.handle('window:open-plugin-window', async (_, pluginId: string, query: string = '') => {
   const cfg = await getConfig()
   if (!cfg.token) return
+  await ensurePluginStarted(pluginId)
   openPluginWindow(pluginId, query)
 })
 

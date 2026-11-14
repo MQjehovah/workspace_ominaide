@@ -3,7 +3,7 @@ import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream, rmSync } from 'fs'
 import { writeLog } from '../logger'
-import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin, getPluginPermissionStates, setPluginPermission, requestInstallConsent, getApplicableActions, executeUniversalAction } from '../plugin/host'
+import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin, getPluginPermissionStates, setPluginPermission, requestInstallConsent, getApplicableActions, executeUniversalAction, isLazyPlugin, isPluginRunning, ensurePluginStarted, ensureLazyPluginsStarted } from '../plugin/host'
 import * as selectionBar from '../selectionBar'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
@@ -13,6 +13,7 @@ import { clipboard as electronClipboard, nativeImage, BrowserWindow as BW } from
 import { readClipboardTextSafe } from '../clipboard'
 import { getRecentLogs, getLogFilePath, getLogDir } from '../logger'
 import { PERMISSIONS } from '../permissions'
+import { collectCommandArguments, submitCommandForm, cancelCommandForm, resizeCommandForm } from '../commandForm'
 
 let nutLoader: any = null
 let remotePowerSaveId = 0
@@ -138,6 +139,15 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('plugin:get-panel-data', async (_, pluginId: string) => {
     try {
+      if (isLazyPlugin(pluginId) && !isPluginRunning(pluginId)) {
+        const info = getAllPlugins().find(plugin => plugin.id === pluginId)
+        return {
+          title: info?.manifest.displayName || pluginId,
+          subtitle: '按需启动',
+          description: '该插件不会在启动时运行，点击启动或首次使用后加载。',
+          buttons: [{ label: '启动', command: '__activate__' }],
+        }
+      }
       const result: any = await executeCommand(pluginId, 'getPanelData')
       if (result && typeof result === 'object' && !result.error) {
         return {
@@ -393,6 +403,7 @@ export function registerIpcHandlers() {
 
   // Search
   ipcMain.handle('search:plugin', async (_, keyword: string, query: string) => {
+    await ensureLazyPluginsStarted('search')
     const allPlugins = getPlugins()
     const results: any[] = []
     const fallback = keyword === '__fallback__'
@@ -405,8 +416,33 @@ export function registerIpcHandlers() {
     }
     return results.slice(0, 20)
   })
-  ipcMain.handle('palette:list', async () => getPaletteItems())
+  ipcMain.handle('palette:list', async () => {
+    await ensureLazyPluginsStarted('search')
+    return getPaletteItems()
+  })
+  ipcMain.handle('palette:run', async (_, key: string, values?: Record<string, unknown>) => {
+    const item = getPaletteItems().find(entry => entry.key === key)
+    if (!item) return { error: '命令不存在' }
+    let formValues = values
+    if (Array.isArray(item.arguments) && item.arguments.length > 0 && !formValues) {
+      formValues = await collectCommandArguments(item.title, item.arguments) || undefined
+      if (!formValues) return { cancelled: true }
+    }
+    try {
+      return await executeCommand(item.pluginId, item.command, {
+        ...(item.args && typeof item.args === 'object' ? item.args : {}),
+        ...(formValues || {}),
+      })
+    } catch (e: any) {
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  ipcMain.on('command-form:submit', (_, values: Record<string, unknown>) => submitCommandForm(values))
+  ipcMain.on('command-form:cancel', () => cancelCommandForm())
+  ipcMain.on('command-form:resize', (_, height: number) => resizeCommandForm(height))
   ipcMain.handle('search:get-providers', async () => {
+    await ensureLazyPluginsStarted('search')
     const allPlugins = getPlugins()
     const providers: any[] = []
     for (const plugin of allPlugins) {
@@ -419,7 +455,10 @@ export function registerIpcHandlers() {
   })
 
   // Universal actions (selection / files / images / deep links)
-  ipcMain.handle('actions:list', async (_, input: any) => getApplicableActions(input || { type: 'text' }))
+  ipcMain.handle('actions:list', async (_, input: any) => {
+    await ensureLazyPluginsStarted('all')
+    return getApplicableActions(input || { type: 'text' })
+  })
   ipcMain.handle('actions:run', async (_, key: string, input: any) => executeUniversalAction(key, input || { type: 'text' }))
 
   // Selection bar (system-wide selected-text actions)

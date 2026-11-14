@@ -78,9 +78,18 @@ contextBridge.exposeInMainWorld('mqbox', {
   },
   palette: {
     list: () => ipcRenderer.invoke('palette:list'),
+    run: (key: string, values?: Record<string, unknown>) => ipcRenderer.invoke('palette:run', key, values),
     onUpdated: (callback: () => void) => {
       ipcRenderer.on('palette:updated', () => callback())
     },
+  },
+  commandForm: {
+    onInit: (callback: (data: any) => void) => {
+      ipcRenderer.on('command-form:init', (_, data) => callback(data))
+    },
+    submit: (values: Record<string, unknown>) => ipcRenderer.send('command-form:submit', values),
+    cancel: () => ipcRenderer.send('command-form:cancel'),
+    resize: (height: number) => ipcRenderer.send('command-form:resize', height),
   },
   actions: {
     list: (input: any) => ipcRenderer.invoke('actions:list', input),

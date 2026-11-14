@@ -1,6 +1,6 @@
 {
   "name": "omniaide-sources",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "displayName": "资讯",
   "description": "资讯阅读",
   "main": "dist/index.js",
@@ -24,7 +24,8 @@
       "api"
     ],
     "builtin": true,
-    "version": "1.0.1"
+    "version": "1.0.2",
+    "activation": "lazy"
   },
   "devDependencies": {
     "vite": "^5.2.0",

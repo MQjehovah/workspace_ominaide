@@ -1,6 +1,9 @@
 export interface PluginManifest {
   id: string
   name: string
+  activation?: 'startup' | 'lazy'
+  /** Whether the plugin contributes search results (used for lazy activation). */
+  search?: boolean
   displayName: string
   description?: string
   version: string
@@ -27,6 +30,7 @@ export type PluginRuntimeState =
   | 'stopped'
   | 'crashed'
   | 'disabled'
+  | 'lazy'
 
 export interface PluginRuntimeStatus {
   id: string
@@ -163,6 +167,18 @@ export interface TrayMenuItem {
   args?: unknown
 }
 
+export type CommandArgumentType = 'text' | 'textarea' | 'number' | 'select' | 'switch'
+
+export interface CommandArgument {
+  name: string
+  label?: string
+  type?: CommandArgumentType
+  placeholder?: string
+  required?: boolean
+  default?: string | number | boolean
+  options?: Array<{ label: string; value: string | number | boolean }>
+}
+
 export interface PaletteItem {
   id: string
   title: string
@@ -171,6 +187,7 @@ export interface PaletteItem {
   icon?: string
   command: string
   args?: unknown
+  arguments?: CommandArgument[]
 }
 
 export interface SelectionAction {
@@ -239,6 +256,7 @@ export interface UniversalAction {
   when?: UniversalActionWhen
   command: string
   args?: Record<string, unknown>
+  arguments?: CommandArgument[]
 }
 
 export interface ActionFileRef {
@@ -432,10 +450,17 @@ declare global {
       }
       palette: {
         list: () => Promise<Array<PaletteItem & { pluginId: string; key: string }>>
+        run: (key: string, values?: Record<string, unknown>) => Promise<unknown>
+      }
+      commandForm: {
+        onInit: (callback: (data: { title: string; arguments: CommandArgument[] }) => void) => void
+        submit: (values: Record<string, unknown>) => void
+        cancel: () => void
+        resize: (height: number) => void
       }
       actions: {
         list: (input: ActionContext) => Promise<ActionDescriptor[]>
-        run: (key: string, input: ActionContext) => Promise<{ success: boolean; message?: string; error?: string; result?: unknown }>
+        run: (key: string, input: ActionContext) => Promise<{ success: boolean; message?: string; error?: string; result?: unknown; cancelled?: boolean }>
       }
       selection: {
         onInit: (callback: (data: { text: string; actions: Array<SelectionAction & { pluginId: string; key: string }> }) => void) => void

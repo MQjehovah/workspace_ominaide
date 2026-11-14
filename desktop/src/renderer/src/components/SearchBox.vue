@@ -39,6 +39,7 @@ function paletteResults(query: string) {
     action: item.command,
     actionArgs: item.args,
     _palette: true,
+    paletteKey: item.key,
     _icon: item.icon,
   }))
 }
@@ -102,7 +103,7 @@ function selectIndex(i: number) {
   const r = results.value[i]
   if (!r?.action || !r.pluginId) { window.mqbox?.window.hide(); return }
   if (r._palette) {
-    const p = doAction(r.pluginId, r.action, r.actionArgs)
+    const p = window.mqbox?.palette?.run(r.paletteKey)
     if (p?.then) {
       p.then(() => { clearSearch(); window.mqbox?.window.hide() }).catch(() => {})
     } else {

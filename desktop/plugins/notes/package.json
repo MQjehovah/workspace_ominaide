@@ -1,6 +1,6 @@
 {
   "name": "omniaide-notes",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "displayName": "笔记",
   "description": "Markdown 笔记",
   "main": "dist/index.js",
@@ -20,7 +20,9 @@
       "api"
     ],
     "builtin": true,
-    "version": "1.2.4"
+    "version": "1.2.6",
+    "activation": "lazy",
+    "search": true
   },
   "devDependencies": {
     "vite": "^5.2.0",

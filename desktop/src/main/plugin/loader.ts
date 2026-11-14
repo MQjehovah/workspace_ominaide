@@ -61,6 +61,8 @@ export function loadPlugins(): Map<string, PluginInfo> {
         const manifest: PluginManifest = {
           id: m.id || m.name,
           name: m.name || m.id,
+          activation: m.activation === 'lazy' ? 'lazy' : 'startup',
+          search: !!m.search,
           displayName: m.displayName || m.name || m.id,
           description: m.description,
           version: m.version,
@@ -80,6 +82,8 @@ export function loadPlugins(): Map<string, PluginInfo> {
       const manifest: PluginManifest = {
         id: mqbox.id || pkg.name,
         name: pkg.name,
+        activation: mqbox.activation === 'lazy' ? 'lazy' : 'startup',
+        search: !!mqbox.search,
         displayName: mqbox.displayName || pkg.displayName || pkg.name,
         description: pkg.description,
         version: pkg.version,
