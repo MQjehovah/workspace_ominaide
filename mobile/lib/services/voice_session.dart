@@ -71,6 +71,8 @@ class VoiceSessionController extends ChangeNotifier {
   int _lastVoice = -1;
   Future<void> _audioChain = Future.value();
   bool _needsSeek = false;
+  bool _firstAudioOfTurn = true;
+  int _audioGeneration = 0;
   int _lastAudioAt = 0;
 
   bool _capturing = false;
@@ -312,6 +314,10 @@ class VoiceSessionController extends ChangeNotifier {
 
   Future<void> _sendTurn(Uint8List pcm, VoiceTurn turn) async {
     _abortStream();
+    // Start every turn from an empty player. Reusing the previous turn's
+    // playlist left just_audio parked at the end, so only the first answer
+    // ever played.
+    await _resetPlayback();
     _streamDone = false;
     final api = ApiService();
     final token = api.token;
@@ -419,24 +425,37 @@ class VoiceSessionController extends ChangeNotifier {
     }
     // Serialize playlist mutations: sentence frames arrive as a burst and
     // just_audio expects awaited playlist updates.
-    _audioChain = _audioChain.then((_) => _addAudio(wav));
+    final generation = _audioGeneration;
+    _audioChain = _audioChain.then((_) async {
+      if (generation != _audioGeneration) return;
+      await _addAudio(wav);
+    });
   }
 
   Future<void> _addAudio(Uint8List wav) async {
     try {
-      await _player.addAudioSource(_WavSource(wav));
-      if (!_playing) {
+      if (_firstAudioOfTurn) {
+        _firstAudioOfTurn = false;
+        // A fresh source per turn resets just_audio's cursor; appending to a
+        // completed playlist does not resume on iOS.
+        await _player.setAudioSource(_WavSource(wav));
         _playing = true;
-        if (_needsSeek) {
-          _needsSeek = false;
-          final sequence = _player.sequenceState.sequence;
-          if (sequence.isNotEmpty) {
-            await _player.seek(Duration.zero, index: sequence.length - 1);
-          }
-        }
         await _player.play();
-        _lastAudioAt = DateTime.now().millisecondsSinceEpoch;
+      } else {
+        await _player.addAudioSource(_WavSource(wav));
+        if (!_playing) {
+          _playing = true;
+          if (_needsSeek) {
+            _needsSeek = false;
+            final sequence = _player.sequenceState.sequence;
+            if (sequence.isNotEmpty) {
+              await _player.seek(Duration.zero, index: sequence.length - 1);
+            }
+          }
+          await _player.play();
+        }
       }
+      _lastAudioAt = DateTime.now().millisecondsSinceEpoch;
     } catch (e) {
       _playing = false;
       errorText = '语音播放失败：${e.toString().replaceFirst('Exception: ', '')}';
@@ -457,7 +476,9 @@ class VoiceSessionController extends ChangeNotifier {
 
   Future<void> _resetPlayback() async {
     _audioChain = Future.value();
+    _audioGeneration += 1;
     _needsSeek = false;
+    _firstAudioOfTurn = true;
     _playing = false;
     try {
       await _player.stop();
