@@ -56,6 +56,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
   Timer? _offlineTimer;
   bool _showOffline = false;
   bool _stickToBottom = true;
+  bool _userScrolling = false;
 
   @override
   void initState() {
@@ -114,8 +115,21 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     _stickToBottom = _atBottom;
   }
 
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _userScrolling = true;
+      _stickToBottom = false;
+    } else if (notification is ScrollEndNotification) {
+      _userScrolling = false;
+      _stickToBottom = notification.metrics.pixels >=
+          notification.metrics.maxScrollExtent - 80;
+    }
+    return false;
+  }
+
   bool _onScrollMetrics(ScrollMetricsNotification notification) {
-    if (!_stickToBottom) return false;
+    if (!_stickToBottom || _userScrolling) return false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients || !_stickToBottom) return;
       final target = _scroll.position.maxScrollExtent;
@@ -472,6 +486,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
     if (isLatest && pendingForm != null) _scheduleFormSheet();
     if (isLatest) {
       _stickToBottom = true;
+      _userScrolling = false;
       _scrollToBottom(force: true, animate: false);
     }
   }
@@ -531,6 +546,7 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       machineId: widget.machineId,
     );
     _stickToBottom = true;
+    _userScrolling = false;
     _scrollToBottom(force: true);
   }
 
@@ -733,12 +749,15 @@ class _OpenCodeSessionScreenState extends State<OpenCodeSessionScreen> {
       widgets.add(_MessageView(message: draft, streaming: _running));
       widgets.add(const SizedBox(height: 10));
     }
-    return NotificationListener<ScrollMetricsNotification>(
-      onNotification: _onScrollMetrics,
-      child: ListView(
-        controller: _scroll,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        children: widgets,
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScrollNotification,
+      child: NotificationListener<ScrollMetricsNotification>(
+        onNotification: _onScrollMetrics,
+        child: ListView(
+          controller: _scroll,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          children: widgets,
+        ),
       ),
     );
   }

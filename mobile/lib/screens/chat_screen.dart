@@ -55,6 +55,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loadingOlder = false;
   bool _atBottom = true;
   bool _showJump = false;
+  bool _userScrolling = false;
   int? _oldestId;
   bool _contextVisible = true;
   bool _stopRequested = false;
@@ -344,8 +345,26 @@ class _ChatScreenState extends State<ChatScreen> {
     return loaded;
   }
 
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _userScrolling = true;
+    } else if (notification is ScrollEndNotification) {
+      _userScrolling = false;
+      final atBottom = notification.metrics.pixels >=
+          notification.metrics.maxScrollExtent - 80;
+      if (atBottom != _atBottom) {
+        setState(() {
+          _atBottom = atBottom;
+          _showJump = !atBottom;
+        });
+      }
+    }
+    return false;
+  }
+
   bool _onScrollMetrics(ScrollMetricsNotification notification) {
-    if (!_atBottom) return false;
+    if (!_atBottom || _userScrolling) return false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients || !_atBottom) return;
       final target = _scroll.position.maxScrollExtent;
@@ -374,6 +393,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _oldestId = loaded.first.id;
         _hasOlder = rows.length >= 50;
         _atBottom = true;
+        _userScrolling = false;
       });
       _scrollToBottom(force: true, animate: false);
     } catch (_) {
@@ -441,6 +461,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _loading = true;
     });
     _atBottom = true;
+    _showJump = false;
+    _userScrolling = false;
     _scrollToBottom(force: true);
 
     _stopRequested = false;
@@ -1041,7 +1063,9 @@ class _ChatScreenState extends State<ChatScreen> {
                             )
                           : _messages.isEmpty
                               ? _buildEmpty(palette)
-                              : NotificationListener<ScrollMetricsNotification>(
+                              : NotificationListener<ScrollNotification>(
+                                  onNotification: _onScrollNotification,
+                                  child: NotificationListener<ScrollMetricsNotification>(
                                   onNotification: _onScrollMetrics,
                                   child: ListView.builder(
                                   controller: _scroll,
@@ -1176,6 +1200,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     );
                                   },
                                 ),
+                                  ),
                               ),
                     ),
                     if (_showJump)
