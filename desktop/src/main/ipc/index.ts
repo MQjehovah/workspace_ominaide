@@ -3,7 +3,7 @@ import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import { join, basename } from 'path'
 import { existsSync, readFileSync, mkdirSync, cpSync, writeFileSync, createWriteStream, rmSync } from 'fs'
 import { writeLog } from '../logger'
-import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin, getPluginPermissionStates, setPluginPermission, requestInstallConsent, getApplicableActions, executeUniversalAction, ensurePluginStarted, ensureLazyPluginsStarted } from '../plugin/host'
+import { getPlugins, getAllPlugins, getPanels, executeCommand, getPluginPage, reloadNewPlugins, removePlugin, getProcessManager, setPluginEnabled, getPaletteItems, getPluginStatuses, restartPlugin, getPluginPermissionStates, setPluginPermission, requestInstallConsent, getApplicableActions, executeUniversalAction, ensurePluginStarted, ensureLazyPluginsStarted, isPluginRunning } from '../plugin/host'
 import * as selectionBar from '../selectionBar'
 import { getConfig, setConfig } from '../config'
 import { getCustomShortcuts, addCustomShortcut, removeCustomShortcut, getBuiltinShortcuts, updateBuiltinShortcut } from '../shortcut'
@@ -139,6 +139,17 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('plugin:get-panel-data', async (_, pluginId: string) => {
     try {
+      if (!isPluginRunning(pluginId)) {
+        const info = getAllPlugins().find(plugin => plugin.id === pluginId)
+        if (!info) return null
+        // The background startup queue is already working through plugins;
+        // do not spawn every plugin at once just because panels rendered.
+        return {
+          title: info.manifest.displayName || pluginId,
+          subtitle: '启动中…',
+          description: info.manifest.description || '',
+        }
+      }
       const result: any = await executeCommand(pluginId, 'getPanelData')
       if (result && typeof result === 'object' && !result.error) {
         return {

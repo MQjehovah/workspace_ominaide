@@ -32,13 +32,13 @@ async function loadPlugins() {
   try {
     pluginList.value = await window.mqbox?.plugin.list() || []
     panels.value = await window.mqbox?.plugin.getPanels() || []
-    for (const panel of panels.value) {
-      await loadPanelData(panel.pluginId)
-    }
-    // Register per-plugin panel update listeners
+    // Register listeners before fetching so a plugin that becomes ready while
+    // we load cannot be missed.
     panels.value.forEach(p => {
       window.mqbox?.plugin?.onPanelUpdated?.(p.pluginId, () => loadPanelData(p.pluginId))
     })
+    // Load panels in parallel and let each card update as soon as it is ready.
+    await Promise.all(panels.value.map(panel => loadPanelData(panel.pluginId)))
   } catch {}
   isLoading.value = false
 }

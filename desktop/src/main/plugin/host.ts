@@ -683,6 +683,12 @@ function patchRuntime(id: string, patch: Partial<RuntimeRecord>): void {
 
 let broadcastTimer: NodeJS.Timeout | null = null
 
+function notifyPanelUpdated(pluginId: string): void {
+  BrowserWindow.getAllWindows().forEach(win => {
+    if (!win.isDestroyed()) win.webContents.send('panel:updated', pluginId)
+  })
+}
+
 function broadcastPluginUpdate(): void {
   if (broadcastTimer) return
   broadcastTimer = setTimeout(() => {
@@ -790,6 +796,7 @@ async function startPluginInstance(info: PluginInfo): Promise<boolean> {
     })
     writeLog(id, 'system', `running (pid=${proc.pid ?? '?'})`)
     console.log(`[plugin] started in child process: ${id} (${info.manifest.version})`)
+    notifyPanelUpdated(id)
     return true
   } catch (e: any) {
     const message = e?.message || String(e)
@@ -821,6 +828,7 @@ function attachLifecycle(id: string, proc: import('./child-process').PluginChild
   })
 
   proc.on('exit', (code: number | null) => {
+    plugins.delete(id)
     clearPluginSubscriptions(id)
     clearPluginSchedules(id)
     const stable = stableTimers.get(id)
@@ -1542,7 +1550,7 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 }
 
 export async function startPluginById(id: string): Promise<boolean> {
-  if (plugins.has(id)) return true
+  if (isPluginRunning(id)) return true
   if (disabledPlugins.has(id)) return false
   const inFlight = startingPlugins.get(id)
   if (inFlight) return inFlight
@@ -1633,11 +1641,11 @@ export function getSearchProviders(): Array<SearchProvider & { pluginId: string 
 }
 
 export function isPluginRunning(pluginId: string): boolean {
-  return !!processManager.getProcess(pluginId)?.isRunning()
+  return plugins.has(pluginId) && !!processManager.getProcess(pluginId)?.isRunning()
 }
 
 export async function ensurePluginStarted(pluginId: string): Promise<boolean> {
-  if (plugins.has(pluginId)) return true
+  if (isPluginRunning(pluginId)) return true
   if (disabledPlugins.has(pluginId)) return false
   const info = knownPlugins.get(pluginId)
   if (!info) return false
@@ -1657,15 +1665,15 @@ export async function ensureLazyPluginsStarted(_mode: 'search' | 'all' = 'all'):
 }
 
 export async function executeCommand(pluginId: string, command: string, args?: unknown): Promise<unknown> {
+  // A forked process is not ready to receive commands until its handlers are
+  // registered; wait for the plugin to be marked ready, not just forked.
+  if (!isPluginRunning(pluginId) && !disabledPlugins.has(pluginId) && knownPlugins.has(pluginId)) {
+    await ensurePluginStarted(pluginId)
+  }
   let proc = processManager.getProcess(pluginId)
 
-  if (!proc && !disabledPlugins.has(pluginId) && knownPlugins.has(pluginId)) {
-    await ensurePluginStarted(pluginId)
-    proc = processManager.getProcess(pluginId)
-  }
-
   if (command === '__activate__') {
-    if (!proc) throw new Error(`Plugin ${pluginId} not running`)
+    if (!proc || !plugins.has(pluginId)) throw new Error(`Plugin ${pluginId} not running`)
     return { ok: true }
   }
 
