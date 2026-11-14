@@ -509,16 +509,17 @@ class OpenCodeRunMonitor with WidgetsBindingObserver {
       if (justCompleted.value == run) justCompleted.value = null;
     });
 
+    // Always surface a system notification, not only in the background:
+    // the user may be on another page and miss the in-app bubble.
+    unawaited(
+      LocalReminderService().showNow(
+        title: status == 'failed' ? '编程任务失败' : '编程任务完成',
+        body: '${run.title} · 用时 ${formatRunDuration(run.elapsed)}',
+        payload: _notificationPayload(run, busy: false),
+      ),
+    );
     if (_appActive) {
       onCompleted?.call(run);
-    } else {
-      unawaited(
-        LocalReminderService().showNow(
-          title: status == 'failed' ? '编程任务失败' : '编程任务完成',
-          body: '${run.title} · 用时 ${formatRunDuration(run.elapsed)}',
-          payload: _notificationPayload(run, busy: false),
-        ),
-      );
     }
   }
 
