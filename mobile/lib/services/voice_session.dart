@@ -75,6 +75,14 @@ class VoiceSessionController extends ChangeNotifier {
   int _audioGeneration = 0;
   int _turnId = 0;
   int _lastAudioAt = 0;
+  // Echo probe: mute the answer for a moment and check whether the "speech"
+  // survives. Speaker leakage disappears instantly; a real voice does not.
+  bool _probing = false;
+  int _probeStartAt = 0;
+  int _probeConfirmMs = 0;
+  double _probeLevel = 0;
+  double _echoGate = 0;
+  int _probeCooldownUntil = 0;
 
   bool _capturing = false;
   bool _playing = false;
@@ -225,18 +233,59 @@ class VoiceSessionController extends ChangeNotifier {
       }
     } else if (phase == VoicePhase.speaking) {
       if (autoInterrupt) {
-        // Speaker leakage is strongest right after a sentence starts, so
-        // ignore the first 350ms and require a louder, longer burst. This
-        // trades a little responsiveness for far fewer self-interrupts.
-        final sinceAudio =
-            DateTime.now().millisecondsSinceEpoch - _lastAudioAt;
-        final barge = math.max(1500.0, _noiseFloor * 7);
-        if (sinceAudio > 350 && rms > barge) {
-          _bargeMs += _frameMs;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (_probing) {
+          // Give the speaker ~90ms to go silent, then require the sound to
+          // continue for 140ms with the answer muted.
+          final elapsed = now - _probeStartAt;
+          if (elapsed > 90) {
+            final confirm = math.max(600.0, _noiseFloor * 3.5);
+            if (rms > confirm) {
+              _probeConfirmMs += _frameMs;
+            } else {
+              _probeConfirmMs = 0;
+            }
+            if (_probeConfirmMs >= 140) {
+              _bargeIn();
+              return;
+            }
+          }
+          if (elapsed > 320) {
+            // It was our own audio: remember this echo level so it does not
+            // trigger another probe on the next sentence.
+            _probing = false;
+            _probeConfirmMs = 0;
+            _bargeMs = 0;
+            _echoGate = math.max(_echoGate, _probeLevel);
+            _probeCooldownUntil = now + 400;
+            try {
+              _player.setVolume(1.0);
+            } catch (_) {}
+          }
         } else {
-          _bargeMs = 0;
+          final sinceAudio = now - _lastAudioAt;
+          final threshold = math.max(
+            950.0,
+            math.max(_noiseFloor * 6, _echoGate * 1.2),
+          );
+          if (now > _probeCooldownUntil &&
+              sinceAudio > 350 &&
+              rms > threshold) {
+            _bargeMs += _frameMs;
+            if (_bargeMs >= 100) {
+              _probing = true;
+              _probeStartAt = now;
+              _probeConfirmMs = 0;
+              _probeLevel = rms;
+              _bargeMs = 0;
+              try {
+                _player.setVolume(0.0);
+              } catch (_) {}
+            }
+          } else {
+            _bargeMs = 0;
+          }
         }
-        if (_bargeMs >= 280) _bargeIn();
       }
     } else if (phase == VoicePhase.listening) {
       _speechMs = speech
@@ -493,7 +542,15 @@ class VoiceSessionController extends ChangeNotifier {
     _audioGeneration += 1;
     _needsSeek = false;
     _firstAudioOfTurn = true;
+    _probing = false;
+    _probeConfirmMs = 0;
+    _bargeMs = 0;
+    _echoGate = 0;
+    _probeCooldownUntil = 0;
     _playing = false;
+    try {
+      await _player.setVolume(1.0);
+    } catch (_) {}
     try {
       await _player.stop();
     } catch (_) {}
