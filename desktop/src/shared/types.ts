@@ -30,7 +30,6 @@ export type PluginRuntimeState =
   | 'stopped'
   | 'crashed'
   | 'disabled'
-  | 'lazy'
 
 export interface PluginRuntimeStatus {
   id: string

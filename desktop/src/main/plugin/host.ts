@@ -627,7 +627,6 @@ export type PluginRuntimeState =
   | 'stopped'
   | 'crashed'
   | 'disabled'
-  | 'lazy'
 
 export interface PluginRuntimeStatus {
   id: string
@@ -654,7 +653,8 @@ interface RuntimeRecord {
 }
 
 const knownPlugins = new Map<string, PluginInfo>()
-const lazyPlugins = new Set<string>()
+const deferredPlugins = new Set<string>()
+const startingPlugins = new Map<string, Promise<boolean>>()
 const runtime = new Map<string, RuntimeRecord>()
 const disabledPlugins = new Set<string>()
 const restartTimers = new Map<string, NodeJS.Timeout>()
@@ -700,9 +700,8 @@ export function getPluginStatuses(): PluginRuntimeStatus[] {
     const disabled = disabledPlugins.has(info.id)
     let state: PluginRuntimeState = rec.state
     if (disabled) state = 'disabled'
-    else if (running && (state === 'stopped' || state === 'crashed' || state === 'lazy')) state = 'running'
-    else if (!running && (state === 'running' || state === 'starting')) state = 'stopped'
-    else if (!running && lazyPlugins.has(info.id) && !disabled) state = 'lazy'
+    else if (running && (state === 'stopped' || state === 'crashed')) state = 'running'
+    else if (!running && state === 'running') state = 'stopped'
     return {
       id: info.id,
       displayName: info.manifest.displayName || info.id,
@@ -923,6 +922,9 @@ export async function initPlugins() {
 
   await initPermissionPolicy(loaded)
 
+  const startupInfos: PluginInfo[] = []
+  const deferredInfos: PluginInfo[] = []
+
   for (const [id, info] of loaded) {
     knownPlugins.set(id, info)
     if (disabledPlugins.has(id)) {
@@ -930,23 +932,51 @@ export async function initPlugins() {
       console.log(`[plugin] ${id}: disabled by user, not starting`)
       continue
     }
-    if (info.manifest.activation === 'lazy') {
-      lazyPlugins.add(id)
-      runtimeRecord(id).state = 'lazy'
-      const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
-      if (!panels.some(p => p.pluginId === id)) {
-        panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
-      }
-      writeLog(id, 'system', 'lazy startup: waiting for first use')
-      continue
+    const hasPage = existsSync(join(info.path, 'frontend', 'index.html'))
+    if (!panels.some(p => p.pluginId === id)) {
+      panels.push({ id: `${id}-panel`, pluginId: id, height: 120, hasPage })
     }
-    await startPluginInstance(info)
+    runtimeRecord(id).state = 'starting'
+    if (info.manifest.activation === 'lazy') {
+      deferredPlugins.add(id)
+      deferredInfos.push(info)
+    } else {
+      startupInfos.push(info)
+    }
   }
 
+  // Never block app startup on plugin process creation. Plugins start in the
+  // background, with lazy ones a moment later; all of them still come up.
   startClipboardMonitoring()
   startEventSources()
   startScheduler(dispatchPluginEvent)
   broadcastPluginUpdate()
+
+  void startBackgroundQueue(startupInfos)
+  if (deferredInfos.length > 0) {
+    setTimeout(() => {
+      if (!pluginsShuttingDown) void startBackgroundQueue(deferredInfos)
+    }, 600)
+  }
+}
+
+async function startBackgroundQueue(infos: PluginInfo[]): Promise<void> {
+  const queue = [...infos]
+  const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+  const worker = async () => {
+    while (queue.length > 0 && !pluginsShuttingDown) {
+      const info = queue.shift()!
+      try {
+        await startPluginById(info.id)
+      } catch (e) {
+        writeLog(info.id, 'warn', `background start failed: ${(e as Error)?.message || e}`)
+      }
+      await wait(40)
+    }
+  }
+  // Two concurrent process starts keep the UI responsive without serializing
+  // the whole plugin set.
+  await Promise.all([worker(), worker()])
 }
 
 export async function reloadNewPlugins(): Promise<string[]> {
@@ -1513,13 +1543,24 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
 
 export async function startPluginById(id: string): Promise<boolean> {
   if (plugins.has(id)) return true
+  if (disabledPlugins.has(id)) return false
+  const inFlight = startingPlugins.get(id)
+  if (inFlight) return inFlight
   const info = knownPlugins.get(id) || loadPlugins().get(id)
   if (!info) return false
   knownPlugins.set(id, info)
-  disabledPlugins.delete(id)
-  const ok = await startPluginInstance(info)
-  if (ok) broadcastPluginUpdate()
-  return ok
+
+  const task = (async () => {
+    const ok = await startPluginInstance(info)
+    if (ok) broadcastPluginUpdate()
+    return ok
+  })()
+  startingPlugins.set(id, task)
+  try {
+    return await task
+  } finally {
+    startingPlugins.delete(id)
+  }
 }
 
 export async function setPluginEnabled(id: string, enabled: boolean): Promise<boolean> {
@@ -1591,10 +1632,6 @@ export function getSearchProviders(): Array<SearchProvider & { pluginId: string 
   return providers
 }
 
-export function isLazyPlugin(pluginId: string): boolean {
-  return lazyPlugins.has(pluginId)
-}
-
 export function isPluginRunning(pluginId: string): boolean {
   return !!processManager.getProcess(pluginId)?.isRunning()
 }
@@ -1607,17 +1644,14 @@ export async function ensurePluginStarted(pluginId: string): Promise<boolean> {
   return startPluginById(pluginId)
 }
 
-/** Start lazy plugins. `search` only starts plugins that contribute search results. */
-export async function ensureLazyPluginsStarted(mode: 'search' | 'all' = 'all'): Promise<void> {
-  for (const id of [...lazyPlugins]) {
+/** Bring deferred (lazy) plugins up early when a search/action surface needs them. */
+export async function ensureLazyPluginsStarted(_mode: 'search' | 'all' = 'all'): Promise<void> {
+  for (const id of [...deferredPlugins]) {
     if (plugins.has(id) || disabledPlugins.has(id)) continue
-    const info = knownPlugins.get(id)
-    if (!info) continue
-    if (mode === 'search' && !info.manifest.search) continue
     try {
       await ensurePluginStarted(id)
     } catch (e) {
-      writeLog(id, 'warn', `lazy start failed: ${(e as Error)?.message || e}`)
+      writeLog(id, 'warn', `deferred start failed: ${(e as Error)?.message || e}`)
     }
   }
 }
