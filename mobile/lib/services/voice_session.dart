@@ -1,14 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 
 import 'api_service.dart';
@@ -40,7 +38,15 @@ class VoiceSessionController extends ChangeNotifier {
   static const int _frameBytes = sampleRate * 2 * _frameMs ~/ 1000;
 
   final AudioRecorder _recorder = AudioRecorder();
-  final AudioPlayer _player = AudioPlayer();
+  // just_audio plays from an in-memory byte stream (audioplayers' iOS plugin
+  // does not implement setSourceBytes). The player must not touch the audio
+  // session: record keeps it in playAndRecord + voice-processing mode so the
+  // microphone can stay open while the answer is playing.
+  final AudioPlayer _player = AudioPlayer(
+    handleInterruptions: false,
+    handleAudioSessionActivation: false,
+    androidApplyAudioAttributes: false,
+  );
 
   VoicePhase phase = VoicePhase.idle;
   String status = '点击开始，然后直接说话';
@@ -54,7 +60,7 @@ class VoiceSessionController extends ChangeNotifier {
   VoiceTurn? _active;
 
   StreamSubscription<Uint8List>? _micSub;
-  StreamSubscription<void>? _completeSub;
+  StreamSubscription<PlayerState>? _playerSub;
   StreamSubscription<String>? _lineSub;
   http.Client? _client;
   final BytesBuilder _pending = BytesBuilder(copy: true);
@@ -63,8 +69,9 @@ class VoiceSessionController extends ChangeNotifier {
   int _preRollBytes = 0;
   int _firstVoice = -1;
   int _lastVoice = -1;
-  final List<Uint8List> _audioQueue = [];
-  final List<File> _audioFiles = [];
+  Future<void> _audioChain = Future.value();
+  bool _needsSeek = false;
+  int _lastAudioAt = 0;
 
   bool _capturing = false;
   bool _playing = false;
@@ -98,7 +105,7 @@ class VoiceSessionController extends ChangeNotifier {
         _fail('需要麦克风权限才能语音对话');
         return;
       }
-      await _configureAudio();
+      await _resetPlayback();
       _sessionId ??= 'mobile-voice-${DateTime.now().millisecondsSinceEpoch}';
       final stream = await _recorder.startStream(const RecordConfig(
         encoder: AudioEncoder.pcm16bits,
@@ -126,8 +133,7 @@ class VoiceSessionController extends ChangeNotifier {
         _onAudio,
         onError: (Object e) => _fail('录音失败：$e'),
       );
-      _completeSub ??=
-          _player.onPlayerComplete.listen((_) {_playing = false; _drainAudio();});
+      _playerSub ??= _player.playerStateStream.listen(_onPlayerState);
       _setPhase(VoicePhase.listening, '正在聆听，请直接说话');
     } catch (e) {
       _fail('麦克风启动失败：$e');
@@ -148,12 +154,7 @@ class VoiceSessionController extends ChangeNotifier {
     _firstVoice = -1;
     _lastVoice = -1;
     _abortStream();
-    _audioQueue.clear();
-    _playing = false;
-    try {
-      await _player.stop();
-    } catch (_) {}
-    _cleanupAudioFiles();
+    await _resetPlayback();
     await _micSub?.cancel();
     _micSub = null;
     try {
@@ -175,27 +176,6 @@ class VoiceSessionController extends ChangeNotifier {
   void setAutoInterrupt(bool value) {
     autoInterrupt = value;
     _notify();
-  }
-
-  Future<void> _configureAudio() async {
-    // playAndRecord keeps the mic alive while TTS is playing, and
-    // defaultToSpeaker avoids routing the answer to the earpiece.
-    await _player.setAudioContext(const AudioContext(
-      iOS: AudioContextIOS(
-        category: AVAudioSessionCategory.playAndRecord,
-        options: [
-          AVAudioSessionOptions.defaultToSpeaker,
-          AVAudioSessionOptions.allowBluetooth,
-        ],
-      ),
-      android: AudioContextAndroid(
-        audioMode: AndroidAudioMode.inCommunication,
-        contentType: AndroidContentType.speech,
-        usageType: AndroidUsageType.voiceCommunication,
-        audioFocus: AndroidAudioFocus.gainTransientMayDuck,
-      ),
-    ));
-    await _player.setReleaseMode(ReleaseMode.stop);
   }
 
   // ---------------- microphone / VAD ----------------
@@ -240,9 +220,18 @@ class VoiceSessionController extends ChangeNotifier {
       }
     } else if (phase == VoicePhase.speaking) {
       if (autoInterrupt) {
-        final barge = math.max(1100.0, _noiseFloor * 6);
-        _bargeMs = rms > barge ? _bargeMs + _frameMs : 0;
-        if (_bargeMs >= 160) _bargeIn();
+        // Speaker leakage is strongest right after a sentence starts, so
+        // ignore the first 350ms and require a louder, longer burst. This
+        // trades a little responsiveness for far fewer self-interrupts.
+        final sinceAudio =
+            DateTime.now().millisecondsSinceEpoch - _lastAudioAt;
+        final barge = math.max(1500.0, _noiseFloor * 7);
+        if (sinceAudio > 350 && rms > barge) {
+          _bargeMs += _frameMs;
+        } else {
+          _bargeMs = 0;
+        }
+        if (_bargeMs >= 280) _bargeIn();
       }
     } else if (phase == VoicePhase.listening) {
       _speechMs = speech
@@ -366,7 +355,7 @@ class VoiceSessionController extends ChangeNotifier {
         onDone: () {
           _streamDone = true;
           if (phase == VoicePhase.speaking || phase == VoicePhase.thinking) {
-            if (!_playing && _audioQueue.isEmpty) _completeTurn();
+            if (!_playing) _completeTurn();
           }
         },
         cancelOnError: true,
@@ -416,7 +405,7 @@ class VoiceSessionController extends ChangeNotifier {
         turn.done = true;
         turn.interrupted = msg['interrupted'] == true;
         _streamDone = true;
-        if (!_playing && _audioQueue.isEmpty) _completeTurn();
+        if (!_playing) _completeTurn();
         break;
     }
   }
@@ -424,64 +413,73 @@ class VoiceSessionController extends ChangeNotifier {
   // ---------------- playback ----------------
 
   void _enqueueAudio(Uint8List wav) {
-    _audioQueue.add(wav);
+    _lastAudioAt = DateTime.now().millisecondsSinceEpoch;
     if (phase != VoicePhase.speaking) {
       _setPhase(VoicePhase.speaking, '正在回答，可直接打断');
     }
-    if (!_playing) _drainAudio();
+    // Serialize playlist mutations: sentence frames arrive as a burst and
+    // just_audio expects awaited playlist updates.
+    _audioChain = _audioChain.then((_) => _addAudio(wav));
   }
 
-  Future<void> _drainAudio() async {
-    if (_playing) return;
-    if (_audioQueue.isEmpty) {
-      if (_streamDone) _completeTurn();
-      return;
-    }
-    _playing = true;
-    final bytes = _audioQueue.removeAt(0);
+  Future<void> _addAudio(Uint8List wav) async {
     try {
-      // audioplayers' iOS implementation does not support BytesSource
-      // ("setSourceBytes is not currently implemented on iOS"), so write each
-      // sentence to a temp file and play it from disk.
-      final dir = await getTemporaryDirectory();
-      final file = File(
-        '${dir.path}/voice_seg_${DateTime.now().microsecondsSinceEpoch}.wav',
-      );
-      await file.writeAsBytes(bytes, flush: true);
-      _audioFiles.add(file);
-      await _player.play(DeviceFileSource(file.path));
+      await _player.addAudioSource(_WavSource(wav));
+      if (!_playing) {
+        _playing = true;
+        if (_needsSeek) {
+          _needsSeek = false;
+          final sequence = _player.sequenceState.sequence;
+          if (sequence.isNotEmpty) {
+            await _player.seek(Duration.zero, index: sequence.length - 1);
+          }
+        }
+        await _player.play();
+        _lastAudioAt = DateTime.now().millisecondsSinceEpoch;
+      }
     } catch (e) {
       _playing = false;
       errorText = '语音播放失败：${e.toString().replaceFirst('Exception: ', '')}';
       _notify();
-      _drainAudio();
     }
   }
 
-  void _cleanupAudioFiles() {
-    for (final file in _audioFiles) {
-      try {
-        if (file.existsSync()) file.deleteSync();
-      } catch (_) {}
+  void _onPlayerState(PlayerState state) {
+    if (state.processingState != ProcessingState.completed) return;
+    _playing = false;
+    if (_streamDone) {
+      _completeTurn();
+    } else {
+      // More sentences are still being synthesized; the next add resumes.
+      _needsSeek = true;
     }
-    _audioFiles.clear();
+  }
+
+  Future<void> _resetPlayback() async {
+    _audioChain = Future.value();
+    _needsSeek = false;
+    _playing = false;
+    try {
+      await _player.stop();
+    } catch (_) {}
+    try {
+      await _player.clearAudioSources();
+    } catch (_) {}
   }
 
   void _completeTurn() {
+    if (phase == VoicePhase.listening) return;
     _streamDone = false;
     _playing = false;
+    _needsSeek = false;
     _active?.done = true;
     _setPhase(VoicePhase.listening, '继续说话，或点击结束');
   }
 
   void _bargeIn({bool manual = false}) {
     _bargeMs = 0;
-    _playing = false;
     _streamDone = false;
-    _audioQueue.clear();
-    try {
-      _player.stop();
-    } catch (_) {}
+    unawaited(_resetPlayback());
     final turn = _active;
     if (turn != null && !turn.done) {
       turn.interrupted = true;
@@ -647,4 +645,27 @@ class _SpeechFrame {
 
   final Uint8List bytes;
   final bool speech;
+}
+
+
+class _WavSource extends StreamAudioSource {
+  _WavSource(this._bytes);
+
+  final Uint8List _bytes;
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    var from = start ?? 0;
+    var to = end ?? _bytes.length;
+    if (from < 0) from = 0;
+    if (to > _bytes.length) to = _bytes.length;
+    if (to < from) to = from;
+    return StreamAudioResponse(
+      sourceLength: _bytes.length,
+      contentLength: to - from,
+      offset: from,
+      stream: Stream.value(_bytes.sublist(from, to)),
+      contentType: 'audio/wav',
+    );
+  }
 }

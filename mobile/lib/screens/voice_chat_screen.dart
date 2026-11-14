@@ -20,7 +20,6 @@ class _VoiceChatScreenState extends State<VoiceChatScreen> {
   void initState() {
     super.initState();
     _voice = VoiceSessionController()..addListener(_onChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _voice.start());
   }
 
   void _onChanged() {
