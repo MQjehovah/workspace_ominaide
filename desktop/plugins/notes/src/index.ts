@@ -12,8 +12,8 @@ export default {
   async activate(context: PluginContext) {
     context.registerCommand("getPanelData", async () => {
       try {
-        const data = (await context.api.get("/plugins/notes/tree")) || [];
-        const notesArr = Array.isArray(data) ? data : [];
+        const data = (await context.api.get("/plugins/notes")) || [];
+        const notesArr = (Array.isArray(data) ? data : []).filter((n: any) => !n.is_folder);
         return {
           title: "笔记",
           subtitle: `${notesArr.length} 篇笔记`,
@@ -42,15 +42,16 @@ export default {
     context.registerCommand("create", async () => {
       try {
         const res = await context.api.post("/plugins/notes", {title: "无标题", content: ""});
-        context.openPage("notes");
+        context.openPage("notes", res?.id ? `id=${res.id}` : "");
         return {success: true, id: res?.id};
       } catch {
         return {success: false};
       }
     });
 
-    context.registerCommand("open", async () => {
-      context.openPage("notes");
+    context.registerCommand("open", async (args: any) => {
+      const id = Number(args?.id ?? args?.noteId);
+      context.openPage("notes", Number.isFinite(id) && id > 0 ? `id=${id}` : "");
     });
 
     // Search provider for notes (merged from quick-notes).

@@ -488,8 +488,14 @@ async function deleteNode(id: number) {
   } catch {}
 }
 
-onMounted(() => {
-  loadTree()
+onMounted(async () => {
+  await loadTree()
+  // Support `?id=123` / `?noteId=123` from the panel, search results and deep links.
+  const params = new URLSearchParams(window.location.search)
+  const requestedId = Number(params.get('id') || params.get('noteId') || 0)
+  if (Number.isFinite(requestedId) && requestedId > 0) {
+    await openNote(requestedId)
+  }
   window.addEventListener('keydown', handleKeydown)
 })
 

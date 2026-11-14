@@ -19,7 +19,7 @@ defineProps<{
       <button class="panel-btn" @click="openPage"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
     </div>
     <div v-if="data.notes?.length" class="notes-list">
-      <div v-for="n in data.notes.slice(0,3)" :key="n.id" class="note-item">
+      <div v-for="n in data.notes.slice(0,3)" :key="n.id" class="note-item" @click="execute('open', { id: n.id })">
         <div class="note-title">{{ n.title || '无标题' }}</div>
         <div class="note-date">{{ n.updated_at ? n.updated_at.slice(0,10) : '' }}</div>
       </div>
@@ -40,7 +40,7 @@ defineProps<{
 .panel-btn { border:none; background:transparent; cursor:pointer; color:#ccc; padding:4px; border-radius:4px; }
 .panel-btn:hover { background:#f5f5f5; color:#666; }
 .notes-list { display:flex; flex-direction:column; gap:4px; }
-.note-item { padding:6px 8px; border-radius:6px; }
+.note-item { padding:6px 8px; border-radius:6px; cursor:pointer; }
 .note-item:hover { background:#f5f7fa; }
 .note-title { font-size:12px; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .note-date { font-size:10px; color:#999; margin-top:2px; }

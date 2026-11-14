@@ -1293,10 +1293,10 @@ function registerBridgeHandlers(proc: import('./child-process').PluginChildProce
       width: 900, height: 700,
       webPreferences: { preload: preloadPath, contextIsolation: true },
     })
-    const extra = query ? '?' + query : ''
+    const extra = query ? `&${String(query).replace(/^\?/, '')}` : ''
     const url = process.env.VITE_DEV_SERVER_URL
       ? `${process.env.VITE_DEV_SERVER_URL}?view=plugin-page&pluginId=${pluginId}${extra}`
-      : `file://${join(__dirname, '../../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}${extra}`
+      : `file://${join(__dirname, '../../dist/index.html').replace(/\\/g, '/')}?view=plugin-page&pluginId=${pluginId}${extra}`
     win.loadURL(url)
   })
 

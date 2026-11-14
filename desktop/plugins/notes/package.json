@@ -1,6 +1,6 @@
 {
   "name": "omniaide-notes",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "displayName": "笔记",
   "description": "Markdown 笔记",
   "main": "dist/index.js",
